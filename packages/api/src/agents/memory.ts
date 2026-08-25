@@ -136,7 +136,7 @@ The \`delete_memory\` tool should only be used in two scenarios:
 
 ${validKeys && validKeys.length > 0 ? `\nVALID KEYS: ${validKeys.join(', ')}` : ''}
 
-${tokenLimit ? `\nTOKEN LIMIT: Maximum ${tokenLimit} tokens per memory value.` : ''}
+${tokenLimit ? `\nTOKEN LIMIT: Maximum ${tokenLimit} tokens across all memory values.` : ''}
 
 When in doubt, and the user hasn't asked to remember or forget anything, END THE TURN IMMEDIATELY.`;
 
@@ -153,6 +153,7 @@ export const createMemoryTool = ({
   charLimit,
   tokenLimit,
   totalTokens = 0,
+  tokenCountsByKey,
   onWrite,
 }: {
   userId: string | ObjectId;
@@ -163,6 +164,7 @@ export const createMemoryTool = ({
   charLimit?: number;
   tokenLimit?: number;
   totalTokens?: number;
+  tokenCountsByKey?: ReadonlyMap<string, number>;
   onWrite?: () => void;
 }): DynamicStructuredTool => {
   /** Running token total, advanced after each successful write. Writes are
@@ -171,10 +173,10 @@ export const createMemoryTool = ({
    *  check against the same stale total and collectively exceed `tokenLimit`. */
   let currentTotalTokens = totalTokens;
   let writeChain: Promise<unknown> = Promise.resolve();
-  /** Tokens this instance has already committed per key. `set_memory` upserts,
-   *  so a repeat write to the same key REPLACES its value — the running total
-   *  must swap the prior contribution for the new one, not add both. */
-  const writtenTokensByKey = new Map<string, number>();
+  /** Token counts are seeded from persisted memory and advanced after each
+   *  successful write. `set_memory` upserts, so every write replaces this
+   *  key's prior contribution instead of adding both values to the total. */
+  const currentTokensByKey = new Map(tokenCountsByKey);
 
   return tool(
     async ({ key, value }) => {
@@ -202,9 +204,9 @@ export const createMemoryTool = ({
           }
 
           const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
-          /** Total excluding this key's prior in-instance write, so a same-key
-           *  rewrite is measured as a replacement rather than an addition. */
-          const baseTotalTokens = currentTotalTokens - (writtenTokensByKey.get(key) ?? 0);
+          /** Total excluding this key's prior persisted or in-instance value,
+           *  so a rewrite is measured as a replacement rather than an addition. */
+          const baseTotalTokens = currentTotalTokens - (currentTokensByKey.get(key) ?? 0);
           const remainingTokens = tokenLimit ? tokenLimit - baseTotalTokens : Infinity;
 
           if (tokenLimit && remainingTokens <= 0) {
@@ -261,7 +263,7 @@ export const createMemoryTool = ({
           if (result.ok) {
             if (tokenLimit) {
               currentTotalTokens = newTotalTokens;
-              writtenTokensByKey.set(key, tokenCount);
+              currentTokensByKey.set(key, tokenCount);
             }
             onWrite?.();
             logger.debug(`Memory set for key "${key}" (${tokenCount} tokens) for user "${userId}"`);
@@ -694,6 +696,7 @@ export async function buildInlineMemoryTool({
   const charLimit = memoryConfig?.charLimit as number | undefined;
   const tokenLimit = memoryConfig?.tokenLimit as number | undefined;
   let totalTokens = 0;
+  let tokenCountsByKey: ReadonlyMap<string, number> | undefined;
   if (tokenLimit) {
     try {
       const formatted = await getRequestMemories({
@@ -703,6 +706,7 @@ export async function buildInlineMemoryTool({
         getFormattedMemories: memoryMethods.getFormattedMemories,
       });
       totalTokens = formatted?.totalTokens ?? 0;
+      tokenCountsByKey = formatted?.tokenCountsByKey;
     } catch (error) {
       logger.error('[memory] Failed to load memory token count for set_memory', error);
       /** Fail closed: without the current usage total a configured tokenLimit
@@ -719,6 +723,7 @@ export async function buildInlineMemoryTool({
     charLimit,
     tokenLimit,
     totalTokens,
+    tokenCountsByKey,
     onWrite: () => invalidateRequestMemories(req, memoryAgentId),
   });
 }
@@ -782,6 +787,7 @@ export async function processMemory({
   llmConfig,
   tokenLimit,
   totalTokens = 0,
+  tokenCountsByKey,
   streamId = null,
   jobCreatedAt,
   user,
@@ -802,6 +808,7 @@ export async function processMemory({
   instructions: string;
   tokenLimit?: number;
   totalTokens?: number;
+  tokenCountsByKey?: ReadonlyMap<string, number>;
   llmConfig?: Partial<LLMConfig>;
   streamId?: string | null;
   jobCreatedAt?: number;
@@ -819,6 +826,7 @@ export async function processMemory({
       setMemory,
       validKeys,
       totalTokens,
+      tokenCountsByKey,
     });
     const deleteMemoryTool = createDeleteMemoryTool({
       userId,
@@ -832,7 +840,7 @@ export async function processMemory({
     let memoryStatus = `# Existing memory:\n${memory ?? 'No existing memories'}`;
 
     if (tokenLimit) {
-      const remainingTokens = tokenLimit - currentMemoryTokens;
+      const remainingTokens = Math.max(tokenLimit - currentMemoryTokens, 0);
       memoryStatus = `# Memory Status:
 Current memory usage: ${currentMemoryTokens} tokens
 Token limit: ${tokenLimit} tokens
@@ -1055,10 +1063,11 @@ export async function createMemoryProcessor({
   const { validKeys, instructions, llmConfig, tokenLimit } = config;
   const finalInstructions = instructions || getDefaultInstructions(validKeys, tokenLimit);
 
-  const { withKeys, withoutKeys, totalTokens } = await memoryMethods.getFormattedMemories({
-    userId,
-    agentId,
-  });
+  const { withKeys, withoutKeys, totalTokens, tokenCountsByKey } =
+    await memoryMethods.getFormattedMemories({
+      userId,
+      agentId,
+    });
 
   return [
     withoutKeys,
@@ -1081,6 +1090,7 @@ export async function createMemoryProcessor({
           conversationId,
           memory: withKeys,
           totalTokens: totalTokens || 0,
+          tokenCountsByKey,
           instructions: finalInstructions,
           setMemory: memoryMethods.setMemory,
           deleteMemory: memoryMethods.deleteMemory,
