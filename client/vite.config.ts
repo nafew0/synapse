@@ -140,7 +140,7 @@ export default defineConfig(({ command }) => ({
       },
       includeAssets: [],
       manifest: {
-        name: 'BdREN Synapse',
+        name: 'Synapse',
         short_name: 'Synapse',
         display: 'standalone',
         background_color: '#ffffff',

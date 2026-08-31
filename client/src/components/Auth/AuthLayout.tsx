@@ -54,7 +54,7 @@ function AuthLayout({
   const dark = isDark(theme);
   const hasStartupConfigError = startupConfigError !== null && startupConfigError !== undefined;
   const isLoginPage = pathname.includes('login');
-  const appTitle = startupConfig?.appTitle || 'BdREN Synapse';
+  const appTitle = startupConfig?.appTitle || 'Synapse';
 
   const DisplayError = () => {
     if (hasStartupConfigError) {

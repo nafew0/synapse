@@ -15,7 +15,7 @@ function Footer({ startupConfig, immersive = false }: FooterProps) {
   const privacyPolicy = startupConfig.interface?.privacyPolicy;
   const termsOfService = startupConfig.interface?.termsOfService;
   const helpAndFaqURL = startupConfig.helpAndFaqURL;
-  const appTitle = startupConfig.appTitle || 'BdREN Synapse';
+  const appTitle = startupConfig.appTitle || 'Synapse';
   const linkClassName = immersive
     ? 'text-sm text-auth-muted transition-colors duration-theme-normal hover:text-accent-primary focus:text-accent-primary'
     : 'text-sm text-accent-primary underline decoration-transparent transition-all duration-theme-normal hover:text-accent-primary-hover hover:decoration-accent-primary-hover focus:text-accent-primary-hover focus:decoration-accent-primary-hover';
