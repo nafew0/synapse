@@ -7,7 +7,7 @@ export { createAdminSkillsSyncAccess, createAdminSkillsSyncHandlers } from './sk
 export { createAdminUsersHandlers } from './users';
 export { createAdminAuditLogHandlers } from './auditLog';
 export { createGlobalConfigHandlers } from './global/config';
-export { resolveConfigSecret } from './secrets';
+export { resolveConfigSecret, redactConfigSecretMaps } from './secrets';
 export type { AdminConfigDeps } from './config';
 export type { AdminLangfuseDeps } from './langfuse';
 export type { AdminGrantsDeps, GrantPrincipalType } from './grants';
