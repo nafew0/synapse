@@ -17,7 +17,7 @@ import AgentContact from '~/components/Agents/AgentContact';
 import ConvoIcon from '~/components/Endpoints/ConvoIcon';
 
 const containerClassName =
-  'shadow-stroke relative flex h-full items-center justify-center rounded-full bg-presentation text-text-primary dark:after:shadow-none ';
+  'lc-logo-dot shadow-stroke relative flex h-full items-center justify-center rounded-full bg-presentation text-text-primary dark:after:shadow-none ';
 
 /** Stable references: fresh literals re-initialized SplitText's springs and
  * re-rendered every grapheme span on each Landing render. */
@@ -176,7 +176,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
               <SplitText
                 key={`split-text-${name}`}
                 text={name}
-                className={`${getTextSizeClass(name)} font-medium text-text-primary`}
+                className={`lc-headline ${getTextSizeClass(name)} font-medium text-text-primary`}
                 delay={50}
                 textAlign="center"
                 animationFrom={greetingAnimationFrom}
@@ -191,7 +191,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             <SplitText
               key={`split-text-${greetingText}${user?.name ? '-user' : ''}`}
               text={greetingText}
-              className={`${getTextSizeClass(greetingText)} font-medium text-text-primary`}
+              className={`lc-headline ${getTextSizeClass(greetingText)} font-medium text-text-primary`}
               delay={50}
               textAlign="center"
               animationFrom={greetingAnimationFrom}

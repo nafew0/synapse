@@ -1,5 +1,5 @@
 import { Briefcase, FileText, Sparkles } from 'lucide-react';
-import { ThemeSelector } from '@librechat/client';
+import { ThemeSelector, useTheme, isDark } from '@librechat/client';
 import type { ReactNode } from 'react';
 import type { TStartupConfig } from 'librechat-data-provider';
 import type { LucideIcon } from 'lucide-react';
@@ -50,6 +50,8 @@ function AuthLayout({
   error,
 }: AuthLayoutProps) {
   const localize = useLocalize();
+  const { theme } = useTheme();
+  const dark = isDark(theme);
   const hasStartupConfigError = startupConfigError !== null && startupConfigError !== undefined;
   const isLoginPage = pathname.includes('login');
   const appTitle = startupConfig?.appTitle || 'BdREN Synapse';
@@ -90,14 +92,16 @@ function AuthLayout({
 
   return (
     <div
-      className={`relative flex min-h-screen flex-col ${
+      className={`lc-auth-login-page relative flex min-h-screen flex-col ${
         isLoginPage ? 'bg-auth-background font-theme-ui' : 'bg-surface-primary'
       }`}
     >
       {isLoginPage ? (
         <img
           src="/assets/auth-network-background.png"
-          className="pointer-events-none fixed inset-0 h-full w-full object-cover"
+          className={`lc-auth-network-background pointer-events-none fixed inset-0 h-full w-full object-cover ${
+            dark ? '' : 'lc-auth-network-background-light'
+          }`}
           alt=""
           aria-hidden="true"
           draggable={false}
@@ -118,13 +122,13 @@ function AuthLayout({
       <main className="relative z-10 flex flex-grow items-center justify-center px-4 py-10 sm:px-6 lg:py-14">
         {isLoginPage ? (
           <section
-            className="grid w-full max-w-6xl overflow-hidden rounded-theme-surface-lg border border-auth-border/50 bg-auth-surface/90 shadow-2xl backdrop-blur-xl lg:min-h-[44rem] lg:grid-cols-[minmax(0,0.94fr)_minmax(0,1.06fr)]"
+            className="lc-auth-login-card grid w-full max-w-6xl overflow-hidden rounded-theme-surface-lg border border-auth-border/50 bg-auth-surface/90 shadow-2xl backdrop-blur-xl lg:min-h-[44rem] lg:grid-cols-[minmax(0,0.94fr)_minmax(0,1.06fr)]"
             aria-label={localize('com_auth_login_card')}
           >
-            <div className="flex flex-col items-center justify-center border-b border-auth-border/40 px-6 py-9 lg:border-b-0 lg:border-r lg:px-12 lg:py-12">
+            <div className="lc-auth-brand-panel flex flex-col items-center justify-center border-b border-auth-border/40 px-6 py-9 lg:border-b-0 lg:border-r lg:px-12 lg:py-12">
               <BlinkAnimation active={isFetching}>
                 <img
-                  src="/assets/logo_white.svg"
+                  src={dark ? '/assets/logo_white.svg' : '/assets/logo_bdren_v1.svg'}
                   className="h-36 w-36 lg:h-52 lg:w-52"
                   alt={localize('com_ui_logo', { 0: appTitle })}
                   draggable={false}
@@ -144,7 +148,7 @@ function AuthLayout({
               </div> */}
             </div>
 
-            <div className="flex w-full flex-col justify-center px-6 py-9 sm:px-10 lg:px-16 lg:py-12">
+            <div className="lc-auth-form-panel flex w-full flex-col justify-center px-6 py-9 sm:px-10 lg:px-16 lg:py-12">
               {!hasStartupConfigError && !isFetching && header && (
                 <>
                   <h1

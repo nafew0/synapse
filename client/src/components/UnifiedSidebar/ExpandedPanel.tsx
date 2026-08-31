@@ -52,7 +52,7 @@ const NewChatButton = memo(function NewChatButton({
           data-testid="new-chat-button"
           aria-label={localize('com_ui_new_chat')}
           aria-keyshortcuts={ariaKey}
-          className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-surface-hover"
+          className="lc-rail-icon flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-surface-hover"
           onClick={handleClick}
         >
           <SquarePen className="h-5 w-5 text-text-primary" />
@@ -111,7 +111,7 @@ const NavIconButton = memo(function NavIconButton({
           aria-pressed={isActive}
           data-testid={`nav-panel-${link.id}`}
           className={cn(
-            'h-9 w-9 rounded-lg',
+            'lc-rail-icon h-9 w-9 rounded-lg',
             isActive ? 'bg-surface-active-alt text-text-primary' : 'text-text-secondary',
           )}
           onClick={handleClick}
@@ -144,7 +144,7 @@ function ExpandedPanel({
   const toggleSidebarAriaKey = useShortcutAriaKey('toggleSidebar');
 
   return (
-    <div className="flex h-full flex-shrink-0 flex-col gap-2 border-r border-border-light bg-surface-primary-alt px-2 py-2">
+    <div className="lc-left-rail flex h-full flex-shrink-0 flex-col gap-2 border-r border-border-light bg-surface-primary-alt px-2 py-2">
       <TooltipAnchor
         side="right"
         description={toggleSidebarHint}
@@ -157,7 +157,7 @@ function ExpandedPanel({
             aria-label={localize(toggleLabel)}
             aria-expanded={expanded}
             aria-keyshortcuts={toggleSidebarAriaKey}
-            className="h-9 w-9 rounded-lg"
+            className="lc-rail-icon h-9 w-9 rounded-lg"
             onClick={toggleClick}
           >
             <Sidebar aria-hidden="true" className="h-5 w-5 text-text-primary" />

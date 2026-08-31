@@ -64,6 +64,18 @@ interface:
     use: false
   fileCitations: true
 
+
+speech:
+  speechTab:
+    conversationMode: true
+    advancedMode: false
+    speechToText:
+      engineSTT: "browser"
+      languageSTT: "English (US)"
+      autoTranscribeAudio: true
+      decibelValue: -45
+      autoSendText: 0
+
 modelSpecs:
   enforce: true
   prioritize: true
@@ -80,7 +92,7 @@ modelSpecs:
       label: Office Assistant
       description: General office assistant with document, spreadsheet, presentation, mail, and image delegation.
       default: true
-      # group: Agents
+      group: agents
       preset:
         endpoint: agents
         agent_id: agent_office_assistant
@@ -89,9 +101,8 @@ modelSpecs:
       label: ChatGPT 
       askUserQuestion: true
       preset:
-        endpoint: OpenAI
-        model: gpt-5.6-luna
-        useResponsesApi: true
+        endpoint: OpenRouter
+        model: openai/gpt-5.6-luna
         promptPrefix: |
           You assist non-technical office users with emails, letters, reports,
           research, document editing, meeting materials, and presentations.
@@ -219,8 +230,7 @@ endpoints:
         x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
       models:
         default:
-          - 'google/gemma-4-31b-it'
-          - ''
+          - openai/gpt-5.6-luna
         fetch: false
       titleConvo: true
       dropParams: ['stop']

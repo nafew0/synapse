@@ -43,8 +43,8 @@ specialists:
       You draft professional emails, letters, memos, agendas, and meeting minutes.
       Adjust formality, tone, and structure to match the user's request.
       Support both English and Bangla. Produce clear drafts; never claim to send or deliver.
-    provider: OpenAI
-    model: gpt-5.6-luna
+    provider: OpenRouter
+    model: openai/gpt-5.6-luna
     model_parameters: { useResponsesApi: true }
     orchestrationOnly: true
 
@@ -56,8 +56,8 @@ specialists:
       and evaluation templates. You summarize CVs and compare them against explicit user-provided
       criteria only. Never rank candidates, make hiring decisions, infer protected traits,
       or provide final legal/disciplinary decisions. Use file search and OCR for uploads.
-    provider: OpenAI
-    model: gpt-5.6-luna
+    provider: OpenRouter
+    model: openai/gpt-5.6-luna
     model_parameters: { useResponsesApi: true }
     tools: [file_search]
     orchestrationOnly: true
@@ -77,8 +77,8 @@ specialists:
       Write the generator script itself (e.g. the python-docx build script) to /tmp, not
       /mnt/data — /tmp is same-call scratch space and never appears in the UI; only the actual
       DOCX/PDF deliverable belongs in /mnt/data.
-    provider: OpenAI
-    model: gpt-5.6-luna
+    provider: OpenRouter
+    model: openai/gpt-5.6-luna
     model_parameters: { useResponsesApi: true }
     tools: [execute_code]
     orchestrationOnly: true
@@ -107,8 +107,8 @@ specialists:
       Write any throwaway helper script you create (as opposed to the skill's own bundled
       scripts under /mnt/data/skills/) to /tmp, not /mnt/data — /tmp is same-call scratch space
       and never appears in the UI; only the actual workbook deliverable belongs in /mnt/data.
-    provider: OpenAI
-    model: gpt-5.6-luna
+    provider: OpenRouter
+    model: openai/gpt-5.6-luna
     model_parameters: { useResponsesApi: true }
     tools: [execute_code]
     orchestrationOnly: true
@@ -128,8 +128,8 @@ specialists:
       Write the generator script itself (e.g. the python-pptx build script) to /tmp, not
       /mnt/data — /tmp is same-call scratch space and never appears in the UI; only the actual
       PPTX deliverable belongs in /mnt/data.
-    provider: OpenAI
-    model: gpt-5.6-luna
+    provider: OpenRouter
+    model: openai/gpt-5.6-luna
     model_parameters: { useResponsesApi: true }
     tools: [execute_code]
     orchestrationOnly: true

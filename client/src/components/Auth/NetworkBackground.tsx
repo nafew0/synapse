@@ -235,6 +235,7 @@ function NetworkBackground() {
     }
 
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const shouldAnimate = dark && !prefersReducedMotion;
     const ctx = canvas.getContext('2d');
     if (!ctx) {
       return;
@@ -498,7 +499,7 @@ function NetworkBackground() {
         drawEdge(nodes[from], nodes[to], 1, bridgeAlphaScale);
       }
 
-      if (!prefersReducedMotion) {
+      if (shouldAnimate) {
         advanceSignals(delta);
         if (signals.length < SIGNAL_TARGET_COUNT && now - lastSpawn > SIGNAL_SPAWN_INTERVAL_MS) {
           lastSpawn = now;
@@ -510,7 +511,7 @@ function NetworkBackground() {
       }
 
       for (const node of nodes) {
-        const breath = prefersReducedMotion ? 1 : 1 + Math.sin(now * 0.0011 + node.phase) * 0.16;
+        const breath = shouldAnimate ? 1 + Math.sin(now * 0.0011 + node.phase) * 0.16 : 1;
         const excite = Math.max(node.warmth, node.flash);
         const color = mixColor(node.isGradient ? INDIGO : purpleBase, ORANGE, excite);
         const radius = node.radius * breath + excite * 1.4;
@@ -530,7 +531,7 @@ function NetworkBackground() {
         ctx!.fill();
       }
 
-      if (!prefersReducedMotion) {
+      if (shouldAnimate) {
         drawSignals();
       }
 
@@ -542,7 +543,7 @@ function NetworkBackground() {
         return;
       }
       drawFrame(now);
-      if (!prefersReducedMotion) {
+      if (shouldAnimate) {
         animationFrame = requestAnimationFrame(loop);
       }
     }
@@ -551,7 +552,7 @@ function NetworkBackground() {
       if (document.hidden) {
         running = false;
         cancelAnimationFrame(animationFrame);
-      } else if (!running) {
+      } else if (!running && shouldAnimate) {
         running = true;
         lastNow = 0;
         animationFrame = requestAnimationFrame(loop);
@@ -559,7 +560,11 @@ function NetworkBackground() {
     }
 
     resize();
-    animationFrame = requestAnimationFrame(loop);
+    if (shouldAnimate) {
+      animationFrame = requestAnimationFrame(loop);
+    } else {
+      drawFrame(0);
+    }
 
     window.addEventListener('resize', resize);
     document.addEventListener('visibilitychange', handleVisibility);

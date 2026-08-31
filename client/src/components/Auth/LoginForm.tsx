@@ -187,7 +187,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
             type="submit"
             disabled={(requireCaptcha && !turnstileToken) || isSubmitting}
             variant="submit"
-            className="group relative h-14 w-full rounded-theme-control text-base"
+            className="lc-auth-submit group relative h-14 w-full rounded-theme-control text-base"
           >
             {isSubmitting ? (
               <Spinner />

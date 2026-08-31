@@ -547,7 +547,7 @@ const ChatForm = memo(function ChatForm({
                 isTextAreaFocused ? 'shadow-lg' : 'shadow-md',
                 isTemporary
                   ? 'border-violet-800/60 bg-violet-950/10'
-                  : 'border-border-light bg-surface-chat',
+                  : 'lc-composer border-border-light bg-surface-chat',
               )}
             >
               <TextareaHeader addedConvo={addedConvo} setAddedConvo={setAddedConvo} />
