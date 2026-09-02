@@ -460,6 +460,7 @@ router.get('/:tenantId/agent-access', async (req, res) => {
             principalId: selectedGroup._id,
             resourceType: ResourceType.AGENT,
             resourceId: { $in: agents.map((agent) => agent._id) },
+            tenantId,
           })
             .select('resourceId permBits')
             .lean()
@@ -556,6 +557,7 @@ router.patch('/:tenantId/agent-access', async (req, res) => {
           resourceId: agent._id,
           accessRoleId: AccessRoleIds.AGENT_VIEWER,
           grantedBy: req.user.id ?? req.user._id,
+          tenantId,
         });
         for (const specialist of targetAgents.slice(1)) {
           await grantPermission({
@@ -565,12 +567,14 @@ router.patch('/:tenantId/agent-access', async (req, res) => {
             resourceId: specialist._id,
             accessRoleId: AccessRoleIds.REMOTE_AGENT_VIEWER,
             grantedBy: req.user.id ?? req.user._id,
+            tenantId,
           });
         }
       } else {
         await models.AclEntry.deleteMany({
           principalType: PrincipalType.GROUP,
           principalId: group._id,
+          tenantId,
           $or: [
             { resourceType: ResourceType.AGENT, resourceId: { $in: targetAgents.map((item) => item._id) } },
             { resourceType: ResourceType.REMOTE_AGENT, resourceId: { $in: targetAgents.slice(1).map((item) => item._id) } },
