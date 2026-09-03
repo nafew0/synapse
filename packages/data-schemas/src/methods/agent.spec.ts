@@ -21,6 +21,7 @@ import type { IAgent, IAclEntry, IUser, IAccessRole } from '..';
 import { createAgentMethods, type AgentMethods } from './agent';
 import { createAclEntryMethods } from './aclEntry';
 import { createModels } from '~/models';
+import { runAsSystem, tenantStorage } from '~/config/tenantContext';
 
 /** Version snapshot stored in `IAgent.versions[]`. Extends the base omit with runtime-only fields. */
 type VersionEntry = Omit<IAgent, 'versions'> & {
@@ -4199,3 +4200,77 @@ function generateVersionTestCases() {
     },
   ];
 }
+
+describe('Tenant-visible platform agent reads', () => {
+  const tenantId = 'learn';
+  const foreignTenantId = 'foreign-tenant';
+
+  async function seedAgent(id: string, scope?: string, name = id): Promise<IAgent> {
+    return await runAsSystem(async () => {
+      const agent = await Agent.create({
+        id,
+        name,
+        provider: 'openai',
+        model: 'gpt-4',
+        author: new mongoose.Types.ObjectId(),
+        ...(scope ? { tenantId: scope } : {}),
+      });
+      return agent.toObject() as IAgent;
+    });
+  }
+
+  beforeEach(async () => {
+    await runAsSystem(async () => {
+      await Agent.deleteMany({});
+    });
+  });
+
+  test('tenant reads include own and platform agents but exclude foreign agents', async () => {
+    const platformAgent = await seedAgent('agent_platform');
+    const tenantAgent = await seedAgent('agent_learn', tenantId);
+    const foreignAgent = await seedAgent('agent_foreign', foreignTenantId);
+
+    const result = await tenantStorage.run({ tenantId }, async () => {
+      const [platform, own, foreign, agents, list] = await Promise.all([
+        getAgent({ id: platformAgent.id }),
+        getAgent({ id: tenantAgent.id }),
+        getAgent({ id: foreignAgent.id }),
+        methods.getAgents({
+          _id: { $in: [platformAgent._id, tenantAgent._id, foreignAgent._id] },
+        }),
+        methods.getListAgentsByAccess({
+          accessibleIds: [platformAgent._id, tenantAgent._id, foreignAgent._id],
+          limit: null,
+        }),
+      ]);
+      return { platform, own, foreign, agents, list };
+    });
+
+    expect(result.platform?._id.toString()).toBe(platformAgent._id.toString());
+    expect(result.own?._id.toString()).toBe(tenantAgent._id.toString());
+    expect(result.foreign).toBeNull();
+    expect(result.agents.map((agent) => agent.id).sort()).toEqual(
+      ['agent_learn', 'agent_platform'].sort(),
+    );
+    expect(result.list.data.map((agent) => agent.id).sort()).toEqual(
+      ['agent_learn', 'agent_platform'].sort(),
+    );
+  });
+
+  test('tenant-specific agent shadows a platform agent with the same stable ID', async () => {
+    const stableId = 'agent_shared';
+    await seedAgent(stableId, undefined, 'Platform definition');
+    const tenantAgent = await seedAgent(stableId, tenantId, 'Tenant definition');
+
+    const [agent, agentWithVersion] = await tenantStorage.run({ tenantId }, async () =>
+      Promise.all([
+        getAgent({ id: stableId }),
+        getAgentWithVersionCount({ id: stableId }),
+      ]),
+    );
+
+    expect(agent?._id.toString()).toBe(tenantAgent._id.toString());
+    expect(agent?.name).toBe('Tenant definition');
+    expect(agentWithVersion?._id.toString()).toBe(tenantAgent._id.toString());
+  });
+});
