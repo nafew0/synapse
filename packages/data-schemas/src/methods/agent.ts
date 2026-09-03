@@ -11,6 +11,7 @@ import type { AgentToolResources } from 'librechat-data-provider';
 import type { IAgent, IAclEntry } from '~/types';
 import { filterExistingSkillIds } from './skill';
 import logger from '~/config/winston';
+import { getTenantId, runAsSystem, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 
 const { mcp_delimiter } = Constants;
 
@@ -27,6 +28,43 @@ const TOOL_RESOURCE_KEYS: ReadonlyArray<keyof AgentToolResources> = [
   EToolResources.context,
   EToolResources.ocr,
 ];
+
+/**
+ * Builds the explicit visibility predicate for agent reads. Unlike ordinary
+ * tenant-owned records, agents may be platform-wide (no tenantId) and shared
+ * to a tenant through ACLs. Writes remain governed by the normal tenant
+ * isolation plugin; only read methods opt into this wider, explicit scope.
+ */
+function visibleAgentFilter(tenantId: string): FilterQuery<IAgent> {
+  return {
+    $or: [{ tenantId }, { tenantId: null }, { tenantId: { $exists: false } }],
+  };
+}
+
+function combineAgentReadFilter(
+  searchParameter: FilterQuery<IAgent> | null | undefined,
+  visibility?: FilterQuery<IAgent>,
+): FilterQuery<IAgent> {
+  if (!visibility) {
+    return searchParameter ?? {};
+  }
+  return { $and: [searchParameter ?? {}, visibility] };
+}
+
+/**
+ * Runs an agent read with tenant-local plus platform-wide visibility. The
+ * system context prevents the generic model plugin from replacing this
+ * deliberate scope with `{ tenantId: currentTenant }`.
+ */
+async function runVisibleAgentRead<T>(
+  reader: (visibility?: FilterQuery<IAgent>) => Promise<T>,
+): Promise<T> {
+  const tenantId = getTenantId();
+  if (!tenantId || tenantId === SYSTEM_TENANT_ID) {
+    return await reader();
+  }
+  return await runAsSystem(async () => await reader(visibleAgentFilter(tenantId)));
+}
 
 /** Builds an atomic update that prunes deleted IDs without discarding surviving edge members. */
 function createEdgeCleanupPipeline(agentIds: string[]): PipelineStage[] {
@@ -564,7 +602,15 @@ export function createAgentMethods(
    */
   async function getAgent(searchParameter: FilterQuery<IAgent>): Promise<IAgent | null> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    return await Agent.findOne(searchParameter).lean<IAgent>();
+    return await runVisibleAgentRead(async (visibility) => {
+      const query = Agent.findOne(combineAgentReadFilter(searchParameter, visibility));
+      // A tenant-specific definition shadows a platform definition with the
+      // same stable ID. Exact _id lookups are unaffected by the ordering.
+      if (visibility) {
+        query.sort({ tenantId: -1 });
+      }
+      return await query.lean<IAgent>();
+    });
   }
 
   /**
@@ -576,9 +622,16 @@ export function createAgentMethods(
     searchParameter: FilterQuery<IAgent>,
   ): Promise<IAgent['versions'] | null> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    const result = await Agent.findOne(searchParameter, { versions: 1, _id: 0 }).lean<
-      Pick<IAgent, 'versions'>
-    >();
+    const result = await runVisibleAgentRead(async (visibility) => {
+      const query = Agent.findOne(combineAgentReadFilter(searchParameter, visibility), {
+        versions: 1,
+        _id: 0,
+      });
+      if (visibility) {
+        query.sort({ tenantId: -1 });
+      }
+      return await query.lean<Pick<IAgent, 'versions'>>();
+    });
     if (!result) {
       return null;
     }
@@ -593,11 +646,17 @@ export function createAgentMethods(
     searchParameter: FilterQuery<IAgent>,
   ): Promise<(IAgent & { version: number }) | null> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    const [agent] = await Agent.aggregate<IAgent & { version: number }>([
-      { $match: searchParameter },
-      { $addFields: { version: { $size: { $ifNull: ['$versions', []] } } } },
-      { $project: { versions: 0 } },
-    ]);
+    const [agent] = await runVisibleAgentRead(async (visibility) => {
+      const preferenceStages: PipelineStage[] = visibility
+        ? [{ $sort: { tenantId: -1 } }, { $limit: 1 }]
+        : [];
+      return await Agent.aggregate<IAgent & { version: number }>([
+        { $match: combineAgentReadFilter(searchParameter, visibility) },
+        ...preferenceStages,
+        { $addFields: { version: { $size: { $ifNull: ['$versions', []] } } } },
+        { $project: { versions: 0 } },
+      ]);
+    });
     return agent ?? null;
   }
 
@@ -606,7 +665,9 @@ export function createAgentMethods(
    */
   async function getAgents(searchParameter: FilterQuery<IAgent>): Promise<IAgent[]> {
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    return await Agent.find(searchParameter).lean<IAgent[]>();
+    return await runVisibleAgentRead(async (visibility) =>
+      Agent.find(combineAgentReadFilter(searchParameter, visibility)).lean<IAgent[]>(),
+    );
   }
 
   async function hasAgentWithMCPServerName({
@@ -621,10 +682,17 @@ export function createAgentMethods(
     }
 
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    const agent = await Agent.exists({
-      _id: { $in: agentIds },
-      mcpServerNames: serverName,
-    });
+    const agent = await runVisibleAgentRead(async (visibility) =>
+      Agent.exists(
+        combineAgentReadFilter(
+          {
+            _id: { $in: agentIds },
+            mcpServerNames: serverName,
+          },
+          visibility,
+        ),
+      ),
+    );
 
     return agent !== null;
   }
@@ -635,13 +703,18 @@ export function createAgentMethods(
     }
 
     const Agent = mongoose.models.Agent as Model<IAgent>;
-    const agents = await Agent.find(
-      {
-        _id: { $in: agentIds },
-        mcpServerNames: { $exists: true, $not: { $size: 0 } },
-      },
-      { mcpServerNames: 1 },
-    ).lean<Array<Pick<IAgent, 'mcpServerNames'>>>();
+    const agents = await runVisibleAgentRead(async (visibility) =>
+      Agent.find(
+        combineAgentReadFilter(
+          {
+            _id: { $in: agentIds },
+            mcpServerNames: { $exists: true, $not: { $size: 0 } },
+          },
+          visibility,
+        ),
+        { mcpServerNames: 1 },
+      ).lean<Array<Pick<IAgent, 'mcpServerNames'>>>(),
+    );
 
     const serverNames = new Set<string>();
     for (const agent of agents) {
@@ -1143,13 +1216,18 @@ export function createAgentMethods(
       projection.skills_enabled = 1;
     }
 
-    let query = Agent.find(baseQuery, projection).sort({ updatedAt: -1, _id: 1 });
+    const agents = await runVisibleAgentRead(async (visibility) => {
+      let query = Agent.find(
+        combineAgentReadFilter(baseQuery as FilterQuery<IAgent>, visibility),
+        projection,
+      ).sort({ updatedAt: -1, _id: 1 });
 
-    if (isPaginated && normalizedLimit) {
-      query = query.limit(normalizedLimit + 1);
-    }
+      if (isPaginated && normalizedLimit) {
+        query = query.limit(normalizedLimit + 1);
+      }
 
-    const agents = (await query.lean()) as Array<Record<string, unknown>>;
+      return (await query.lean()) as Array<Record<string, unknown>>;
+    });
 
     const hasMore = isPaginated && normalizedLimit ? agents.length > normalizedLimit : false;
     const data = (isPaginated && normalizedLimit ? agents.slice(0, normalizedLimit) : agents).map(
