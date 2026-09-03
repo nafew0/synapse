@@ -27,6 +27,7 @@ const { getAppConfig } = require('./Config');
 const INVITE_EXPIRY_MS = 1000 * 60 * 60 * 24 * 7;
 const MAX_IMPORT_ROWS = 1000;
 const ALLOWED_MEMBER_ROLES = new Set([SystemRoles.USER, INSTITUTION_ADMIN_ROLE]);
+const TENANT_ALL_USERS_GROUP_SUFFIX = '-all-users';
 let transactionSupportCache = null;
 let standaloneWarningLogged = false;
 
@@ -46,6 +47,38 @@ function normalizeEmail(email) {
 
 function getCreditPackages(appConfig) {
   return appConfig?.creditPackages ?? appConfig?.config?.creditPackages ?? { currency: 'BDT', list: [] };
+}
+
+/**
+ * Enroll an active institution member in its tenant's system-managed default
+ * group. Tenant-level feature and agent ACLs live on this group, so members
+ * added later inherit the same policy without copied individual grants.
+ *
+ * A missing group is a no-op: provisioning an institution does not implicitly
+ * grant features. The tenant-access setup workflow creates/configures the
+ * group only when the tenant is enabled for a feature.
+ */
+async function enrollInTenantAllUsersGroup({ tenantId, userId, session }) {
+  const Group = models.Group;
+  if (!Group?.findOne || typeof db.addUserToGroup !== 'function') {
+    return false;
+  }
+
+  const query = Group.findOne({
+    tenantId,
+    source: 'local',
+    name: `${tenantId}${TENANT_ALL_USERS_GROUP_SUFFIX}`,
+  });
+  if (session) {
+    query.session(session);
+  }
+  const group = await query.lean().exec();
+  if (!group) {
+    return false;
+  }
+
+  await db.addUserToGroup(userId, group._id, session);
+  return true;
 }
 
 const usernameAllowedCharactersRegex = /^[a-zA-Z0-9_.@#$%&*()\p{Script=Latin}\p{Script=Common}\p{Script=Cyrillic}\p{Script=Devanagari}\p{Script=Han}\p{Script=Arabic}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+$/u;
@@ -316,6 +349,7 @@ async function activateMemberWithoutTransaction(tenantId, userId) {
     throw new HttpError(404, 'Member not found');
   }
   if (isActiveStatus(user.membershipStatus)) {
+    await enrollInTenantAllUsersGroup({ tenantId, userId: user._id });
     return user;
   }
 
@@ -342,6 +376,7 @@ async function activateMemberWithoutTransaction(tenantId, userId) {
       .exec();
 
     if (activated) {
+      await enrollInTenantAllUsersGroup({ tenantId, userId: activated._id });
       return activated;
     }
 
@@ -1182,8 +1217,9 @@ async function reactivateInstitutionMember({ tenantId, userId, actor, context })
   const result = await withInstitutionUserTransaction(
     tenantId,
     userId,
-    async ({ institution, user }) => {
+    async ({ institution, user, session }) => {
       if (isActiveStatus(user.membershipStatus)) {
+        await enrollInTenantAllUsersGroup({ tenantId, userId: user._id, session });
         return user;
       }
 
@@ -1203,6 +1239,7 @@ async function reactivateInstitutionMember({ tenantId, userId, actor, context })
 
       await institution.save();
       await user.save();
+      await enrollInTenantAllUsersGroup({ tenantId, userId: user._id, session });
       return user.toObject();
     },
     () => activateMemberWithoutTransaction(tenantId, userId),
@@ -1385,8 +1422,9 @@ async function activateProvisionedMember({ userId, tenantId }) {
   return await withInstitutionUserTransaction(
     tenantId,
     userId,
-    async ({ institution, user }) => {
+    async ({ institution, user, session }) => {
       if (isActiveStatus(user.membershipStatus)) {
+        await enrollInTenantAllUsersGroup({ tenantId, userId: user._id, session });
         return user.toObject();
       }
 
@@ -1406,6 +1444,7 @@ async function activateProvisionedMember({ userId, tenantId }) {
 
       await institution.save();
       await user.save();
+      await enrollInTenantAllUsersGroup({ tenantId, userId: user._id, session });
       return user.toObject();
     },
     () => activateMemberWithoutTransaction(tenantId, userId),
