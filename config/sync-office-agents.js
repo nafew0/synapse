@@ -165,8 +165,12 @@ async function createOrUpdateAgent(agentDef, author, dryRun) {
   if (existing && !dryRun) {
     // Update existing agent
     console.log(`[update] "${name}" (${id})`);
-    await runAsSystem(async () => {
-      await Agent.updateOne(
+    /** Must return the post-update document. The master's handoff edges are
+     *  rebuilt from these records, and the edge description is what the router
+     *  reads when choosing a specialist — returning the pre-update snapshot
+     *  leaves routing one sync behind the agent rows. */
+    return runAsSystem(async () =>
+      Agent.findOneAndUpdate(
         { id },
         {
           $set: {
@@ -184,9 +188,11 @@ async function createOrUpdateAgent(agentDef, author, dryRun) {
             skills: config.skills,
           },
         },
-      ).exec();
-    });
-    return existing;
+        { new: true },
+      )
+        .lean()
+        .exec(),
+    );
   }
 
   if (existing) {
