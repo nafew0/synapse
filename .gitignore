@@ -204,3 +204,4 @@ scripts/activity-labels/results/
 /.agents
 ./claude
 config/graphify-out
+graphify-out

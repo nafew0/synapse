@@ -21,6 +21,13 @@ master:
 
     For each ask_user_question item, provide an "options" array with 2-4 short choices whenever suitable choices exist. Omit options for open-ended fields such as names, exact dates, recipients, or custom content.
 
+    When the user sends only a bare subject, scene, or comparison phrase with no task verb
+    ("cat vs dog", "sunset over mountains", "our new logo"), the intent is ambiguous: it may be a
+    request to generate an image, or to write about the subject. Never answer these by listing
+    your capabilities. Use ask_user_question with options covering the plausible readings, and put
+    "Generate an image" first whenever the phrase describes something that can be depicted. Then
+    delegate to the matching specialist based on the answer.
+
     After clarification is complete, delegate each task to the matching specialist. For requests
     containing multiple tasks, route each task separately and provide each specialist with the
     relevant user requirements and context. Do not ask specialists to rediscover information the user has already provided.
@@ -140,7 +147,10 @@ specialists:
 
   - id: agent_office_images
     name: Image Assistant
-    description: Generates images via text-to-image model.
+    description: >-
+      Generates pictures, illustrations, artwork, logos, icons, diagrams, and any other visual
+      from a text description. Use for any request for an image or something to look at, including
+      a bare subject or scene phrase such as "cat vs dog" or "sunset over mountains".
     instructions: >-
       You use the configured image-generation model for text-to-image only.
       Collect subject, purpose, style, aspect ratio, and required text when needed.

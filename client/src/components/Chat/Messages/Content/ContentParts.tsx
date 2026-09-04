@@ -522,7 +522,6 @@ const ContentParts = memo(function ContentParts({
       <ApprovalProvider>
         <SearchContext.Provider value={{ searchResults }}>
           <MemoryArtifacts attachments={attachments} />
-          <GeneratedImageArtifacts attachments={attachments} />
           {hasParallelContent && (
             <Sources messageId={messageId} conversationId={conversationId || undefined} />
           )}
@@ -561,6 +560,9 @@ const ContentParts = memo(function ContentParts({
               )
             ),
           )}
+          {/* Rendered after the phases so a multi-step run reads chronologically:
+              the reasoning and handoffs that produced the image come first. */}
+          <GeneratedImageArtifacts attachments={attachments} />
         </SearchContext.Provider>
       </ApprovalProvider>
     );
@@ -610,10 +612,20 @@ const ContentParts = memo(function ContentParts({
   }
 
   // Sequential content: render parts in order (90% of cases)
+  /** When reasoning or tool steps are present the image is the outcome of that
+   *  work, so it belongs after them; a bare generation keeps it at the top. */
+  const imageAfterContent = safeContent.some(
+    (part) =>
+      part?.type === ContentTypes.THINK ||
+      part?.type === ContentTypes.TOOL_CALL ||
+      part?.type === ContentTypes.AGENT_UPDATE,
+  );
   const sequentialContent = (
     <SearchContext.Provider value={{ searchResults }}>
       {!nestedActivityPhase && <MemoryArtifacts attachments={attachments} />}
-      {!nestedActivityPhase && <GeneratedImageArtifacts attachments={attachments} />}
+      {!nestedActivityPhase && !imageAfterContent && (
+        <GeneratedImageArtifacts attachments={attachments} />
+      )}
       {!nestedActivityPhase && renderPendingSkills()}
       {showEmptyCursor && (
         <Container>
@@ -663,6 +675,9 @@ const ContentParts = memo(function ContentParts({
           );
           return nodes;
         })}
+      {!nestedActivityPhase && imageAfterContent && (
+        <GeneratedImageArtifacts attachments={attachments} />
+      )}
     </SearchContext.Provider>
   );
   if (nestedActivityPhase) {

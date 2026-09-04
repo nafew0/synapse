@@ -1,0 +1,40 @@
+diff --git a/node_modules/@librechat/agents/node_modules/@langchain/openai/dist/converters/completions.cjs b/node_modules/@librechat/agents/node_modules/@langchain/openai/dist/converters/completions.cjs
+index 48fa1fc..26b21b2 100644
+--- a/node_modules/@librechat/agents/node_modules/@langchain/openai/dist/converters/completions.cjs
++++ b/node_modules/@librechat/agents/node_modules/@langchain/openai/dist/converters/completions.cjs
+@@ -180,6 +180,7 @@ const convertCompletionsMessageToBaseMessage = ({ message, rawResponse, includeR
+ 				...rawResponse.system_fingerprint ? { system_fingerprint: rawResponse.system_fingerprint } : {}
+ 			};
+ 			if (message.audio) additional_kwargs.audio = message.audio;
++			if (Array.isArray(message.images)) additional_kwargs.images = message.images;
+ 			return new _langchain_core_messages.AIMessage({
+ 				content: require_output.handleMultiModalOutput(message.content || "", rawResponse.choices?.[0]?.message),
+ 				tool_calls: toolCalls,
+@@ -264,6 +265,7 @@ const convertCompletionsDeltaToBaseMessageChunk = ({ delta, rawResponse, include
+ 		...delta.audio,
+ 		index: rawResponse.choices[0].index
+ 	};
++	if (Array.isArray(delta.images)) additional_kwargs.images = delta.images;
+ 	const response_metadata = {
+ 		model_provider: "openai",
+ 		usage: { ...rawResponse.usage }
+diff --git a/node_modules/@librechat/agents/node_modules/@langchain/openai/dist/converters/completions.js b/node_modules/@librechat/agents/node_modules/@langchain/openai/dist/converters/completions.js
+index 3d28586..68c1c17 100644
+--- a/node_modules/@librechat/agents/node_modules/@langchain/openai/dist/converters/completions.js
++++ b/node_modules/@librechat/agents/node_modules/@langchain/openai/dist/converters/completions.js
+@@ -180,6 +180,7 @@ const convertCompletionsMessageToBaseMessage = ({ message, rawResponse, includeR
+ 				...rawResponse.system_fingerprint ? { system_fingerprint: rawResponse.system_fingerprint } : {}
+ 			};
+ 			if (message.audio) additional_kwargs.audio = message.audio;
++			if (Array.isArray(message.images)) additional_kwargs.images = message.images;
+ 			return new AIMessage({
+ 				content: handleMultiModalOutput(message.content || "", rawResponse.choices?.[0]?.message),
+ 				tool_calls: toolCalls,
+@@ -264,6 +265,7 @@ const convertCompletionsDeltaToBaseMessageChunk = ({ delta, rawResponse, include
+ 		...delta.audio,
+ 		index: rawResponse.choices[0].index
+ 	};
++	if (Array.isArray(delta.images)) additional_kwargs.images = delta.images;
+ 	const response_metadata = {
+ 		model_provider: "openai",
+ 		usage: { ...rawResponse.usage }
