@@ -1,6 +1,41 @@
 export const isHttpDownloadTarget = (target?: string | null): boolean =>
   /^https?:\/\//i.test(target ?? '');
 
+/** Matches the `<file_id>-` storage-key prefix the backend prepends to stored filenames
+ * (see `saveBase64Image`/`processImageFile` in `api/server/services/Files/process.js`) so
+ * files with the same name don't collide on disk/S3. */
+const STORAGE_ID_PREFIX = /^([0-9a-f]{8})-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-/i;
+const DOWNLOAD_ID_SUFFIX_LENGTH = 6;
+
+/**
+ * Turns a stored filename into the name the browser should save it under: the leading
+ * storage id moves to a short tail, so `<file_id>-red-panda-eating-bamboo.png` saves as
+ * `red-panda-eating-bamboo-4f3a2b.png` — descriptive, but still unique per file.
+ *
+ * The tail is load-bearing, not decoration: a thread regenerating the same prompt, or one
+ * request fanning out into parallel image tool calls, produces several files whose
+ * descriptive part is identical. Without it they would overwrite each other on download.
+ */
+export function toDownloadFilename(filename: string): string {
+  const match = filename.match(STORAGE_ID_PREFIX);
+  if (!match) {
+    return filename;
+  }
+
+  const rest = filename.slice(match[0].length);
+  if (!rest) {
+    return filename;
+  }
+
+  const suffix = match[1].slice(0, DOWNLOAD_ID_SUFFIX_LENGTH);
+  const dot = rest.lastIndexOf('.');
+  if (dot <= 0) {
+    return `${rest}-${suffix}`;
+  }
+
+  return `${rest.slice(0, dot)}-${suffix}${rest.slice(dot)}`;
+}
+
 /**
  * Maps a fenced-block language hint to a file extension. Used to name
  * downloads of chat code blocks (`code.<ext>`). Only languages whose common

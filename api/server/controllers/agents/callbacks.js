@@ -1,4 +1,3 @@
-const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const {
   Tools,
@@ -22,6 +21,7 @@ const {
   GenerationJobManager,
   writeAttachmentEvent,
   createToolExecuteHandler,
+  buildDescriptiveImageFilename,
   createBackgroundCodeResultHandler: createCodeHarvestHandler,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
@@ -38,6 +38,20 @@ function isHostFileAuthoringArtifact(artifact) {
 
 function isCodeArtifactToolOutput(output) {
   return isCodeSessionToolName(output.name) || isHostFileAuthoringArtifact(output.artifact);
+}
+
+/**
+ * Source text for naming a generated image. `data.input` carries the tool call's parsed
+ * arguments, so the tool's own `prompt` describes that specific image — unlike the user's
+ * message, which is shared by every image of the turn and is replayed verbatim on regenerate.
+ * @param {ToolEndData} data
+ * @param {ServerRequest} req
+ * @returns {string | undefined}
+ */
+function resolveImageNameSource(data, req) {
+  const input = data?.input;
+  const prompt = typeof input === 'object' && input !== null ? input.prompt : undefined;
+  return typeof prompt === 'string' && prompt.length > 0 ? prompt : req?.body?.text;
 }
 
 class ModelEndHandler {
@@ -100,7 +114,7 @@ class ModelEndHandler {
       }
       this.artifactPromises.push(
         (async () => {
-          const filename = `generated_img_${nanoid()}`;
+          const filename = buildDescriptiveImageFilename(this.req?.body?.text, 'generated_img');
           const file = await saveBase64Image(url, {
             req: this.req,
             filename,
@@ -962,7 +976,10 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null, jo
         const { url } = part.image_url;
         artifactPromises.push(
           (async () => {
-            const filename = `${output.name}_img_${nanoid()}`;
+            const filename = buildDescriptiveImageFilename(
+              resolveImageNameSource(data, req),
+              `${output.name}_img`,
+            );
             const file_id = output.artifact.file_ids?.[i];
             const file = await saveBase64Image(url, {
               req,
@@ -1278,7 +1295,10 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
         const { url } = part.image_url;
         artifactPromises.push(
           (async () => {
-            const filename = `${output.name}_img_${nanoid()}`;
+            const filename = buildDescriptiveImageFilename(
+              resolveImageNameSource(data, req),
+              `${output.name}_img`,
+            );
             const file_id = output.artifact.file_ids?.[i];
             const file = await saveBase64Image(url, {
               req,

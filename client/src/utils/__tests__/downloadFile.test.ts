@@ -1,4 +1,9 @@
-import { getCodeBlockFilename, isHttpDownloadTarget, triggerDownload } from '../downloadFile';
+import {
+  triggerDownload,
+  toDownloadFilename,
+  isHttpDownloadTarget,
+  getCodeBlockFilename,
+} from '../downloadFile';
 
 describe('downloadFile utilities', () => {
   let clickSpy: jest.SpyInstance;
@@ -67,6 +72,44 @@ describe('downloadFile utilities', () => {
     expect(revokeSpy).not.toHaveBeenCalled();
     jest.advanceTimersByTime(1000);
     expect(revokeSpy).toHaveBeenCalledWith('blob:https://app.example.com/download-id');
+  });
+});
+
+describe('toDownloadFilename', () => {
+  it('moves the storage id to a short tail, preserving the extension', () => {
+    expect(
+      toDownloadFilename('550e8400-e29b-41d4-a716-446655440000-red-panda-eating-bamboo.png'),
+    ).toBe('red-panda-eating-bamboo-550e84.png');
+  });
+
+  it('is case-insensitive on the hex prefix', () => {
+    expect(toDownloadFilename('550E8400-E29B-41D4-A716-446655440000-red-panda.png')).toBe(
+      'red-panda-550E84.png',
+    );
+  });
+
+  it('keeps images of the same prompt distinct so they cannot overwrite each other', () => {
+    const first = toDownloadFilename('550e8400-e29b-41d4-a716-446655440000-draw-me-cat.png');
+    const second = toDownloadFilename('2b81f0aa-e29b-41d4-a716-446655440000-draw-me-cat.png');
+    expect(first).not.toBe(second);
+    expect(first).toBe('draw-me-cat-550e84.png');
+    expect(second).toBe('draw-me-cat-2b81f0.png');
+  });
+
+  it('appends the tail at the end when there is no extension', () => {
+    expect(toDownloadFilename('550e8400-e29b-41d4-a716-446655440000-red-panda')).toBe(
+      'red-panda-550e84',
+    );
+  });
+
+  it('leaves filenames without a storage prefix unchanged', () => {
+    expect(toDownloadFilename('red-panda-eating-bamboo.png')).toBe('red-panda-eating-bamboo.png');
+  });
+
+  it('leaves a bare storage id unchanged rather than returning an empty name', () => {
+    expect(toDownloadFilename('550e8400-e29b-41d4-a716-446655440000-')).toBe(
+      '550e8400-e29b-41d4-a716-446655440000-',
+    );
   });
 });
 
