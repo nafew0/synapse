@@ -1,6 +1,7 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Skeleton } from '@librechat/client';
 import { apiBaseUrl } from 'librechat-data-provider';
+import { triggerDownload, toDownloadFilename } from '~/utils/downloadFile';
 import DialogImage from './DialogImage';
 import { cn } from '~/utils';
 
@@ -65,6 +66,7 @@ const Image = ({
   }, [imagePath]);
 
   const downloadImage = async () => {
+    const filename = toDownloadFilename(altText) || 'image.png';
     try {
       const response = await fetch(absoluteImageUrl);
       if (!response.ok) {
@@ -73,23 +75,10 @@ const Image = ({
 
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
-
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = altText || 'image.png';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
-      window.URL.revokeObjectURL(url);
+      triggerDownload(url, filename);
     } catch (error) {
       console.error('Download failed:', error);
-      const link = document.createElement('a');
-      link.href = absoluteImageUrl;
-      link.download = altText || 'image.png';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      triggerDownload(absoluteImageUrl, filename);
     }
   };
 

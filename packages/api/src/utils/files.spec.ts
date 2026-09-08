@@ -1,8 +1,10 @@
 import {
   sanitizeFilename,
+  slugifyForFilename,
   sanitizeArtifactPath,
   flattenArtifactPath,
   resolveUploadErrorMessage,
+  buildDescriptiveImageFilename,
 } from './files';
 
 jest.mock('node:crypto', () => {
@@ -614,5 +616,73 @@ describe('sanitizeFilename with real crypto', () => {
     const hexMatch = result.match(/-([a-f0-9]{6})\.txt$/);
     expect(hexMatch).toBeTruthy();
     expect(hexMatch![1]).toMatch(/^[a-f0-9]{6}$/);
+  });
+});
+
+describe('slugifyForFilename', () => {
+  test('returns empty string for nullish or empty input', () => {
+    expect(slugifyForFilename(undefined)).toBe('');
+    expect(slugifyForFilename(null)).toBe('');
+    expect(slugifyForFilename('')).toBe('');
+  });
+
+  test('returns empty string when there are no word characters', () => {
+    expect(slugifyForFilename('!!! ??? ---')).toBe('');
+  });
+
+  test('slugifies a simple sentence', () => {
+    expect(slugifyForFilename('Generate a picture of a red panda')).toBe(
+      'generate-a-picture-of-a-red-panda',
+    );
+  });
+
+  test('strips punctuation and collapses whitespace', () => {
+    expect(slugifyForFilename("What's the weather, today?!")).toBe('what-s-the-weather-today');
+  });
+
+  test('truncates to maxLength on a word boundary', () => {
+    const text = 'one two three four five six seven eight nine ten';
+    const result = slugifyForFilename(text, 15);
+    expect(result.length).toBeLessThanOrEqual(15);
+    expect(result).toBe('one-two-three');
+  });
+
+  test('hard-truncates a single word longer than maxLength', () => {
+    const result = slugifyForFilename('supercalifragilisticexpialidocious', 10);
+    expect(result).toBe('supercalif');
+  });
+});
+
+describe('buildDescriptiveImageFilename', () => {
+  test('drops instruction filler words from a full prompt', () => {
+    const result = buildDescriptiveImageFilename(
+      'Generate a picture of a red panda eating bamboo',
+      'generated_img',
+    );
+    expect(result).toBe('red-panda-eating-bamboo');
+  });
+
+  test('uses a slug of the source text as-is when it has no filler words', () => {
+    const result = buildDescriptiveImageFilename('red panda eating bamboo', 'generated_img');
+    expect(result).toBe('red-panda-eating-bamboo');
+  });
+
+  test('falls back to the prefix with a random suffix when there is no usable text', () => {
+    const result = buildDescriptiveImageFilename(undefined, 'generated_img');
+    expect(result).toMatch(/^generated_img_[A-Za-z0-9_-]{8}$/);
+  });
+
+  test('falls back to the prefix with a random suffix when the text is only filler words', () => {
+    const result = buildDescriptiveImageFilename(
+      'please generate an image for me',
+      'generated_img',
+    );
+    expect(result).toMatch(/^generated_img_[A-Za-z0-9_-]{8}$/);
+  });
+
+  test('is deterministic for the same descriptive prompt', () => {
+    const first = buildDescriptiveImageFilename('a red panda eating bamboo', 'generated_img');
+    const second = buildDescriptiveImageFilename('a red panda eating bamboo', 'generated_img');
+    expect(first).toBe(second);
   });
 });

@@ -60,6 +60,12 @@ export interface ToolEndCallbackData {
     content: string | unknown;
     artifact?: unknown;
   };
+  /** The tool call's parsed arguments, mirroring `ToolEndData['input']` from
+   * `@librechat/agents` — the graph path gets it from LangChain's `on_tool_end`, and the
+   * paths below pass `tc.args` so both behave alike. Consumers name generated artifacts
+   * after the originating args (an image tool's `prompt` describes that one image, unlike
+   * the turn's user text, which every image of the turn shares). */
+  input?: string | Record<string, unknown>;
 }
 
 export interface ToolEndCallbackMetadata {
@@ -4132,6 +4138,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                               content: pending.content,
                               artifact: pending.artifact,
                             },
+                            input: tc.args,
                           },
                           {
                             ...(metadata ?? {}),
@@ -4351,6 +4358,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                             content: handlerResult.content,
                             artifact: handlerResult.artifact,
                           },
+                          input: tc.args,
                         },
                         {
                           run_id: (metadata as Record<string, unknown>)?.run_id as
@@ -4490,6 +4498,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                             content: cleanedContent,
                             artifact: result.artifact,
                           },
+                          input: tc.args,
                         },
                         {
                           run_id: (metadata as Record<string, unknown>)?.run_id as

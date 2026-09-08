@@ -1,5 +1,6 @@
 import path from 'path';
 import crypto from 'node:crypto';
+import { nanoid } from 'nanoid';
 import { createReadStream } from 'fs';
 import { readFile, stat } from 'fs/promises';
 
@@ -114,6 +115,117 @@ export function sanitizeFilename(inputName: string): string {
   );
 
   return name;
+}
+
+const FILENAME_SLUG_MAX_LENGTH = 60;
+const FILENAME_SLUG_WORD_PATTERN = /[a-z0-9]+/gu;
+
+/**
+ * Instruction/filler words that carry no descriptive value in an image-generation request
+ * (e.g. "generate a picture of a red panda" -> "red panda"). Excluded only when building
+ * generated-image filenames, not from `slugifyForFilename` in general.
+ */
+const IMAGE_FILENAME_STOPWORDS = new Set([
+  'a',
+  'an',
+  'the',
+  'of',
+  'please',
+  'generate',
+  'generates',
+  'generating',
+  'create',
+  'creates',
+  'creating',
+  'make',
+  'makes',
+  'making',
+  'draw',
+  'draws',
+  'drawing',
+  'render',
+  'renders',
+  'rendering',
+  'image',
+  'images',
+  'picture',
+  'pictures',
+  'photo',
+  'photos',
+  'show',
+  'shows',
+  'me',
+  'us',
+  'i',
+  'want',
+  'wants',
+  'need',
+  'needs',
+  'can',
+  'could',
+  'would',
+  'you',
+  'for',
+  'to',
+  'in',
+  'on',
+  'my',
+  'and',
+  'with',
+  'that',
+  'this',
+  'some',
+]);
+
+/**
+ * Converts free-form text (typically the user's chat message) into a filename-safe,
+ * hyphenated slug, so generated files can be named after what was asked instead of a
+ * random id. Returns an empty string when the source has no usable words.
+ */
+export function slugifyForFilename(
+  text: string | null | undefined,
+  maxLength: number = FILENAME_SLUG_MAX_LENGTH,
+  stopwords?: ReadonlySet<string>,
+): string {
+  if (!text) {
+    return '';
+  }
+
+  const normalized = text.normalize('NFKD').replace(/\p{M}/gu, '').toLowerCase();
+  const allWords = normalized.match(FILENAME_SLUG_WORD_PATTERN);
+  if (!allWords || allWords.length === 0) {
+    return '';
+  }
+
+  const words = stopwords ? allWords.filter((word) => !stopwords.has(word)) : allWords;
+  if (words.length === 0) {
+    return '';
+  }
+
+  let slug = '';
+  for (const word of words) {
+    const candidate = slug ? `${slug}-${word}` : word;
+    if (candidate.length > maxLength) {
+      break;
+    }
+    slug = candidate;
+  }
+
+  return slug || words[0].slice(0, maxLength);
+}
+
+/**
+ * Builds a descriptive base filename (no extension) for a generated image: a slug of the
+ * source prompt/message with instruction filler words removed (e.g. "a red panda eating
+ * bamboo"), falling back to `${fallbackPrefix}_<random>` when there's no usable text. The
+ * storage layer already prefixes a unique file id, so no extra random suffix is needed here.
+ */
+export function buildDescriptiveImageFilename(
+  sourceText: string | null | undefined,
+  fallbackPrefix: string,
+): string {
+  const slug = slugifyForFilename(sourceText, FILENAME_SLUG_MAX_LENGTH, IMAGE_FILENAME_STOPWORDS);
+  return slug || `${fallbackPrefix}_${nanoid(8)}`;
 }
 
 /** Per-path-component byte cap. Mirrors `sanitizeFilename`'s 255-byte
