@@ -14,7 +14,6 @@ type AdminRequest = ServerRequest & {
 export interface ExportableMember {
   kind: 'user' | 'invite';
   name?: string;
-  username?: string | null;
   email?: string;
   role?: string;
   status?: string;
@@ -130,9 +129,8 @@ function parseDate(value?: string | null): Date | null {
 type SheetCell = XLSX.CellObject;
 
 function textCell(value?: string | null): SheetCell {
-  /** Always `t: 's'`. Inference would coerce a numeric username such as `0421`
-   *  to a number and drop the leading zero, and would turn a name beginning with
-   *  `=` into a formula. */
+  /** Always `t: 's'`. Inference would turn a name beginning with `=` into a
+   *  formula, and would coerce a numeric-looking value to a number. */
   return { t: 's', v: value == null ? '' : String(value) };
 }
 
@@ -157,7 +155,6 @@ interface ColumnSpec {
 
 const BASE_COLUMNS: ReadonlyArray<ColumnSpec> = [
   { label: 'Name', width: 28, cell: (m) => textCell(m.name) },
-  { label: 'Username', width: 20, cell: (m) => textCell(m.username) },
   { label: 'Email', width: 32, cell: (m) => textCell(m.email) },
   { label: 'Role', width: 20, cell: (m) => textCell(roleLabel(m.role)) },
   { label: 'Status', width: 14, cell: (m) => textCell(m.status) },

@@ -31,7 +31,6 @@ function build(
 const member = (overrides: Partial<ExportableMember> = {}): ExportableMember => ({
   kind: 'user',
   name: 'Ada Rahman',
-  username: 'ada',
   email: 'ada@example.bd',
   role: 'USER',
   status: 'active',
@@ -42,41 +41,26 @@ const member = (overrides: Partial<ExportableMember> = {}): ExportableMember => 
 describe('buildMemberWorkbook', () => {
   it('writes the header row the members table shows', () => {
     const sheet = build([]);
-    expect(['A1', 'B1', 'C1', 'D1', 'E1', 'F1'].map((ref) => sheet[ref]?.v)).toEqual([
+    expect(['A1', 'B1', 'C1', 'D1', 'E1'].map((ref) => sheet[ref]?.v)).toEqual([
       'Name',
-      'Username',
       'Email',
       'Role',
       'Status',
       'Added / Sent',
     ]);
-    expect(sheet['G1']).toBeUndefined();
+    /** No Institution column unless the export spans institutions. */
+    expect(sheet['F1']).toBeUndefined();
   });
 
   it('appends an Institution column only for platform-wide exports', () => {
     const sheet = build([member({ institutionName: 'BdREN' })], { includeInstitution: true });
-    expect(sheet['G1'].v).toBe('Institution');
-    expect(sheet['G2'].v).toBe('BdREN');
+    expect(sheet['F1'].v).toBe('Institution');
+    expect(sheet['F2'].v).toBe('BdREN');
   });
 
   it('falls back to the tenant id when an institution has no name', () => {
     const sheet = build([member({ tenantId: 'tenant-a' })], { includeInstitution: true });
-    expect(sheet['G2'].v).toBe('tenant-a');
-  });
-
-  describe('username rendering', () => {
-    /** The requirement that drove xlsx over CSV: every spreadsheet app coerces a
-     *  bare `0421` in a CSV to the number 421. */
-    it('keeps an all-digit username as text with its leading zero', () => {
-      const sheet = build([member({ username: '0421' })]);
-      expect(sheet['B2'].t).toBe('s');
-      expect(sheet['B2'].v).toBe('0421');
-    });
-
-    it('renders a missing username as an empty cell, not "null"', () => {
-      const sheet = build([member({ username: null })]);
-      expect(sheet['B2'].v).toBe('');
-    });
+    expect(sheet['F2'].v).toBe('tenant-a');
   });
 
   describe('untrusted text', () => {
@@ -99,6 +83,14 @@ describe('buildMemberWorkbook', () => {
       expect(sheet['A2'].v).toBe(name);
     });
 
+    /** Name is still free user text, so type inference would coerce a
+     *  numeric-looking one and drop a leading zero. */
+    it('keeps a numeric-looking name as text', () => {
+      const sheet = build([member({ name: '0421' })]);
+      expect(sheet['A2'].t).toBe('s');
+      expect(sheet['A2'].v).toBe('0421');
+    });
+
     it('round-trips non-ASCII names unchanged', () => {
       const sheet = build([member({ name: 'জোবায়ের Zoë 田中' })]);
       expect(sheet['A2'].v).toBe('জোবায়ের Zoë 田中');
@@ -110,15 +102,15 @@ describe('buildMemberWorkbook', () => {
 
     it('is a real date cell so the column sorts chronologically', () => {
       const sheet = build([member()]);
-      expect(sheet['F2'].t).toBe('n');
-      expect(sheet['F2'].z).toBe('yyyy-mm-dd');
+      expect(sheet['E2'].t).toBe('n');
+      expect(sheet['E2'].z).toBe('yyyy-mm-dd');
     });
 
     /** Guards the whole point of the date cell: a reader must display a date,
      *  not the underlying serial number. */
     it('displays as a formatted date rather than a serial number', () => {
       const sheet = build([member()]);
-      expect(sheet['F2'].w).toBe('2026-03-10');
+      expect(sheet['E2'].w).toBe('2026-03-10');
     });
 
     it('reads back as a real Date for consumers that request them', () => {
@@ -126,7 +118,7 @@ describe('buildMemberWorkbook', () => {
         timeZone: DHAKA,
         includeInstitution: false,
       });
-      const cell = XLSX.read(buffer, { type: 'buffer', cellDates: true }).Sheets['Members']['F2'];
+      const cell = XLSX.read(buffer, { type: 'buffer', cellDates: true }).Sheets['Members']['E2'];
       expect(cell.t).toBe('d');
       expect((cell.v as Date).toISOString().slice(0, 10)).toBe('2026-03-10');
     });
@@ -135,14 +127,14 @@ describe('buildMemberWorkbook', () => {
      *  10th would show the admin a different day than the members table did. */
     it('resolves the date in the institution timezone, not UTC', () => {
       const sheet = build([member({ createdAt: '2026-03-10T23:45:00.000Z' })]);
-      expect(formatted(sheet, 'F2')).toBe('2026-03-11');
+      expect(formatted(sheet, 'E2')).toBe('2026-03-11');
     });
 
     it('is stable across server timezones for the same institution', () => {
       const sheet = build([member({ createdAt: '2026-03-10T23:45:00.000Z' })], {
         timeZone: 'Pacific/Honolulu',
       });
-      expect(formatted(sheet, 'F2')).toBe('2026-03-10');
+      expect(formatted(sheet, 'E2')).toBe('2026-03-10');
     });
 
     it('prefers lastSentAt over createdAt, matching the table', () => {
@@ -154,12 +146,12 @@ describe('buildMemberWorkbook', () => {
           lastSentAt: '2026-03-12T20:30:00.000Z',
         }),
       ]);
-      expect(formatted(sheet, 'F2')).toBe('2026-03-13');
+      expect(formatted(sheet, 'E2')).toBe('2026-03-13');
     });
 
     it('leaves the cell empty when neither date is present', () => {
       const sheet = build([member({ createdAt: null, lastSentAt: null })]);
-      expect(sheet['F2'].v).toBe('');
+      expect(sheet['E2'].v).toBe('');
     });
 
     /**
@@ -175,8 +167,8 @@ describe('buildMemberWorkbook', () => {
         { timeZones: { 'dhaka-uni': DHAKA, 'hawaii-uni': 'Pacific/Honolulu' } },
       );
 
-      expect(formatted(sheet, 'F2')).toBe('2026-03-11');
-      expect(formatted(sheet, 'F3')).toBe('2026-03-10');
+      expect(formatted(sheet, 'E2')).toBe('2026-03-11');
+      expect(formatted(sheet, 'E3')).toBe('2026-03-10');
     });
 
     /** Standalone accounts belong to no institution, so there is no local zone.
@@ -189,12 +181,12 @@ describe('buildMemberWorkbook', () => {
           { timeZones: {}, includeInstitution: true },
         ),
       );
-      expect(formatted(sheet, 'F2')).toBe('2026-03-10');
+      expect(formatted(sheet, 'E2')).toBe('2026-03-10');
     });
 
     it('leaves the cell empty when a date is unparseable', () => {
       const sheet = build([member({ createdAt: 'not-a-date' })]);
-      expect(sheet['F2'].v).toBe('');
+      expect(sheet['E2'].v).toBe('');
     });
   });
 
@@ -204,8 +196,8 @@ describe('buildMemberWorkbook', () => {
         member({ kind: 'invite', status: 'invited' }),
         member({ kind: 'invite', status: 'expired' }),
       ]);
-      expect(sheet['E2'].v).toBe('invited');
-      expect(sheet['E3'].v).toBe('expired');
+      expect(sheet['D2'].v).toBe('invited');
+      expect(sheet['D3'].v).toBe('expired');
     });
 
     it.each([
@@ -215,18 +207,18 @@ describe('buildMemberWorkbook', () => {
       ['INSTITUTION_MEMBER', 'Institution member'],
     ])('labels %s as %s, matching the table', (role, label) => {
       const sheet = build([member({ role })]);
-      expect(sheet['D2'].v).toBe(label);
+      expect(sheet['C2'].v).toBe(label);
     });
   });
 
   it('sizes the sheet range to the rows written', () => {
     const sheet = build([member(), member(), member()]);
-    expect(sheet['!ref']).toBe('A1:F4');
+    expect(sheet['!ref']).toBe('A1:E4');
   });
 
   it('produces a header-only sheet when nothing matches the filters', () => {
     const sheet = build([]);
-    expect(sheet['!ref']).toBe('A1:F1');
+    expect(sheet['!ref']).toBe('A1:E1');
     expect(sheet['A2']).toBeUndefined();
   });
 });
