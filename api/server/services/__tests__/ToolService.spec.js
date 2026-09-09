@@ -212,13 +212,51 @@ describe('ToolService - Action Capability Gating', () => {
     });
 
     it('should fall back to default capabilities for ephemeral agents with empty config', async () => {
-      const req = createMockReq(defaultAgentCapabilities);
-      mockGetEndpointsConfig.mockResolvedValue({});
+      const originalRagApiUrl = process.env.RAG_API_URL;
+      process.env.RAG_API_URL = 'http://localhost:8000';
+      try {
+        const req = createMockReq(defaultAgentCapabilities);
+        mockGetEndpointsConfig.mockResolvedValue({});
 
-      const result = await resolveAgentCapabilities(req, req.config, Constants.EPHEMERAL_AGENT_ID);
+        const result = await resolveAgentCapabilities(
+          req,
+          req.config,
+          Constants.EPHEMERAL_AGENT_ID,
+        );
 
-      for (const cap of defaultAgentCapabilities) {
-        expect(result.has(cap)).toBe(true);
+        for (const cap of defaultAgentCapabilities) {
+          expect(result.has(cap)).toBe(true);
+        }
+      } finally {
+        if (originalRagApiUrl === undefined) {
+          delete process.env.RAG_API_URL;
+        } else {
+          process.env.RAG_API_URL = originalRagApiUrl;
+        }
+      }
+    });
+
+    it('should drop file_search from the ephemeral-agent fallback when RAG_API_URL is unset', async () => {
+      const originalRagApiUrl = process.env.RAG_API_URL;
+      delete process.env.RAG_API_URL;
+      try {
+        const req = createMockReq(defaultAgentCapabilities);
+        mockGetEndpointsConfig.mockResolvedValue({});
+
+        const result = await resolveAgentCapabilities(
+          req,
+          req.config,
+          Constants.EPHEMERAL_AGENT_ID,
+        );
+
+        expect(result.has(AgentCapabilities.file_search)).toBe(false);
+        expect(result.has(AgentCapabilities.execute_code)).toBe(true);
+      } finally {
+        if (originalRagApiUrl === undefined) {
+          delete process.env.RAG_API_URL;
+        } else {
+          process.env.RAG_API_URL = originalRagApiUrl;
+        }
       }
     });
 

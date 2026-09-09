@@ -42,6 +42,18 @@ export default function useAgentToolPermissions(
     [agentData?.provider, selectedAgent?.provider],
   );
 
+  /**
+   * An orchestrator holds no tools of its own but hands the file off to whichever
+   * specialist it delegates to — codeFilesSession resolves execute_code files across
+   * the whole subagent/graph reachability set server-side, and message-attachment
+   * uploads are scoped per-user rather than per-agent (see api/server/services/Files/process.js),
+   * so the upload only needs *a* code-capable agent downstream, not the selected one itself.
+   */
+  const subagentsEnabled = useMemo(
+    () => (agentData?.subagents ?? selectedAgent?.subagents)?.enabled === true,
+    [agentData?.subagents, selectedAgent?.subagents],
+  );
+
   const fileSearchAllowedByAgent = useMemo(() => {
     // Check ephemeral agent settings
     if (isEphemeralAgent(agentId)) {
@@ -49,9 +61,9 @@ export default function useAgentToolPermissions(
     }
     // If agentId exists but agent not found, disallow
     if (!selectedAgent) return false;
-    // Check if the agent has the file_search tool
-    return tools?.includes(Tools.file_search) ?? false;
-  }, [agentId, selectedAgent, tools, ephemeralAgent]);
+    // Check if the agent has the file_search tool, or delegates to a specialist that might
+    return (tools?.includes(Tools.file_search) ?? false) || subagentsEnabled;
+  }, [agentId, selectedAgent, tools, ephemeralAgent, subagentsEnabled]);
 
   const codeAllowedByAgent = useMemo(() => {
     // Check ephemeral agent settings
@@ -60,9 +72,9 @@ export default function useAgentToolPermissions(
     }
     // If agentId exists but agent not found, disallow
     if (!selectedAgent) return false;
-    // Check if the agent has the execute_code tool
-    return tools?.includes(Tools.execute_code) ?? false;
-  }, [agentId, selectedAgent, tools, ephemeralAgent]);
+    // Check if the agent has the execute_code tool, or delegates to a specialist that might
+    return (tools?.includes(Tools.execute_code) ?? false) || subagentsEnabled;
+  }, [agentId, selectedAgent, tools, ephemeralAgent, subagentsEnabled]);
 
   return {
     fileSearchAllowedByAgent,

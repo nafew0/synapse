@@ -1,11 +1,12 @@
 import {
   AuthType,
   EModelEndpoint,
+  AgentCapabilities,
   isAgentsEndpoint,
   orderEndpointsConfig,
   defaultAgentCapabilities,
 } from 'librechat-data-provider';
-import type { AgentCapabilities, TEndpointsConfig, TConfig } from 'librechat-data-provider';
+import type { TEndpointsConfig, TConfig } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { ServerRequest, TCustomEndpointsConfig } from '~/types';
 import type { GetAppConfigOptions } from '~/app/service';
@@ -15,6 +16,23 @@ import { getAppConfigOptionsFromUser } from '~/app/service';
 type PartialEndpointEntry = Partial<TConfig> & Record<string, unknown>;
 type DefaultEndpointsResult = Record<string, PartialEndpointEntry | false | null>;
 type MutableEndpointsConfig = Record<string, PartialEndpointEntry | false | null | undefined>;
+
+/**
+ * `file_search` defaults to enabled and admins may not think to gate it explicitly, but the
+ * capability is inert without a reachable RAG API — every embed/search call
+ * (`packages/api/src/files/rag.ts`, `api/server/services/Files/VectorDB/crud.js`) throws
+ * without `RAG_API_URL`. Dropping the capability here, upstream of both the client-facing
+ * config and `checkCapability`, keeps the upload picker and the server-side upload gate from
+ * offering a destination that is guaranteed to fail.
+ */
+export function withRagAvailability(
+  capabilities: AgentCapabilities[] | undefined,
+): AgentCapabilities[] | undefined {
+  if (capabilities == null || process.env.RAG_API_URL) {
+    return capabilities;
+  }
+  return capabilities.filter((capability) => capability !== AgentCapabilities.file_search);
+}
 
 export interface EndpointsConfigDeps {
   getAppConfig: (params: GetAppConfigOptions) => Promise<AppConfig>;
@@ -81,6 +99,18 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps): {
       };
     }
 
+    /* Applied unconditionally (not just when the block above ran) so an admin who never
+     * configured `endpoints.agents` at all still gets the default capability list filtered —
+     * `loadDefaultEndpointsConfig` is the other source of `capabilities` on this key. */
+    if (mergedConfig[EModelEndpoint.agents]) {
+      mergedConfig[EModelEndpoint.agents] = {
+        ...mergedConfig[EModelEndpoint.agents],
+        capabilities: withRagAvailability(
+          mergedConfig[EModelEndpoint.agents].capabilities as AgentCapabilities[] | undefined,
+        ),
+      };
+    }
+
     if (
       mergedConfig[EModelEndpoint.azureAssistants] &&
       appConfig?.endpoints?.[EModelEndpoint.azureAssistants]
@@ -129,8 +159,8 @@ export function createEndpointsConfigService(deps: EndpointsConfigDeps): {
     const capabilities =
       isAgents || endpointsConfig?.[EModelEndpoint.agents]?.capabilities != null
         ? (endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? [])
-        : defaultAgentCapabilities;
-    return capabilities.includes(capability);
+        : withRagAvailability(defaultAgentCapabilities as AgentCapabilities[]);
+    return (capabilities ?? []).includes(capability);
   }
 
   return { getEndpointsConfig, checkCapability };

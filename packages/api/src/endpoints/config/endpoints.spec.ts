@@ -12,7 +12,7 @@ import type { AppConfigServiceDeps } from '~/app/service';
 import type { EndpointsConfigDeps } from './endpoints';
 import type { ServerRequest } from '~/types';
 
-import { createEndpointsConfigService } from './endpoints';
+import { createEndpointsConfigService, withRagAvailability } from './endpoints';
 import { createAppConfigService } from '~/app/service';
 
 function appConfig(partial: Record<string, unknown>): AppConfig {
@@ -414,6 +414,149 @@ describe('createEndpointsConfigService', () => {
 
       expect(result).toBe(true);
     });
+
+    describe('file_search without a configured RAG API', () => {
+      const originalRagApiUrl = process.env.RAG_API_URL;
+
+      afterEach(() => {
+        if (originalRagApiUrl === undefined) {
+          delete process.env.RAG_API_URL;
+        } else {
+          process.env.RAG_API_URL = originalRagApiUrl;
+        }
+      });
+
+      it('reports file_search as disabled even when explicitly configured', async () => {
+        delete process.env.RAG_API_URL;
+        const deps = createMockDeps({
+          loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({
+            [EModelEndpoint.agents]: { userProvide: false, order: 0 },
+          }),
+          getAppConfig: jest.fn().mockResolvedValue(
+            appConfig({
+              endpoints: {
+                [EModelEndpoint.agents]: {
+                  capabilities: [AgentCapabilities.execute_code, AgentCapabilities.file_search],
+                },
+              },
+            }),
+          ),
+        });
+        const { checkCapability } = createEndpointsConfigService(deps);
+
+        const result = await checkCapability(
+          fakeReq({ body: { endpoint: EModelEndpoint.agents } }),
+          AgentCapabilities.file_search,
+        );
+
+        expect(result).toBe(false);
+      });
+
+      it('reports file_search as enabled once RAG_API_URL is set', async () => {
+        process.env.RAG_API_URL = 'http://localhost:8000';
+        const deps = createMockDeps({
+          loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({
+            [EModelEndpoint.agents]: { userProvide: false, order: 0 },
+          }),
+          getAppConfig: jest.fn().mockResolvedValue(
+            appConfig({
+              endpoints: {
+                [EModelEndpoint.agents]: {
+                  capabilities: [AgentCapabilities.file_search],
+                },
+              },
+            }),
+          ),
+        });
+        const { checkCapability } = createEndpointsConfigService(deps);
+
+        const result = await checkCapability(
+          fakeReq({ body: { endpoint: EModelEndpoint.agents } }),
+          AgentCapabilities.file_search,
+        );
+
+        expect(result).toBe(true);
+      });
+
+      it('strips file_search from the capabilities returned to the client', async () => {
+        delete process.env.RAG_API_URL;
+        const deps = createMockDeps({
+          loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({
+            [EModelEndpoint.agents]: { userProvide: false, order: 0 },
+          }),
+          getAppConfig: jest.fn().mockResolvedValue(
+            appConfig({
+              endpoints: {
+                [EModelEndpoint.agents]: {
+                  capabilities: [AgentCapabilities.execute_code, AgentCapabilities.file_search],
+                },
+              },
+            }),
+          ),
+        });
+        const { getEndpointsConfig } = createEndpointsConfigService(deps);
+
+        const result = await getEndpointsConfig(fakeReq());
+
+        expect(result?.[EModelEndpoint.agents]?.capabilities).toEqual([
+          AgentCapabilities.execute_code,
+        ]);
+      });
+
+      it('leaves an unconfigured agents.capabilities default untouched aside from file_search', async () => {
+        delete process.env.RAG_API_URL;
+        const deps = createMockDeps({
+          loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({
+            [EModelEndpoint.agents]: {
+              userProvide: false,
+              order: 0,
+              capabilities: defaultAgentCapabilities,
+            },
+          }),
+        });
+        const { getEndpointsConfig } = createEndpointsConfigService(deps);
+
+        const result = await getEndpointsConfig(fakeReq());
+
+        expect(result?.[EModelEndpoint.agents]?.capabilities).not.toContain(
+          AgentCapabilities.file_search,
+        );
+        expect(result?.[EModelEndpoint.agents]?.capabilities).toContain(
+          AgentCapabilities.execute_code,
+        );
+      });
+    });
+  });
+});
+
+describe('withRagAvailability', () => {
+  const originalRagApiUrl = process.env.RAG_API_URL;
+
+  afterEach(() => {
+    if (originalRagApiUrl === undefined) {
+      delete process.env.RAG_API_URL;
+    } else {
+      process.env.RAG_API_URL = originalRagApiUrl;
+    }
+  });
+
+  it('passes capabilities through unchanged when RAG_API_URL is set', () => {
+    process.env.RAG_API_URL = 'http://localhost:8000';
+    const capabilities = [AgentCapabilities.file_search, AgentCapabilities.execute_code];
+
+    expect(withRagAvailability(capabilities)).toEqual(capabilities);
+  });
+
+  it('drops file_search when RAG_API_URL is unset', () => {
+    delete process.env.RAG_API_URL;
+    const capabilities = [AgentCapabilities.file_search, AgentCapabilities.execute_code];
+
+    expect(withRagAvailability(capabilities)).toEqual([AgentCapabilities.execute_code]);
+  });
+
+  it('passes undefined through unchanged', () => {
+    delete process.env.RAG_API_URL;
+    expect(withRagAvailability(undefined)).toBeUndefined();
   });
 });
 

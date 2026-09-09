@@ -142,6 +142,56 @@ describe('useAgentToolPermissions', () => {
     });
   });
 
+  describe('when agent is an orchestrator with no tools of its own', () => {
+    it('allows code and file_search uploads because a delegated specialist may need them', () => {
+      const agentId = 'agent_master';
+      const agent = {
+        id: agentId,
+        tools: ['ask_user_question'],
+        subagents: { enabled: true, agent_ids: ['agent_office_documents'] },
+      };
+
+      mockUseAgentsMapContext.mockReturnValue({ [agentId]: agent });
+      mockUseGetAgentByIdQuery.mockReturnValue({ data: undefined });
+
+      const { result } = renderHook(() => useAgentToolPermissions(agentId));
+
+      expect(result.current.codeAllowedByAgent).toBe(true);
+      expect(result.current.fileSearchAllowedByAgent).toBe(true);
+      expect(result.current.tools).toEqual(['ask_user_question']);
+    });
+
+    it('disallows both when subagents are not enabled', () => {
+      const agentId = 'agent_master';
+      const agent = {
+        id: agentId,
+        tools: ['ask_user_question'],
+        subagents: { enabled: false },
+      };
+
+      mockUseAgentsMapContext.mockReturnValue({ [agentId]: agent });
+      mockUseGetAgentByIdQuery.mockReturnValue({ data: undefined });
+
+      const { result } = renderHook(() => useAgentToolPermissions(agentId));
+
+      expect(result.current.codeAllowedByAgent).toBe(false);
+      expect(result.current.fileSearchAllowedByAgent).toBe(false);
+    });
+
+    it('prefers API subagents data over agent map data', () => {
+      const agentId = 'agent_master';
+      const agentMapData = { id: agentId, tools: [], subagents: { enabled: false } };
+      const agentApiData = { id: agentId, tools: [], subagents: { enabled: true } };
+
+      mockUseAgentsMapContext.mockReturnValue({ [agentId]: agentMapData });
+      mockUseGetAgentByIdQuery.mockReturnValue({ data: agentApiData });
+
+      const { result } = renderHook(() => useAgentToolPermissions(agentId));
+
+      expect(result.current.codeAllowedByAgent).toBe(true);
+    });
+  });
+
   describe('when agent has no tools', () => {
     it('should disallow all tools with empty array', () => {
       const agentId = 'agent_test';

@@ -36,6 +36,7 @@ const {
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE,
   isFatalAgentInitializationError,
   resolveCodeExecutionContext,
+  withRagAvailability,
 } = require('@librechat/api');
 const {
   Time,
@@ -181,7 +182,9 @@ async function resolveAgentCapabilities(req, appConfig, agentId) {
   let capabilities = new Set(endpointsConfig?.[EModelEndpoint.agents]?.capabilities ?? []);
   if (capabilities.size === 0 && isEphemeralAgentId(agentId)) {
     capabilities = new Set(
-      appConfig.endpoints?.[EModelEndpoint.agents]?.capabilities ?? defaultAgentCapabilities,
+      withRagAvailability(
+        appConfig.endpoints?.[EModelEndpoint.agents]?.capabilities ?? defaultAgentCapabilities,
+      ),
     );
   }
   return capabilities;

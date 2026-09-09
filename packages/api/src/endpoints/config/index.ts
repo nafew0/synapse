@@ -1,4 +1,4 @@
-export { createEndpointsConfigService } from './endpoints';
+export { createEndpointsConfigService, withRagAvailability } from './endpoints';
 export { createLoadConfigModels } from './models';
 export * from './providers';
 export type { EndpointsConfigDeps } from './endpoints';
