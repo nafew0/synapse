@@ -1,4 +1,5 @@
 const express = require('express');
+const { createAdminMembersHandlers } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { resolveAdminTenant, requireTenant } = require('~/server/middleware/adminTenant');
@@ -17,12 +18,23 @@ const {
   resendInstitutionInvite,
   revokeInstitutionInvite,
   searchInstitutionMembers,
+  getInstitutionTimezones,
+  recordMemberExportAudit,
   setInstitutionRole,
+  streamInstitutionMembers,
+  streamPlatformMembers,
   suspendInstitutionMember,
 } = require('~/server/services/institutionMembers');
 const { getMemberUsageSummary } = require('~/server/services/institutionUsage');
 
 const router = express.Router();
+
+const memberHandlers = createAdminMembersHandlers({
+  streamInstitutionMembers,
+  streamPlatformMembers,
+  getInstitutionTimezones,
+  recordMemberExportAudit,
+});
 
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 const requireReadUsers = requireCapability(SystemCapabilities.READ_USERS);
@@ -88,6 +100,16 @@ router.get('/', requireReadUsers, async (req, res) => {
     return handleError(res, error, 'Failed to list institution members');
   }
 });
+
+/**
+ * Unpaginated by design: a truncated roster is worse than a slow one.
+ *
+ * Unlike the other routes here this does not call `requireTenant`. A superadmin
+ * has no institution of their own, and cross-institution oversight is the point
+ * of the role — so an unscoped export means every member they can see, not a
+ * missing parameter.
+ */
+router.get('/export.xlsx', requireReadUsers, (req, res) => memberHandlers.exportMembers(req, res));
 
 router.get('/summary', requireReadUsers, async (req, res) => {
   const tenantId = requireTenant(req, res);

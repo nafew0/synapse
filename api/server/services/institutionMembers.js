@@ -953,17 +953,49 @@ async function revokeInstitutionInvite({ tenantId, inviteId, actor, context }) {
   return invite;
 }
 
-async function listInstitutionMembers({ tenantId, limit = 25, offset = 0, query, status, role }) {
+/**
+ * The membership test shared by the paginated list and the roster export, so a
+ * filtered export can never disagree with the page the admin is looking at.
+ * `resolveMemberRole` is hoisted out of the per-member call rather than resolved
+ * once per row.
+ */
+function buildMemberPredicate({ tenantId, query, status, role }) {
   const normalizedQuery = String(query || '')
     .trim()
     .toLowerCase();
+  const requestedRole = role
+    ? resolveMemberRole({ role, tenantId, accountScope: 'institution' })
+    : undefined;
+
+  return (member) => {
+    if (status && member.status !== status) {
+      return false;
+    }
+    if (requestedRole && member.role !== requestedRole) {
+      return false;
+    }
+    if (!normalizedQuery) {
+      return true;
+    }
+    return (
+      member.name.toLowerCase().includes(normalizedQuery) ||
+      member.email.toLowerCase().includes(normalizedQuery)
+    );
+  };
+}
+
+const MEMBER_USER_FIELDS =
+  '_id tenantId name username email emailVerified role provider membershipStatus createdAt updatedAt suspendedAt removedAt';
+const MEMBER_INVITE_FIELDS =
+  '_id tenantId name requestedUsername email requestedRole status source createdAt updatedAt lastSentAt expiresAt acceptedAt';
+
+async function listInstitutionMembers({ tenantId, limit = 25, offset = 0, query, status, role }) {
+  const matchesFilters = buildMemberPredicate({ tenantId, query, status, role });
 
   const [users, invites, summary] = await Promise.all([
     tenantStorage.run({ tenantId }, async () =>
       models.User.find({ tenantId, ...visibleMembershipFilter() })
-        .select(
-          '_id tenantId name email emailVerified role provider membershipStatus createdAt updatedAt suspendedAt removedAt',
-        )
+        .select(MEMBER_USER_FIELDS)
         .lean()
         .exec(),
     ),
@@ -974,9 +1006,7 @@ async function listInstitutionMembers({ tenantId, limit = 25, offset = 0, query,
           $in: [InstitutionInviteStatuses.PENDING, InstitutionInviteStatuses.EXPIRED],
         },
       })
-        .select(
-          '_id tenantId name email requestedRole status source createdAt updatedAt lastSentAt expiresAt acceptedAt',
-        )
+        .select(MEMBER_INVITE_FIELDS)
         .lean()
         .exec(),
     ),
@@ -984,24 +1014,7 @@ async function listInstitutionMembers({ tenantId, limit = 25, offset = 0, query,
   ]);
 
   const members = [...users.map(mapUserMember), ...invites.map(mapInviteMember)]
-    .filter((member) => {
-      if (status && member.status !== status) {
-        return false;
-      }
-      const requestedRole = role
-        ? resolveMemberRole({ role, tenantId, accountScope: 'institution' })
-        : undefined;
-      if (requestedRole && member.role !== requestedRole) {
-        return false;
-      }
-      if (!normalizedQuery) {
-        return true;
-      }
-      return (
-        member.name.toLowerCase().includes(normalizedQuery) ||
-        member.email.toLowerCase().includes(normalizedQuery)
-      );
-    })
+    .filter(matchesFilters)
     .sort(sortMembersDesc);
 
   return {
@@ -1011,6 +1024,277 @@ async function listInstitutionMembers({ tenantId, limit = 25, offset = 0, query,
     offset,
     summary,
   };
+}
+
+/**
+ * A roster export ships names and email addresses out of the system, so it is
+ * recorded like any other member action rather than passing silently.
+ */
+async function recordMemberExportAudit({ tenantId, actor, filters, rowCount }) {
+  await recordMemberAudit({
+    tenantId,
+    action: 'member.exported',
+    actor: actorFromUser(actor),
+    target: { type: 'institution', id: tenantId, name: tenantId },
+    metadata: { rowCount, ...filters },
+  });
+}
+
+const MEMBER_STREAM_BATCH_SIZE = 500;
+
+/**
+ * Streams every member matching the filters — registered users and pending
+ * invitations alike — through `onMember`, newest first within each group.
+ *
+ * Deliberately unpaginated: this backs the roster export, where a truncated file
+ * is worse than a slow one. Cursors keep the database read flat regardless of how
+ * large the institution is, and `isCancelled` closes them when the client hangs up
+ * rather than reading a roster nobody is waiting for.
+ *
+ * Rows are projected through the same mappers and the same predicate the paginated
+ * list uses, so an export can never report a different status or a different
+ * membership than the page it was launched from.
+ */
+async function streamInstitutionMembers(
+  { tenantId, query, status, role },
+  onMember,
+  { isCancelled } = {},
+) {
+  const matchesFilters = buildMemberPredicate({ tenantId, query, status, role });
+  const cancelled = typeof isCancelled === 'function' ? isCancelled : () => false;
+  let count = 0;
+
+  const drain = async (cursor, mapMember) => {
+    try {
+      for await (const doc of cursor) {
+        if (cancelled()) {
+          break;
+        }
+        const member = mapMember(doc);
+        if (!matchesFilters(member)) {
+          continue;
+        }
+        count += 1;
+        await onMember(member);
+      }
+    } finally {
+      await cursor.close();
+    }
+  };
+
+  await tenantStorage.run({ tenantId }, () =>
+    drain(
+      models.User.find({ tenantId, ...visibleMembershipFilter() })
+        .select(MEMBER_USER_FIELDS)
+        .sort({ createdAt: -1 })
+        .lean()
+        .cursor({ batchSize: MEMBER_STREAM_BATCH_SIZE }),
+      mapUserMember,
+    ),
+  );
+
+  if (cancelled()) {
+    return { count };
+  }
+
+  await runAsSystem(() =>
+    drain(
+      models.InstitutionInvite.find({
+        tenantId,
+        status: {
+          $in: [InstitutionInviteStatuses.PENDING, InstitutionInviteStatuses.EXPIRED],
+        },
+      })
+        .select(MEMBER_INVITE_FIELDS)
+        .sort({ createdAt: -1 })
+        .lean()
+        .cursor({ batchSize: MEMBER_STREAM_BATCH_SIZE }),
+      mapInviteMember,
+    ),
+  );
+
+  return { count };
+}
+
+/**
+ * Resolves the timezone each member's dates should be reported in.
+ *
+ * A platform-wide export spans institutions that may sit in different zones, so
+ * one timezone for the whole file would misreport rows for every institution but
+ * one. Loaded as a single read rather than per row.
+ */
+async function getInstitutionTimezones(tenantId) {
+  const institutions = await runAsSystem(() =>
+    models.Institution.find(tenantId ? { tenantId } : {})
+      .select('tenantId timezone')
+      .lean()
+      .exec(),
+  );
+  const timezones = {};
+  for (const institution of institutions) {
+    if (institution.tenantId && institution.timezone) {
+      timezones[institution.tenantId] = institution.timezone;
+    }
+  }
+  return timezones;
+}
+
+/**
+ * The Mongo-level filters behind the platform members list, shared with the
+ * roster export so a superadmin's file describes exactly the rows their current
+ * view describes.
+ */
+async function buildPlatformMemberFilters({ tenantId, accountScope, query, status, role }) {
+  const normalizedQuery = String(query || '').trim();
+  const searchFilter = normalizedQuery
+    ? {
+        $or: [
+          { name: { $regex: escapeRegex(normalizedQuery), $options: 'i' } },
+          { email: { $regex: escapeRegex(normalizedQuery), $options: 'i' } },
+        ],
+      }
+    : {};
+  const statusFilter = platformUserStatusFilter(status);
+  const inviteStatus = platformInviteStatusFilter(status);
+  const invitesOnly =
+    status === 'invited' || status === InstitutionInviteStatuses.EXPIRED ? [{ _id: null }] : [];
+
+  if (accountScope === 'standalone') {
+    const configuredAdmins = String(process.env.PLATFORM_SUPERADMIN_EMAILS || '')
+      .split(',')
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean);
+    const adminRecords = models.PlatformAdmin
+      ? await runAsSystem(() =>
+          models.PlatformAdmin.find({ active: true }).select('email').lean().exec(),
+        )
+      : [];
+    const adminEmails = [
+      ...new Set([...configuredAdmins, ...adminRecords.map((admin) => admin.email).filter(Boolean)]),
+    ];
+    const institutionTenantIds = await runAsSystem(() =>
+      models.Institution.distinct('tenantId').exec(),
+    );
+    const tenantlessFilter = {
+      $or: [
+        { tenantId: { $exists: false } },
+        { tenantId: null },
+        { tenantId: '' },
+        ...(institutionTenantIds.length > 0 ? [{ tenantId: { $nin: institutionTenantIds } }] : []),
+      ],
+    };
+
+    return {
+      userFilter: {
+        $and: [
+          tenantlessFilter,
+          { email: { $nin: adminEmails } },
+          visibleMembershipFilter(),
+          searchFilter,
+          statusFilter,
+          ...invitesOnly,
+        ],
+      },
+      inviteFilter: {
+        accountScope: InstitutionInviteAccountScopes.STANDALONE,
+        ...(inviteStatus ? { status: inviteStatus } : { _id: null }),
+        ...searchFilter,
+      },
+      standalone: true,
+    };
+  }
+
+  const tenantFilter = tenantId ? { tenantId } : { tenantId: { $exists: true, $ne: null } };
+  const storedRole = role ? normalizeRole(role) : undefined;
+
+  return {
+    userFilter: {
+      $and: [
+        tenantFilter,
+        visibleMembershipFilter(),
+        searchFilter,
+        statusFilter,
+        ...invitesOnly,
+        ...(storedRole ? [{ role: storedRole }] : []),
+      ],
+    },
+    inviteFilter: {
+      ...tenantFilter,
+      ...(inviteStatus ? { status: inviteStatus } : { _id: null }),
+      ...searchFilter,
+      ...(storedRole ? { requestedRole: storedRole } : null),
+    },
+    standalone: false,
+  };
+}
+
+/**
+ * The platform-wide counterpart to `streamInstitutionMembers`: every member a
+ * superadmin can see, across every institution or scoped to one, plus the
+ * standalone accounts that belong to none.
+ */
+async function streamPlatformMembers(
+  { tenantId, accountScope = 'institution', query, status, role },
+  onMember,
+  { isCancelled } = {},
+) {
+  const cancelled = typeof isCancelled === 'function' ? isCancelled : () => false;
+  const [{ userFilter, inviteFilter, standalone }, institutions] = await Promise.all([
+    buildPlatformMemberFilters({ tenantId, accountScope, query, status, role }),
+    runAsSystem(() =>
+      models.Institution.find(tenantId ? { tenantId } : {})
+        .select('tenantId name')
+        .lean()
+        .exec(),
+    ),
+  ]);
+
+  const institutionNames = new Map(
+    institutions.map((institution) => [institution.tenantId, institution.name]),
+  );
+  const decorate = (member) =>
+    standalone
+      ? { ...member, tenantId: undefined, institutionName: 'Others', accountScope: 'standalone' }
+      : { ...member, institutionName: institutionNames.get(member.tenantId) ?? member.tenantId };
+
+  let count = 0;
+  const drain = async (cursor, mapMember) => {
+    try {
+      for await (const doc of cursor) {
+        if (cancelled()) {
+          break;
+        }
+        count += 1;
+        await onMember(decorate(mapMember(doc)));
+      }
+    } finally {
+      await cursor.close();
+    }
+  };
+
+  await runAsSystem(async () => {
+    await drain(
+      models.User.find(userFilter)
+        .select(MEMBER_USER_FIELDS)
+        .sort({ createdAt: -1 })
+        .lean()
+        .cursor({ batchSize: MEMBER_STREAM_BATCH_SIZE }),
+      mapUserMember,
+    );
+    if (cancelled()) {
+      return;
+    }
+    await drain(
+      models.InstitutionInvite.find(inviteFilter)
+        .select(MEMBER_INVITE_FIELDS)
+        .sort({ createdAt: -1 })
+        .lean()
+        .cursor({ batchSize: MEMBER_STREAM_BATCH_SIZE }),
+      mapInviteMember,
+    );
+  });
+
+  return { count };
 }
 
 async function listPlatformInstitutionMembers({
@@ -1863,6 +2147,10 @@ module.exports = {
   getSeatSummary,
   listInstitutionMembers,
   listPlatformInstitutionMembers,
+  getInstitutionTimezones,
+  recordMemberExportAudit,
+  streamInstitutionMembers,
+  streamPlatformMembers,
   removeInstitutionMember,
   removeStandaloneMember,
   resolveInstitutionInviteByToken,
