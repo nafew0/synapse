@@ -10,6 +10,7 @@ const {
   listUsageByMember,
   listUsageByModel,
 } = require('~/server/services/institutionUsage');
+const { resolveUsageLabels } = require('~/server/services/usageLabels');
 
 const router = express.Router();
 
@@ -38,6 +39,7 @@ router.get('/summary', async (req, res) => {
       tenantId,
       start: req.query.start,
       end: req.query.end,
+      labels: await resolveUsageLabels(req),
     });
     return res.status(200).json(result);
   } catch (error) {
@@ -59,6 +61,7 @@ router.get('/members', async (req, res) => {
       limit: req.query.limit,
       offset: req.query.offset,
       query: req.query.q,
+      labels: await resolveUsageLabels(req),
     });
     return res.status(200).json(result);
   } catch (error) {
@@ -80,6 +83,7 @@ router.get('/models', async (req, res) => {
       limit: req.query.limit,
       offset: req.query.offset,
       query: req.query.q,
+      labels: await resolveUsageLabels(req),
     });
     return res.status(200).json(result);
   } catch (error) {
