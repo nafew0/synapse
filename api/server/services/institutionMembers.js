@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const mongoose = require('mongoose');
-const { checkEmailConfig } = require('@librechat/api');
+const { checkEmailConfig, math } = require('@librechat/api');
 const { SystemRoles } = require('librechat-data-provider');
 const {
   getRandomValues,
@@ -24,7 +24,16 @@ const { resolveMemberRole, toStoredUserRole, isPlatformRole } = require('./accou
 const { appointInstitutionAdmin, revokeInstitutionAdmin } = require('./tenancy');
 const { getAppConfig } = require('./Config');
 
-const INVITE_EXPIRY_MS = 1000 * 60 * 60 * 24 * 7;
+const DEFAULT_INVITE_EXPIRY = 1000 * 60 * 60 * 24 * 7;
+
+/**
+ * Read per call rather than captured at module load: a constant would freeze the
+ * value before a test or a reconfigured process could change it, which is also
+ * why `SESSION_EXPIRY` and `REFRESH_TOKEN_EXPIRY` are read this way.
+ */
+function getInviteExpiryMs() {
+  return math(process.env.INVITE_EXPIRY, DEFAULT_INVITE_EXPIRY);
+}
 const MAX_IMPORT_ROWS = 1000;
 const ALLOWED_MEMBER_ROLES = new Set([SystemRoles.USER, INSTITUTION_ADMIN_ROLE]);
 const TENANT_ALL_USERS_GROUP_SUFFIX = '-all-users';
@@ -811,7 +820,7 @@ async function createInstitutionInvite({
       tokenHash,
       invitedBy: toObjectId(invitedBy?.id ?? invitedBy?._id ?? invitedBy),
       lastSentAt: new Date(),
-      expiresAt: new Date(Date.now() + INVITE_EXPIRY_MS),
+      expiresAt: new Date(Date.now() + getInviteExpiryMs()),
       source,
     }),
   );
@@ -851,31 +860,76 @@ async function createStandaloneInvite({ email, username, creditPackageId, invite
   const rawToken = await getRandomValues(32);
   const tokenHash = await hashToken(rawToken);
   const name = requestedUsername || normalizedEmail.split('@')[0];
-  const invite = await runAsSystem(() => models.InstitutionInvite.create({ accountScope: InstitutionInviteAccountScopes.STANDALONE, tenantId: null, email: normalizedEmail, name, requestedUsername, requestedRole: SystemRoles.USER, creditPackageId: pkg.id, status: InstitutionInviteStatuses.PENDING, tokenHash, invitedBy: toObjectId(invitedBy?.id ?? invitedBy?._id ?? invitedBy), lastSentAt: new Date(), expiresAt: new Date(Date.now() + INVITE_EXPIRY_MS), source: InstitutionInviteSources.MANUAL }));
+  const invite = await runAsSystem(() => models.InstitutionInvite.create({ accountScope: InstitutionInviteAccountScopes.STANDALONE, tenantId: null, email: normalizedEmail, name, requestedUsername, requestedRole: SystemRoles.USER, creditPackageId: pkg.id, status: InstitutionInviteStatuses.PENDING, tokenHash, invitedBy: toObjectId(invitedBy?.id ?? invitedBy?._id ?? invitedBy), lastSentAt: new Date(), expiresAt: new Date(Date.now() + getInviteExpiryMs()), source: InstitutionInviteSources.MANUAL }));
   const emailResult = await sendInstitutionInviteEmail({ email: normalizedEmail, token: rawToken, appName: process.env.APP_TITLE || 'LibreChat', name: invite.name });
   await recordMemberAudit({ tenantId: undefined, action: 'member.invited', actor: actorFromUser(invitedBy), target: { type: 'standalone_invite', id: invite._id, name: normalizedEmail }, metadata: { accountScope: InstitutionInviteAccountScopes.STANDALONE, packageId: pkg.id }, context });
   return { invite, ...emailResult };
 }
 
-async function resendInstitutionInvite({ tenantId, inviteId, actor, context }) {
-  const invite = await runAsSystem(() =>
-    models.InstitutionInvite.findOne({
-      _id: inviteId,
-      tenantId,
-      status: {
-        $in: [InstitutionInviteStatuses.PENDING, InstitutionInviteStatuses.EXPIRED],
-      },
-    }).exec(),
-  );
-  if (!invite) {
-    throw new HttpError(404, 'Pending or expired invitation not found');
-  }
+const RESENDABLE_STATUSES = [
+  InstitutionInviteStatuses.PENDING,
+  InstitutionInviteStatuses.EXPIRED,
+];
 
+/**
+ * The audiences a bulk resend can target.
+ *
+ * `EXPIRED` and `PENDING` here partition the resendable set — an invitation is
+ * lapsed or it is not — so no invitation can be reached by both, and none can
+ * fall between them. A single "all" resend therefore never needs to
+ * de-duplicate, and can never mail the same person twice.
+ *
+ * Lapsed-ness is computed from `expiresAt` rather than the stored status,
+ * because `EXPIRED` is only ever written when an invitee clicks a dead link;
+ * an invitation that simply timed out unnoticed still reads as PENDING.
+ *
+ * The partition holds at any instant, but the audiences are not stable across
+ * operations: resending an expired invitation gives it a fresh window, which
+ * moves it into `pending`. Resending one audience and then the other would
+ * otherwise mail those recipients twice — the cooldown is what prevents it.
+ */
+const InviteAudiences = {
+  EXPIRED: 'expired',
+  PENDING: 'pending',
+  ALL: 'all',
+};
+
+function buildInviteAudienceFilter(audience, now = new Date()) {
+  if (audience === InviteAudiences.EXPIRED) {
+    return {
+      $or: [
+        { status: InstitutionInviteStatuses.EXPIRED },
+        { status: InstitutionInviteStatuses.PENDING, expiresAt: { $lt: now } },
+      ],
+    };
+  }
+  if (audience === InviteAudiences.PENDING) {
+    return { status: InstitutionInviteStatuses.PENDING, expiresAt: { $gte: now } };
+  }
+  return { status: { $in: RESENDABLE_STATUSES } };
+}
+
+/** Scopes a resend to one institution, or to the standalone accounts. */
+function buildInviteScopeFilter({ tenantId, accountScope }) {
+  if (accountScope === 'standalone') {
+    return { accountScope: InstitutionInviteAccountScopes.STANDALONE };
+  }
+  return tenantId ? { tenantId } : { tenantId: { $exists: true, $ne: null } };
+}
+
+/**
+ * Issues a fresh token for one invitation and mails it.
+ *
+ * Shared by the single-invite paths and the bulk resend so all three rotate the
+ * token, reset the window, and record the audit entry identically. Rotation
+ * invalidates any link already sent for this invitation.
+ */
+async function reissueInvite(invite, { actor, context, tenantId, standalone }) {
   const rawToken = await getRandomValues(32);
   invite.tokenHash = await hashToken(rawToken);
   invite.status = InstitutionInviteStatuses.PENDING;
   invite.lastSentAt = new Date();
-  invite.expiresAt = new Date(Date.now() + INVITE_EXPIRY_MS);
+  invite.expiresAt = new Date(Date.now() + getInviteExpiryMs());
   await invite.save();
 
   const emailResult = await sendInstitutionInviteEmail({
@@ -889,25 +943,209 @@ async function resendInstitutionInvite({ tenantId, inviteId, actor, context }) {
     tenantId,
     action: 'member.invite_resent',
     actor: actorFromUser(actor),
-    target: { type: 'institution_invite', id: invite._id, name: invite.email },
+    target: {
+      type: standalone ? 'standalone_invite' : 'institution_invite',
+      id: invite._id,
+      name: invite.email,
+    },
     context,
   });
 
   return { invite, ...emailResult };
 }
 
+async function resendInstitutionInvite({ tenantId, inviteId, actor, context }) {
+  const invite = await runAsSystem(() =>
+    models.InstitutionInvite.findOne({
+      _id: inviteId,
+      tenantId,
+      status: { $in: RESENDABLE_STATUSES },
+    }).exec(),
+  );
+  if (!invite) {
+    throw new HttpError(404, 'Pending or expired invitation not found');
+  }
+  return reissueInvite(invite, { actor, context, tenantId, standalone: false });
+}
+
 async function resendStandaloneInvite({ inviteId, actor, context }) {
-  const invite = await runAsSystem(() => models.InstitutionInvite.findOne({ _id: inviteId, accountScope: InstitutionInviteAccountScopes.STANDALONE, status: { $in: [InstitutionInviteStatuses.PENDING, InstitutionInviteStatuses.EXPIRED] } }).exec());
-  if (!invite) throw new HttpError(404, 'Pending or expired invitation not found');
-  const rawToken = await getRandomValues(32);
-  invite.tokenHash = await hashToken(rawToken);
-  invite.status = InstitutionInviteStatuses.PENDING;
-  invite.lastSentAt = new Date();
-  invite.expiresAt = new Date(Date.now() + INVITE_EXPIRY_MS);
-  await invite.save();
-  const emailResult = await sendInstitutionInviteEmail({ email: invite.email, token: rawToken, appName: process.env.APP_TITLE || 'LibreChat', name: invite.name });
-  await recordMemberAudit({ tenantId: undefined, action: 'member.invite_resent', actor: actorFromUser(actor), target: { type: 'standalone_invite', id: invite._id, name: invite.email }, context });
-  return { invite, ...emailResult };
+  const invite = await runAsSystem(() =>
+    models.InstitutionInvite.findOne({
+      _id: inviteId,
+      accountScope: InstitutionInviteAccountScopes.STANDALONE,
+      status: { $in: RESENDABLE_STATUSES },
+    }).exec(),
+  );
+  if (!invite) {
+    throw new HttpError(404, 'Pending or expired invitation not found');
+  }
+  return reissueInvite(invite, { actor, context, tenantId: undefined, standalone: true });
+}
+
+const INVITE_RESEND_COOLDOWN_MS = 1000 * 60 * 5;
+const MAX_INVITE_RESEND_BATCH = 250;
+const INVITE_RESEND_CONCURRENCY = 5;
+
+/**
+ * How many invitations each audience would reach, in one round trip.
+ *
+ * The dialog labels all three options with live counts, so three sequential
+ * counts would be three round trips for one screen.
+ */
+async function countResendableInvites({ tenantId, accountScope }) {
+  const now = new Date();
+  const scope = buildInviteScopeFilter({ tenantId, accountScope });
+  const [result] = await runAsSystem(() =>
+    models.InstitutionInvite.aggregate([
+      { $match: { ...scope, status: { $in: RESENDABLE_STATUSES } } },
+      {
+        $group: {
+          _id: null,
+          all: { $sum: 1 },
+          expired: {
+            $sum: {
+              $cond: [
+                {
+                  $or: [
+                    { $eq: ['$status', InstitutionInviteStatuses.EXPIRED] },
+                    { $lt: ['$expiresAt', now] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          all: 1,
+          expired: 1,
+          /** Derived rather than counted, so the two halves always sum to `all`. */
+          pending: { $subtract: ['$all', '$expired'] },
+        },
+      },
+    ]).exec(),
+  );
+
+  return result ?? { all: 0, expired: 0, pending: 0 };
+}
+
+/** Runs `task` over `items`, at most `limit` in flight. */
+async function mapWithConcurrency(items, limit, task) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await task(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+/**
+ * Reissues every invitation in one audience.
+ *
+ * Per-invitation failures are captured rather than thrown: one unreachable
+ * address must not abandon the rest of the batch half-sent, with no record of
+ * which half. The caller gets a row per invitation saying what happened.
+ *
+ * Capped rather than unbounded — unlike a roster export, this sends email to
+ * real people, so the size of the blast stays a deliberate choice.
+ */
+async function resendPendingInvites({
+  tenantId,
+  accountScope,
+  audience = InviteAudiences.ALL,
+  actor,
+  context,
+}) {
+  const now = new Date();
+  const filter = {
+    ...buildInviteScopeFilter({ tenantId, accountScope }),
+    ...buildInviteAudienceFilter(audience, now),
+  };
+
+  const invites = await runAsSystem(() =>
+    models.InstitutionInvite.find(filter)
+      .sort({ lastSentAt: 1 })
+      .limit(MAX_INVITE_RESEND_BATCH + 1)
+      .exec(),
+  );
+
+  if (invites.length > MAX_INVITE_RESEND_BATCH) {
+    throw new HttpError(
+      400,
+      `This would resend more than ${MAX_INVITE_RESEND_BATCH} invitations at once. Narrow the selection and try again.`,
+    );
+  }
+  if (invites.length === 0) {
+    return { summary: { total: 0, sent: 0, linkOnly: 0, skipped: 0, failed: 0 }, results: [] };
+  }
+
+  const cooldownBefore = new Date(now.getTime() - INVITE_RESEND_COOLDOWN_MS);
+  const standalone = accountScope === 'standalone';
+
+  const results = await mapWithConcurrency(invites, INVITE_RESEND_CONCURRENCY, async (invite) => {
+    const row = { inviteId: invite._id.toString(), email: invite.email };
+
+    if (invite.lastSentAt && invite.lastSentAt > cooldownBefore) {
+      return { ...row, outcome: 'skipped_cooldown' };
+    }
+
+    try {
+      const { inviteLink } = await reissueInvite(invite, {
+        actor,
+        context,
+        tenantId: standalone ? undefined : invite.tenantId,
+        standalone,
+      });
+      return inviteLink ? { ...row, outcome: 'link_only', inviteLink } : { ...row, outcome: 'sent' };
+    } catch (error) {
+      logger.error('[institutionMembers] failed to resend invitation', {
+        email: invite.email,
+        error,
+      });
+      return { ...row, outcome: 'failed', error: error.message };
+    }
+  });
+
+  const summary = results.reduce(
+    (totals, row) => {
+      totals.total += 1;
+      if (row.outcome === 'sent') {
+        totals.sent += 1;
+      } else if (row.outcome === 'link_only') {
+        totals.linkOnly += 1;
+      } else if (row.outcome === 'skipped_cooldown') {
+        totals.skipped += 1;
+      } else {
+        totals.failed += 1;
+      }
+      return totals;
+    },
+    { total: 0, sent: 0, linkOnly: 0, skipped: 0, failed: 0 },
+  );
+
+  await recordMemberAudit({
+    tenantId,
+    action: 'member.invites_bulk_resent',
+    actor: actorFromUser(actor),
+    target: {
+      type: 'institution',
+      id: tenantId ?? accountScope ?? 'all',
+      name: tenantId ?? accountScope ?? 'all institutions',
+    },
+    metadata: { audience, ...summary },
+    context,
+  });
+
+  return { summary, results };
 }
 
 async function revokeStandaloneInvite({ inviteId, actor, context }) {
@@ -2145,8 +2383,12 @@ module.exports = {
   getInstitutionImportJob,
   getInstitutionMemberDetail,
   getSeatSummary,
+  buildInviteAudienceFilter,
+  countResendableInvites,
   listInstitutionMembers,
   listPlatformInstitutionMembers,
+  resendPendingInvites,
+  InviteAudiences,
   getInstitutionTimezones,
   recordMemberExportAudit,
   streamInstitutionMembers,

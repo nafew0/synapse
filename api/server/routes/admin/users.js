@@ -18,8 +18,10 @@ const {
   resendInstitutionInvite,
   revokeInstitutionInvite,
   searchInstitutionMembers,
+  countResendableInvites,
   getInstitutionTimezones,
   recordMemberExportAudit,
+  resendPendingInvites,
   setInstitutionRole,
   streamInstitutionMembers,
   streamPlatformMembers,
@@ -32,8 +34,10 @@ const router = express.Router();
 const memberHandlers = createAdminMembersHandlers({
   streamInstitutionMembers,
   streamPlatformMembers,
+  countResendableInvites,
   getInstitutionTimezones,
   recordMemberExportAudit,
+  resendPendingInvites,
 });
 
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
@@ -223,6 +227,40 @@ router.get('/imports/:jobId', requireReadUsers, async (req, res) => {
     return res.status(200).json({ job });
   } catch (error) {
     return handleError(res, error, 'Failed to load import job');
+  }
+});
+
+router.get('/invites/resendable', requireReadUsers, async (req, res) => {
+  const tenantId = requireTenant(req, res);
+  if (!tenantId) {
+    return;
+  }
+
+  try {
+    const counts = await countResendableInvites({ tenantId });
+    return res.status(200).json({ counts });
+  } catch (error) {
+    return handleError(res, error, 'Failed to count resendable invitations');
+  }
+});
+
+/** Reissues every invitation in one audience; see `resendPendingInvites`. */
+router.post('/invites/resend-bulk', requireManageUsers, async (req, res) => {
+  const tenantId = requireTenant(req, res);
+  if (!tenantId) {
+    return;
+  }
+
+  try {
+    const result = await resendPendingInvites({
+      tenantId,
+      audience: req.body?.audience,
+      actor: req.user,
+      context: buildAuditContext(req),
+    });
+    return res.status(200).json(result);
+  } catch (error) {
+    return handleError(res, error, 'Failed to resend invitations');
   }
 });
 
