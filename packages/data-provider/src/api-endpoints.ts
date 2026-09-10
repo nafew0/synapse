@@ -488,6 +488,9 @@ export const addTagToConversation = (conversationId: string) =>
 export const userTerms = () => `${BASE_URL}/api/user/terms`;
 export const acceptUserTerms = () => `${BASE_URL}/api/user/terms/accept`;
 export const banner = () => `${BASE_URL}/api/banner`;
+export const bannerSeen = (bannerId: string) => `${banner()}/${encodeURIComponent(bannerId)}/seen`;
+export const bannerDismiss = (bannerId: string) =>
+  `${banner()}/${encodeURIComponent(bannerId)}/dismiss`;
 
 // Message Feedback
 export const feedback = (conversationId: string, messageId: string) =>
