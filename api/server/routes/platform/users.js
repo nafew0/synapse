@@ -12,7 +12,9 @@ const { getMemberUsageSummary } = require('~/server/services/institutionUsage');
 const {
   HttpError,
   listPlatformInstitutionMembers,
+  countResendableInvites,
   createStandaloneInvite,
+  resendPendingInvites,
   reactivateInstitutionMember,
   removeInstitutionMember,
   resendInstitutionInvite,
@@ -274,6 +276,41 @@ router.post('/standalone/invites/:inviteId/resend', async (req, res) => {
 router.post('/standalone/invites/:inviteId/revoke', async (req, res) => {
   try { return res.json({ invite: await revokeStandaloneInvite({ inviteId: req.params.inviteId, actor: req.user, context: buildAuditContext(req) }) }); }
   catch (error) { return handleError(res, error, 'Failed to revoke invitation'); }
+});
+
+function readAccountScope(value) {
+  return value === 'standalone' ? 'standalone' : 'institution';
+}
+
+router.get('/invites/resendable', async (req, res) => {
+  try {
+    const counts = await countResendableInvites({
+      tenantId: req.query.tenantId?.trim() || undefined,
+      accountScope: readAccountScope(req.query.accountScope),
+    });
+    return res.status(200).json({ counts });
+  } catch (error) {
+    return handleError(res, error, 'Failed to count resendable invitations');
+  }
+});
+
+/**
+ * A superadmin may resend across every institution at once, so `tenantId` is
+ * optional here — unlike the institution-admin route, which is always scoped.
+ */
+router.post('/invites/resend-bulk', async (req, res) => {
+  try {
+    const result = await resendPendingInvites({
+      tenantId: req.body?.tenantId?.trim() || undefined,
+      accountScope: readAccountScope(req.body?.accountScope),
+      audience: req.body?.audience,
+      actor: req.user,
+      context: buildAuditContext(req),
+    });
+    return res.status(200).json(result);
+  } catch (error) {
+    return handleError(res, error, 'Failed to resend invitations');
+  }
 });
 
 router.post('/invites/:inviteId/resend', async (req, res) => {
