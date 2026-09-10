@@ -69,7 +69,7 @@ async function getQuotaModelSources(tenantId) {
 
     const provider = agent?.provider ?? spec.preset.endpointType ?? spec.preset.endpoint;
     const { modelKey } = canonicalizeModel({ provider, model });
-    return modelKey ? [{ modelKey, label: spec.label }] : [];
+    return modelKey ? [{ modelKey, modelId: model, label: spec.label }] : [];
   });
 }
 

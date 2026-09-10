@@ -1,6 +1,9 @@
 /** A model the server currently offers, keyed the way the quota engine keys it. */
 export interface QuotaModelSource {
   modelKey: string;
+  /** The model as configured — the id a person recognises. `modelKey` is the
+   *  engine's matcher output and can be a family or catch-all (`claude-`). */
+  modelId: string;
   label: string;
 }
 
@@ -30,6 +33,9 @@ export type QuotaModelStatus = 'active' | 'retired' | 'unmatched';
 
 export interface QuotaModelRow {
   modelKey: string;
+  /** Configured model ids drawing from this bucket; empty for retired and
+   *  unmatched rows, which have no configuration left to name them. */
+  modelIds: string[];
   label: string;
   status: QuotaModelStatus;
   usedTokens: number;
@@ -50,12 +56,14 @@ const STATUS_ORDER: Record<QuotaModelStatus, number> = { active: 0, retired: 1, 
 
 function emptyRow(
   modelKey: string,
+  modelIds: string[],
   label: string,
   status: QuotaModelStatus,
   limit: number | null,
 ): QuotaModelRow {
   return {
     modelKey,
+    modelIds,
     label,
     status,
     usedTokens: 0,
@@ -69,11 +77,13 @@ function emptyRow(
 
 function bucketRow(
   bucket: QuotaModelBucket,
+  modelIds: string[],
   label: string,
   status: QuotaModelStatus,
 ): QuotaModelRow {
   return {
     modelKey: bucket.scopeKey,
+    modelIds,
     label,
     status,
     usedTokens: bucket.usedTokens,
@@ -98,17 +108,17 @@ export function buildQuotaModelRows({
   buckets,
   limits,
 }: BuildQuotaModelRowsParams): QuotaModelRow[] {
-  const labelsByKey = new Map<string, string[]>();
-  for (const { modelKey, label } of sources) {
+  const offered = new Map<string, { labels: Set<string>; modelIds: Set<string> }>();
+  for (const { modelKey, modelId, label } of sources) {
     if (!modelKey || !label) {
       continue;
     }
-    const labels = labelsByKey.get(modelKey);
-    if (!labels) {
-      labelsByKey.set(modelKey, [label]);
-    } else if (!labels.includes(label)) {
-      labels.push(label);
+    const entry = offered.get(modelKey) ?? { labels: new Set(), modelIds: new Set() };
+    entry.labels.add(label);
+    if (modelId) {
+      entry.modelIds.add(modelId);
     }
+    offered.set(modelKey, entry);
   }
 
   const bucketByKey = new Map<string, QuotaModelBucket>();
@@ -125,25 +135,26 @@ export function buildQuotaModelRows({
 
   const rows: QuotaModelRow[] = [];
 
-  for (const [modelKey, labels] of labelsByKey) {
-    const label = labels.join(' · ');
+  for (const [modelKey, { labels, modelIds }] of offered) {
+    const label = Array.from(labels).join(' · ');
+    const ids = Array.from(modelIds);
     const bucket = bucketByKey.get(modelKey);
     rows.push(
       bucket
-        ? bucketRow(bucket, label, 'active')
-        : emptyRow(modelKey, label, 'active', limitByKey.get(modelKey) ?? null),
+        ? bucketRow(bucket, ids, label, 'active')
+        : emptyRow(modelKey, ids, label, 'active', limitByKey.get(modelKey) ?? null),
     );
   }
 
   for (const [modelKey, bucket] of bucketByKey) {
-    if (!labelsByKey.has(modelKey)) {
-      rows.push(bucketRow(bucket, modelKey, 'retired'));
+    if (!offered.has(modelKey)) {
+      rows.push(bucketRow(bucket, [], modelKey, 'retired'));
     }
   }
 
   for (const [modelKey, maxTokens] of limitByKey) {
-    if (!labelsByKey.has(modelKey) && !bucketByKey.has(modelKey)) {
-      rows.push(emptyRow(modelKey, modelKey, 'unmatched', maxTokens));
+    if (!offered.has(modelKey) && !bucketByKey.has(modelKey)) {
+      rows.push(emptyRow(modelKey, [], modelKey, 'unmatched', maxTokens));
     }
   }
 

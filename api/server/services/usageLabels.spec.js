@@ -69,10 +69,14 @@ describe('getQuotaModelSources', () => {
     const sources = await getQuotaModelSources('tenant-a');
 
     expect(sources).toEqual([
-      { modelKey: 'claude-haiku-4-5', label: 'Office Assistant' },
-      { modelKey: 'gpt-5.6-luna', label: 'ChatGPT' },
-      { modelKey: 'claude-haiku-4-5', label: 'Claude' },
-      { modelKey: 'gemini-3.1', label: 'Image Generation' },
+      { modelKey: 'claude-haiku-4-5', modelId: 'claude-haiku-4-5', label: 'Office Assistant' },
+      { modelKey: 'gpt-5.6-luna', modelId: 'openai/gpt-5.6-luna', label: 'ChatGPT' },
+      { modelKey: 'claude-haiku-4-5', modelId: 'claude-haiku-4-5', label: 'Claude' },
+      {
+        modelKey: 'gemini-3.1',
+        modelId: 'google/gemini-3.1-flash-image',
+        label: 'Image Generation',
+      },
     ]);
     expect(mockGetAppConfig).toHaveBeenCalledWith({ tenantId: 'tenant-a' });
   });
