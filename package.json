@@ -15,6 +15,7 @@
     "set-balance": "node config/set-balance.js",
     "list-balances": "node config/list-balances.js",
     "user-stats": "node config/user-stats.js",
+    "sync-langfuse-models": "node config/sync-langfuse-models.js",
     "rebuild:package-lock": "node config/packages",
     "reinstall": "node config/update.js -l -g",
     "smart-reinstall": "node config/smart-reinstall.js",

@@ -235,6 +235,17 @@ endpoints:
       titleConvo: true
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
+      # USD per 1M tokens, from https://openrouter.ai/api/v1/models (pricing x 1e6).
+      # Without an entry, tx.ts falls back to the nearest shorter family key —
+      # `google/gemini-3.8-flash` would bill as `gemini-3` (2/12), ~3x too high.
+      # Push these rates to Langfuse with `npm run sync-langfuse-models`.
+      tokenConfig:
+        'google/gemini-3.8-flash':
+          prompt: 0.75
+          completion: 3.75
+          cacheRead: 0.075
+          cacheWrite: 0.041667
+          context: 1048576
 
     # Separate endpoint so `addParams` below (modalities/image_config) only ever
     # reaches google/gemini-3.1-flash-image. Sending `modalities: ["image","text"]`
