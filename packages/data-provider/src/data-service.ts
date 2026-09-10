@@ -1342,6 +1342,14 @@ export function getBanner(): Promise<t.TBannerResponse> {
   return request.get(endpoints.banner());
 }
 
+export function markBannerSeen(bannerId: string): Promise<void> {
+  return request.post(endpoints.bannerSeen(bannerId));
+}
+
+export function dismissBanner(bannerId: string): Promise<void> {
+  return request.post(endpoints.bannerDismiss(bannerId));
+}
+
 export function updateFeedback(
   conversationId: string,
   messageId: string,

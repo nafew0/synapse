@@ -98,6 +98,8 @@ export const DynamicQueryKeys = {
 } as const;
 
 export enum MutationKeys {
+  markBannerSeen = 'markBannerSeen',
+  dismissBanner = 'dismissBanner',
   updateLangfuseConnection = 'updateLangfuseConnection',
   testLangfuseConnection = 'testLangfuseConnection',
   createAgentApiKey = 'createAgentApiKey',

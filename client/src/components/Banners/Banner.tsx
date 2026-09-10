@@ -1,19 +1,75 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { XIcon } from 'lucide-react';
 import { useRecoilState } from 'recoil';
-import { Button, cn } from '@librechat/client';
+import type { TBanner } from 'librechat-data-provider';
 import {
   CONFIG_HTML_TEXT_TAGS,
   CONFIG_HTML_CLASS_ATTR,
   createConfigHtmlSanitizer,
 } from '~/utils/configHtml';
-import { useGetBannerQuery } from '~/data-provider';
+import {
+  useGetBannerQuery,
+  useDismissBannerMutation,
+  useMarkBannerSeenMutation,
+} from '~/data-provider';
+import { useAuthContext } from '~/hooks';
 import store from '~/store';
+import Card from './Card';
+import Bar from './Bar';
+
+/**
+ * Signed-in users: the server filters out banners they have seen (`once`) or
+ * dismissed, so this only reports those events back. Anonymous visitors (login
+ * page) fall back to `localStorage`, which also keeps dismissals made before
+ * server-side tracking existed.
+ */
+function useBannerVisibility(banner: TBanner | null | undefined, userId?: string) {
+  const [hiddenIds, setHiddenIds] = useRecoilState<string[]>(store.hideBannerHint);
+  const shownThisVisit = useRef(new Set<string>());
+  const { mutate: markSeen } = useMarkBannerSeenMutation();
+  const { mutate: recordDismiss } = useDismissBannerMutation(userId);
+
+  const bannerId = banner?.bannerId;
+  const display = banner?.display;
+  const isVisible =
+    bannerId != null &&
+    (display === 'always' || shownThisVisit.current.has(bannerId) || !hiddenIds.includes(bannerId));
+
+  useEffect(() => {
+    if (!isVisible || !bannerId || shownThisVisit.current.has(bannerId)) {
+      return;
+    }
+    shownThisVisit.current.add(bannerId);
+    if (display !== 'once') {
+      return;
+    }
+    if (userId) {
+      markSeen(bannerId);
+      return;
+    }
+    setHiddenIds((ids) => (ids.includes(bannerId) ? ids : [...ids, bannerId]));
+  }, [isVisible, bannerId, display, userId, markSeen, setHiddenIds]);
+
+  const dismiss = () => {
+    if (!bannerId) {
+      return;
+    }
+    shownThisVisit.current.delete(bannerId);
+    setHiddenIds((ids) => (ids.includes(bannerId) ? ids : [...ids, bannerId]));
+    if (userId) {
+      recordDismiss(bannerId);
+    }
+  };
+
+  return { isVisible, dismiss };
+}
 
 export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) => void }) => {
-  const { data: banner } = useGetBannerQuery();
-  const [hideBannerHint, setHideBannerHint] = useRecoilState<string[]>(store.hideBannerHint);
-  const bannerRef = useRef<HTMLDivElement>(null);
+  const { user, isAuthenticated } = useAuthContext();
+  const userId = isAuthenticated ? user?.id : undefined;
+  const { data: banner } = useGetBannerQuery(userId);
+  const { isVisible, dismiss } = useBannerVisibility(banner, userId);
+  const barRef = useRef<HTMLDivElement>(null);
+  const isBar = isVisible && banner?.type !== 'popup';
   const sanitize = useMemo(
     () =>
       createConfigHtmlSanitizer({
@@ -23,61 +79,31 @@ export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) =
     [],
   );
 
-  const sanitizedMessage = useMemo(() => {
-    if (!banner?.message) {
-      return '';
-    }
-    return sanitize(banner.message);
-  }, [banner?.message, sanitize]);
+  const sanitizedMessage = useMemo(
+    () => (banner?.message ? sanitize(banner.message) : ''),
+    [banner?.message, sanitize],
+  );
 
   useEffect(() => {
-    if (onHeightChange && bannerRef.current) {
-      onHeightChange(bannerRef.current.offsetHeight);
+    const element = barRef.current;
+    if (!onHeightChange) {
+      return;
     }
-  }, [banner, hideBannerHint, onHeightChange]);
+    if (!element || !isBar) {
+      onHeightChange(0);
+      return;
+    }
+    const observer = new ResizeObserver(() => onHeightChange(element.offsetHeight));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [isBar, onHeightChange]);
 
-  if (
-    !banner ||
-    (banner.bannerId && !banner.persistable && hideBannerHint.includes(banner.bannerId))
-  ) {
+  if (!banner || !isVisible) {
     return null;
   }
 
-  const onClick = () => {
-    if (banner.persistable) {
-      return;
-    }
-
-    setHideBannerHint([...hideBannerHint, banner.bannerId]);
-
-    if (onHeightChange) {
-      onHeightChange(0);
-    }
-  };
-
-  return (
-    <div
-      ref={bannerRef}
-      className="sticky top-0 z-20 flex items-center bg-presentation px-2 py-1 text-text-primary dark:bg-gradient-to-r md:relative"
-    >
-      <div
-        className={cn(
-          'w-full truncate text-center text-base [&_a]:text-link [&_a]:underline',
-          !banner.persistable && 'px-4',
-        )}
-        dangerouslySetInnerHTML={{ __html: sanitizedMessage }}
-      ></div>
-      {!banner.persistable && (
-        <Button
-          size="icon"
-          variant="ghost"
-          aria-label="Dismiss banner"
-          className="size-8"
-          onClick={onClick}
-        >
-          <XIcon className="mx-auto h-4 w-4 text-text-primary" aria-hidden="true" />
-        </Button>
-      )}
-    </div>
-  );
+  if (banner.type === 'popup') {
+    return <Card banner={banner} message={sanitizedMessage} onDismiss={dismiss} />;
+  }
+  return <Bar ref={barRef} banner={banner} message={sanitizedMessage} onDismiss={dismiss} />;
 };

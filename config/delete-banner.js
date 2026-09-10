@@ -26,7 +26,10 @@ const connect = require('./connect');
     }
 
     console.purple('Current banner:');
+    console.log(`Type: ${banner.category ?? 'update'}`);
+    console.log(`Title: ${banner.title || '—'}`);
     console.log(`Message: ${banner.message}`);
+    console.log(`Shown: ${banner.display ?? (banner.persistable ? 'always' : 'until_dismissed')}`);
     console.log(`Display From: ${banner.displayFrom}`);
     console.log(`Display To: ${banner.displayTo || 'Not specified'}`);
     console.log(`Is Public: ${banner.isPublic}`);
