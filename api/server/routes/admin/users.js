@@ -28,6 +28,7 @@ const {
   suspendInstitutionMember,
 } = require('~/server/services/institutionMembers');
 const { getMemberUsageSummary } = require('~/server/services/institutionUsage');
+const { resolveUsageLabels } = require('~/server/services/usageLabels');
 
 const router = express.Router();
 
@@ -336,6 +337,7 @@ router.get('/:id/usage', requireReadUsers, async (req, res) => {
       userId: req.params.id,
       start: req.query.start,
       end: req.query.end,
+      labels: await resolveUsageLabels(req),
     });
     return res.status(200).json(result);
   } catch (error) {

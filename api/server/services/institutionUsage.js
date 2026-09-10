@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { resolveModelLabel } = require('@librechat/api');
 const { runAsSystem, tenantStorage } = require('@librechat/data-schemas');
 const { getCalendarMonthRange, zonedDateTimeToUtc } = require('./usageQuota');
 const models = require('~/db/models');
@@ -152,6 +153,90 @@ function modelIdExpr() {
   return { $ifNull: ['$providerModelId', { $ifNull: ['$model', 'unknown'] }] };
 }
 
+/**
+ * The modelSpec the member actually picked, recorded on the conversation. It is
+ * the only way back to the label the chat UI showed: several specs can share
+ * one provider model (the office agent and the Claude spec both run
+ * `claude-haiku-4-5`), so the model id alone cannot tell them apart.
+ */
+function conversationSpecLookup() {
+  return {
+    $lookup: {
+      from: 'conversations',
+      let: { conversationId: '$_id.conversationId' },
+      pipeline: [
+        { $match: { $expr: { $eq: ['$conversationId', '$$conversationId'] } } },
+        { $project: { _id: 0, spec: 1 } },
+        { $limit: 1 },
+      ],
+      as: 'conversation',
+    },
+  };
+}
+
+function mergeModelUsageRows(rows, { index, restrictToLabeled } = {}) {
+  const merged = new Map();
+
+  for (const row of rows) {
+    const displayName = index
+      ? resolveModelLabel(index, { specName: row.spec, modelId: row.modelKey })
+      : undefined;
+
+    if (restrictToLabeled && !displayName) {
+      continue;
+    }
+
+    const key = displayName ?? `${row.providerKey ?? 'unknown'}:${row.modelKey}`;
+    const existing = merged.get(key);
+
+    if (!existing) {
+      merged.set(key, {
+        displayName,
+        providerKey: row.providerKey,
+        modelKey: row.modelKey,
+        providerModelId: row.modelKey,
+        promptTokens: row.promptTokens,
+        completionTokens: row.completionTokens,
+        totalTokens: row.promptTokens + row.completionTokens,
+        totalCost: row.totalCost,
+        eventCount: row.eventCount,
+        lastUsedAt: row.lastUsedAt,
+        memberIds: new Set(row.memberIds),
+      });
+      continue;
+    }
+
+    existing.promptTokens += row.promptTokens;
+    existing.completionTokens += row.completionTokens;
+    existing.totalTokens += row.promptTokens + row.completionTokens;
+    existing.totalCost += row.totalCost;
+    existing.eventCount += row.eventCount;
+    if (row.lastUsedAt > existing.lastUsedAt) {
+      existing.lastUsedAt = row.lastUsedAt;
+    }
+    for (const memberId of row.memberIds) {
+      existing.memberIds.add(memberId);
+    }
+  }
+
+  return Array.from(merged.values())
+    .map(({ memberIds, ...row }) => ({ ...row, memberCount: memberIds.size }))
+    .sort((a, b) => b.totalTokens - a.totalTokens || String(a.modelKey).localeCompare(b.modelKey));
+}
+
+function stripRestrictedFields(row, restrictToLabeled) {
+  if (!restrictToLabeled) {
+    return row;
+  }
+  const {
+    totalCost: _totalCost,
+    providerKey: _providerKey,
+    providerModelId: _providerModelId,
+    ...visible
+  } = row;
+  return visible;
+}
+
 function getTokenProjection() {
   return {
     promptTokens: {
@@ -172,59 +257,55 @@ function getTokenProjection() {
   };
 }
 
-async function getUsageSummary({ tenantId, start, end }) {
+async function getUsageSummary({ tenantId, start, end, labels }) {
   const range = await resolveRange(tenantId, { start, end });
   const Transaction = getTransactionModel();
+  const restrictToLabeled = labels?.restrictToLabeled === true;
 
-  const [summary] = await tenantStorage.run({ tenantId }, async () =>
-    Transaction.aggregate([
-      { $match: getBaseMatch(range) },
-      {
-        $group: {
-          _id: null,
-          ...getTokenProjection(),
-          members: { $addToSet: '$user' },
-          models: { $addToSet: modelIdExpr() },
-        },
-      },
-      {
-        $project: {
-          _id: 0,
-          promptTokens: 1,
-          completionTokens: 1,
-          totalTokens: { $add: ['$promptTokens', '$completionTokens'] },
-          totalCost: 1,
-          eventCount: 1,
-          memberCount: { $size: '$members' },
-          modelCount: {
-            $size: {
-              $filter: {
-                input: '$models',
-                as: 'model',
-                cond: { $ne: ['$$model', null] },
-              },
-            },
+  /** "Models used" counts the same rows the model table shows, so the card and
+   *  the table can never disagree for either audience. */
+  const [[summary], models] = await Promise.all([
+    tenantStorage.run({ tenantId }, async () =>
+      Transaction.aggregate([
+        { $match: getBaseMatch(range) },
+        {
+          $group: {
+            _id: null,
+            ...getTokenProjection(),
+            members: { $addToSet: '$user' },
           },
         },
-      },
-    ]),
-  );
+        {
+          $project: {
+            _id: 0,
+            promptTokens: 1,
+            completionTokens: 1,
+            totalTokens: { $add: ['$promptTokens', '$completionTokens'] },
+            totalCost: 1,
+            eventCount: 1,
+            memberCount: { $size: '$members' },
+          },
+        },
+      ]),
+    ),
+    aggregateModelUsage({ tenantId, range, labels }),
+  ]);
 
-  return {
-    range,
-    summary: summary ?? {
-      promptTokens: 0,
-      completionTokens: 0,
-      totalTokens: 0,
-      totalCost: 0,
-      eventCount: 0,
-      memberCount: 0,
-      modelCount: 0,
-    },
+  const resolved = {
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    totalCost: 0,
+    eventCount: 0,
+    memberCount: 0,
+    ...(summary ?? {}),
+    modelCount: models.length,
   };
+
+  return { range, summary: stripRestrictedFields(resolved, restrictToLabeled) };
 }
 
-async function listUsageByMember({ tenantId, start, end, limit, offset, query }) {
+async function listUsageByMember({ tenantId, start, end, limit, offset, query, labels }) {
   const range = await resolveRange(tenantId, { start, end });
   const pagination = parsePagination({ limit, offset });
   const Transaction = getTransactionModel();
@@ -290,81 +371,117 @@ async function listUsageByMember({ tenantId, start, end, limit, offset, query })
   );
 
   const total = result?.meta?.[0]?.total ?? 0;
+  const restrictToLabeled = labels?.restrictToLabeled === true;
 
   return {
     range,
-    members: result?.rows ?? [],
+    members: (result?.rows ?? []).map((row) => stripRestrictedFields(row, restrictToLabeled)),
     total,
     limit: pagination.limit,
     offset: pagination.offset,
   };
 }
 
-async function listUsageByModel({ tenantId, start, end, limit, offset, query }) {
-  const range = await resolveRange(tenantId, { start, end });
-  const pagination = parsePagination({ limit, offset });
+/**
+ * Usage per model, keyed by the label the chat UI shows. Grouping is done in
+ * two stages: per conversation first, so the spec lookup runs once per
+ * conversation rather than once per ledger row, then per (spec, model) pair —
+ * a set small enough to label, merge and page in memory.
+ *
+ * The billing view drops models that used tokens but cost nothing, from both
+ * the table and the "Models used" card. Institution admins never see cost, so
+ * their view keeps every labeled model's usage.
+ */
+async function aggregateModelUsage({ tenantId, range, labels }) {
   const Transaction = getTransactionModel();
-  const search = typeof query === 'string' && query.trim() ? query.trim() : null;
-  const regex = search ? new RegExp(escapeRegex(search), 'i') : null;
 
-  const [result] = await tenantStorage.run({ tenantId }, async () =>
-    Transaction.aggregate([
-      { $match: getBaseMatch(range) },
-      {
-        $group: {
-          _id: {
-            providerKey: providerKeyExpr(),
-            modelKey: modelIdExpr(),
-            providerModelId: modelIdExpr(),
+  const rows = await tenantStorage.run({ tenantId }, async () =>
+    Transaction.aggregate(
+      [
+        { $match: getBaseMatch(range) },
+        {
+          $group: {
+            _id: {
+              conversationId: '$conversationId',
+              modelKey: modelIdExpr(),
+              providerKey: providerKeyExpr(),
+            },
+            ...getTokenProjection(),
+            memberIds: { $addToSet: '$user' },
           },
-          ...getTokenProjection(),
-          memberIds: { $addToSet: '$user' },
         },
-      },
-      ...(regex
-        ? [
-            {
-              $match: {
-                $or: [
-                  { '_id.modelKey': regex },
-                  { '_id.providerKey': regex },
-                  { '_id.providerModelId': regex },
-                ],
+        conversationSpecLookup(),
+        {
+          $group: {
+            _id: {
+              spec: { $first: '$conversation.spec' },
+              modelKey: '$_id.modelKey',
+              providerKey: '$_id.providerKey',
+            },
+            promptTokens: { $sum: '$promptTokens' },
+            completionTokens: { $sum: '$completionTokens' },
+            totalCost: { $sum: '$totalCost' },
+            eventCount: { $sum: '$eventCount' },
+            lastUsedAt: { $max: '$lastUsedAt' },
+            memberIdGroups: { $push: '$memberIds' },
+          },
+        },
+        {
+          $project: {
+            _id: 0,
+            spec: '$_id.spec',
+            modelKey: { $ifNull: ['$_id.modelKey', 'unknown'] },
+            providerKey: '$_id.providerKey',
+            promptTokens: 1,
+            completionTokens: 1,
+            totalCost: 1,
+            eventCount: 1,
+            lastUsedAt: 1,
+            memberIds: {
+              $reduce: {
+                input: '$memberIdGroups',
+                initialValue: [],
+                in: { $setUnion: ['$$value', '$$this'] },
               },
             },
-          ]
-        : []),
-      {
-        $project: {
-          _id: 0,
-          providerKey: '$_id.providerKey',
-          modelKey: { $ifNull: ['$_id.modelKey', 'unknown'] },
-          providerModelId: '$_id.providerModelId',
-          promptTokens: 1,
-          completionTokens: 1,
-          totalTokens: { $add: ['$promptTokens', '$completionTokens'] },
-          totalCost: 1,
-          eventCount: 1,
-          lastUsedAt: 1,
-          memberCount: { $size: '$memberIds' },
+          },
         },
-      },
-      { $sort: { totalTokens: -1, modelKey: 1 } },
-      {
-        $facet: {
-          rows: [{ $skip: pagination.offset }, { $limit: pagination.limit }],
-          meta: [{ $count: 'total' }],
-        },
-      },
-    ]),
+      ],
+      { allowDiskUse: true },
+    ),
   );
 
-  const total = result?.meta?.[0]?.total ?? 0;
+  const merged = mergeModelUsageRows(rows, labels);
+  if (labels?.restrictToLabeled === true) {
+    return merged;
+  }
+  return merged.filter((row) => row.totalCost > 0);
+}
+
+async function listUsageByModel({ tenantId, start, end, limit, offset, query, labels }) {
+  const range = await resolveRange(tenantId, { start, end });
+  const pagination = parsePagination({ limit, offset });
+  const merged = await aggregateModelUsage({ tenantId, range, labels });
+
+  const search = typeof query === 'string' && query.trim() ? query.trim() : null;
+  const regex = search ? new RegExp(escapeRegex(search), 'i') : null;
+  const matched = regex
+    ? merged.filter(
+        (row) =>
+          regex.test(row.displayName ?? '') ||
+          regex.test(row.modelKey ?? '') ||
+          regex.test(row.providerKey ?? ''),
+      )
+    : merged;
+
+  const restrictToLabeled = labels?.restrictToLabeled === true;
 
   return {
     range,
-    models: result?.rows ?? [],
-    total,
+    models: matched
+      .slice(pagination.offset, pagination.offset + pagination.limit)
+      .map((row) => stripRestrictedFields(row, restrictToLabeled)),
+    total: matched.length,
     limit: pagination.limit,
     offset: pagination.offset,
   };
@@ -518,16 +635,17 @@ async function exportUsageCsv({ tenantId, start, end }) {
   };
 }
 
-async function getMemberUsageSummary({ tenantId, userId, start, end }) {
+async function getMemberUsageSummary({ tenantId, userId, start, end, labels }) {
   const range = await resolveRange(tenantId, { start, end });
   const Transaction = getTransactionModel();
   const objectId = mongoose.Types.ObjectId.isValid(userId)
     ? new mongoose.Types.ObjectId(userId)
     : userId;
+  const memberMatch = { ...getBaseMatch(range), user: objectId };
   const aggregate = () =>
     Promise.all([
       Transaction.aggregate([
-        { $match: { ...getBaseMatch(range), user: objectId } },
+        { $match: memberMatch },
         { $group: { _id: null, ...getTokenProjection() } },
         {
           $project: {
@@ -541,48 +659,82 @@ async function getMemberUsageSummary({ tenantId, userId, start, end }) {
           },
         },
       ]),
-      Transaction.aggregate([
-        { $match: { ...getBaseMatch(range), user: objectId } },
-        {
-          $group: {
-            _id: {
-              providerKey: { $ifNull: ['$providerKey', 'unknown'] },
-              modelKey: { $ifNull: ['$modelKey', '$model'] },
+      /** Same identity rules as the institution-wide model table: the operator's
+       *  model id, not the coarser pricing bucket, attributed by spec. */
+      Transaction.aggregate(
+        [
+          { $match: memberMatch },
+          {
+            $group: {
+              _id: {
+                conversationId: '$conversationId',
+                modelKey: modelIdExpr(),
+                providerKey: providerKeyExpr(),
+              },
+              ...getTokenProjection(),
+              memberIds: { $addToSet: '$user' },
             },
-            ...getTokenProjection(),
           },
-        },
-        {
-          $project: {
-            _id: 0,
-            providerKey: '$_id.providerKey',
-            modelKey: '$_id.modelKey',
-            promptTokens: 1,
-            completionTokens: 1,
-            totalTokens: { $add: ['$promptTokens', '$completionTokens'] },
-            totalCost: 1,
-            eventCount: 1,
-            lastUsedAt: 1,
+          conversationSpecLookup(),
+          {
+            $group: {
+              _id: {
+                spec: { $first: '$conversation.spec' },
+                modelKey: '$_id.modelKey',
+                providerKey: '$_id.providerKey',
+              },
+              promptTokens: { $sum: '$promptTokens' },
+              completionTokens: { $sum: '$completionTokens' },
+              totalCost: { $sum: '$totalCost' },
+              eventCount: { $sum: '$eventCount' },
+              lastUsedAt: { $max: '$lastUsedAt' },
+              memberIdGroups: { $push: '$memberIds' },
+            },
           },
-        },
-        { $sort: { totalTokens: -1 } },
-      ]),
+          {
+            $project: {
+              _id: 0,
+              spec: '$_id.spec',
+              modelKey: { $ifNull: ['$_id.modelKey', 'unknown'] },
+              providerKey: '$_id.providerKey',
+              promptTokens: 1,
+              completionTokens: 1,
+              totalCost: 1,
+              eventCount: 1,
+              lastUsedAt: 1,
+              memberIds: {
+                $reduce: {
+                  input: '$memberIdGroups',
+                  initialValue: [],
+                  in: { $setUnion: ['$$value', '$$this'] },
+                },
+              },
+            },
+          },
+        ],
+        { allowDiskUse: true },
+      ),
     ]);
-  const [summary, modelsUsed] = tenantId
+  const [summary, modelRows] = tenantId
     ? await tenantStorage.run({ tenantId }, aggregate)
     : await runAsSystem(aggregate);
 
+  const restrictToLabeled = labels?.restrictToLabeled === true;
+  const resolved = summary[0] ?? {
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    totalCost: 0,
+    eventCount: 0,
+    lastUsedAt: null,
+  };
+
   return {
     range,
-    summary: summary[0] ?? {
-      promptTokens: 0,
-      completionTokens: 0,
-      totalTokens: 0,
-      totalCost: 0,
-      eventCount: 0,
-      lastUsedAt: null,
-    },
-    models: modelsUsed,
+    summary: stripRestrictedFields(resolved, restrictToLabeled),
+    models: mergeModelUsageRows(modelRows, labels).map(({ memberCount: _memberCount, ...row }) =>
+      stripRestrictedFields(row, restrictToLabeled),
+    ),
   };
 }
 
