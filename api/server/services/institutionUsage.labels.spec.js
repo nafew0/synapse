@@ -8,8 +8,7 @@ jest.mock('~/server/services/usageQuota', () => ({
     end: new Date('2026-10-01T00:00:00.000Z'),
     timezone: 'UTC',
   }),
-  zonedDateTimeToUtc: ({ year, month, day }) =>
-    new Date(Date.UTC(year, month - 1, day)),
+  zonedDateTimeToUtc: ({ year, month, day }) => new Date(Date.UTC(year, month - 1, day)),
 }));
 
 const OFFICE_SPEC = {
@@ -32,7 +31,13 @@ const TENANT = 'tenant-a';
 const MEMBER = new mongoose.Types.ObjectId();
 const OTHER_MEMBER = new mongoose.Types.ObjectId();
 
-function transaction({ conversationId, model, user = MEMBER, tokenType = 'completion', amount = 100 }) {
+function transaction({
+  conversationId,
+  model,
+  user = MEMBER,
+  tokenType = 'completion',
+  amount = 100,
+}) {
   return {
     user,
     tenantId: TENANT,
@@ -65,14 +70,29 @@ describe('institutionUsage model labels', () => {
       .insertOne({ tenantId: TENANT, name: 'Test Institution', timezone: 'UTC' });
 
     await mongoose.connection.collection('conversations').insertMany([
-      { conversationId: 'convo-office', user: String(MEMBER), tenantId: TENANT, spec: 'office-assistant' },
-      { conversationId: 'convo-chat', user: String(MEMBER), tenantId: TENANT, spec: 'claude-haiku-4-5' },
+      {
+        conversationId: 'convo-office',
+        user: String(MEMBER),
+        tenantId: TENANT,
+        spec: 'office-assistant',
+      },
+      {
+        conversationId: 'convo-chat',
+        user: String(MEMBER),
+        tenantId: TENANT,
+        spec: 'claude-haiku-4-5',
+      },
       { conversationId: 'convo-title', user: String(MEMBER), tenantId: TENANT },
     ]);
 
     await mongoose.connection.collection('transactions').insertMany([
       transaction({ conversationId: 'convo-office', model: 'claude-haiku-4-5', amount: 500 }),
-      transaction({ conversationId: 'convo-office', model: 'claude-haiku-4-5', user: OTHER_MEMBER, amount: 300 }),
+      transaction({
+        conversationId: 'convo-office',
+        model: 'claude-haiku-4-5',
+        user: OTHER_MEMBER,
+        amount: 300,
+      }),
       transaction({ conversationId: 'convo-chat', model: 'claude-haiku-4-5', amount: 200 }),
       transaction({ conversationId: 'convo-title', model: 'claude-sonnet-4-5', amount: 90 }),
     ]);
@@ -172,5 +192,63 @@ describe('institutionUsage model labels', () => {
     expect(labels).toEqual(['Claude', 'Office Assistant']);
     expect(result.summary).not.toHaveProperty('totalCost');
     expect(result.models[0]).not.toHaveProperty('providerKey');
+  });
+
+  describe('zero-cost models', () => {
+    const FREE_TENANT = 'tenant-free';
+    const freeRange = { tenantId: FREE_TENANT, start: '2026-09-01', end: '2026-09-30' };
+
+    beforeAll(async () => {
+      await mongoose.connection
+        .collection('institutions')
+        .insertOne({ tenantId: FREE_TENANT, name: 'Free Institution', timezone: 'UTC' });
+      await mongoose.connection.collection('conversations').insertMany([
+        {
+          conversationId: 'convo-paid',
+          user: String(MEMBER),
+          tenantId: FREE_TENANT,
+          spec: 'claude-haiku-4-5',
+        },
+        {
+          conversationId: 'convo-free',
+          user: String(MEMBER),
+          tenantId: FREE_TENANT,
+          spec: 'office-assistant',
+        },
+      ]);
+      await mongoose.connection.collection('transactions').insertMany([
+        {
+          ...transaction({ conversationId: 'convo-paid', model: 'claude-haiku-4-5', amount: 400 }),
+          tenantId: FREE_TENANT,
+        },
+        {
+          ...transaction({ conversationId: 'convo-free', model: 'free-model', amount: 700 }),
+          tenantId: FREE_TENANT,
+          tokenValue: 0,
+        },
+      ]);
+    });
+
+    it('drops models that used tokens but cost nothing from the billing table and its count', async () => {
+      const labels = { index: labelIndex, restrictToLabeled: false };
+      const table = await listUsageByModel({ ...freeRange, labels });
+      expect(table.total).toBe(1);
+      expect(table.models.map((row) => row.modelKey)).toEqual(['claude-haiku-4-5']);
+
+      const { summary } = await getUsageSummary({ ...freeRange, labels });
+      expect(summary.modelCount).toBe(1);
+      expect(summary.totalTokens).toBe(1100);
+    });
+
+    it('keeps zero-cost usage for institution admins, who never see cost', async () => {
+      const labels = { index: labelIndex, restrictToLabeled: true };
+      const table = await listUsageByModel({ ...freeRange, labels });
+      const byLabel = new Map(table.models.map((row) => [row.displayName, row]));
+      expect([...byLabel.keys()].sort()).toEqual(['Claude', 'Office Assistant']);
+      expect(byLabel.get('Office Assistant').totalTokens).toBe(700);
+
+      const { summary } = await getUsageSummary({ ...freeRange, labels });
+      expect(summary.modelCount).toBe(2);
+    });
   });
 });

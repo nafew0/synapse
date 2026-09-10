@@ -387,6 +387,10 @@ async function listUsageByMember({ tenantId, start, end, limit, offset, query, l
  * two stages: per conversation first, so the spec lookup runs once per
  * conversation rather than once per ledger row, then per (spec, model) pair —
  * a set small enough to label, merge and page in memory.
+ *
+ * The billing view drops models that used tokens but cost nothing, from both
+ * the table and the "Models used" card. Institution admins never see cost, so
+ * their view keeps every labeled model's usage.
  */
 async function aggregateModelUsage({ tenantId, range, labels }) {
   const Transaction = getTransactionModel();
@@ -447,7 +451,11 @@ async function aggregateModelUsage({ tenantId, range, labels }) {
     ),
   );
 
-  return mergeModelUsageRows(rows, labels);
+  const merged = mergeModelUsageRows(rows, labels);
+  if (labels?.restrictToLabeled === true) {
+    return merged;
+  }
+  return merged.filter((row) => row.totalCost > 0);
 }
 
 async function listUsageByModel({ tenantId, start, end, limit, offset, query, labels }) {
