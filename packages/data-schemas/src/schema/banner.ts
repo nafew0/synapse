@@ -1,5 +1,10 @@
 import { Schema } from 'mongoose';
-import { bannerCategories, bannerDisplayModes, bannerTypes } from 'librechat-data-provider';
+import {
+  bannerApps,
+  bannerTypes,
+  bannerCategories,
+  bannerDisplayModes,
+} from 'librechat-data-provider';
 import type { IBanner } from '~/types/banner';
 
 const bannerSchema: Schema<IBanner> = new Schema<IBanner>(
@@ -7,6 +12,11 @@ const bannerSchema: Schema<IBanner> = new Schema<IBanner>(
     bannerId: {
       type: String,
       required: true,
+    },
+    app: {
+      type: String,
+      enum: bannerApps,
+      default: 'chat',
     },
     title: {
       type: String,

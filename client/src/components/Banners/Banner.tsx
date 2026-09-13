@@ -19,8 +19,9 @@ import Bar from './Bar';
 /**
  * Signed-in users: the server filters out banners they have seen (`once`) or
  * dismissed, so this only reports those events back. Anonymous visitors (login
- * page) fall back to `localStorage`, which also keeps dismissals made before
- * server-side tracking existed.
+ * page) fall back to `localStorage`. That list is per browser, not per person,
+ * so it must never hide a banner from a signed-in account — otherwise one
+ * user closing it would hide it from everyone who signs in on that browser.
  */
 function useBannerVisibility(banner: TBanner | null | undefined, userId?: string) {
   const [hiddenIds, setHiddenIds] = useRecoilState<string[]>(store.hideBannerHint);
@@ -30,9 +31,10 @@ function useBannerVisibility(banner: TBanner | null | undefined, userId?: string
 
   const bannerId = banner?.bannerId;
   const display = banner?.display;
+  const hiddenInBrowser = !userId && bannerId != null && hiddenIds.includes(bannerId);
   const isVisible =
     bannerId != null &&
-    (display === 'always' || shownThisVisit.current.has(bannerId) || !hiddenIds.includes(bannerId));
+    (display === 'always' || shownThisVisit.current.has(bannerId) || !hiddenInBrowser);
 
   useEffect(() => {
     if (!isVisible || !bannerId || shownThisVisit.current.has(bannerId)) {
@@ -54,10 +56,11 @@ function useBannerVisibility(banner: TBanner | null | undefined, userId?: string
       return;
     }
     shownThisVisit.current.delete(bannerId);
-    setHiddenIds((ids) => (ids.includes(bannerId) ? ids : [...ids, bannerId]));
     if (userId) {
       recordDismiss(bannerId);
+      return;
     }
+    setHiddenIds((ids) => (ids.includes(bannerId) ? ids : [...ids, bannerId]));
   };
 
   return { isVisible, dismiss };

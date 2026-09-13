@@ -65,10 +65,7 @@ const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const createSpaFallback = require('./utils/fallback');
 const { getAppConfig } = require('./services/Config');
-const {
-  assertEnforcementTopology,
-  reconcileQuotaState,
-} = require('./services/usageQuota');
+const { assertEnforcementTopology, reconcileQuotaState } = require('./services/usageQuota');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
@@ -338,6 +335,7 @@ const startServer = async () => {
   app.use('/api/admin/users', routes.adminUsers);
   app.use('/api/admin/billing', routes.adminBilling);
   app.use('/api/admin/audit-log', routes.adminAuditLog);
+  app.use('/api/admin/banner', routes.adminBanner);
   app.use('/api/platform/institutions', routes.platformInstitutions);
   app.use('/api/platform/users', routes.platformUsers);
   app.use('/api/platform/institution-packages', routes.platformInstitutionPackages);

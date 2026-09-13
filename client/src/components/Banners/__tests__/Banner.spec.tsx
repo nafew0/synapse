@@ -27,6 +27,7 @@ jest.mock('librechat-data-provider', () => {
 
 const baseBanner: TBanner = {
   bannerId: 'gemini-38',
+  app: 'chat',
   type: 'banner',
   title: 'Gemini 3.8 Flash is here',
   message: 'Faster answers at a <b>lower</b> cost.',
@@ -133,6 +134,30 @@ describe('Banner (bar)', () => {
     renderBanner(anonymous);
     await waitFor(() => expect(mockGetBanner).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole('region', { name: 'Announcement' })).not.toBeInTheDocument();
+  });
+
+  it('closing it as one account does not hide it from the next account on this browser', async () => {
+    mockGetBanner.mockResolvedValue({ ...baseBanner, display: 'until_dismissed' });
+    const first = renderBanner(signedIn);
+    fireEvent.click(await screen.findByRole('button', { name: 'Dismiss announcement' }));
+    await waitFor(() => expect(mockDismissBanner).toHaveBeenCalledWith('gemini-38'));
+    expect(localStorage.getItem('hideBannerHint') ?? '').not.toContain('gemini-38');
+    first.unmount();
+
+    const nextAccount: Partial<TAuthContext> = {
+      isAuthenticated: true,
+      user: { id: 'user-2' } as TAuthContext['user'],
+    };
+    renderBanner(nextAccount);
+    expect(await screen.findByRole('region', { name: 'Announcement' })).toBeInTheDocument();
+  });
+
+  it('ignores ids hidden in this browser by an earlier version or a logged-out visit', async () => {
+    localStorage.setItem('hideBannerHint', JSON.stringify(['gemini-38']));
+    mockGetBanner.mockResolvedValue({ ...baseBanner, display: 'until_dismissed' });
+    renderBanner(signedIn);
+
+    expect(await screen.findByRole('region', { name: 'Announcement' })).toBeInTheDocument();
   });
 });
 

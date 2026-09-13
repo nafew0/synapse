@@ -1,7 +1,7 @@
 const path = require('path');
 const mongoose = require('mongoose');
 const { v5: uuidv5 } = require('uuid');
-const { bannerCategories, bannerDisplayModes } = require('librechat-data-provider');
+const { bannerApps, bannerCategories, bannerDisplayModes } = require('librechat-data-provider');
 const { Banner } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { askQuestion, askMultiLineQuestion, askChoice, silentExit } = require('./helpers');
@@ -12,6 +12,11 @@ const BANNER_ID_NAMESPACE = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::\d{2})?(Z|[+-]\d{2}:\d{2})?$/;
 const LINK_PATTERN = /^(https?:\/\/\S+|\/\S*)$/;
+
+const APP_CHOICES = [
+  { value: 'chat', label: 'Synapse chat app', hint: 'everyone who uses Synapse' },
+  { value: 'admin', label: 'Admin panel', hint: 'only institution and platform admins' },
+];
 
 const CATEGORY_CHOICES = [
   { value: 'feature', label: 'New feature', hint: 'orange “New” label' },
@@ -86,6 +91,7 @@ const USAGE = `Usage: npm run update-banner [-- options]
 Run without options to be asked each question with a list of choices.
 Any option you pass skips its question.
 
+  --app <${bannerApps.join('|')}>          default: chat
   --category <${bannerCategories.join('|')}>
   --title <text>
   --message <text>          HTML allowed: <b>, <i>, <a href="...">
@@ -163,6 +169,7 @@ function parseDateFlag(name, value) {
 }
 
 const FLAG_PARSERS = {
+  app: (value) => assertOneOf('app', value, bannerApps),
   category: (value) => assertOneOf('category', value, bannerCategories),
   display: (value) => assertOneOf('display', value, bannerDisplayModes),
   style: (value) => STYLE_FLAGS[assertOneOf('style', value, Object.keys(STYLE_FLAGS))],
@@ -208,6 +215,9 @@ function parseFlags(argv) {
 
   if (flags.yes && !flags.message) {
     fail('--message is required when using --yes');
+  }
+  if (flags.app === 'admin' && flags.public) {
+    fail('Admin panel banners are only shown to admins; --public cannot be used with --app admin');
   }
   if (flags['link-label'] && !flags['link-url']) {
     fail('--link-label needs --link-url');
@@ -289,7 +299,20 @@ async function askEnd(flags, start) {
   return choice == null ? null : new Date(start.getTime() + choice * DAY_MS);
 }
 
-async function collectBanner(flags) {
+/** Chat banners saved before the `app` field existed have none. */
+const appFilter = (app) => (app === 'chat' ? { app: { $in: ['chat', null] } } : { app });
+
+async function askApp(flags) {
+  if (flags.app) {
+    return flags.app;
+  }
+  if (flags.yes) {
+    return 'chat';
+  }
+  return askChoice('Which app is this announcement for?', APP_CHOICES);
+}
+
+async function collectBanner(flags, app) {
   const category =
     flags.category ?? (await askChoice('What kind of announcement is this?', CATEGORY_CHOICES));
 
@@ -334,7 +357,10 @@ async function collectBanner(flags) {
         ));
 
   const isPublic =
-    flags.public ?? (flags.yes ? false : await askChoice('Who should see it?', AUDIENCE_CHOICES));
+    app === 'admin'
+      ? false
+      : (flags.public ??
+        (flags.yes ? false : await askChoice('Who should see it?', AUDIENCE_CHOICES)));
 
   const displayFrom = await askStart(flags);
   const displayTo = await askEnd(flags, displayFrom);
@@ -342,9 +368,12 @@ async function collectBanner(flags) {
     fail('The end date must be after the start date.');
   }
 
-  const bannerId = uuidv5([category, title, message, linkUrl].join('\n'), BANNER_ID_NAMESPACE);
+  /** `app` is only mixed in for admin banners so existing chat banner ids stay the same. */
+  const idParts = [category, title, message, linkUrl, ...(app === 'admin' ? [app] : [])];
+  const bannerId = uuidv5(idParts.join('\n'), BANNER_ID_NAMESPACE);
   return {
     bannerId,
+    app,
     type,
     category,
     title,
@@ -424,12 +453,16 @@ function printPreview(banner) {
 
 function printSummary(banner, current) {
   const rows = [
+    ['App', labelOf(APP_CHOICES, banner.app)],
     ['Type', labelOf(CATEGORY_CHOICES, banner.category)],
     ['Style', labelOf(STYLE_CHOICES, banner.type)],
     ['Title', banner.title || '—'],
     ['Link', banner.linkUrl ? `${banner.linkLabel} → ${banner.linkUrl}` : '—'],
     ['Shown', labelOf(DISPLAY_CHOICES, banner.display)],
-    ['Audience', labelOf(AUDIENCE_CHOICES, banner.isPublic)],
+    [
+      'Audience',
+      banner.app === 'admin' ? 'Admins only' : labelOf(AUDIENCE_CHOICES, banner.isPublic),
+    ],
     ['Starts', formatDate(banner.displayFrom)],
     ['Ends', formatDate(banner.displayTo)],
   ];
@@ -439,7 +472,7 @@ function printSummary(banner, current) {
   rows.forEach(([label, value]) => console.log(`  ${label.padEnd(9)} ${value}`));
   if (current) {
     console.orange(
-      `\nThis replaces the current banner: “${stripTags(current.title || current.message)}”`,
+      `\nThis replaces the current ${labelOf(APP_CHOICES, banner.app)} banner: “${stripTags(current.title || current.message)}”`,
     );
   }
   if (current?.bannerId === banner.bannerId) {
@@ -456,7 +489,7 @@ async function saveBanner(banner) {
   const $set = Object.fromEntries(Object.entries(banner).filter(([key]) => !(key in $unset)));
   $set.persistable = banner.display === 'always';
   const update = Object.keys($unset).length ? { $set, $unset } : { $set };
-  return Banner.findOneAndUpdate({}, update, { upsert: true, new: true });
+  return Banner.findOneAndUpdate(appFilter(banner.app), update, { upsert: true, new: true });
 }
 
 (async () => {
@@ -468,8 +501,9 @@ async function saveBanner(banner) {
   console.purple('--------------------------');
   console.gray('Tip: run with --help to see options for scripted use.\n');
 
-  const current = await Banner.findOne().lean();
-  const banner = await collectBanner(flags);
+  const app = await askApp(flags);
+  const current = await Banner.findOne(appFilter(app)).lean();
+  const banner = await collectBanner(flags, app);
   printSummary(banner, current);
 
   const confirmed = flags.yes || (await askChoice('Publish this announcement?', CONFIRM_CHOICES));

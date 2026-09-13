@@ -1571,8 +1571,13 @@ export type TBannerDisplay = (typeof bannerDisplayModes)[number];
 export const bannerTypes = ['popup', 'banner'] as const;
 export type TBannerType = (typeof bannerTypes)[number];
 
+/** Which application shows the banner: the chat app or the admin panel. */
+export const bannerApps = ['chat', 'admin'] as const;
+export type TBannerApp = (typeof bannerApps)[number];
+
 export const tBannerSchema = z.object({
   bannerId: z.string(),
+  app: z.enum(bannerApps),
   type: z.enum(bannerTypes),
   title: z.string().optional(),
   message: z.string(),
