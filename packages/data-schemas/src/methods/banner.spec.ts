@@ -65,6 +65,33 @@ describe('getBanner', () => {
     expect(await methods.getBanner(asUser())).toMatchObject({ type: 'popup', category: 'feature' });
   });
 
+  test('keeps chat-app and admin-panel banners apart', async () => {
+    await createBanner({ bannerId: 'chat-1' });
+    await createBanner({ bannerId: 'admin-1', app: 'admin', displayFrom: new Date() });
+    const user = asUser();
+
+    expect(await methods.getBanner(user)).toMatchObject({ bannerId: 'chat-1', app: 'chat' });
+    expect(await methods.getBanner(user, 'chat')).toMatchObject({ bannerId: 'chat-1' });
+    expect(await methods.getBanner(user, 'admin')).toMatchObject({
+      bannerId: 'admin-1',
+      app: 'admin',
+    });
+  });
+
+  test('banners saved before the app field existed belong to the chat app', async () => {
+    await Banner.collection.insertOne({
+      bannerId: 'legacy',
+      message: 'Legacy banner',
+      displayFrom: new Date(Date.now() - HOUR),
+      type: 'banner',
+      isPublic: false,
+    });
+    const user = asUser();
+
+    expect(await methods.getBanner(user)).toMatchObject({ bannerId: 'legacy', app: 'chat' });
+    expect(await methods.getBanner(user, 'admin')).toBeNull();
+  });
+
   test('returns null for anonymous requests unless the banner is public', async () => {
     await createBanner();
     expect(await methods.getBanner(null)).toBeNull();

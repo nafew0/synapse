@@ -1,5 +1,5 @@
 import type { Model, Types } from 'mongoose';
-import type { TBannerDisplay } from 'librechat-data-provider';
+import type { TBannerApp, TBannerDisplay } from 'librechat-data-provider';
 import type {
   IBanner,
   IUser,
@@ -26,9 +26,15 @@ function tenantScope(): (string | null)[] {
   return [tenantId, null];
 }
 
+/** Chat banners saved before the `app` field existed have no value; treat them as chat banners. */
+function appScope(app: TBannerApp): TBannerApp | { $in: (TBannerApp | null)[] } {
+  return app === 'chat' ? { $in: ['chat', null] } : app;
+}
+
 function resolveBanner(banner: BannerFields): ActiveBanner {
   return {
     ...banner,
+    app: banner.app ?? 'chat',
     type: banner.type ?? 'banner',
     category: banner.category ?? 'update',
     display: banner.display ?? (banner.persistable ? 'always' : 'until_dismissed'),
@@ -46,7 +52,7 @@ function isHiddenFor(display: TBannerDisplay, view?: BannerViewState | null): bo
 }
 
 export function createBannerMethods(mongoose: typeof import('mongoose')): {
-  getBanner: (user?: IUser | null) => Promise<ActiveBanner | null>;
+  getBanner: (user?: IUser | null, app?: TBannerApp) => Promise<ActiveBanner | null>;
   markBannerSeen: (userId: string | Types.ObjectId, bannerId: string) => Promise<void>;
   dismissBanner: (userId: string | Types.ObjectId, bannerId: string) => Promise<void>;
 } {
@@ -64,11 +70,14 @@ export function createBannerMethods(mongoose: typeof import('mongoose')): {
   }
 
   /**
-   * Retrieves the active banner for this request, or `null` when there is none,
-   * it is not public and the request is anonymous, or the user has already
-   * seen (`once`) or dismissed it.
+   * Retrieves the active banner for `app` (the chat app by default), or `null`
+   * when there is none, it is not public and the request is anonymous, or the
+   * user has already seen (`once`) or dismissed it.
    */
-  async function getBanner(user?: IUser | null): Promise<ActiveBanner | null> {
+  async function getBanner(
+    user?: IUser | null,
+    app: TBannerApp = 'chat',
+  ): Promise<ActiveBanner | null> {
     try {
       const { Banner } = getModels();
       const now = new Date();
@@ -77,6 +86,7 @@ export function createBannerMethods(mongoose: typeof import('mongoose')): {
         Banner.findOne({
           displayFrom: { $lte: now },
           $or: [{ displayTo: { $gte: now } }, { displayTo: null }],
+          app: appScope(app),
           tenantId: { $in: scope },
         })
           .sort({ displayFrom: -1 })

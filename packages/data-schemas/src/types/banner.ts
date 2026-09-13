@@ -1,8 +1,15 @@
 import type { Types, Document } from 'mongoose';
-import type { TBannerCategory, TBannerDisplay, TBannerType } from 'librechat-data-provider';
+import type {
+  TBannerApp,
+  TBannerType,
+  TBannerDisplay,
+  TBannerCategory,
+} from 'librechat-data-provider';
 
 export interface BannerFields {
   bannerId: string;
+  /** Missing on banners saved before admin-panel banners existed; those belong to the chat app. */
+  app?: TBannerApp;
   title?: string;
   message: string;
   category?: TBannerCategory;
@@ -22,8 +29,9 @@ export interface BannerFields {
 
 export interface IBanner extends BannerFields, Document {}
 
-/** Banner as served to clients: `category` and `display` are always resolved. */
-export type ActiveBanner = Omit<BannerFields, 'category' | 'display'> & {
+/** Banner as served to clients: `app`, `category` and `display` are always resolved. */
+export type ActiveBanner = Omit<BannerFields, 'app' | 'category' | 'display'> & {
+  app: TBannerApp;
   category: TBannerCategory;
   display: TBannerDisplay;
 };

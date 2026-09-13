@@ -2,8 +2,24 @@ const path = require('path');
 const mongoose = require('mongoose');
 const { Banner } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
-const { askQuestion, silentExit } = require('./helpers');
+const { askChoice, silentExit } = require('./helpers');
 const connect = require('./connect');
+
+const APP_LABELS = { chat: 'Synapse chat app', admin: 'Admin panel' };
+
+const appLabel = (banner) => APP_LABELS[banner.app ?? 'chat'];
+const bannerLabel = (banner) => `${appLabel(banner)}: ${banner.title || banner.message}`;
+
+/** @param {Array<Record<string, unknown>>} banners */
+async function pickBanner(banners) {
+  if (banners.length === 1) {
+    return banners[0];
+  }
+  return askChoice(
+    'Which banner do you want to delete?',
+    banners.map((banner) => ({ value: banner, label: bannerLabel(banner) })),
+  );
+}
 
 (async () => {
   await connect();
@@ -15,17 +31,22 @@ const connect = require('./connect');
   const now = new Date();
 
   try {
-    const banner = await Banner.findOne({
+    const banners = await Banner.find({
       displayFrom: { $lte: now },
       $or: [{ displayTo: { $gte: now } }, { displayTo: null }],
-    });
+    })
+      .sort({ app: 1, displayFrom: -1 })
+      .lean();
 
-    if (!banner) {
+    if (!banners.length) {
       console.yellow('No banner found to delete.');
       silentExit(0);
     }
 
+    const banner = await pickBanner(banners);
+
     console.purple('Current banner:');
+    console.log(`App: ${appLabel(banner)}`);
     console.log(`Type: ${banner.category ?? 'update'}`);
     console.log(`Title: ${banner.title || '—'}`);
     console.log(`Message: ${banner.message}`);
@@ -34,9 +55,12 @@ const connect = require('./connect');
     console.log(`Display To: ${banner.displayTo || 'Not specified'}`);
     console.log(`Is Public: ${banner.isPublic}`);
 
-    const confirmDelete = await askQuestion('Do you want to delete this banner? (y/N): ');
+    const confirmed = await askChoice('Delete this banner?', [
+      { value: false, label: 'Cancel' },
+      { value: true, label: 'Delete' },
+    ]);
 
-    if (confirmDelete.toLowerCase() === 'y') {
+    if (confirmed) {
       await Banner.findByIdAndDelete(banner._id);
       console.green('Banner deleted successfully!');
     } else {
