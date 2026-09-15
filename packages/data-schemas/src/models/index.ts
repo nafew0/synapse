@@ -14,6 +14,7 @@ import { createPluginAuthModel } from './pluginAuth';
 import { createSharedLinkModel } from './sharedLink';
 import { createAccessRoleModel } from './accessRole';
 import { createToolFavoriteModel } from './favorite';
+import { createBannerViewModel } from './bannerView';
 import { createMCPServerModel } from './mcpServer';
 import { createAssistantModel } from './assistant';
 import { createSkillFileModel } from './skillFile';
@@ -72,6 +73,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
   Assistant: ReturnType<typeof createAssistantModel>;
   File: ReturnType<typeof createFileModel>;
   Banner: ReturnType<typeof createBannerModel>;
+  BannerView: ReturnType<typeof createBannerViewModel>;
   Key: ReturnType<typeof createKeyModel>;
   PluginAuth: ReturnType<typeof createPluginAuthModel>;
   Transaction: ReturnType<typeof createTransactionModel>;
@@ -125,6 +127,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
     Assistant: createAssistantModel(mongoose),
     File: createFileModel(mongoose),
     Banner: createBannerModel(mongoose),
+    BannerView: createBannerViewModel(mongoose),
     Key: createKeyModel(mongoose),
     PluginAuth: createPluginAuthModel(mongoose),
     Transaction: createTransactionModel(mongoose),

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { buildQuotaModelRows } = require('@librechat/api');
 const { getTransactionSupport, runAsSystem } = require('@librechat/data-schemas');
 const models = require('~/db/models');
 const {
@@ -8,6 +9,7 @@ const {
   getQuotaHealth,
   getShadowReadiness,
 } = require('./usageQuota');
+const { getQuotaModelSources } = require('./usageLabels');
 
 class PolicyError extends Error {
   constructor(statusCode, code, message, details) {
@@ -269,12 +271,24 @@ async function listUsagePolicies({ tenantId, limit = 50, offset = 0 }) {
   return { policies, total, limit: safeLimit, offset: safeOffset };
 }
 
+/**
+ * `models` is the per-model view the console renders: the server's current
+ * model list with the names members see, joined to this period's buckets and
+ * the policy's limits. Raw buckets stay in `health` for anything that needs
+ * the engine's own keys.
+ */
 async function getPolicyConsole({ tenantId }) {
-  const [policy, health] = await Promise.all([
+  const [policy, health, sources] = await Promise.all([
     getActivePolicy(tenantId),
     getQuotaHealth({ tenantId }),
+    getQuotaModelSources(tenantId),
   ]);
-  return { policy, health };
+  const models = buildQuotaModelRows({
+    sources,
+    buckets: health.buckets,
+    limits: policy.limits?.modelTokens ?? [],
+  });
+  return { policy, health, models };
 }
 
 module.exports = {

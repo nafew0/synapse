@@ -1,15 +1,11 @@
-import { Schema, Document } from 'mongoose';
-
-export interface IBanner extends Document {
-  bannerId: string;
-  message: string;
-  displayFrom: Date;
-  displayTo?: Date;
-  type: 'banner' | 'popup';
-  isPublic: boolean;
-  persistable: boolean;
-  tenantId?: string;
-}
+import { Schema } from 'mongoose';
+import {
+  bannerApps,
+  bannerTypes,
+  bannerCategories,
+  bannerDisplayModes,
+} from 'librechat-data-provider';
+import type { IBanner } from '~/types/banner';
 
 const bannerSchema: Schema<IBanner> = new Schema<IBanner>(
   {
@@ -17,9 +13,31 @@ const bannerSchema: Schema<IBanner> = new Schema<IBanner>(
       type: String,
       required: true,
     },
+    app: {
+      type: String,
+      enum: bannerApps,
+      default: 'chat',
+    },
+    title: {
+      type: String,
+    },
     message: {
       type: String,
       required: true,
+    },
+    category: {
+      type: String,
+      enum: bannerCategories,
+    },
+    display: {
+      type: String,
+      enum: bannerDisplayModes,
+    },
+    linkLabel: {
+      type: String,
+    },
+    linkUrl: {
+      type: String,
     },
     displayFrom: {
       type: Date,
@@ -31,7 +49,7 @@ const bannerSchema: Schema<IBanner> = new Schema<IBanner>(
     },
     type: {
       type: String,
-      enum: ['banner', 'popup'],
+      enum: bannerTypes,
       default: 'banner',
     },
     isPublic: {

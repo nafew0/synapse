@@ -1,4 +1,5 @@
 const express = require('express');
+const { createAdminMembersHandlers } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { resolveAdminTenant, requireTenant } = require('~/server/middleware/adminTenant');
@@ -17,12 +18,28 @@ const {
   resendInstitutionInvite,
   revokeInstitutionInvite,
   searchInstitutionMembers,
+  countResendableInvites,
+  getInstitutionTimezones,
+  recordMemberExportAudit,
+  resendPendingInvites,
   setInstitutionRole,
+  streamInstitutionMembers,
+  streamPlatformMembers,
   suspendInstitutionMember,
 } = require('~/server/services/institutionMembers');
 const { getMemberUsageSummary } = require('~/server/services/institutionUsage');
+const { resolveUsageLabels } = require('~/server/services/usageLabels');
 
 const router = express.Router();
+
+const memberHandlers = createAdminMembersHandlers({
+  streamInstitutionMembers,
+  streamPlatformMembers,
+  countResendableInvites,
+  getInstitutionTimezones,
+  recordMemberExportAudit,
+  resendPendingInvites,
+});
 
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 const requireReadUsers = requireCapability(SystemCapabilities.READ_USERS);
@@ -88,6 +105,16 @@ router.get('/', requireReadUsers, async (req, res) => {
     return handleError(res, error, 'Failed to list institution members');
   }
 });
+
+/**
+ * Unpaginated by design: a truncated roster is worse than a slow one.
+ *
+ * Unlike the other routes here this does not call `requireTenant`. A superadmin
+ * has no institution of their own, and cross-institution oversight is the point
+ * of the role — so an unscoped export means every member they can see, not a
+ * missing parameter.
+ */
+router.get('/export.xlsx', requireReadUsers, (req, res) => memberHandlers.exportMembers(req, res));
 
 router.get('/summary', requireReadUsers, async (req, res) => {
   const tenantId = requireTenant(req, res);
@@ -204,6 +231,40 @@ router.get('/imports/:jobId', requireReadUsers, async (req, res) => {
   }
 });
 
+router.get('/invites/resendable', requireReadUsers, async (req, res) => {
+  const tenantId = requireTenant(req, res);
+  if (!tenantId) {
+    return;
+  }
+
+  try {
+    const counts = await countResendableInvites({ tenantId });
+    return res.status(200).json({ counts });
+  } catch (error) {
+    return handleError(res, error, 'Failed to count resendable invitations');
+  }
+});
+
+/** Reissues every invitation in one audience; see `resendPendingInvites`. */
+router.post('/invites/resend-bulk', requireManageUsers, async (req, res) => {
+  const tenantId = requireTenant(req, res);
+  if (!tenantId) {
+    return;
+  }
+
+  try {
+    const result = await resendPendingInvites({
+      tenantId,
+      audience: req.body?.audience,
+      actor: req.user,
+      context: buildAuditContext(req),
+    });
+    return res.status(200).json(result);
+  } catch (error) {
+    return handleError(res, error, 'Failed to resend invitations');
+  }
+});
+
 router.post('/invites/:inviteId/resend', requireManageUsers, async (req, res) => {
   const tenantId = requireTenant(req, res);
   if (!tenantId) {
@@ -276,6 +337,7 @@ router.get('/:id/usage', requireReadUsers, async (req, res) => {
       userId: req.params.id,
       start: req.query.start,
       end: req.query.end,
+      labels: await resolveUsageLabels(req),
     });
     return res.status(200).json(result);
   } catch (error) {

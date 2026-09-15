@@ -8,6 +8,8 @@ class mockHttpError extends Error {
 const mockGetUsageSummary = jest.fn();
 const mockListUsageByMember = jest.fn();
 const mockExportUsageCsv = jest.fn();
+const mockLabels = { index: { labelBySpecName: new Map(), labelByModelId: new Map(), modelIds: [] }, restrictToLabeled: true };
+const mockResolveUsageLabels = jest.fn().mockResolvedValue(mockLabels);
 
 jest.mock('~/server/middleware', () => ({
   requireJwtAuth: (_req, _res, next) => next(),
@@ -15,6 +17,10 @@ jest.mock('~/server/middleware', () => ({
 
 jest.mock('~/server/middleware/roles/capabilities', () => ({
   requireCapability: () => (_req, _res, next) => next(),
+}));
+
+jest.mock('~/server/services/usageLabels', () => ({
+  resolveUsageLabels: (...args) => mockResolveUsageLabels(...args),
 }));
 
 jest.mock('~/server/services/institutionUsage', () => ({
@@ -128,6 +134,7 @@ describe('admin usage route', () => {
       tenantId: 'tenant-a',
       start: '2026-07-01',
       end: '2026-08-01',
+      labels: mockLabels,
     });
     expect(res.statusCode).toBe(200);
     expect(res.body.summary.totalTokens).toBe(1200);
@@ -155,6 +162,7 @@ describe('admin usage route', () => {
       limit: '25',
       offset: '0',
       query: 'ada',
+      labels: mockLabels,
     });
     expect(res.statusCode).toBe(200);
     expect(res.body.total).toBe(1);

@@ -47,6 +47,8 @@ export * from './middleware';
 export * from './memory';
 /* Model Specs */
 export * from './modelSpecs';
+/* Usage */
+export * from './usage';
 /* Agents */
 export * from './agents';
 /* Actions */

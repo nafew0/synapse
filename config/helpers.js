@@ -88,6 +88,130 @@ const askMultiLineQuestion = (query) => {
   });
 };
 
+/**
+ * @template T
+ * @typedef {{ label: string, value: T, hint?: string }} Choice
+ */
+
+/**
+ * @template T
+ * @param {Choice<T>[]} choices
+ * @param {number} active
+ * @returns {string}
+ */
+const renderChoices = (choices, active) =>
+  choices
+    .map((choice, i) => {
+      const hint = choice.hint ? `\x1b[90m  ${choice.hint}\x1b[0m` : '';
+      return i === active ? `\x1b[36m❯ ${choice.label}\x1b[0m${hint}` : `  ${choice.label}${hint}`;
+    })
+    .join('\n');
+
+/**
+ * Numbered fallback for non-interactive terminals (piped input, some CI shells).
+ * @template T
+ * @param {string} query
+ * @param {Choice<T>[]} choices
+ * @param {number} defaultIndex
+ * @returns {Promise<T>}
+ */
+const askNumberedChoice = async (query, choices, defaultIndex) => {
+  const list = choices
+    .map((choice, i) => `  ${i + 1}) ${choice.label}${choice.hint ? ` — ${choice.hint}` : ''}`)
+    .join('\n');
+  for (;;) {
+    const answer = await askQuestion(
+      `${query}\n${list}\nChoose 1-${choices.length} (default ${defaultIndex + 1}):`,
+    );
+    if (answer.trim() === '') {
+      return choices[defaultIndex].value;
+    }
+    const index = Number(answer.trim()) - 1;
+    if (Number.isInteger(index) && index >= 0 && index < choices.length) {
+      return choices[index].value;
+    }
+    coloredConsole.red(`Please enter a number between 1 and ${choices.length}.`);
+  }
+};
+
+/**
+ * @param {string} str
+ * @param {string | undefined} keyName
+ * @param {number} active
+ * @param {number} count
+ * @returns {number | null}
+ */
+const nextChoiceIndex = (str, keyName, active, count) => {
+  if (keyName === 'up' || keyName === 'k') {
+    return (active - 1 + count) % count;
+  }
+  if (keyName === 'down' || keyName === 'j' || keyName === 'tab') {
+    return (active + 1) % count;
+  }
+  const number = Number(str);
+  return Number.isInteger(number) && number >= 1 && number <= count ? number - 1 : null;
+};
+
+/**
+ * Asks the user to pick one option with the arrow keys (or j/k, or its number) and Enter.
+ * @template T
+ * @param {string} query
+ * @param {Choice<T>[]} choices
+ * @param {number} [defaultIndex]
+ * @returns {Promise<T>}
+ */
+const askChoice = (query, choices, defaultIndex = 0) => {
+  const input = process.stdin;
+  if (!input.isTTY || typeof input.setRawMode !== 'function') {
+    return askNumberedChoice(query, choices, defaultIndex);
+  }
+
+  let active = defaultIndex;
+  const out = process.stdout;
+  out.write(`\x1b[36m${query}\x1b[0m \x1b[90m(↑/↓ to move, Enter to select)\x1b[0m\n`);
+  out.write('\x1b[?25l' + renderChoices(choices, active) + '\n');
+
+  const redraw = () => {
+    out.write(`\x1b[${choices.length}A\x1b[0J`);
+    out.write(renderChoices(choices, active) + '\n');
+  };
+
+  return new Promise((resolve) => {
+    readline.emitKeypressEvents(input);
+    input.setRawMode(true);
+    input.resume();
+
+    const finish = () => {
+      input.removeListener('keypress', onKeypress);
+      input.setRawMode(false);
+      input.pause();
+      out.write(`\x1b[${choices.length}A\x1b[0J`);
+      out.write(`\x1b[32m✔\x1b[0m ${choices[active].label}\n\x1b[?25h`);
+      resolve(choices[active].value);
+    };
+
+    /** @param {string} str @param {{ name?: string, ctrl?: boolean }} key */
+    const onKeypress = (str, key = {}) => {
+      if (key.ctrl && key.name === 'c') {
+        out.write('\x1b[?25h\n');
+        process.exit(130);
+      }
+      if (key.name === 'return' || key.name === 'enter') {
+        finish();
+        return;
+      }
+      const next = nextChoiceIndex(str, key.name, active, choices.length);
+      if (next == null) {
+        return;
+      }
+      active = next;
+      redraw();
+    };
+
+    input.on('keypress', onKeypress);
+  });
+};
+
 function isDockerRunning() {
   try {
     execSync('docker info');
@@ -131,6 +255,7 @@ module.exports = {
   askQuestion,
   askSilentQuestion,
   askMultiLineQuestion,
+  askChoice,
   silentExit,
   isDockerRunning,
   deleteNodeModules,

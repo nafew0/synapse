@@ -263,6 +263,16 @@ html {
   --lc-rail-icon: 61 110 110;
   --lc-user-avatar-background: linear-gradient(140deg, #328a8a, #134f54);
   --lc-user-avatar-text: 36 18 6;
+  --lc-banner-feature: linear-gradient(90deg, rgba(50, 138, 138, 0.11), rgba(245, 135, 31, 0.09));
+  --lc-banner-update: rgba(50, 138, 138, 0.09);
+  --lc-banner-rule: linear-gradient(90deg, #328a8a, #f5871f);
+  --lc-banner-chip-update: linear-gradient(135deg, #328a8a, #134f54);
+  --lc-banner-link: 27 102 103;
+  --lc-banner-eyebrow-feature: 194 97 15;
+  --lc-banner-card-feature: linear-gradient(135deg, #328a8a, #134f54);
+  --lc-banner-card-update: linear-gradient(135deg, #3b9696, #1b5f63);
+  --lc-banner-card-maintenance: linear-gradient(135deg, #e08a12, #9a4a0b);
+  --lc-banner-card-outage: linear-gradient(135deg, #e0452f, #8f1d1d);
 }
 .dark {
   --brand-purple: 176 84 160;
@@ -363,8 +373,33 @@ html {
   --lc-footer-body: 117 152 143;
   --lc-rail-icon: 127 176 166;
   --lc-user-avatar-background: linear-gradient(140deg, #ff9a44, #e96e28);
+  --lc-banner-feature: linear-gradient(90deg, rgba(50, 138, 138, 0.28), rgba(247, 148, 30, 0.14));
+  --lc-banner-update: rgba(50, 138, 138, 0.2);
+  --lc-banner-link: 127 211 205;
+  --lc-banner-eyebrow-feature: 251 162 77;
+  --lc-banner-card-feature: linear-gradient(135deg, #1d6a6a, #0a3336);
+  --lc-banner-card-update: linear-gradient(135deg, #1f5f5f, #0b2f31);
+  --lc-banner-card-maintenance: linear-gradient(135deg, #b45309, #5c2a06);
+  --lc-banner-card-outage: linear-gradient(135deg, #b91c1c, #5a1010);
 }
 .lc-main-surface { background: var(--lc-app-background); }
+/* Announcement banner: brand gradients have no semantic Tailwind role, same as the other lc-* surfaces. */
+.lc-banner-feature { background: var(--lc-banner-feature); }
+.lc-banner-feature::after { content: ''; position: absolute; inset: auto 0 0 0; height: 1px; background: var(--lc-banner-rule); opacity: 0.7; }
+.lc-banner-update { background: var(--lc-banner-update); }
+.lc-banner-chip-update { background: var(--lc-banner-chip-update); color: #ffffff; }
+.lc-banner-link { color: rgb(var(--lc-banner-link)); }
+.lc-banner-eyebrow-feature { color: rgb(var(--lc-banner-eyebrow-feature)); }
+.lc-banner-card-feature { background: var(--lc-banner-card-feature); }
+.lc-banner-card-update { background: var(--lc-banner-card-update); }
+.lc-banner-card-maintenance { background: var(--lc-banner-card-maintenance); }
+.lc-banner-card-outage { background: var(--lc-banner-card-outage); }
+.lc-banner-network-edge { stroke: rgba(255, 255, 255, 0.28); stroke-width: 1; }
+.lc-banner-network-node { fill: rgba(255, 255, 255, 0.75); }
+.lc-banner-network-accent { fill: #f7941e; }
+.lc-banner-network-ring { fill: none; stroke: rgba(247, 148, 30, 0.55); stroke-width: 1.5; }
+.lc-banner-card-close { color: rgba(255, 255, 255, 0.85); }
+.lc-banner-card-close:hover, .lc-banner-card-close:focus-visible { background: rgba(255, 255, 255, 0.16); color: #ffffff; }
 .lc-left-rail { background: var(--lc-left-rail-background); border-right-color: rgba(19, 79, 84, 0.08); }
 .lc-left-rail .lc-rail-icon, .lc-left-rail .lc-rail-icon svg { color: rgb(var(--lc-rail-icon)); }
 .lc-chat-sidebar { background: var(--lc-chat-sidebar-background); border-right: 1px solid rgba(19, 79, 84, 0.08); color: rgb(28 50 48); }

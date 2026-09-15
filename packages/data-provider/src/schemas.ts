@@ -1556,11 +1556,37 @@ export const anthropicSchema = anthropicBaseSchema
   .transform((obj) => removeNullishValues(obj))
   .catch(() => ({}));
 
+export const bannerCategories = ['feature', 'update', 'maintenance', 'outage'] as const;
+export type TBannerCategory = (typeof bannerCategories)[number];
+
+/**
+ * - `once`: hidden for good once the user has seen it, on any device
+ * - `until_dismissed`: shown on every visit until the user closes it
+ * - `always`: cannot be closed; shown until `displayTo`
+ */
+export const bannerDisplayModes = ['once', 'until_dismissed', 'always'] as const;
+export type TBannerDisplay = (typeof bannerDisplayModes)[number];
+
+/** `popup` renders as a floating card, `banner` as a slim bar across the top. */
+export const bannerTypes = ['popup', 'banner'] as const;
+export type TBannerType = (typeof bannerTypes)[number];
+
+/** Which application shows the banner: the chat app or the admin panel. */
+export const bannerApps = ['chat', 'admin'] as const;
+export type TBannerApp = (typeof bannerApps)[number];
+
 export const tBannerSchema = z.object({
   bannerId: z.string(),
+  app: z.enum(bannerApps),
+  type: z.enum(bannerTypes),
+  title: z.string().optional(),
   message: z.string(),
+  category: z.enum(bannerCategories),
+  display: z.enum(bannerDisplayModes),
+  linkLabel: z.string().optional(),
+  linkUrl: z.string().optional(),
   displayFrom: z.string(),
-  displayTo: z.string(),
+  displayTo: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   isPublic: z.boolean(),

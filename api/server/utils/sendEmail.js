@@ -64,6 +64,36 @@ const sendEmailViaSMTP = async ({ transporterOptions, mailOptions }) => {
 };
 
 /**
+ * Resolves the hostname announced in the SMTP HELO/EHLO greeting. Nodemailer otherwise
+ * announces the local machine hostname, which inside a container is a loopback literal
+ * (`[127.0.0.1]`) that receiving servers score heavily as spam. Falls back to the
+ * `DOMAIN_CLIENT` host so the greeting matches the public name of the sending machine.
+ *
+ * @returns {string|undefined} A fully-qualified hostname, or `undefined` to keep the default.
+ */
+const getHeloName = () => {
+  const explicit = (process.env.EMAIL_HELO_HOSTNAME || '').trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  const domainClient = (process.env.DOMAIN_CLIENT || '').trim();
+  if (!domainClient) {
+    return undefined;
+  }
+
+  let hostname;
+  try {
+    hostname = new URL(domainClient).hostname;
+  } catch {
+    return undefined;
+  }
+
+  const isFqdn = hostname.includes('.') && !/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname);
+  return isFqdn ? hostname : undefined;
+};
+
+/**
  * Sends an email using the specified template, subject, and payload.
  *
  * @async
@@ -115,6 +145,7 @@ const sendEmail = async ({ email, subject, payload, template, throwError = true 
 
     // Default to SMTP
     logger.debug('[sendEmail] Using SMTP provider');
+    const heloName = getHeloName();
     const transporterOptions = {
       // Use STARTTLS by default instead of obligatory TLS
       secure: process.env.EMAIL_ENCRYPTION === 'tls',
@@ -125,6 +156,14 @@ const sendEmail = async ({ email, subject, payload, template, throwError = true 
         rejectUnauthorized: !isEnabled(process.env.EMAIL_ALLOW_SELFSIGNED),
       },
     };
+
+    if (heloName) {
+      transporterOptions.name = heloName;
+    } else {
+      logger.debug(
+        '[sendEmail] No usable HELO hostname; set EMAIL_HELO_HOSTNAME to the public FQDN of this server to avoid greeting SMTP peers with a local hostname.',
+      );
+    }
 
     const hasUsername = !!process.env.EMAIL_USERNAME;
     const hasPassword = !!process.env.EMAIL_PASSWORD;

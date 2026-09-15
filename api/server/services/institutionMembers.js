@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const mongoose = require('mongoose');
-const { checkEmailConfig } = require('@librechat/api');
+const { checkEmailConfig, math } = require('@librechat/api');
 const { SystemRoles } = require('librechat-data-provider');
 const {
   getRandomValues,
@@ -24,7 +24,16 @@ const { resolveMemberRole, toStoredUserRole, isPlatformRole } = require('./accou
 const { appointInstitutionAdmin, revokeInstitutionAdmin } = require('./tenancy');
 const { getAppConfig } = require('./Config');
 
-const INVITE_EXPIRY_MS = 1000 * 60 * 60 * 24 * 7;
+const DEFAULT_INVITE_EXPIRY = 1000 * 60 * 60 * 24 * 7;
+
+/**
+ * Read per call rather than captured at module load: a constant would freeze the
+ * value before a test or a reconfigured process could change it, which is also
+ * why `SESSION_EXPIRY` and `REFRESH_TOKEN_EXPIRY` are read this way.
+ */
+function getInviteExpiryMs() {
+  return math(process.env.INVITE_EXPIRY, DEFAULT_INVITE_EXPIRY);
+}
 const MAX_IMPORT_ROWS = 1000;
 const ALLOWED_MEMBER_ROLES = new Set([SystemRoles.USER, INSTITUTION_ADMIN_ROLE]);
 const TENANT_ALL_USERS_GROUP_SUFFIX = '-all-users';
@@ -811,7 +820,7 @@ async function createInstitutionInvite({
       tokenHash,
       invitedBy: toObjectId(invitedBy?.id ?? invitedBy?._id ?? invitedBy),
       lastSentAt: new Date(),
-      expiresAt: new Date(Date.now() + INVITE_EXPIRY_MS),
+      expiresAt: new Date(Date.now() + getInviteExpiryMs()),
       source,
     }),
   );
@@ -851,31 +860,76 @@ async function createStandaloneInvite({ email, username, creditPackageId, invite
   const rawToken = await getRandomValues(32);
   const tokenHash = await hashToken(rawToken);
   const name = requestedUsername || normalizedEmail.split('@')[0];
-  const invite = await runAsSystem(() => models.InstitutionInvite.create({ accountScope: InstitutionInviteAccountScopes.STANDALONE, tenantId: null, email: normalizedEmail, name, requestedUsername, requestedRole: SystemRoles.USER, creditPackageId: pkg.id, status: InstitutionInviteStatuses.PENDING, tokenHash, invitedBy: toObjectId(invitedBy?.id ?? invitedBy?._id ?? invitedBy), lastSentAt: new Date(), expiresAt: new Date(Date.now() + INVITE_EXPIRY_MS), source: InstitutionInviteSources.MANUAL }));
+  const invite = await runAsSystem(() => models.InstitutionInvite.create({ accountScope: InstitutionInviteAccountScopes.STANDALONE, tenantId: null, email: normalizedEmail, name, requestedUsername, requestedRole: SystemRoles.USER, creditPackageId: pkg.id, status: InstitutionInviteStatuses.PENDING, tokenHash, invitedBy: toObjectId(invitedBy?.id ?? invitedBy?._id ?? invitedBy), lastSentAt: new Date(), expiresAt: new Date(Date.now() + getInviteExpiryMs()), source: InstitutionInviteSources.MANUAL }));
   const emailResult = await sendInstitutionInviteEmail({ email: normalizedEmail, token: rawToken, appName: process.env.APP_TITLE || 'LibreChat', name: invite.name });
   await recordMemberAudit({ tenantId: undefined, action: 'member.invited', actor: actorFromUser(invitedBy), target: { type: 'standalone_invite', id: invite._id, name: normalizedEmail }, metadata: { accountScope: InstitutionInviteAccountScopes.STANDALONE, packageId: pkg.id }, context });
   return { invite, ...emailResult };
 }
 
-async function resendInstitutionInvite({ tenantId, inviteId, actor, context }) {
-  const invite = await runAsSystem(() =>
-    models.InstitutionInvite.findOne({
-      _id: inviteId,
-      tenantId,
-      status: {
-        $in: [InstitutionInviteStatuses.PENDING, InstitutionInviteStatuses.EXPIRED],
-      },
-    }).exec(),
-  );
-  if (!invite) {
-    throw new HttpError(404, 'Pending or expired invitation not found');
-  }
+const RESENDABLE_STATUSES = [
+  InstitutionInviteStatuses.PENDING,
+  InstitutionInviteStatuses.EXPIRED,
+];
 
+/**
+ * The audiences a bulk resend can target.
+ *
+ * `EXPIRED` and `PENDING` here partition the resendable set — an invitation is
+ * lapsed or it is not — so no invitation can be reached by both, and none can
+ * fall between them. A single "all" resend therefore never needs to
+ * de-duplicate, and can never mail the same person twice.
+ *
+ * Lapsed-ness is computed from `expiresAt` rather than the stored status,
+ * because `EXPIRED` is only ever written when an invitee clicks a dead link;
+ * an invitation that simply timed out unnoticed still reads as PENDING.
+ *
+ * The partition holds at any instant, but the audiences are not stable across
+ * operations: resending an expired invitation gives it a fresh window, which
+ * moves it into `pending`. Resending one audience and then the other would
+ * otherwise mail those recipients twice — the cooldown is what prevents it.
+ */
+const InviteAudiences = {
+  EXPIRED: 'expired',
+  PENDING: 'pending',
+  ALL: 'all',
+};
+
+function buildInviteAudienceFilter(audience, now = new Date()) {
+  if (audience === InviteAudiences.EXPIRED) {
+    return {
+      $or: [
+        { status: InstitutionInviteStatuses.EXPIRED },
+        { status: InstitutionInviteStatuses.PENDING, expiresAt: { $lt: now } },
+      ],
+    };
+  }
+  if (audience === InviteAudiences.PENDING) {
+    return { status: InstitutionInviteStatuses.PENDING, expiresAt: { $gte: now } };
+  }
+  return { status: { $in: RESENDABLE_STATUSES } };
+}
+
+/** Scopes a resend to one institution, or to the standalone accounts. */
+function buildInviteScopeFilter({ tenantId, accountScope }) {
+  if (accountScope === 'standalone') {
+    return { accountScope: InstitutionInviteAccountScopes.STANDALONE };
+  }
+  return tenantId ? { tenantId } : { tenantId: { $exists: true, $ne: null } };
+}
+
+/**
+ * Issues a fresh token for one invitation and mails it.
+ *
+ * Shared by the single-invite paths and the bulk resend so all three rotate the
+ * token, reset the window, and record the audit entry identically. Rotation
+ * invalidates any link already sent for this invitation.
+ */
+async function reissueInvite(invite, { actor, context, tenantId, standalone }) {
   const rawToken = await getRandomValues(32);
   invite.tokenHash = await hashToken(rawToken);
   invite.status = InstitutionInviteStatuses.PENDING;
   invite.lastSentAt = new Date();
-  invite.expiresAt = new Date(Date.now() + INVITE_EXPIRY_MS);
+  invite.expiresAt = new Date(Date.now() + getInviteExpiryMs());
   await invite.save();
 
   const emailResult = await sendInstitutionInviteEmail({
@@ -889,25 +943,209 @@ async function resendInstitutionInvite({ tenantId, inviteId, actor, context }) {
     tenantId,
     action: 'member.invite_resent',
     actor: actorFromUser(actor),
-    target: { type: 'institution_invite', id: invite._id, name: invite.email },
+    target: {
+      type: standalone ? 'standalone_invite' : 'institution_invite',
+      id: invite._id,
+      name: invite.email,
+    },
     context,
   });
 
   return { invite, ...emailResult };
 }
 
+async function resendInstitutionInvite({ tenantId, inviteId, actor, context }) {
+  const invite = await runAsSystem(() =>
+    models.InstitutionInvite.findOne({
+      _id: inviteId,
+      tenantId,
+      status: { $in: RESENDABLE_STATUSES },
+    }).exec(),
+  );
+  if (!invite) {
+    throw new HttpError(404, 'Pending or expired invitation not found');
+  }
+  return reissueInvite(invite, { actor, context, tenantId, standalone: false });
+}
+
 async function resendStandaloneInvite({ inviteId, actor, context }) {
-  const invite = await runAsSystem(() => models.InstitutionInvite.findOne({ _id: inviteId, accountScope: InstitutionInviteAccountScopes.STANDALONE, status: { $in: [InstitutionInviteStatuses.PENDING, InstitutionInviteStatuses.EXPIRED] } }).exec());
-  if (!invite) throw new HttpError(404, 'Pending or expired invitation not found');
-  const rawToken = await getRandomValues(32);
-  invite.tokenHash = await hashToken(rawToken);
-  invite.status = InstitutionInviteStatuses.PENDING;
-  invite.lastSentAt = new Date();
-  invite.expiresAt = new Date(Date.now() + INVITE_EXPIRY_MS);
-  await invite.save();
-  const emailResult = await sendInstitutionInviteEmail({ email: invite.email, token: rawToken, appName: process.env.APP_TITLE || 'LibreChat', name: invite.name });
-  await recordMemberAudit({ tenantId: undefined, action: 'member.invite_resent', actor: actorFromUser(actor), target: { type: 'standalone_invite', id: invite._id, name: invite.email }, context });
-  return { invite, ...emailResult };
+  const invite = await runAsSystem(() =>
+    models.InstitutionInvite.findOne({
+      _id: inviteId,
+      accountScope: InstitutionInviteAccountScopes.STANDALONE,
+      status: { $in: RESENDABLE_STATUSES },
+    }).exec(),
+  );
+  if (!invite) {
+    throw new HttpError(404, 'Pending or expired invitation not found');
+  }
+  return reissueInvite(invite, { actor, context, tenantId: undefined, standalone: true });
+}
+
+const INVITE_RESEND_COOLDOWN_MS = 1000 * 60 * 5;
+const MAX_INVITE_RESEND_BATCH = 250;
+const INVITE_RESEND_CONCURRENCY = 5;
+
+/**
+ * How many invitations each audience would reach, in one round trip.
+ *
+ * The dialog labels all three options with live counts, so three sequential
+ * counts would be three round trips for one screen.
+ */
+async function countResendableInvites({ tenantId, accountScope }) {
+  const now = new Date();
+  const scope = buildInviteScopeFilter({ tenantId, accountScope });
+  const [result] = await runAsSystem(() =>
+    models.InstitutionInvite.aggregate([
+      { $match: { ...scope, status: { $in: RESENDABLE_STATUSES } } },
+      {
+        $group: {
+          _id: null,
+          all: { $sum: 1 },
+          expired: {
+            $sum: {
+              $cond: [
+                {
+                  $or: [
+                    { $eq: ['$status', InstitutionInviteStatuses.EXPIRED] },
+                    { $lt: ['$expiresAt', now] },
+                  ],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          all: 1,
+          expired: 1,
+          /** Derived rather than counted, so the two halves always sum to `all`. */
+          pending: { $subtract: ['$all', '$expired'] },
+        },
+      },
+    ]).exec(),
+  );
+
+  return result ?? { all: 0, expired: 0, pending: 0 };
+}
+
+/** Runs `task` over `items`, at most `limit` in flight. */
+async function mapWithConcurrency(items, limit, task) {
+  const results = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await task(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+/**
+ * Reissues every invitation in one audience.
+ *
+ * Per-invitation failures are captured rather than thrown: one unreachable
+ * address must not abandon the rest of the batch half-sent, with no record of
+ * which half. The caller gets a row per invitation saying what happened.
+ *
+ * Capped rather than unbounded — unlike a roster export, this sends email to
+ * real people, so the size of the blast stays a deliberate choice.
+ */
+async function resendPendingInvites({
+  tenantId,
+  accountScope,
+  audience = InviteAudiences.ALL,
+  actor,
+  context,
+}) {
+  const now = new Date();
+  const filter = {
+    ...buildInviteScopeFilter({ tenantId, accountScope }),
+    ...buildInviteAudienceFilter(audience, now),
+  };
+
+  const invites = await runAsSystem(() =>
+    models.InstitutionInvite.find(filter)
+      .sort({ lastSentAt: 1 })
+      .limit(MAX_INVITE_RESEND_BATCH + 1)
+      .exec(),
+  );
+
+  if (invites.length > MAX_INVITE_RESEND_BATCH) {
+    throw new HttpError(
+      400,
+      `This would resend more than ${MAX_INVITE_RESEND_BATCH} invitations at once. Narrow the selection and try again.`,
+    );
+  }
+  if (invites.length === 0) {
+    return { summary: { total: 0, sent: 0, linkOnly: 0, skipped: 0, failed: 0 }, results: [] };
+  }
+
+  const cooldownBefore = new Date(now.getTime() - INVITE_RESEND_COOLDOWN_MS);
+  const standalone = accountScope === 'standalone';
+
+  const results = await mapWithConcurrency(invites, INVITE_RESEND_CONCURRENCY, async (invite) => {
+    const row = { inviteId: invite._id.toString(), email: invite.email };
+
+    if (invite.lastSentAt && invite.lastSentAt > cooldownBefore) {
+      return { ...row, outcome: 'skipped_cooldown' };
+    }
+
+    try {
+      const { inviteLink } = await reissueInvite(invite, {
+        actor,
+        context,
+        tenantId: standalone ? undefined : invite.tenantId,
+        standalone,
+      });
+      return inviteLink ? { ...row, outcome: 'link_only', inviteLink } : { ...row, outcome: 'sent' };
+    } catch (error) {
+      logger.error('[institutionMembers] failed to resend invitation', {
+        email: invite.email,
+        error,
+      });
+      return { ...row, outcome: 'failed', error: error.message };
+    }
+  });
+
+  const summary = results.reduce(
+    (totals, row) => {
+      totals.total += 1;
+      if (row.outcome === 'sent') {
+        totals.sent += 1;
+      } else if (row.outcome === 'link_only') {
+        totals.linkOnly += 1;
+      } else if (row.outcome === 'skipped_cooldown') {
+        totals.skipped += 1;
+      } else {
+        totals.failed += 1;
+      }
+      return totals;
+    },
+    { total: 0, sent: 0, linkOnly: 0, skipped: 0, failed: 0 },
+  );
+
+  await recordMemberAudit({
+    tenantId,
+    action: 'member.invites_bulk_resent',
+    actor: actorFromUser(actor),
+    target: {
+      type: 'institution',
+      id: tenantId ?? accountScope ?? 'all',
+      name: tenantId ?? accountScope ?? 'all institutions',
+    },
+    metadata: { audience, ...summary },
+    context,
+  });
+
+  return { summary, results };
 }
 
 async function revokeStandaloneInvite({ inviteId, actor, context }) {
@@ -953,17 +1191,49 @@ async function revokeInstitutionInvite({ tenantId, inviteId, actor, context }) {
   return invite;
 }
 
-async function listInstitutionMembers({ tenantId, limit = 25, offset = 0, query, status, role }) {
+/**
+ * The membership test shared by the paginated list and the roster export, so a
+ * filtered export can never disagree with the page the admin is looking at.
+ * `resolveMemberRole` is hoisted out of the per-member call rather than resolved
+ * once per row.
+ */
+function buildMemberPredicate({ tenantId, query, status, role }) {
   const normalizedQuery = String(query || '')
     .trim()
     .toLowerCase();
+  const requestedRole = role
+    ? resolveMemberRole({ role, tenantId, accountScope: 'institution' })
+    : undefined;
+
+  return (member) => {
+    if (status && member.status !== status) {
+      return false;
+    }
+    if (requestedRole && member.role !== requestedRole) {
+      return false;
+    }
+    if (!normalizedQuery) {
+      return true;
+    }
+    return (
+      member.name.toLowerCase().includes(normalizedQuery) ||
+      member.email.toLowerCase().includes(normalizedQuery)
+    );
+  };
+}
+
+const MEMBER_USER_FIELDS =
+  '_id tenantId name username email emailVerified role provider membershipStatus createdAt updatedAt suspendedAt removedAt';
+const MEMBER_INVITE_FIELDS =
+  '_id tenantId name requestedUsername email requestedRole status source createdAt updatedAt lastSentAt expiresAt acceptedAt';
+
+async function listInstitutionMembers({ tenantId, limit = 25, offset = 0, query, status, role }) {
+  const matchesFilters = buildMemberPredicate({ tenantId, query, status, role });
 
   const [users, invites, summary] = await Promise.all([
     tenantStorage.run({ tenantId }, async () =>
       models.User.find({ tenantId, ...visibleMembershipFilter() })
-        .select(
-          '_id tenantId name email emailVerified role provider membershipStatus createdAt updatedAt suspendedAt removedAt',
-        )
+        .select(MEMBER_USER_FIELDS)
         .lean()
         .exec(),
     ),
@@ -974,9 +1244,7 @@ async function listInstitutionMembers({ tenantId, limit = 25, offset = 0, query,
           $in: [InstitutionInviteStatuses.PENDING, InstitutionInviteStatuses.EXPIRED],
         },
       })
-        .select(
-          '_id tenantId name email requestedRole status source createdAt updatedAt lastSentAt expiresAt acceptedAt',
-        )
+        .select(MEMBER_INVITE_FIELDS)
         .lean()
         .exec(),
     ),
@@ -984,24 +1252,7 @@ async function listInstitutionMembers({ tenantId, limit = 25, offset = 0, query,
   ]);
 
   const members = [...users.map(mapUserMember), ...invites.map(mapInviteMember)]
-    .filter((member) => {
-      if (status && member.status !== status) {
-        return false;
-      }
-      const requestedRole = role
-        ? resolveMemberRole({ role, tenantId, accountScope: 'institution' })
-        : undefined;
-      if (requestedRole && member.role !== requestedRole) {
-        return false;
-      }
-      if (!normalizedQuery) {
-        return true;
-      }
-      return (
-        member.name.toLowerCase().includes(normalizedQuery) ||
-        member.email.toLowerCase().includes(normalizedQuery)
-      );
-    })
+    .filter(matchesFilters)
     .sort(sortMembersDesc);
 
   return {
@@ -1011,6 +1262,277 @@ async function listInstitutionMembers({ tenantId, limit = 25, offset = 0, query,
     offset,
     summary,
   };
+}
+
+/**
+ * A roster export ships names and email addresses out of the system, so it is
+ * recorded like any other member action rather than passing silently.
+ */
+async function recordMemberExportAudit({ tenantId, actor, filters, rowCount }) {
+  await recordMemberAudit({
+    tenantId,
+    action: 'member.exported',
+    actor: actorFromUser(actor),
+    target: { type: 'institution', id: tenantId, name: tenantId },
+    metadata: { rowCount, ...filters },
+  });
+}
+
+const MEMBER_STREAM_BATCH_SIZE = 500;
+
+/**
+ * Streams every member matching the filters — registered users and pending
+ * invitations alike — through `onMember`, newest first within each group.
+ *
+ * Deliberately unpaginated: this backs the roster export, where a truncated file
+ * is worse than a slow one. Cursors keep the database read flat regardless of how
+ * large the institution is, and `isCancelled` closes them when the client hangs up
+ * rather than reading a roster nobody is waiting for.
+ *
+ * Rows are projected through the same mappers and the same predicate the paginated
+ * list uses, so an export can never report a different status or a different
+ * membership than the page it was launched from.
+ */
+async function streamInstitutionMembers(
+  { tenantId, query, status, role },
+  onMember,
+  { isCancelled } = {},
+) {
+  const matchesFilters = buildMemberPredicate({ tenantId, query, status, role });
+  const cancelled = typeof isCancelled === 'function' ? isCancelled : () => false;
+  let count = 0;
+
+  const drain = async (cursor, mapMember) => {
+    try {
+      for await (const doc of cursor) {
+        if (cancelled()) {
+          break;
+        }
+        const member = mapMember(doc);
+        if (!matchesFilters(member)) {
+          continue;
+        }
+        count += 1;
+        await onMember(member);
+      }
+    } finally {
+      await cursor.close();
+    }
+  };
+
+  await tenantStorage.run({ tenantId }, () =>
+    drain(
+      models.User.find({ tenantId, ...visibleMembershipFilter() })
+        .select(MEMBER_USER_FIELDS)
+        .sort({ createdAt: -1 })
+        .lean()
+        .cursor({ batchSize: MEMBER_STREAM_BATCH_SIZE }),
+      mapUserMember,
+    ),
+  );
+
+  if (cancelled()) {
+    return { count };
+  }
+
+  await runAsSystem(() =>
+    drain(
+      models.InstitutionInvite.find({
+        tenantId,
+        status: {
+          $in: [InstitutionInviteStatuses.PENDING, InstitutionInviteStatuses.EXPIRED],
+        },
+      })
+        .select(MEMBER_INVITE_FIELDS)
+        .sort({ createdAt: -1 })
+        .lean()
+        .cursor({ batchSize: MEMBER_STREAM_BATCH_SIZE }),
+      mapInviteMember,
+    ),
+  );
+
+  return { count };
+}
+
+/**
+ * Resolves the timezone each member's dates should be reported in.
+ *
+ * A platform-wide export spans institutions that may sit in different zones, so
+ * one timezone for the whole file would misreport rows for every institution but
+ * one. Loaded as a single read rather than per row.
+ */
+async function getInstitutionTimezones(tenantId) {
+  const institutions = await runAsSystem(() =>
+    models.Institution.find(tenantId ? { tenantId } : {})
+      .select('tenantId timezone')
+      .lean()
+      .exec(),
+  );
+  const timezones = {};
+  for (const institution of institutions) {
+    if (institution.tenantId && institution.timezone) {
+      timezones[institution.tenantId] = institution.timezone;
+    }
+  }
+  return timezones;
+}
+
+/**
+ * The Mongo-level filters behind the platform members list, shared with the
+ * roster export so a superadmin's file describes exactly the rows their current
+ * view describes.
+ */
+async function buildPlatformMemberFilters({ tenantId, accountScope, query, status, role }) {
+  const normalizedQuery = String(query || '').trim();
+  const searchFilter = normalizedQuery
+    ? {
+        $or: [
+          { name: { $regex: escapeRegex(normalizedQuery), $options: 'i' } },
+          { email: { $regex: escapeRegex(normalizedQuery), $options: 'i' } },
+        ],
+      }
+    : {};
+  const statusFilter = platformUserStatusFilter(status);
+  const inviteStatus = platformInviteStatusFilter(status);
+  const invitesOnly =
+    status === 'invited' || status === InstitutionInviteStatuses.EXPIRED ? [{ _id: null }] : [];
+
+  if (accountScope === 'standalone') {
+    const configuredAdmins = String(process.env.PLATFORM_SUPERADMIN_EMAILS || '')
+      .split(',')
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean);
+    const adminRecords = models.PlatformAdmin
+      ? await runAsSystem(() =>
+          models.PlatformAdmin.find({ active: true }).select('email').lean().exec(),
+        )
+      : [];
+    const adminEmails = [
+      ...new Set([...configuredAdmins, ...adminRecords.map((admin) => admin.email).filter(Boolean)]),
+    ];
+    const institutionTenantIds = await runAsSystem(() =>
+      models.Institution.distinct('tenantId').exec(),
+    );
+    const tenantlessFilter = {
+      $or: [
+        { tenantId: { $exists: false } },
+        { tenantId: null },
+        { tenantId: '' },
+        ...(institutionTenantIds.length > 0 ? [{ tenantId: { $nin: institutionTenantIds } }] : []),
+      ],
+    };
+
+    return {
+      userFilter: {
+        $and: [
+          tenantlessFilter,
+          { email: { $nin: adminEmails } },
+          visibleMembershipFilter(),
+          searchFilter,
+          statusFilter,
+          ...invitesOnly,
+        ],
+      },
+      inviteFilter: {
+        accountScope: InstitutionInviteAccountScopes.STANDALONE,
+        ...(inviteStatus ? { status: inviteStatus } : { _id: null }),
+        ...searchFilter,
+      },
+      standalone: true,
+    };
+  }
+
+  const tenantFilter = tenantId ? { tenantId } : { tenantId: { $exists: true, $ne: null } };
+  const storedRole = role ? normalizeRole(role) : undefined;
+
+  return {
+    userFilter: {
+      $and: [
+        tenantFilter,
+        visibleMembershipFilter(),
+        searchFilter,
+        statusFilter,
+        ...invitesOnly,
+        ...(storedRole ? [{ role: storedRole }] : []),
+      ],
+    },
+    inviteFilter: {
+      ...tenantFilter,
+      ...(inviteStatus ? { status: inviteStatus } : { _id: null }),
+      ...searchFilter,
+      ...(storedRole ? { requestedRole: storedRole } : null),
+    },
+    standalone: false,
+  };
+}
+
+/**
+ * The platform-wide counterpart to `streamInstitutionMembers`: every member a
+ * superadmin can see, across every institution or scoped to one, plus the
+ * standalone accounts that belong to none.
+ */
+async function streamPlatformMembers(
+  { tenantId, accountScope = 'institution', query, status, role },
+  onMember,
+  { isCancelled } = {},
+) {
+  const cancelled = typeof isCancelled === 'function' ? isCancelled : () => false;
+  const [{ userFilter, inviteFilter, standalone }, institutions] = await Promise.all([
+    buildPlatformMemberFilters({ tenantId, accountScope, query, status, role }),
+    runAsSystem(() =>
+      models.Institution.find(tenantId ? { tenantId } : {})
+        .select('tenantId name')
+        .lean()
+        .exec(),
+    ),
+  ]);
+
+  const institutionNames = new Map(
+    institutions.map((institution) => [institution.tenantId, institution.name]),
+  );
+  const decorate = (member) =>
+    standalone
+      ? { ...member, tenantId: undefined, institutionName: 'Others', accountScope: 'standalone' }
+      : { ...member, institutionName: institutionNames.get(member.tenantId) ?? member.tenantId };
+
+  let count = 0;
+  const drain = async (cursor, mapMember) => {
+    try {
+      for await (const doc of cursor) {
+        if (cancelled()) {
+          break;
+        }
+        count += 1;
+        await onMember(decorate(mapMember(doc)));
+      }
+    } finally {
+      await cursor.close();
+    }
+  };
+
+  await runAsSystem(async () => {
+    await drain(
+      models.User.find(userFilter)
+        .select(MEMBER_USER_FIELDS)
+        .sort({ createdAt: -1 })
+        .lean()
+        .cursor({ batchSize: MEMBER_STREAM_BATCH_SIZE }),
+      mapUserMember,
+    );
+    if (cancelled()) {
+      return;
+    }
+    await drain(
+      models.InstitutionInvite.find(inviteFilter)
+        .select(MEMBER_INVITE_FIELDS)
+        .sort({ createdAt: -1 })
+        .lean()
+        .cursor({ batchSize: MEMBER_STREAM_BATCH_SIZE }),
+      mapInviteMember,
+    );
+  });
+
+  return { count };
 }
 
 async function listPlatformInstitutionMembers({
@@ -1861,8 +2383,16 @@ module.exports = {
   getInstitutionImportJob,
   getInstitutionMemberDetail,
   getSeatSummary,
+  buildInviteAudienceFilter,
+  countResendableInvites,
   listInstitutionMembers,
   listPlatformInstitutionMembers,
+  resendPendingInvites,
+  InviteAudiences,
+  getInstitutionTimezones,
+  recordMemberExportAudit,
+  streamInstitutionMembers,
+  streamPlatformMembers,
   removeInstitutionMember,
   removeStandaloneMember,
   resolveInstitutionInviteByToken,

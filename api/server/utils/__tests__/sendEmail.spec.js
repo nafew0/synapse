@@ -141,3 +141,50 @@ describe('sendEmail SMTP auth assembly', () => {
     expect(freshLogger.warn).not.toHaveBeenCalled();
   });
 });
+
+describe('sendEmail SMTP HELO hostname', () => {
+  /** @returns {Record<string, unknown>} The options passed to nodemailer.createTransport. */
+  async function transporterOptions() {
+    const sendEmail = loadSendEmail();
+    const { createTransport } = require('nodemailer');
+    await sendEmail(baseParams);
+    return createTransport.mock.calls[0][0];
+  }
+
+  it('uses EMAIL_HELO_HOSTNAME when set', async () => {
+    process.env.EMAIL_HELO_HOSTNAME = 'mail.example.org';
+    process.env.DOMAIN_CLIENT = 'https://chat.example.com';
+
+    expect((await transporterOptions()).name).toBe('mail.example.org');
+  });
+
+  it('falls back to the DOMAIN_CLIENT hostname', async () => {
+    delete process.env.EMAIL_HELO_HOSTNAME;
+    process.env.DOMAIN_CLIENT = 'https://chat.example.com';
+
+    expect((await transporterOptions()).name).toBe('chat.example.com');
+  });
+
+  it('omits the name for a non-FQDN DOMAIN_CLIENT', async () => {
+    delete process.env.EMAIL_HELO_HOSTNAME;
+    process.env.DOMAIN_CLIENT = 'http://localhost:3090';
+
+    expect((await transporterOptions()).name).toBeUndefined();
+  });
+
+  it('omits the name for a bare IP DOMAIN_CLIENT', async () => {
+    delete process.env.EMAIL_HELO_HOSTNAME;
+    process.env.DOMAIN_CLIENT = 'http://203.96.189.213:3080';
+
+    expect((await transporterOptions()).name).toBeUndefined();
+  });
+
+  it('omits the name when DOMAIN_CLIENT is unset or malformed', async () => {
+    delete process.env.EMAIL_HELO_HOSTNAME;
+    delete process.env.DOMAIN_CLIENT;
+    expect((await transporterOptions()).name).toBeUndefined();
+
+    process.env.DOMAIN_CLIENT = 'not a url';
+    expect((await transporterOptions()).name).toBeUndefined();
+  });
+});
