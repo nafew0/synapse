@@ -8,9 +8,20 @@ and the next deploy silently reverts whatever was changed in place.
 | File | Deployed to | Path on host |
 |---|---|---|
 | `nginx/chat.bdren.ai.conf` | `203.96.189.213` | `/etc/nginx/sites-available/synapse` |
-| `caddy/interpreter.bdren.ai.Caddyfile` | `203.96.189.202` | `~/caddy/Caddyfile` |
+| `caddy/interpreter.bdren.ai.Caddyfile` | `203.96.189.202` | `~/caddy/Caddyfile` (interpreter block only; see below) |
+| `caddy/rag.bdren.ai.Caddyfile` | `203.96.189.202` | a block in `~/caddy/Caddyfile` (see below) |
 | `../ecosystem.config.js` | `203.96.189.213` | `/opt/synapse/ecosystem.config.js` |
 | `../librechat.yaml` | `203.96.189.213` | `/opt/synapse/librechat.yaml` |
+
+**The Caddyfile here is partial.** The live `~/caddy/Caddyfile` also serves
+`langfuse.bdren.ai` and `langfuse-storage.bdren.ai`, whose blocks are not captured yet.
+Until they are, edit only the `interpreter.bdren.ai { … }` and `rag.bdren.ai { … }` blocks on the host by hand.
+Copying this file over the live one would drop the Langfuse routes.
+
+The **RAG API** is not configured from this repo. Its compose file, entrypoint, deploy
+script and `.env` template live in the fork `Ghost-141/rag_api` on branch `bdren-prod`,
+checked out at `/opt/rag_api` on `203.96.189.202` and deployed with
+`scripts/synapse-deploy.sh`. See [`../plans/rag-api-deployment.md`](../plans/rag-api-deployment.md).
 
 `librechat.yaml` is deliberately un-ignored in this fork. It holds no literal
 secrets — provider keys are `${ENV}` references — and tracking it is what makes

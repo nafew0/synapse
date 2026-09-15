@@ -1,3 +1,4 @@
+import jwt from 'jsonwebtoken';
 import {
   AGENT_TRIGGER_SCOPE,
   generateAgentTriggerToken,
@@ -48,5 +49,61 @@ describe('agent trigger identity', () => {
 
     expect(payload).toMatchObject({ id: 'user-1', scope: AGENT_TRIGGER_SCOPE });
     expect(generateShortLivedToken('user-1')).not.toBe(trigger);
+  });
+});
+
+describe('RAG API tokens', () => {
+  const original = { jwt: process.env.JWT_SECRET, rag: process.env.RAG_JWT_SECRET };
+
+  const restore = (key: 'JWT_SECRET' | 'RAG_JWT_SECRET', value: string | undefined) => {
+    if (value == null) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
+  };
+
+  beforeEach(() => {
+    process.env.JWT_SECRET = 'session-secret';
+    delete process.env.RAG_JWT_SECRET;
+  });
+
+  afterAll(() => {
+    restore('JWT_SECRET', original.jwt);
+    restore('RAG_JWT_SECRET', original.rag);
+  });
+
+  it('signs with RAG_JWT_SECRET, so the session secret cannot verify it', () => {
+    process.env.RAG_JWT_SECRET = 'rag-secret';
+    const token = generateShortLivedToken('user-1');
+
+    expect(jwt.verify(token, 'rag-secret', { algorithms: ['HS256'] })).toMatchObject({
+      id: 'user-1',
+    });
+    expect(() => jwt.verify(token, 'session-secret', { algorithms: ['HS256'] })).toThrow(
+      'invalid signature',
+    );
+  });
+
+  it('falls back to JWT_SECRET when RAG_JWT_SECRET is unset or empty', () => {
+    const unset = generateShortLivedToken('user-1');
+    process.env.RAG_JWT_SECRET = '';
+    const empty = generateShortLivedToken('user-1');
+
+    for (const token of [unset, empty]) {
+      expect(jwt.verify(token, 'session-secret', { algorithms: ['HS256'] })).toMatchObject({
+        id: 'user-1',
+      });
+    }
+  });
+
+  it('keeps agent trigger tokens on the session secret', () => {
+    process.env.RAG_JWT_SECRET = 'rag-secret';
+    const trigger = generateAgentTriggerToken('user-1');
+
+    expect(isAgentTriggerRequest(request(trigger))).toBe(true);
+    expect(() => jwt.verify(trigger, 'rag-secret', { algorithms: ['HS256'] })).toThrow(
+      'invalid signature',
+    );
   });
 });

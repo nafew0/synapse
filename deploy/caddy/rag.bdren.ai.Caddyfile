@@ -1,0 +1,33 @@
+# rag.bdren.ai — RAG API (synapse-rag compose stack in /opt/rag_api on 203.96.189.202).
+# Lives in the same live ~/caddy/Caddyfile as interpreter.bdren.ai and the Langfuse blocks;
+# add this block by hand (plans/rag-api-deployment.md section 4). Caddy reaches the API over
+# the rag_edge docker network; DNS: A rag.bdren.ai -> 203.96.189.202.
+
+rag.bdren.ai {
+	# PRE-PRODUCTION (decided 2026-09-15): open to every IP so developers can test from any
+	# machine; rag_api checks a JWT on every route except /health. Before production, add the
+	# app-server allowlist as the first two lines of this block:
+	#   @notAppServer not remote_ip 203.96.189.213
+	#   respond @notAppServer "Forbidden" 403
+	# (tested 2026-09-15: blocked IPs get 403 everywhere, the app server is unaffected).
+
+	# Hide rag_api's API explorer and schema from the internet.
+	respond /docs* 404
+	respond /redoc* 404
+	respond /openapi.json 404
+
+	# 200 MB file ceiling plus multipart overhead.
+	request_body {
+		max_size 220MB
+	}
+
+	reverse_proxy synapse-rag-api:8000 {
+		# /embed answers only after the whole file is parsed, embedded and stored.
+		# A 200 MB document can take many minutes, during which the backend sends nothing.
+		transport http {
+			dial_timeout 10s
+			read_timeout 30m
+			write_timeout 30m
+		}
+	}
+}
