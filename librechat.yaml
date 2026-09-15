@@ -66,6 +66,11 @@ interface:
 
 
 speech:
+  stt:
+    openai:
+      url: "https://openrouter.ai/api/v1/audio/transcriptions"
+      apiKey: "${OPENROUTER_KEY}"
+      model: "microsoft/mai-transcribe-2"
   speechTab:
     conversationMode: true
     advancedMode: false
@@ -97,8 +102,30 @@ modelSpecs:
         endpoint: agents
         agent_id: agent_office_assistant
 
+    # Audio uploaded via "Upload as Text" is transcribed by speech.stt before
+    # it reaches this model; the model only echoes the transcript back.
+    - name: transcriber
+      label: Transcriber
+      description: Upload an audio file with "Upload as Text" to get its full transcript.
+      preset:
+        endpoint: OpenRouter
+        model: openai/gpt-5.6-luna
+        promptPrefix: |
+          You return transcripts of audio files the user attaches.
+
+          When an attached file contains a transcript, output the full transcript
+          exactly as provided, in its original language or languages. Do not
+          translate, summarize, correct, or add commentary. Only add paragraph
+          breaks where the speaker clearly changes topic or pauses.
+
+          If the user asks for something else about the transcript, such as a
+          translation, summary, or speaker labels, do that instead.
+
+          If no transcript is attached, tell the user to attach an audio file
+          using "Upload as Text".
+
     - name: gpt-5.6-luna
-      label: ChatGPT 
+      label: ChatGPT
       askUserQuestion: true
       preset:
         endpoint: OpenRouter
