@@ -2,12 +2,17 @@
 	email nafew@bdren.net.bd
 }
 
+# WARNING: the live ~/caddy/Caddyfile on 203.96.189.202 also serves rag.bdren.ai (record:
+# rag.bdren.ai.Caddyfile next to this file), langfuse.bdren.ai and langfuse-storage.bdren.ai.
+# The Langfuse blocks are NOT captured in the repo yet. Never copy this file over the live one;
+# edit the interpreter.bdren.ai block by hand (plans/rag-api-deployment.md section 4).
+
 interpreter.bdren.ai {
-	# Only the Synapse application server may reach the interpreter. The JWT
-	# check still applies underneath; this is defence in depth, standing in for
-	# the ufw rule we cannot add without sudo.
-	@notAppServer not remote_ip 203.96.189.213
-	respond @notAppServer "Forbidden" 403
+	# PRE-PRODUCTION (decided 2026-09-15): open to every IP so developers can test from any
+	# machine; the interpreter checks its own JWT (CODEAPI_* keypair) on every call. Before
+	# production, re-add the app-server allowlist as the first two lines of this block:
+	#   @notAppServer not remote_ip 203.96.189.213
+	#   respond @notAppServer "Forbidden" 403
 
 	request_body {
 		max_size 50MB

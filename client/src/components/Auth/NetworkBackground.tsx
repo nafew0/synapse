@@ -586,7 +586,7 @@ function NetworkBackground() {
   return (
     <div ref={wrapperRef} className="absolute inset-0 z-0 overflow-hidden" aria-hidden="true">
       <img
-        src="assets/synapse-icon.svg"
+        src="assets/icon_synapse_v1.svg"
         alt=""
         className="absolute left-1/2 top-1/2 w-[70vmin] max-w-none -translate-x-1/2 -translate-y-1/2 select-none opacity-[0.05] dark:opacity-[0.07]"
         draggable={false}

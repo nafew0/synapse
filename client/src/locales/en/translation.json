@@ -2357,5 +2357,7 @@
   "com_insights_start_date": "Start date",
   "com_insights_end_date": "End date",
   "com_insights_invalid_date_range": "Choose an end date after the start date, within {{days}} days.",
-  "com_insights_sparkline_accessibility": "{{label}} over time"
+  "com_insights_sparkline_accessibility": "{{label}} over time",
+  "com_auth_invite_not_found": "This invitation link is not valid. Ask your administrator to send a new one.",
+  "com_auth_invite_unusable": "This invitation has already been used, expired, or was revoked. Ask your administrator to send a new one."
 }

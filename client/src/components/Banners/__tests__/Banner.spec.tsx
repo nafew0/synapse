@@ -49,15 +49,21 @@ const signedIn: Partial<TAuthContext> = {
 };
 const anonymous: Partial<TAuthContext> = { isAuthenticated: false, user: undefined };
 
-function renderBanner(auth: Partial<TAuthContext>, onHeightChange?: (height: number) => void) {
+function renderBanner(
+  auth: Partial<TAuthContext> | null,
+  onHeightChange?: (height: number) => void,
+) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const banner = <Banner onHeightChange={onHeightChange} />;
   const ui = (
     <QueryClientProvider client={queryClient}>
       <RecoilRoot>
         <MemoryRouter>
-          <AuthContext.Provider value={auth as TAuthContext}>
-            <Banner onHeightChange={onHeightChange} />
-          </AuthContext.Provider>
+          {auth === null ? (
+            banner
+          ) : (
+            <AuthContext.Provider value={auth as TAuthContext}>{banner}</AuthContext.Provider>
+          )}
         </MemoryRouter>
       </RecoilRoot>
     </QueryClientProvider>
@@ -70,6 +76,19 @@ beforeEach(() => {
   localStorage.clear();
   mockMarkBannerSeen.mockResolvedValue(undefined);
   mockDismissBanner.mockResolvedValue(undefined);
+});
+
+describe('Banner without an AuthContextProvider', () => {
+  /** The startup routes (`/register`, `/forgot-password`, `/reset-password`) mount this
+   *  outside the provider; reading the context must not throw there. */
+  it('renders the banner and treats the visitor as anonymous', async () => {
+    mockGetBanner.mockResolvedValue(baseBanner);
+    renderBanner(null);
+
+    await screen.findByRole('region', { name: 'Announcement' });
+    await waitFor(() => expect(localStorage.getItem('hideBannerHint')).toContain('gemini-38'));
+    expect(mockMarkBannerSeen).not.toHaveBeenCalled();
+  });
 });
 
 describe('Banner (bar)', () => {

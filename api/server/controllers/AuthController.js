@@ -45,7 +45,13 @@ const OPENID_REUSE_MAX_SESSION_AGE_MS = math(
 const registrationController = async (req, res) => {
   try {
     const response = await registerUser(req.body, { invite: req.invite });
-    const { status, message } = response;
+    const { status, message, userId } = response;
+    /** An accepted invitation proves control of the mailbox, so the session starts here
+     *  rather than bouncing the new member to the login form. `registerUser` returns a
+     *  `userId` only for that path — never for an address that was already registered. */
+    if (status === 200 && userId) {
+      await setAuthTokens(userId, res, null, req);
+    }
     res.status(status).send({ message });
   } catch (err) {
     logger.error('[registrationController]', err);

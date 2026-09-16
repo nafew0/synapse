@@ -8,13 +8,21 @@ type AgentTriggerRequest = {
 };
 
 /**
- * Generate a short-lived JWT token.
+ * Secret for tokens sent to the RAG API. A dedicated `RAG_JWT_SECRET` keeps them apart from
+ * login sessions, which are signed with `JWT_SECRET`: the RAG API then rejects session tokens,
+ * and its secret can be shared with other environments without exposing session signing.
+ * Falls back to `JWT_SECRET` when unset or empty.
+ */
+const getRagJwtSecret = (): string => process.env.RAG_JWT_SECRET || process.env.JWT_SECRET!;
+
+/**
+ * Generate a short-lived JWT for calls to the RAG API, signed with {@link getRagJwtSecret}.
  * @param {String} userId - The ID of the user.
  * @param {String} [expireIn='5m'] - The expiration time for the token.
  * @returns {String} - The generated JWT token.
  */
 export const generateShortLivedToken = (userId: string, expireIn: string = '5m'): string => {
-  return jwt.sign({ id: userId }, process.env.JWT_SECRET!, {
+  return jwt.sign({ id: userId }, getRagJwtSecret(), {
     expiresIn: expireIn,
     algorithm: 'HS256',
   });

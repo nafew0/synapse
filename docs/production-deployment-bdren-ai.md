@@ -443,6 +443,8 @@ stable — it is additive and needs no migration.
 | `DOMAIN_SERVER` | `http://localhost:3080` | `https://chat.bdren.ai` |
 | `MONGO_URI` | `mongodb://127.0.0.1:27017/LibreChat` | `mongodb://synapse:PASS@127.0.0.1:27017/Synapse?replicaSet=rs0&authSource=admin` |
 | `LIBRECHAT_CODE_BASEURL` | `http://127.0.0.1:3112/v1` | `https://interpreter.bdren.ai/v1` |
+| `RAG_API_URL` | unset | `https://rag.bdren.ai` (see `plans/rag-api-deployment.md`) |
+| `RAG_JWT_SECRET` | unset | a new random value (`openssl rand -hex 32`); rag_api's `JWT_SECRET` must equal it. Keeps RAG tokens off the login secret |
 | `ADMIN_PANEL_URL` | `http://localhost:3000` | per §3.3 |
 | `NODE_ENV` | — | `production` |
 | `USE_REDIS`, `REDIS_URI` | unset | §6.2 |
