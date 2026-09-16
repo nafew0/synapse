@@ -120,6 +120,7 @@ jest.mock('~/models', () => ({
   getConvo: jest.fn(),
   getExpiredFiles: jest.fn(),
   getFiles: jest.fn().mockResolvedValue([]),
+  getAgent: jest.fn().mockResolvedValue(null),
   addAgentResourceFile: jest.fn().mockResolvedValue({}),
   removeAgentResourceFiles: jest.fn(),
   removeAgentResourceFilesFromAllAgents: jest.fn(),
@@ -1106,6 +1107,101 @@ describe('processAgentFileUpload', () => {
         }),
         true,
       );
+    });
+
+    describe('routes the assistant cannot reach', () => {
+      const oversized = () => ({
+        handleFileUpload: jest.fn().mockResolvedValue({
+          text: 'w'.repeat(oversizedTextLength()),
+          bytes: 200000,
+          filepath: 'doc://result',
+        }),
+      });
+
+      test('reads a long document in full when the agent has no file_search tool', async () => {
+        db.getAgent.mockResolvedValueOnce({ id: 'agent_office', tools: ['execute_code'] });
+        routeStrategies({ parser: oversized() });
+        const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null, path: uploadPath });
+
+        await processAgentFileUpload({
+          req,
+          res: mockRes,
+          metadata: autoMetadata({ agent_id: 'agent_office' }),
+        });
+
+        expect(uploadVectors).not.toHaveBeenCalled();
+        expect(db.createFile).toHaveBeenCalledWith(
+          expect.objectContaining({
+            source: FileSources.text,
+            metadata: expect.objectContaining({
+              preparation: expect.objectContaining({ delivery: 'full_text' }),
+            }),
+          }),
+          true,
+        );
+      });
+
+      test('searches a long document when the agent does have file_search', async () => {
+        db.getAgent.mockResolvedValueOnce({
+          id: 'agent-abc',
+          tools: ['execute_code', 'file_search'],
+        });
+        routeStrategies({ parser: oversized() });
+        const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null, path: uploadPath });
+
+        await processAgentFileUpload({
+          req,
+          res: mockRes,
+          metadata: autoMetadata({ agent_id: 'agent_office' }),
+        });
+
+        expect(uploadVectors).toHaveBeenCalled();
+      });
+
+      test('skips the sandbox copy when the agent has no execute_code tool', async () => {
+        db.getAgent.mockResolvedValueOnce({ id: 'agent_office', tools: ['file_search'] });
+        const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null, path: uploadPath });
+
+        await processAgentFileUpload({
+          req,
+          res: mockRes,
+          metadata: autoMetadata({ agent_id: 'agent_office' }),
+        });
+
+        expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.execute_code);
+      });
+
+      test('narrows an ephemeral chat to the tools its model spec declares', async () => {
+        routeStrategies({ parser: oversized() });
+        const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null, path: uploadPath });
+        req.config.modelSpecs = {
+          list: [{ name: 'chatgpt', fileSearch: true }],
+        };
+
+        await processAgentFileUpload({
+          req,
+          res: mockRes,
+          metadata: autoMetadata({ agent_id: undefined, spec: 'chatgpt' }),
+        });
+
+        expect(uploadVectors).toHaveBeenCalled();
+        expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.execute_code);
+      });
+
+      test('keeps a spec without retrieval on the full-text route', async () => {
+        routeStrategies({ parser: oversized() });
+        const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null, path: uploadPath });
+        req.config.modelSpecs = { list: [{ name: 'transcriber' }] };
+
+        await processAgentFileUpload({
+          req,
+          res: mockRes,
+          metadata: autoMetadata({ agent_id: undefined, spec: 'transcriber' }),
+        });
+
+        expect(uploadVectors).not.toHaveBeenCalled();
+        expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.execute_code);
+      });
     });
 
     test('sends an image straight to the provider', async () => {

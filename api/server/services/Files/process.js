@@ -4,6 +4,7 @@ const mime = require('mime');
 const { v4 } = require('uuid');
 const {
   isUUID,
+  Tools,
   megabyte,
   Constants,
   FileContext,
@@ -18,6 +19,8 @@ const {
   AUTO_TOOL_RESOURCE,
   removeNullishValues,
   isAssistantsEndpoint,
+  isEphemeralAgentId,
+  stripAgentIdSuffix,
   getEndpointFileConfig,
   documentParserMimeTypes,
   defaultAutoPreparation,
@@ -1221,6 +1224,47 @@ const extractPreparedText = async ({
 };
 
 /**
+ * The tools this chat's assistant will actually be handed, or `null` when that cannot be
+ * determined and preparation should not narrow itself.
+ *
+ * `checkCapability` answers the deployment-wide question ("is file search enabled for Agents?"),
+ * but `ToolService` equips `file_search` and `execute_code` only when they appear in the
+ * assistant's own tool list. Preparing a file for a tool the model never receives is worse than
+ * not preparing it at all: a long document would be embedded and billed, then be unreadable.
+ *
+ * @returns {Promise<Set<string> | null>}
+ */
+const resolveAssistantTools = async ({ req, metadata }) => {
+  const { agent_id, spec } = metadata;
+
+  if (agent_id && !isEphemeralAgentId(agent_id)) {
+    try {
+      const agent = await db.getAgent({ id: stripAgentIdSuffix(agent_id) });
+      return Array.isArray(agent?.tools) ? new Set(agent.tools) : null;
+    } catch (err) {
+      logger.warn(`[processAgentFileUpload] Could not read tools for agent "${agent_id}":`, err);
+      return null;
+    }
+  }
+
+  /** Ephemeral chats take their tools from the model spec (`loadEphemeralAgent`). */
+  const modelSpecs = req.config?.modelSpecs?.list;
+  const modelSpec = spec ? modelSpecs?.find((entry) => entry.name === spec) : undefined;
+  if (!modelSpec) {
+    return null;
+  }
+
+  const tools = new Set();
+  if (modelSpec.executeCode === true) {
+    tools.add(Tools.execute_code);
+  }
+  if (modelSpec.fileSearch === true) {
+    tools.add(Tools.file_search);
+  }
+  return tools;
+};
+
+/**
  * Handles an upload the user attached without choosing a destination. Extraction and delivery are
  * decided here rather than in the composer: the browser knows a file's bytes but not how much text
  * it holds, whether a PDF is a scan, or how much of the conversation's budget is already spent.
@@ -1258,17 +1302,21 @@ const prepareUploadAutomatically = async ({ req, res, metadata, sseStream }) => 
     appConfig?.ocr != null &&
     fileConfig.checkType(file.mimetype, fileConfig.ocr?.supportedMimeTypes || []);
 
-  const [fullText, fileSearch, codeExecution, ocr] = await Promise.all([
+  const [fullText, fileSearch, codeExecution, ocr, assistantTools] = await Promise.all([
     checkCapability(req, AgentCapabilities.context),
     checkCapability(req, AgentCapabilities.file_search),
     checkCapability(req, AgentCapabilities.execute_code),
     isOcrConfigured ? checkCapability(req, AgentCapabilities.ocr) : Promise.resolve(false),
+    resolveAssistantTools({ req, metadata }),
   ]);
+
+  /** Reading text in full needs no tool, so only the tool-backed routes are narrowed. */
+  const equipped = (tool) => assistantTools == null || assistantTools.has(tool);
 
   const availability = {
     fullText,
-    search: fileSearch && !!process.env.RAG_API_URL,
-    sandbox: codeExecution,
+    search: fileSearch && !!process.env.RAG_API_URL && equipped(Tools.file_search),
+    sandbox: codeExecution && equipped(Tools.execute_code),
     ocr: isOcrConfigured && ocr,
   };
 

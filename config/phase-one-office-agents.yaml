@@ -41,7 +41,7 @@ master:
   provider: anthropic 
   model: claude-haiku-4-5
   model_parameters: {}
-  tools: [ask_user_question, execute_code]
+  tools: [ask_user_question, execute_code, file_search]
   subagents: { enabled: true, allowSelf: false }
   orchestrationOnly: false
 

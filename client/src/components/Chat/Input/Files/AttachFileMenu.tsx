@@ -177,20 +177,6 @@ const AttachFileMenu = ({
       toolResourceRef.current = value;
     };
 
-    /** Automatic preparation may route a file to search or to the sandbox, so both ephemeral
-     * capabilities are turned on up front; saved agents keep whatever tools they were given. */
-    const enablePreparationTools = () => {
-      setEphemeralAgent((prev) => ({
-        ...prev,
-        ...(capabilities.codeEnabled && codeAllowedByAgent
-          ? { [EToolResources.execute_code]: true }
-          : {}),
-        ...(capabilities.fileSearchEnabled && fileSearchAllowedByAgent
-          ? { [EToolResources.file_search]: true }
-          : {}),
-      }));
-    };
-
     const createMenuItems = (onAction: (fileType?: FileUploadType) => void) => {
       const items: MenuItemProps[] = [];
 
@@ -207,7 +193,6 @@ const AttachFileMenu = ({
           label: localize('com_ui_upload_file'),
           onClick: () => {
             setToolResource(PER_FILE_UPLOAD_ROUTE);
-            enablePreparationTools();
             onAction();
           },
           icon: <FileType2Icon className="icon-md" />,

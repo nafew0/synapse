@@ -328,6 +328,11 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     ) {
       formData.append('conversationId', conversation.conversationId);
     }
+    /** Automatic preparation reads the spec's `fileSearch` / `executeCode` flags to learn which
+     * routes an ephemeral chat can reach, the same way `loadEphemeralAgent` does at send time. */
+    if (isConversationUpload && conversation?.spec) {
+      formData.append('spec', conversation.spec);
+    }
     if (isTemporary && isConversationUpload) {
       formData.append('isTemporary', 'true');
     }
