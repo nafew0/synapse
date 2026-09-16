@@ -72,10 +72,19 @@ router.post('/cloudfront/refresh', middleware.requireJwtAuth, (req, res) => {
 router.get('/invite/:token', middleware.registerLimiter, async (req, res) => {
   try {
     const invite = await resolveInstitutionInviteByToken(req.params.token);
-    if (!invite || invite.status !== InstitutionInviteStatuses.PENDING) {
-      return res.status(404).json({ message: 'Invitation not found, already used, or expired' });
+    if (!invite) {
+      return res.status(404).json({ message: 'Invitation not found', status: 'not_found' });
     }
-    return res.status(200).json({ email: invite.email, name: invite.name, username: invite.requestedUsername });
+    /** Report why a link is unusable so the form can explain it, rather than silently
+     *  leaving the address blank for the visitor to guess at. The status alone is
+     *  enough — the invited address is withheld for anything but a live invitation. */
+    if (invite.status !== InstitutionInviteStatuses.PENDING) {
+      return res.status(410).json({
+        message: 'This invitation has already been used, expired, or was revoked',
+        status: invite.status,
+      });
+    }
+    return res.status(200).json({ email: invite.email, name: invite.name });
   } catch (error) {
     logger.error('[GET /auth/invite/:token] Failed to resolve invitation', error);
     return res.status(500).json({ message: 'Failed to resolve invitation' });

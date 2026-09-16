@@ -390,7 +390,11 @@ const registerUser = async (user, additionalData = {}) => {
         });
       }
 
-      if (inviteMayClaimAccount && invite?.accountScope === 'standalone' && !existingUser.tenantId) {
+      if (
+        inviteMayClaimAccount &&
+        invite?.accountScope === 'standalone' &&
+        !existingUser.tenantId
+      ) {
         await updateUser(existingUser._id, {
           provider: provider ?? 'local',
           username,
@@ -399,9 +403,17 @@ const registerUser = async (user, additionalData = {}) => {
           role: SystemRoles.USER,
           accountScope: 'standalone',
           membershipStatus: InstitutionMembershipStatuses.ACTIVE,
+          emailVerified: true,
         });
-        await completeInviteAcceptance({ inviteId: invite._id, userId: existingUser._id.toString() });
-        return { status: 200, message: genericVerificationMessage };
+        await completeInviteAcceptance({
+          inviteId: invite._id,
+          userId: existingUser._id.toString(),
+        });
+        return {
+          status: 200,
+          message: genericVerificationMessage,
+          userId: existingUser._id.toString(),
+        };
       }
 
       if (inviteMayClaimAccount && !existingUser.tenantId) {
@@ -414,6 +426,7 @@ const registerUser = async (user, additionalData = {}) => {
           avatar: null,
           role: invite.requestedRole ?? SystemRoles.USER,
           membershipStatus: InstitutionMembershipStatuses.SUSPENDED,
+          emailVerified: true,
         });
 
         await activateProvisionedMember({
@@ -425,7 +438,11 @@ const registerUser = async (user, additionalData = {}) => {
           userId: existingUser._id.toString(),
         });
 
-        return { status: 200, message: genericVerificationMessage };
+        return {
+          status: 200,
+          message: genericVerificationMessage,
+          userId: existingUser._id.toString(),
+        };
       }
 
       if (
@@ -443,6 +460,7 @@ const registerUser = async (user, additionalData = {}) => {
           role: invite.requestedRole ?? SystemRoles.USER,
           password: bcrypt.hashSync(password, salt),
           membershipStatus: InstitutionMembershipStatuses.SUSPENDED,
+          emailVerified: true,
         });
 
         await activateProvisionedMember({
@@ -454,7 +472,11 @@ const registerUser = async (user, additionalData = {}) => {
           userId: existingUser._id.toString(),
         });
 
-        return { status: 200, message: genericVerificationMessage };
+        return {
+          status: 200,
+          message: genericVerificationMessage,
+          userId: existingUser._id.toString(),
+        };
       }
 
       logger.info(
@@ -504,7 +526,10 @@ const registerUser = async (user, additionalData = {}) => {
         userId: newUserId.toString(),
       });
     }
-    if (emailEnabled && !newUser.emailVerified) {
+    /** An invitation token is delivered to the address itself, so accepting one already
+     *  proves control of the mailbox. A second verification round trip adds nothing and
+     *  lands an unexpected email in the new member's inbox moments after they sign in. */
+    if (emailEnabled && !newUser.emailVerified && !invite) {
       await sendVerificationEmail({
         _id: newUserId,
         email,
@@ -514,7 +539,11 @@ const registerUser = async (user, additionalData = {}) => {
       await updateUser(newUserId, { emailVerified: true });
     }
 
-    return { status: 200, message: genericVerificationMessage };
+    return {
+      status: 200,
+      message: genericVerificationMessage,
+      ...(invite ? { userId: newUserId.toString() } : null),
+    };
   } catch (err) {
     logger.error('[registerUser] Error in registering user:', err);
     if (newUserId) {

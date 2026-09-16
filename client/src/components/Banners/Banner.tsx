@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useContext, useEffect, useMemo, useRef } from 'react';
 import { useRecoilState } from 'recoil';
 import type { TBanner } from 'librechat-data-provider';
 import {
@@ -11,7 +11,7 @@ import {
   useDismissBannerMutation,
   useMarkBannerSeenMutation,
 } from '~/data-provider';
-import { useAuthContext } from '~/hooks';
+import { AuthContext } from '~/hooks';
 import store from '~/store';
 import Card from './Card';
 import Bar from './Bar';
@@ -67,8 +67,12 @@ function useBannerVisibility(banner: TBanner | null | undefined, userId?: string
 }
 
 export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) => void }) => {
-  const { user, isAuthenticated } = useAuthContext();
-  const userId = isAuthenticated ? user?.id : undefined;
+  /** The startup routes (`/register`, `/forgot-password`, `/reset-password`) render this
+   *  outside `AuthContextProvider`, so read the context directly rather than through
+   *  `useAuthContext`, which throws when no provider is mounted. No provider means no
+   *  session, which is the anonymous-visitor case handled below. */
+  const auth = useContext(AuthContext);
+  const userId = auth?.isAuthenticated === true ? auth.user?.id : undefined;
   const { data: banner } = useGetBannerQuery(userId);
   const { isVisible, dismiss } = useBannerVisibility(banner, userId);
   const barRef = useRef<HTMLDivElement>(null);

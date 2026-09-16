@@ -172,7 +172,7 @@ function AuthLayout({
               <div className="flex flex-col items-center gap-4 lg:w-2/5 lg:border-r lg:border-border-light lg:pr-8">
                 <BlinkAnimation active={isFetching}>
                   <img
-                    src="/assets/synapse-icon.svg"
+                    src="/assets/icon_synapse_v1.svg"
                     className="h-24 w-24"
                     alt={localize('com_ui_logo', { 0: appTitle })}
                     draggable={false}

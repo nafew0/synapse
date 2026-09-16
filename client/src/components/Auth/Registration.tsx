@@ -10,6 +10,11 @@ import type { TLoginLayoutContext } from '~/common';
 import { useLocalize, TranslationKeys } from '~/hooks';
 import { ErrorMessage } from './ErrorMessage';
 
+/** The handle is chosen on this form, not recalled, so it must not advertise itself as the
+ *  credential identifier: `autocomplete="username"` is what makes password managers drop the
+ *  saved email address into it. */
+const AUTOCOMPLETE_BY_FIELD: Record<string, string> = { username: 'nickname' };
+
 const Registration: React.FC = () => {
   const navigate = useNavigate();
   const localize = useLocalize();
@@ -27,6 +32,8 @@ const Registration: React.FC = () => {
   const [invitedEmail, setInvitedEmail] = useState<string | null>(null);
 
   const [errorMessage, setErrorMessage] = useState<string>('');
+  /** Why the invitation link itself is unusable, known before any submission is attempted. */
+  const [inviteError, setInviteError] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [countdown, setCountdown] = useState<number>(3);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
@@ -45,18 +52,31 @@ const Registration: React.FC = () => {
     }
     let cancelled = false;
     fetch(`/api/auth/invite/${encodeURIComponent(token)}`)
-      .then((response) => (response.ok ? response.json() : null))
-      .then((invite) => {
-        if (cancelled || !invite?.email) {
+      .then(async (response) => ({
+        ok: response.ok,
+        invite: await response.json().catch(() => null),
+      }))
+      .then(({ ok, invite }) => {
+        if (cancelled) {
+          return;
+        }
+        if (!ok) {
+          setInviteError(
+            localize(
+              invite?.status === 'not_found'
+                ? 'com_auth_invite_not_found'
+                : 'com_auth_invite_unusable',
+            ),
+          );
+          return;
+        }
+        if (!invite?.email) {
           return;
         }
         setInvitedEmail(invite.email);
         setValue('email', invite.email, { shouldValidate: true });
         if (invite.name) {
           setValue('name', invite.name, { shouldValidate: true });
-        }
-        if (invite.username) {
-          setValue('username', invite.username, { shouldValidate: true });
         }
       })
       .catch(() => {
@@ -65,7 +85,7 @@ const Registration: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [setValue, token]);
+  }, [localize, setValue, token]);
 
   // only require captcha if we have a siteKey
   const requireCaptcha = Boolean(startupConfig?.turnstile?.siteKey);
@@ -123,7 +143,7 @@ const Registration: React.FC = () => {
           {type === 'password' ? (
             <SecretInput
               id={id}
-              autoComplete={id}
+              autoComplete={AUTOCOMPLETE_BY_FIELD[id] ?? id}
               aria-label={fieldLabel}
               {...field}
               aria-invalid={!!errors[id]}
@@ -140,7 +160,7 @@ const Registration: React.FC = () => {
               <Input
                 id={id}
                 type={type}
-                autoComplete={id}
+                autoComplete={AUTOCOMPLETE_BY_FIELD[id] ?? id}
                 aria-label={fieldLabel}
                 {...field}
                 readOnly={readOnly}
@@ -171,6 +191,7 @@ const Registration: React.FC = () => {
 
   return (
     <>
+      {inviteError && <ErrorMessage>{inviteError}</ErrorMessage>}
       {errorMessage && (
         <ErrorMessage>
           {localize('com_auth_error_create')} {errorMessage}
@@ -182,7 +203,7 @@ const Registration: React.FC = () => {
           role="alert"
         >
           {localize(
-            startupConfig?.emailEnabled
+            startupConfig?.emailEnabled && !token
               ? 'com_auth_registration_success_generic'
               : 'com_auth_registration_success_insecure',
           ) +
