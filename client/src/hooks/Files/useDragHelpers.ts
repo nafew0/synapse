@@ -14,8 +14,10 @@ import type { DropTargetMonitor } from 'react-dnd';
 import type * as t from 'librechat-data-provider';
 import { useChatContext } from '~/Providers/ChatContext';
 import useFileUploadRouter from './useFileUploadRouter';
+import { useGetStartupConfig } from '~/data-provider';
 import { useUploadModalContext } from '~/Providers';
 import useUploadOptions from './useUploadOptions';
+import { PER_FILE_UPLOAD_ROUTE } from '~/utils';
 import useLocalize from '../useLocalize';
 
 export default function useDragHelpers() {
@@ -32,6 +34,8 @@ export default function useDragHelpers() {
   const { getOptions } = useUploadOptions();
   const routeFiles = useFileUploadRouter();
   const { openModal } = useUploadModalContext();
+  const { data: startupConfig } = useGetStartupConfig();
+  const autoPreparationEnabled = startupConfig?.autoFilePreparationEnabled === true;
 
   /** Use refs to avoid re-creating the drop handler */
   const conversationRef = useRef(conversation);
@@ -39,12 +43,14 @@ export default function useDragHelpers() {
   const routeFilesRef = useRef(routeFiles);
   const openModalRef = useRef(openModal);
   const isAssistantsRef = useRef(isAssistants);
+  const autoPreparationRef = useRef(autoPreparationEnabled);
 
   conversationRef.current = conversation;
   getOptionsRef.current = getOptions;
   routeFilesRef.current = routeFiles;
   openModalRef.current = openModal;
   isAssistantsRef.current = isAssistants;
+  autoPreparationRef.current = autoPreparationEnabled;
 
   const handleDrop = useCallback(
     (item: { files: File[] }) => {
@@ -76,6 +82,12 @@ export default function useDragHelpers() {
       /** Assistants do not use the upload-option flow */
       if (isAssistantsRef.current) {
         routeFilesRef.current(item.files);
+        return;
+      }
+
+      /** Nothing to ask: images go to the model, everything else is prepared automatically. */
+      if (autoPreparationRef.current) {
+        routeFilesRef.current(item.files, PER_FILE_UPLOAD_ROUTE);
         return;
       }
 

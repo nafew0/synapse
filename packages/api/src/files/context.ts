@@ -31,6 +31,21 @@ export function getAttachmentTitleText(files?: TFile[] | null): string {
 }
 
 /**
+ * Whether a file's stored `text` belongs in the conversation. Text-sourced records always do;
+ * automatic preparation also marks records whose bytes went elsewhere — a spreadsheet in the
+ * code sandbox that still carries a short preview — so the model sees what it is working with.
+ */
+function getContextText(file: IMongoFile): string | undefined {
+  if (!file.text) {
+    return undefined;
+  }
+  const source = file.source ?? FileSources.local;
+  const belongsInContext =
+    source === FileSources.text || file.metadata?.preparation?.contextText === true;
+  return belongsInContext ? file.text : undefined;
+}
+
+/**
  * Extracts text context from attachments and returns formatted text.
  * This handles text that was already extracted from files (OCR, transcriptions, document text, etc.)
  * @param params - The parameters object
@@ -63,22 +78,24 @@ export async function extractFileContext({
   let resultText = '';
 
   for (const file of attachments) {
-    const source = file.source ?? FileSources.local;
-    if (source === FileSources.text && file.text) {
-      const { text: limitedText, wasTruncated } = await processTextWithTokenLimit({
-        text: file.text,
-        tokenLimit: fileTokenLimit,
-        tokenCountFn,
-      });
-
-      if (wasTruncated) {
-        logger.debug(
-          `[extractFileContext] Text content truncated for file: ${file.filename} due to token limits`,
-        );
-      }
-
-      resultText += `${!resultText ? 'Attached document(s):\n```md' : '\n\n---\n\n'}# "${file.filename}"\n${limitedText}\n`;
+    const contextText = getContextText(file);
+    if (!contextText) {
+      continue;
     }
+
+    const { text: limitedText, wasTruncated } = await processTextWithTokenLimit({
+      text: contextText,
+      tokenLimit: fileTokenLimit,
+      tokenCountFn,
+    });
+
+    if (wasTruncated) {
+      logger.debug(
+        `[extractFileContext] Text content truncated for file: ${file.filename} due to token limits`,
+      );
+    }
+
+    resultText += `${!resultText ? 'Attached document(s):\n```md' : '\n\n---\n\n'}# "${file.filename}"\n${limitedText}\n`;
   }
 
   if (resultText) {

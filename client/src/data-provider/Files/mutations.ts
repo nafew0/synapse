@@ -16,6 +16,7 @@ import { useLocalize } from '~/hooks';
 export const useUploadFileMutation = (
   _options?: t.UploadMutationOptions,
   signal?: AbortSignal | null,
+  onStage?: t.UploadStageHandler,
 ): UseMutationResult<
   t.TFileUpload, // response data
   unknown, // error
@@ -33,14 +34,14 @@ export const useUploadFileMutation = (
       const version = body.get('version') ?? '';
       const endpoint = (body.get('endpoint') ?? '') as string;
       if (isAssistantsEndpoint(endpoint) && version === '2') {
-        return dataService.uploadFile(body, signal, sseEnabled);
+        return dataService.uploadFile(body, signal, sseEnabled, onStage);
       }
 
       if (width !== '' && height !== '') {
-        return dataService.uploadImage(body, signal, sseEnabled);
+        return dataService.uploadImage(body, signal, sseEnabled, onStage);
       }
 
-      return dataService.uploadFile(body, signal, sseEnabled);
+      return dataService.uploadFile(body, signal, sseEnabled, onStage);
     },
     ...options,
     onSuccess: (data, formData, context) => {

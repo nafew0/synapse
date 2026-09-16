@@ -97,6 +97,10 @@ jest.mock('@tanstack/react-query', () => ({
 
 jest.mock('~/data-provider', () => ({
   useGetFileConfig: jest.fn(() => ({ data: mockFileConfig })),
+  /** Read by the per-file upload router to learn which tools this chat can reach. */
+  useGetEndpointsQuery: jest.fn(() => ({ data: undefined })),
+  useGetStartupConfig: jest.fn(() => ({ data: undefined })),
+  useGetAgentByIdQuery: jest.fn(() => ({ data: undefined })),
   useUploadFileMutation: jest.fn((opts: MockUploadMutationOptions) => {
     mockUploadOptions = opts;
     return { mutate: mockMutate };
@@ -142,12 +146,14 @@ jest.mock('../useUpdateFiles', () => ({
 }));
 
 jest.mock('~/utils', () => {
-  const { validateFileSizes, validateFileDuplicates } = jest.requireActual('~/utils/files');
+  const files = jest.requireActual('~/utils/files');
   return {
+    /** Real file helpers, so routing and size rules are exercised rather than stubbed. */
+    ...files,
     logger: { log: jest.fn() },
     validateFiles: jest.fn(() => true),
-    validateFileSizes: jest.fn(validateFileSizes),
-    validateFileDuplicates: jest.fn(validateFileDuplicates),
+    validateFileSizes: jest.fn(files.validateFileSizes),
+    validateFileDuplicates: jest.fn(files.validateFileDuplicates),
     cachePreview: jest.fn(),
     getCachedPreview: jest.fn(() => undefined),
     removePreviewEntry: jest.fn(),

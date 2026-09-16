@@ -1,5 +1,5 @@
 import { Document, Types } from 'mongoose';
-import type { CodeEnvRef, CodeEnvRefMap } from 'librechat-data-provider';
+import type { CodeEnvRef, CodeEnvRefMap, FilePreparationMetadata } from 'librechat-data-provider';
 
 export interface IMongoFile extends Omit<Document, 'model'> {
   user: Types.ObjectId;
@@ -71,6 +71,8 @@ export interface IMongoFile extends Omit<Document, 'model'> {
      */
     codeEnvRef?: CodeEnvRef;
     codeEnvRefs?: CodeEnvRefMap;
+    /** Result of automatic upload preparation; see `FilePreparationMetadata`. */
+    preparation?: FilePreparationMetadata;
   };
   expiresAt?: Date;
   expiredAt?: Date | null;

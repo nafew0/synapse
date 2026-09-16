@@ -14,7 +14,7 @@ import {
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
 import type { EModelEndpoint, TEndpointsConfig, TError } from 'librechat-data-provider';
-import type { TConversation } from 'librechat-data-provider';
+import type { TConversation, UploadStageName } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
 import {
   logger,
@@ -24,6 +24,7 @@ import {
   getCachedPreview,
   removePreviewEntry,
   validateFileDuplicates,
+  PER_FILE_UPLOAD_ROUTE,
 } from '~/utils';
 import { useGetFileConfig, useUploadFileMutation } from '~/data-provider';
 import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
@@ -32,6 +33,7 @@ import { useChatContext } from '~/Providers/ChatContext';
 import store, { ephemeralAgentByConvoId } from '~/store';
 import useClientResize from './useClientResize';
 import useUpdateFiles from './useUpdateFiles';
+import useUploadRoute from './useUploadRoute';
 
 type UseFileHandling = {
   fileSetter?: FileSetter;
@@ -157,6 +159,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
   const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
   const { addFile, replaceFile, updateFileById, deleteFileById } = useUpdateFiles(fileSetter);
   const { isConfigPending, waitForConfig, resizeImageIfNeeded } = useClientResize();
+  const { resolveRoute } = useUploadRoute(conversation);
 
   const agent_id = params?.additionalMetadata?.agent_id ?? '';
   const assistant_id = params?.additionalMetadata?.assistant_id ?? '';
@@ -212,6 +215,14 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     return () => debouncedDisplayToast.cancel();
   }, [errors, debouncedDisplayToast]);
 
+  /** Preparation runs server-side, so the chip's only window into it is this stage stream. */
+  const handleUploadStage = useCallback(
+    (fileId: string, stage: UploadStageName) => {
+      updateFileById(fileId, { preparationStage: stage });
+    },
+    [updateFileById],
+  );
+
   const uploadFile = useUploadFileMutation(
     {
       onSuccess: (data) => {
@@ -250,6 +261,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
               filename: data.filename,
               source: data.source,
               embedded: data.embedded,
+              metadata: data.metadata,
             },
             assistant_id ? true : false,
           );
@@ -282,6 +294,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
       },
     },
     abortControllerRef.current?.signal,
+    handleUploadStage,
   );
 
   const uploadWithRecovery = (
@@ -429,7 +442,9 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         setError,
         fileConfig: currentFileConfig,
         endpointFileConfig,
-        toolResource: _toolResource,
+        /** Per-file batches have no single destination to validate against, so they are checked
+         * against the endpoint's own types and each file's route is resolved below. */
+        toolResource: _toolResource === PER_FILE_UPLOAD_ROUTE ? undefined : _toolResource,
         skipSizeValidation: true,
       });
     } catch (error) {
@@ -465,8 +480,10 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
           size: originalFile.size,
         };
 
-        if (_toolResource != null && _toolResource !== '') {
-          initialExtendedFile.tool_resource = _toolResource;
+        const toolResource =
+          _toolResource === PER_FILE_UPLOAD_ROUTE ? resolveRoute(originalFile) : _toolResource;
+        if (toolResource != null && toolResource !== '') {
+          initialExtendedFile.tool_resource = toolResource;
         }
 
         // Add file immediately to show in UI

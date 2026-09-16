@@ -2357,5 +2357,17 @@
   "com_insights_start_date": "Start date",
   "com_insights_end_date": "End date",
   "com_insights_invalid_date_range": "Choose an end date after the start date, within {{days}} days.",
-  "com_insights_sparkline_accessibility": "{{label}} over time"
+  "com_insights_sparkline_accessibility": "{{label}} over time",
+  "com_ui_upload_file": "Upload file",
+  "com_ui_file_read_in_full": "Read in full",
+  "com_ui_file_searchable": "Searchable",
+  "com_ui_file_ready_for_analysis": "Ready for editing and analysis",
+  "com_ui_file_image": "Image",
+  "com_ui_file_transcribed": "Transcribed",
+  "com_ui_file_recognized": "text recognised",
+  "com_ui_file_stage_uploading": "Uploading…",
+  "com_ui_file_stage_reading": "Reading…",
+  "com_ui_file_stage_recognizing": "Recognising text…",
+  "com_ui_file_stage_indexing": "Indexing…",
+  "com_ui_file_stage_ready": "Ready"
 }

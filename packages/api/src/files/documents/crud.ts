@@ -5,7 +5,18 @@ import type { TextItem } from 'pdfjs-dist/types/src/display/api';
 import type { MistralOCRUploadResult } from '~/types';
 import { assertSafeZipSize } from './zipSafety';
 
-type FileParseFn = (file: Express.Multer.File) => Promise<string>;
+type ParsedDocument = {
+  text: string;
+  /** Pages the parser walked; only PDFs report one, and it decides whether a file reads as a scan. */
+  pages?: number;
+};
+
+type FileParseFn = (file: Express.Multer.File) => Promise<ParsedDocument>;
+
+/** Parser output plus the page count the OCR threshold needs. */
+export interface DocumentParseResult extends MistralOCRUploadResult {
+  pages?: number;
+}
 
 const DOCUMENT_PARSER_MAX_FILE_SIZE = 15 * megabyte;
 const ODT_MAX_DECOMPRESSED_SIZE = 50 * megabyte;
@@ -20,7 +31,7 @@ export async function parseDocument({
   file,
 }: {
   file: Express.Multer.File;
-}): Promise<MistralOCRUploadResult> {
+}): Promise<DocumentParseResult> {
   const parseFn = getParserForMimeType(file.mimetype);
   if (!parseFn) {
     throw new Error(`Unsupported file type in document parser: ${file.mimetype}`);
@@ -35,7 +46,7 @@ export async function parseDocument({
     );
   }
 
-  const text = await parseFn(file);
+  const { text, pages } = await parseFn(file);
 
   if (!text?.trim()) {
     throw new Error('No text found in document');
@@ -47,6 +58,7 @@ export async function parseDocument({
     filepath: FileSources.document_parser,
     text,
     images: [],
+    pages,
   };
 }
 
@@ -71,7 +83,7 @@ function getParserForMimeType(mimetype: string): FileParseFn | undefined {
 }
 
 /** Parses PDF, returns text inside. */
-async function pdfToText(file: Express.Multer.File): Promise<string> {
+async function pdfToText(file: Express.Multer.File): Promise<ParsedDocument> {
   // Imported inline so that Jest can test other routes without failing due to loading ESM
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
 
@@ -89,11 +101,11 @@ async function pdfToText(file: Express.Multer.File): Promise<string> {
     fullText += pageText + '\n';
   }
 
-  return fullText;
+  return { text: fullText, pages: pdf.numPages };
 }
 
 /** Parses Word document, returns text inside. */
-async function wordDocToText(file: Express.Multer.File): Promise<string> {
+async function wordDocToText(file: Express.Multer.File): Promise<ParsedDocument> {
   const buffer = await fs.promises.readFile(file.path);
   /* Reject zip-bomb DOCX before mammoth's internal extractor runs.
    * mammoth has no decompressed-size cap of its own; without this, a
@@ -102,11 +114,11 @@ async function wordDocToText(file: Express.Multer.File): Promise<string> {
   await assertSafeZipSize(buffer, { name: file.originalname ?? 'docx' });
   const { extractRawText } = await import('mammoth');
   const rawText = await extractRawText({ buffer });
-  return rawText.value;
+  return { text: rawText.value };
 }
 
 /** Parses Excel sheet, returns text inside. */
-async function excelSheetToText(file: Express.Multer.File): Promise<string> {
+async function excelSheetToText(file: Express.Multer.File): Promise<ParsedDocument> {
   // xlsx CDN build (0.20.x) does not bind fs internally when dynamically imported;
   // readFile() fails with "Cannot access file". read() takes a pre-loaded Buffer instead.
   const { read, utils } = await import('xlsx');
@@ -126,7 +138,7 @@ async function excelSheetToText(file: Express.Multer.File): Promise<string> {
     text += `${sheetName}:\n${worksheetAsCsvString}\n`;
   }
 
-  return text;
+  return { text };
 }
 
 /**
@@ -136,13 +148,13 @@ async function excelSheetToText(file: Express.Multer.File): Promise<string> {
  * five standard XML entities are decoded. Complex elements such as frames,
  * text boxes, and annotations are stripped without replacement.
  */
-async function odtToText(file: Express.Multer.File): Promise<string> {
+async function odtToText(file: Express.Multer.File): Promise<ParsedDocument> {
   const xml = await extractOdtContentXml(file.path);
   const bodyMatch = xml.match(/<office:body[^>]*>([\s\S]*?)<\/office:body>/);
   if (!bodyMatch) {
-    return '';
+    return { text: '' };
   }
-  return bodyMatch[1]
+  const text = bodyMatch[1]
     .replace(/<\/text:p>/g, '\n')
     .replace(/<\/text:h>/g, '\n')
     .replace(/<text:line-break\/>/g, '\n')
@@ -159,6 +171,7 @@ async function odtToText(file: Express.Multer.File): Promise<string> {
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+  return { text };
 }
 
 /**
