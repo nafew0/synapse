@@ -25,7 +25,67 @@ license: Proprietary. LICENSE.txt has complete terms
 - **Follow the user's spec literally.** Exact tab names, exact column headers, and the formula they spelled out. A redesign that computes something else fails, however elegant.
 - **Document every assumption and hardcoded number** where the reader will see it — a cell comment, or an adjacent cell at a table's end. Cite a real source when one exists (`Source: Company 10-K, FY2024, Page 45, Revenue Note, [SEC EDGAR URL]`); when the number came from the user, say so plainly.
 - **A workbook *you create* for someone to fill in** needs a short legend naming which cells to edit, and one example row of realistic values showing the expected format. Never add such a row to a file you were asked to edit.
-- **Editing an existing file: match its conventions exactly.** They override every guideline here. Find its designated input cells first — a distinct font color, fill, or shading marks them — write only there, and leave every existing formula untouched.
+- **Editing an existing file: match its conventions exactly.** They override every guideline here. Find its designated input cells first — a distinct font color, fill, or shading marks them — write only there, and leave every existing formula untouched. Follow **Editing a user's workbook** below, and never deliver an edit that has not passed the structure preservation gate.
+
+## Editing a user's workbook
+
+A file the user gave you is usually a form they depend on. Change only what they asked for, and
+prove nothing else moved.
+
+1. **Never overwrite the original.** Keep the uploaded file untouched as the reference, and save
+   your edit under a new name, such as `/mnt/data/<name>_updated.xlsx`.
+2. **Inspect it with cell addresses before planning any write.** `markitdown` shows no addresses,
+   so it cannot tell you where to write:
+   ```python
+   from openpyxl import load_workbook
+   wb = load_workbook('/mnt/data/original.xlsx')
+   for ws in wb:
+       print('##', ws.title, '| merged:', sorted(str(r) for r in ws.merged_cells.ranges))
+       for row in ws.iter_rows():
+           for cell in row:
+               if cell.value is not None:
+                   print(cell.coordinate, repr(cell.value))
+   ```
+3. **Find every target by its label, never by guessing an address.** Locate the table header
+   ("Sl. #", "Description"), the total ("Total Estimated cost") and fields such as "Amount in
+   words" or "Remarks" in that output, and write relative to them.
+4. **Write only to a merged range's top-left cell, and never unmerge.** A `MergedCell` read-only
+   error means the address is wrong — you are writing into a title or a label. Stop and inspect
+   again. Unmerging to make the write succeed destroys the form's layout.
+5. **Do not insert or delete rows or columns, and do not rebuild the workbook,** unless the user
+   asked for exactly that. If the items do not fit the existing rows, ask with
+   `ask_user_question` instead of restructuring the form.
+6. **Fill the inputs and let the existing formulas compute.** Write quantities and unit costs,
+   leave the estimated-cost and total formulas in place, and extend a `SUM` range only when you
+   were asked to add rows.
+7. **Pass the structure preservation gate before you deliver.**
+
+## Mandatory structure preservation gate
+
+For any edit to a file the user provided, a clean recalculation is not completion. After saving
+under the new name, and after `recalc.py` (which rewrites the file in place):
+
+```bash
+python /mnt/data/skills/xlsx/scripts/verify_structure.py /mnt/data/original.xlsx /mnt/data/original_updated.xlsx \
+  --allow 'Sheet 2!B12:D14' --allow 'Sheet 2!A19' --allow 'Sheet 2!B20'
+```
+
+- `--allow` names exactly the ranges you meant to change: a cell (`A19`), a block (`B12:D14`),
+  whole rows (`12:14`) or whole columns (`B:D`). Decide them from the task before you run the
+  check, and never widen them to make a failing check pass.
+- It compares sheets, merged ranges, column widths, row heights, data validation, conditional
+  formatting, images and charts, and the value and formatting of every cell outside the allowed
+  ranges. It already tolerates what LibreOffice rewrites on save: rounded row heights, explicit
+  default alignment and color alpha bytes.
+- It prints JSON: `status: success` exits 0; `changes_found` exits 2 and lists every difference;
+  an `error` key exits 1 for bad arguments.
+- **Do not return or attach the workbook unless it reports `success`.** On failure, start again
+  from the untouched original — do not patch the broken output.
+- **A `media` issue means images or charts were lost.** openpyxl drops logos, pictures and shapes
+  on save, so even a correct edit loses them. Never deliver that silently: tell the user what
+  would be lost and ask how to proceed.
+- In the final response, say which ranges you changed and how many merged ranges and untouched
+  cells were verified.
 
 ## Mandatory calculation completion gate
 
@@ -37,6 +97,8 @@ For any request involving totals, costs, quantities, subtotals, balances, percen
 4. Verify every requested result with `python /mnt/data/skills/xlsx/scripts/verify_calculations.py /mnt/data/output.xlsx --formula 'Sheet!F12' --expect 'Sheet!F12=150000'`.
 5. Do not return or attach the workbook unless both commands report success. A saved file with a blank, stale, or hardcoded total is a failed deliverable.
 6. State in the final response how many formula cells and calculated values were checked.
+7. When the workbook is an edit of a file the user provided, it must also pass the structure
+   preservation gate above, run after `recalc.py`.
 
 ## Recalculate (mandatory whenever the file contains formulas)
 
@@ -83,7 +145,7 @@ literal `#NAME?` baked into the file you deliver.
 - **Reading a model takes two loads.** `data_only=True` yields cached values with the formulas gone; the default yields formula strings with no values. One pass cannot give you both.
 - **`data_only=True` is destructive if you save.** That workbook has no formulas left, so saving replaces every one with a literal — permanently.
 - **`data_only=True` on a file openpyxl just wrote returns `None` everywhere** — run `recalc.py` first. (A formula whose result is `""` also reads back as `None`.)
-- **Merged cells: write the top-left anchor only.** Every other cell in the range is a `MergedCell` whose `.value` is read-only.
+- **Merged cells: write the top-left anchor only.** Every other cell in the range is a `MergedCell` whose `.value` is read-only. **Never unmerge to get past that error** — it means the address is wrong.
 - **`.xlsm` loses its macros unless you pass `keep_vba=True`** to `load_workbook`.
 - **A sheet name containing a space must be quoted** in a cross-sheet reference: `='Assumptions Inputs'!$B$5`. Unquoted, it evaluates to `#VALUE!`.
 

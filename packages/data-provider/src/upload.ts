@@ -5,6 +5,16 @@ import request from './request';
 const EVENT_STREAM_MEDIA_TYPE = 'text/event-stream';
 const HEARTBEAT_TIMEOUT_MS = 15_000;
 
+/**
+ * Stages an automatically prepared upload reports while it is being processed. Mirrors the
+ * server's `UploadStage`; the attachment chip shows the latest one so a long extraction reads
+ * as progress rather than as a stall.
+ */
+export type UploadStageName = 'uploading' | 'reading' | 'recognizing' | 'indexing' | 'ready';
+
+/** Notified as the server moves an upload through preparation. */
+export type UploadStageHandler = (fileId: string, stage: UploadStageName) => void;
+
 interface UploadErrorData {
   message?: string;
   code?: number;
@@ -106,6 +116,7 @@ const createStreamError = (data: string, formData: FormData) => {
 const readEventStream = async (
   stream: ReadableStream<Uint8Array>,
   formData: FormData,
+  onStage?: UploadStageHandler,
 ): Promise<TFileUpload> => {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
@@ -152,6 +163,11 @@ const readEventStream = async (
         if (event.type === 'error') {
           throw createStreamError(event.data, formData);
         }
+        if (event.type === 'progress') {
+          const { stage } = JSON.parse(event.data) as { stage: UploadStageName };
+          onStage?.(getFileId(formData), stage);
+          continue;
+        }
         if (event.type === 'data') {
           result = JSON.parse(event.data) as TFileUpload;
           continue;
@@ -182,6 +198,7 @@ export async function uploadEventStream(
   url: string,
   formData: FormData,
   signal?: AbortSignal | null,
+  onStage?: UploadStageHandler,
 ): Promise<TFileUpload> {
   try {
     const response = await request.authenticatedFetch(url, {
@@ -202,7 +219,7 @@ export async function uploadEventStream(
       throw new Error('No upload response body received.');
     }
 
-    return await readEventStream(response.body, formData);
+    return await readEventStream(response.body, formData, onStage);
   } catch (error) {
     if (signal?.aborted || (error instanceof Error && error.name === 'AbortError')) {
       throw new UploadCanceledError('Upload canceled.');

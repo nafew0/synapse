@@ -1,3 +1,6 @@
+/** Characters per token used by this suite's stand-in tokenizer. */
+const APPROX_CHARS_PER_TOKEN = 4;
+
 jest.mock('uuid', () => ({ v4: jest.fn(() => 'mock-uuid') }));
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -7,6 +10,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/agents', () => ({
+  ...jest.requireActual('@librechat/agents'),
   Providers: {
     XAI: 'xai',
     DEEPSEEK: 'deepseek',
@@ -34,10 +38,32 @@ jest.mock('librechat-data-provider', () => {
 });
 
 jest.mock('@librechat/api', () => {
+  /** Loaded on first use, not while this factory runs: the package barrel initializes modules
+   * that read from `librechat-data-provider`, whose own mock is not registered yet. */
+  let cached;
+  const real = () => (cached ??= jest.requireActual('@librechat/api'));
   const actualDataProvider = jest.requireActual('librechat-data-provider');
   const RetentionMode = actualDataProvider.RetentionMode ?? { ALL: 'all', TEMPORARY: 'temporary' };
   const getRetentionExpiry = jest.fn(() => ({}));
   return {
+    /** Preparation planning, token counting and SSE stages are pure: exercise the real logic. */
+    get UploadStage() {
+      return real().UploadStage;
+    },
+    get FileCategory() {
+      return real().FileCategory;
+    },
+    get DeliveryMethod() {
+      return real().DeliveryMethod;
+    },
+    /** The real tokenizer loads its encoding through a dynamic ESM import that Jest's CJS
+     * environment cannot evaluate. The planner reading this count is exercised against exact
+     * numbers in `packages/api/src/files/prepare.spec.ts`. */
+    countTokens: jest.fn((text = '') => Math.ceil(text.length / APPROX_CHARS_PER_TOKEN)),
+    categorizeFile: (...args) => real().categorizeFile(...args),
+    planPreparation: (...args) => real().planPreparation(...args),
+    shouldEscalateToOcr: (...args) => real().shouldEscalateToOcr(...args),
+    processTextWithTokenLimit: (...args) => real().processTextWithTokenLimit(...args),
     sanitizeFilename: jest.fn((n) => n),
     parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
     processAudioFile: jest.fn(),
@@ -93,6 +119,8 @@ jest.mock('~/models', () => ({
   findFileById: jest.fn(),
   getConvo: jest.fn(),
   getExpiredFiles: jest.fn(),
+  getFiles: jest.fn().mockResolvedValue([]),
+  getAgent: jest.fn().mockResolvedValue(null),
   addAgentResourceFile: jest.fn().mockResolvedValue({}),
   removeAgentResourceFiles: jest.fn(),
   removeAgentResourceFilesFromAllAgents: jest.fn(),
@@ -139,16 +167,22 @@ const {
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
 } = require('@librechat/api');
 const {
-  EToolResources,
   FileSources,
   FileContext,
   RetentionMode,
+  EToolResources,
   AgentCapabilities,
+  AUTO_TOOL_RESOURCE,
+  defaultAutoPreparation,
 } = require('librechat-data-provider');
 const { mergeFileConfig } = require('librechat-data-provider');
 const { checkCapability } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+const os = require('os');
+const nodeFs = require('fs');
+const nodePath = require('path');
 const { uploadVectors } = require('./VectorDB/crud');
+const { convertImage } = require('~/server/services/Files/images');
 const db = require('~/models');
 const {
   processAgentFileUpload,
@@ -167,10 +201,16 @@ const ODT_MIME = 'application/vnd.oasis.opendocument.text';
 const ODP_MIME = 'application/vnd.oasis.opendocument.presentation';
 const ODG_MIME = 'application/vnd.oasis.opendocument.graphics';
 
-const makeReq = ({ mimetype = PDF_MIME, ocrConfig = null, interfaceConfig, body } = {}) => ({
+const makeReq = ({
+  mimetype = PDF_MIME,
+  ocrConfig = null,
+  interfaceConfig,
+  body,
+  path = '/tmp/upload.bin',
+} = {}) => ({
   user: { id: 'user-123', tenantId: 'tenant-a' },
   file: {
-    path: '/tmp/upload.bin',
+    path,
     originalname: 'upload.bin',
     filename: 'upload-uuid.bin',
     mimetype,
@@ -195,12 +235,18 @@ const mockRes = {
   json: jest.fn().mockReturnValue({}),
 };
 
-const makeFileConfig = ({ ocrSupportedMimeTypes = [], textSupportedMimeTypes = [] } = {}) => ({
+const makeFileConfig = ({
+  ocrSupportedMimeTypes = [],
+  textSupportedMimeTypes = [],
+  sttSupportedMimeTypes = [],
+  autoPreparation = defaultAutoPreparation,
+} = {}) => ({
   checkType: (mime, types) =>
     (types ?? []).some((t) => (typeof t === 'string' ? t === mime : t.test(mime))),
   ocr: { supportedMimeTypes: ocrSupportedMimeTypes },
-  stt: { supportedMimeTypes: [] },
+  stt: { supportedMimeTypes: sttSupportedMimeTypes },
   text: { supportedMimeTypes: textSupportedMimeTypes },
+  autoPreparation,
 });
 
 const setupStoredFileUpload = (result = {}) => {
@@ -255,7 +301,7 @@ describe('processAgentFileUpload', () => {
       expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.document_parser);
     });
 
-    test('uses the configured OCR strategy when OCR is set up for the file type', async () => {
+    test('keeps free parser output and never bills OCR when the document has a text layer', async () => {
       mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
       const req = makeReq({
         mimetype: PDF_MIME,
@@ -264,8 +310,92 @@ describe('processAgentFileUpload', () => {
 
       await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
 
+      expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.document_parser);
+      expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.mistral_ocr);
+    });
+
+    test('escalates to the configured OCR strategy when the parser finds no text layer', async () => {
+      mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
+      const parserUpload = jest.fn().mockRejectedValue(new Error('No text found in document'));
+      const ocrUpload = jest
+        .fn()
+        .mockResolvedValue({ text: 'recognised text', bytes: 15, filepath: 'ocr://result' });
+      getStrategyFunctions
+        .mockReturnValueOnce({ handleFileUpload: parserUpload })
+        .mockReturnValueOnce({ handleFileUpload: ocrUpload });
+      const req = makeReq({
+        mimetype: PDF_MIME,
+        ocrConfig: { strategy: FileSources.mistral_ocr },
+      });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
       expect(checkCapability).toHaveBeenCalledWith(expect.anything(), AgentCapabilities.ocr);
-      expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.mistral_ocr);
+      expect(getStrategyFunctions).toHaveBeenNthCalledWith(1, FileSources.document_parser);
+      expect(getStrategyFunctions).toHaveBeenNthCalledWith(2, FileSources.mistral_ocr);
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: 'recognised text',
+          metadata: expect.objectContaining({
+            preparation: expect.objectContaining({ ocrApplied: true }),
+          }),
+        }),
+        true,
+      );
+    });
+
+    test('escalates to OCR when a scanned PDF averages less text per page than the threshold', async () => {
+      mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
+      const parserUpload = jest.fn().mockResolvedValue({
+        text: 'x'.repeat(40),
+        bytes: 40,
+        filepath: 'doc://result',
+        pages: 20,
+      });
+      const ocrUpload = jest
+        .fn()
+        .mockResolvedValue({ text: 'recognised text', bytes: 15, filepath: 'ocr://result' });
+      getStrategyFunctions
+        .mockReturnValueOnce({ handleFileUpload: parserUpload })
+        .mockReturnValueOnce({ handleFileUpload: ocrUpload });
+      const req = makeReq({
+        mimetype: PDF_MIME,
+        ocrConfig: { strategy: FileSources.mistral_ocr },
+      });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(getStrategyFunctions).toHaveBeenNthCalledWith(2, FileSources.mistral_ocr);
+    });
+
+    test("keeps parser output when a thin document's OCR attempt fails", async () => {
+      mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
+      const parserUpload = jest.fn().mockResolvedValue({
+        text: 'x'.repeat(40),
+        bytes: 40,
+        filepath: 'doc://result',
+        pages: 20,
+      });
+      const ocrUpload = jest.fn().mockRejectedValue(new Error('OCR API returned 500'));
+      getStrategyFunctions
+        .mockReturnValueOnce({ handleFileUpload: parserUpload })
+        .mockReturnValueOnce({ handleFileUpload: ocrUpload });
+      const req = makeReq({
+        mimetype: PDF_MIME,
+        ocrConfig: { strategy: FileSources.mistral_ocr },
+      });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: 'x'.repeat(40),
+          metadata: expect.objectContaining({
+            preparation: expect.objectContaining({ ocrApplied: false }),
+          }),
+        }),
+        true,
+      );
     });
 
     test('uses document_parser as default when OCR is configured but no strategy is specified', async () => {
@@ -329,10 +459,9 @@ describe('processAgentFileUpload', () => {
     });
 
     test.each([
-      ['ODT', ODT_MIME],
       ['ODP', ODP_MIME],
       ['ODG', ODG_MIME],
-    ])('routes %s through configured OCR when OCR supports the type', async (_, mime) => {
+    ])('routes %s straight to OCR, since the free parser cannot open it', async (_, mime) => {
       mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [mime] }));
       const req = makeReq({
         mimetype: mime,
@@ -343,6 +472,19 @@ describe('processAgentFileUpload', () => {
 
       expect(checkCapability).toHaveBeenCalledWith(expect.anything(), AgentCapabilities.ocr);
       expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.mistral_ocr);
+    });
+
+    test('reads ODT with the free parser even when OCR supports the type', async () => {
+      mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [ODT_MIME] }));
+      const req = makeReq({
+        mimetype: ODT_MIME,
+        ocrConfig: { strategy: FileSources.mistral_ocr },
+      });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+
+      expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.document_parser);
+      expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.mistral_ocr);
     });
 
     test('throws instead of falling back to parseText when document_parser fails for a document MIME type', async () => {
@@ -359,7 +501,7 @@ describe('processAgentFileUpload', () => {
       expect(parseText).not.toHaveBeenCalled();
     });
 
-    test('falls back to document_parser when configured OCR fails for a document MIME type', async () => {
+    test('falls back to configured OCR when the free parser fails for a document MIME type', async () => {
       mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
       const failingUpload = jest.fn().mockRejectedValue(new Error('OCR API returned 500'));
       const fallbackUpload = jest
@@ -381,7 +523,7 @@ describe('processAgentFileUpload', () => {
       expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.document_parser);
     });
 
-    test('throws when both configured OCR and document_parser fallback fail', async () => {
+    test('throws when neither the free parser nor configured OCR can read the document', async () => {
       mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
       getStrategyFunctions.mockReturnValue({
         handleFileUpload: jest.fn().mockRejectedValue(new Error('failure')),
@@ -731,6 +873,379 @@ describe('processAgentFileUpload', () => {
    * `codeEnvRef`. Storing under the legacy key would orphan the file —
    * priming would skip it on subsequent code-execution turns and the
    * sandbox copy would never re-mount. */
+  describe('automatic preparation', () => {
+    const PERMISSIVE_TEXT = [/^[\w.-]+\/[\w.-]+$/];
+    let previousRagUrl;
+    /** The sandbox copy streams the upload off disk and search writes the extracted text beside
+     * it, so these paths have to be real. */
+    let uploadDir;
+    let uploadPath;
+
+    /** Comfortably past the per-file full-text ceiling under this suite's stand-in tokenizer. */
+    const oversizedTextLength = () =>
+      (defaultAutoPreparation.fullTextTokens + 5000) * APPROX_CHARS_PER_TOKEN;
+
+    const autoMetadata = (overrides = {}) => ({
+      file_id: 'file-uuid-123',
+      tool_resource: AUTO_TOOL_RESOURCE,
+      message_file: 'true',
+      conversationId: 'convo-1',
+      ...overrides,
+    });
+
+    /** Routes each strategy to its own stub so a single upload can touch several of them. */
+    const routeStrategies = ({ parser, ocr, storage, codeEnv } = {}) => {
+      const stubs = {
+        [FileSources.document_parser]: parser ?? {
+          handleFileUpload: jest
+            .fn()
+            .mockResolvedValue({ text: 'extracted text', bytes: 14, filepath: 'doc://result' }),
+        },
+        [FileSources.mistral_ocr]: ocr ?? {
+          handleFileUpload: jest
+            .fn()
+            .mockResolvedValue({ text: 'recognised text', bytes: 15, filepath: 'ocr://result' }),
+        },
+        [FileSources.execute_code]: codeEnv ?? {
+          handleFileUpload: jest
+            .fn()
+            .mockResolvedValue({ storage_session_id: 'sess-1', file_id: 'code-file-1' }),
+        },
+      };
+      const storageStub = storage ?? {
+        handleFileUpload: jest.fn().mockResolvedValue({
+          bytes: 42,
+          filename: 'upload.bin',
+          filepath: '/uploads/upload.bin',
+        }),
+        handleImageUpload: jest.fn().mockResolvedValue({
+          bytes: 42,
+          width: 800,
+          height: 600,
+          filepath: '/images/upload.png',
+        }),
+      };
+      getStrategyFunctions.mockImplementation((source) => stubs[source] ?? storageStub);
+      return stubs;
+    };
+
+    /** Kept for the whole suite: the sandbox copy opens its read stream lazily, so tearing the
+     * directory down between tests races the open and crashes the worker. */
+    beforeAll(() => {
+      uploadDir = nodeFs.mkdtempSync(nodePath.join(os.tmpdir(), 'auto-upload-'));
+      uploadPath = nodePath.join(uploadDir, 'upload.bin');
+      nodeFs.writeFileSync(uploadPath, 'binary contents');
+    });
+
+    afterAll(() => {
+      nodeFs.rmSync(uploadDir, { recursive: true, force: true });
+    });
+
+    beforeEach(() => {
+      previousRagUrl = process.env.RAG_API_URL;
+      process.env.RAG_API_URL = 'http://rag.test';
+      mergeFileConfig.mockReturnValue(makeFileConfig({ textSupportedMimeTypes: PERMISSIVE_TEXT }));
+      routeStrategies();
+    });
+
+    afterEach(() => {
+      if (previousRagUrl === undefined) {
+        delete process.env.RAG_API_URL;
+        return;
+      }
+      process.env.RAG_API_URL = previousRagUrl;
+    });
+
+    test('reads a text PDF in full without calling OCR', async () => {
+      const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null, path: uploadPath });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: autoMetadata() });
+
+      expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.mistral_ocr);
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: 'extracted text',
+          source: FileSources.text,
+          conversationId: 'convo-1',
+          metadata: expect.objectContaining({
+            preparation: expect.objectContaining({
+              delivery: 'full_text',
+              contextText: true,
+              ocrApplied: false,
+            }),
+          }),
+        }),
+        true,
+      );
+    });
+
+    test('recognises a scanned PDF and indexes the recognised text, not the scan', async () => {
+      mergeFileConfig.mockReturnValue(
+        makeFileConfig({
+          ocrSupportedMimeTypes: [PDF_MIME],
+          textSupportedMimeTypes: PERMISSIVE_TEXT,
+        }),
+      );
+      routeStrategies({
+        parser: { handleFileUpload: jest.fn().mockRejectedValue(new Error('No text found')) },
+        ocr: {
+          handleFileUpload: jest.fn().mockResolvedValue({
+            text: 'r'.repeat(oversizedTextLength()),
+            bytes: 1000,
+            filepath: 'ocr://result',
+          }),
+        },
+      });
+      const req = makeReq({
+        mimetype: PDF_MIME,
+        ocrConfig: { strategy: FileSources.mistral_ocr },
+        path: uploadPath,
+      });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: autoMetadata() });
+
+      expect(uploadVectors).toHaveBeenCalledWith(
+        expect.objectContaining({
+          file: expect.objectContaining({ mimetype: 'text/plain' }),
+          file_id: 'file-uuid-123',
+        }),
+      );
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          embedded: true,
+          metadata: expect.objectContaining({
+            preparation: expect.objectContaining({ delivery: 'search', ocrApplied: true }),
+          }),
+        }),
+        true,
+      );
+    });
+
+    test('keeps a sandbox copy of a document it reads in full', async () => {
+      const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null, path: uploadPath });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: autoMetadata() });
+
+      expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.execute_code);
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            codeEnvRef: expect.objectContaining({ file_id: 'code-file-1' }),
+            preparation: expect.objectContaining({ delivery: 'full_text' }),
+          }),
+        }),
+        true,
+      );
+    });
+
+    test('searches a document whose text exceeds the per-file ceiling', async () => {
+      routeStrategies({
+        parser: {
+          handleFileUpload: jest.fn().mockResolvedValue({
+            text: 'w'.repeat(oversizedTextLength()),
+            bytes: 200000,
+            filepath: 'doc://result',
+          }),
+        },
+      });
+      const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null, path: uploadPath });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: autoMetadata() });
+
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          embedded: true,
+          metadata: expect.objectContaining({
+            preparation: expect.objectContaining({ delivery: 'search' }),
+          }),
+        }),
+        true,
+      );
+    });
+
+    test('searches a small document once the conversation budget is spent', async () => {
+      db.getFiles.mockResolvedValueOnce([
+        {
+          metadata: {
+            preparation: { contextTokens: defaultAutoPreparation.conversationTextTokens },
+          },
+        },
+      ]);
+      const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null, path: uploadPath });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: autoMetadata() });
+
+      expect(db.getFiles).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationId: 'convo-1' }),
+        null,
+        { metadata: 1 },
+      );
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            preparation: expect.objectContaining({ delivery: 'search' }),
+          }),
+        }),
+        true,
+      );
+    });
+
+    test('sends a spreadsheet to the sandbox with a short preview', async () => {
+      const req = makeReq({ mimetype: XLSX_MIME, ocrConfig: null, path: uploadPath });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: autoMetadata() });
+
+      expect(uploadVectors).not.toHaveBeenCalled();
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: 'extracted text',
+          type: XLSX_MIME,
+          metadata: expect.objectContaining({
+            codeEnvRef: expect.objectContaining({ file_id: 'code-file-1' }),
+            preparation: expect.objectContaining({ delivery: 'sandbox', contextText: true }),
+          }),
+        }),
+        true,
+      );
+    });
+
+    describe('routes the assistant cannot reach', () => {
+      const oversized = () => ({
+        handleFileUpload: jest.fn().mockResolvedValue({
+          text: 'w'.repeat(oversizedTextLength()),
+          bytes: 200000,
+          filepath: 'doc://result',
+        }),
+      });
+
+      test('reads a long document in full when the agent has no file_search tool', async () => {
+        db.getAgent.mockResolvedValueOnce({ id: 'agent_office', tools: ['execute_code'] });
+        routeStrategies({ parser: oversized() });
+        const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null, path: uploadPath });
+
+        await processAgentFileUpload({
+          req,
+          res: mockRes,
+          metadata: autoMetadata({ agent_id: 'agent_office' }),
+        });
+
+        expect(uploadVectors).not.toHaveBeenCalled();
+        expect(db.createFile).toHaveBeenCalledWith(
+          expect.objectContaining({
+            source: FileSources.text,
+            metadata: expect.objectContaining({
+              preparation: expect.objectContaining({ delivery: 'full_text' }),
+            }),
+          }),
+          true,
+        );
+      });
+
+      test('searches a long document when the agent does have file_search', async () => {
+        db.getAgent.mockResolvedValueOnce({
+          id: 'agent-abc',
+          tools: ['execute_code', 'file_search'],
+        });
+        routeStrategies({ parser: oversized() });
+        const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null, path: uploadPath });
+
+        await processAgentFileUpload({
+          req,
+          res: mockRes,
+          metadata: autoMetadata({ agent_id: 'agent_office' }),
+        });
+
+        expect(uploadVectors).toHaveBeenCalled();
+      });
+
+      test('skips the sandbox copy when the agent has no execute_code tool', async () => {
+        db.getAgent.mockResolvedValueOnce({ id: 'agent_office', tools: ['file_search'] });
+        const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null, path: uploadPath });
+
+        await processAgentFileUpload({
+          req,
+          res: mockRes,
+          metadata: autoMetadata({ agent_id: 'agent_office' }),
+        });
+
+        expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.execute_code);
+      });
+
+      test('narrows an ephemeral chat to the tools its model spec declares', async () => {
+        routeStrategies({ parser: oversized() });
+        const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null, path: uploadPath });
+        req.config.modelSpecs = {
+          list: [{ name: 'chatgpt', fileSearch: true }],
+        };
+
+        await processAgentFileUpload({
+          req,
+          res: mockRes,
+          metadata: autoMetadata({ agent_id: undefined, spec: 'chatgpt' }),
+        });
+
+        expect(uploadVectors).toHaveBeenCalled();
+        expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.execute_code);
+      });
+
+      test('keeps a spec without retrieval on the full-text route', async () => {
+        routeStrategies({ parser: oversized() });
+        const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null, path: uploadPath });
+        req.config.modelSpecs = { list: [{ name: 'transcriber' }] };
+
+        await processAgentFileUpload({
+          req,
+          res: mockRes,
+          metadata: autoMetadata({ agent_id: undefined, spec: 'transcriber' }),
+        });
+
+        expect(uploadVectors).not.toHaveBeenCalled();
+        expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.execute_code);
+      });
+    });
+
+    test('sends an image straight to the provider', async () => {
+      const req = makeReq({ mimetype: 'image/png', ocrConfig: null, path: uploadPath });
+      convertImage.mockResolvedValue({ filepath: '/images/upload.png', source: 'local' });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: autoMetadata() });
+
+      expect(uploadVectors).not.toHaveBeenCalled();
+      expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.execute_code);
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'image/png' }),
+        true,
+      );
+    });
+
+    test('falls back to full text when no RAG API is configured', async () => {
+      delete process.env.RAG_API_URL;
+      routeStrategies({
+        parser: {
+          handleFileUpload: jest.fn().mockResolvedValue({
+            text: 'w'.repeat(oversizedTextLength()),
+            bytes: 200000,
+            filepath: 'doc://result',
+          }),
+        },
+      });
+      const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null, path: uploadPath });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: autoMetadata() });
+
+      expect(uploadVectors).not.toHaveBeenCalled();
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: FileSources.text,
+          metadata: expect.objectContaining({
+            preparation: expect.objectContaining({ delivery: 'full_text' }),
+          }),
+        }),
+        true,
+      );
+    });
+  });
+
   describe('execute_code uploads persist codeEnvRef metadata', () => {
     const fs = require('fs');
     const { Readable } = require('stream');

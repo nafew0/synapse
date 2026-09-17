@@ -2359,5 +2359,17 @@
   "com_insights_invalid_date_range": "Choose an end date after the start date, within {{days}} days.",
   "com_insights_sparkline_accessibility": "{{label}} over time",
   "com_auth_invite_not_found": "This invitation link is not valid. Ask your administrator to send a new one.",
-  "com_auth_invite_unusable": "This invitation has already been used, expired, or was revoked. Ask your administrator to send a new one."
+  "com_auth_invite_unusable": "This invitation has already been used, expired, or was revoked. Ask your administrator to send a new one.",
+  "com_ui_upload_file": "Upload file",
+  "com_ui_file_read_in_full": "Read in full",
+  "com_ui_file_searchable": "Searchable",
+  "com_ui_file_ready_for_analysis": "Ready for editing and analysis",
+  "com_ui_file_image": "Image",
+  "com_ui_file_transcribed": "Transcribed",
+  "com_ui_file_recognized": "text recognised",
+  "com_ui_file_stage_uploading": "Uploading…",
+  "com_ui_file_stage_reading": "Reading…",
+  "com_ui_file_stage_recognizing": "Recognising text…",
+  "com_ui_file_stage_indexing": "Indexing…",
+  "com_ui_file_stage_ready": "Ready"
 }

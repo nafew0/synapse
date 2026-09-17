@@ -38,10 +38,10 @@ master:
     /mnt/data. /tmp is same-call scratch space that is never shown to the user; anything written
     to /mnt/data is treated as a deliverable and surfaced in the UI, so reserve it strictly for
     files the user should actually receive.
-  provider: anthropic 
-  model: claude-haiku-4-5
+  provider: OpenRouter
+  model: anthropic/claude-haiku-4.5
   model_parameters: {}
-  tools: [ask_user_question, execute_code]
+  tools: [ask_user_question, execute_code, file_search]
   subagents: { enabled: true, allowSelf: false }
   orchestrationOnly: false
 
@@ -56,20 +56,6 @@ specialists:
     provider: OpenRouter
     model: openai/gpt-5.6-luna
     model_parameters: { useResponsesApi: true }
-    orchestrationOnly: true
-
-  - id: agent_office_hr
-    name: HR Assistant
-    description: Creates HR documents and evaluates CVs against user-provided criteria.
-    instructions: >-
-      You create job descriptions, policies, onboarding materials, interview questions,
-      and evaluation templates. You summarize CVs and compare them against explicit user-provided
-      criteria only. Never rank candidates, make hiring decisions, infer protected traits,
-      or provide final legal/disciplinary decisions. Use file search and OCR for uploads.
-    provider: OpenRouter
-    model: openai/gpt-5.6-luna
-    model_parameters: { useResponsesApi: true }
-    tools: [file_search]
     orchestrationOnly: true
 
   - id: agent_office_documents
@@ -90,7 +76,7 @@ specialists:
     provider: OpenRouter
     model: openai/gpt-5.6-luna
     model_parameters: { useResponsesApi: true }
-    tools: [execute_code]
+    tools: [ask_user_question, execute_code]
     orchestrationOnly: true
     skills_enabled: true
 
@@ -120,7 +106,7 @@ specialists:
     provider: OpenRouter
     model: openai/gpt-5.6-luna
     model_parameters: { useResponsesApi: true }
-    tools: [execute_code]
+    tools: [ask_user_question,execute_code]
     orchestrationOnly: true
     skills_enabled: true
 
@@ -141,7 +127,7 @@ specialists:
     provider: OpenRouter
     model: openai/gpt-5.6-luna
     model_parameters: { useResponsesApi: true }
-    tools: [execute_code]
+    tools: [ask_user_question, execute_code]
     orchestrationOnly: true
     skills_enabled: true
 

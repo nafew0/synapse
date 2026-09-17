@@ -3,8 +3,9 @@ import { useToastContext } from '@librechat/client';
 import { EToolResources } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import { useDeleteFilesMutation } from '~/data-provider';
-import { logger, getCachedPreview } from '~/utils';
+import { logger, getFileType, getCachedPreview } from '~/utils';
 import { useFileDeletion } from '~/hooks/Files';
+import PreparationStatus from './PreparationStatus';
 import FileContainer from './FileContainer';
 import { useLocalize } from '~/hooks';
 import Image from './Image';
@@ -151,7 +152,13 @@ export default function FileRow({
                     source={file.source}
                   />
                 ) : (
-                  <FileContainer file={file} onDelete={handleDelete} />
+                  <FileContainer
+                    file={file}
+                    onDelete={handleDelete}
+                    subtitle={
+                      <PreparationStatus file={file} fallback={getFileType(file.type).title} />
+                    }
+                  />
                 )}
               </div>
             );
