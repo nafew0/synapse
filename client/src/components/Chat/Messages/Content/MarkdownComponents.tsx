@@ -2,12 +2,15 @@ import React, { memo, useMemo, useRef, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { PermissionTypes, Permissions, apiBaseUrl } from 'librechat-data-provider';
+import type { TAttachment, TAttachmentMetadata, TFile } from 'librechat-data-provider';
 import Mermaid, { MermaidErrorBoundary } from '~/components/Messages/Content/Mermaid';
+import { useCodeBlockContext, useMessageContext } from '~/Providers';
+import { findSandboxAttachment, sandboxFilename } from './sandbox';
 import CodeBlock from '~/components/Messages/Content/CodeBlock';
 import { handleDoubleClick, triggerDownload } from '~/utils';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import { useFileDownload } from '~/data-provider';
-import { useCodeBlockContext } from '~/Providers';
+import LogLink from './Parts/LogLink';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -109,7 +112,51 @@ type TAnchorProps = {
   children: React.ReactNode;
 };
 
+type TSandboxAnchorProps = {
+  filename: string;
+  children: React.ReactNode;
+};
+
+/**
+ * A model-authored link into the code sandbox (`sandbox:/mnt/data/report.docx`) has no
+ * browser-reachable URL; it downloads the matching message attachment instead, or reads
+ * as plain text until that attachment exists.
+ */
+const SandboxAnchor = memo(function SandboxAnchor({ filename, children }: TSandboxAnchorProps) {
+  const { attachments } = useMessageContext();
+  const attachment = useMemo(
+    () => findSandboxAttachment(attachments, filename),
+    [attachments, filename],
+  );
+
+  if (!attachment) {
+    return <span>{children}</span>;
+  }
+
+  const file = attachment as TAttachment & TFile & TAttachmentMetadata;
+  return (
+    <LogLink
+      href={file.filepath ?? ''}
+      filename={file.filename ?? filename}
+      file_id={file.file_id}
+      user={file.user}
+      source={file.source}
+    >
+      {children}
+    </LogLink>
+  );
+});
+
 export const a: React.ElementType = memo(function MarkdownAnchor({ href, children }: TAnchorProps) {
+  const filename = sandboxFilename(href);
+  if (filename != null) {
+    return <SandboxAnchor filename={filename}>{children}</SandboxAnchor>;
+  }
+  return <FileAnchor href={href}>{children}</FileAnchor>;
+});
+a.displayName = 'MarkdownAnchor';
+
+const FileAnchor = memo(function FileAnchor({ href, children }: TAnchorProps) {
   const user = useRecoilValue(store.user);
   const { showToast } = useToastContext();
   const localize = useLocalize();
@@ -178,7 +225,6 @@ export const a: React.ElementType = memo(function MarkdownAnchor({ href, childre
     </a>
   );
 });
-a.displayName = 'MarkdownAnchor';
 
 type TParagraphProps = {
   children: React.ReactNode;

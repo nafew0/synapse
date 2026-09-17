@@ -5,6 +5,7 @@ import type { ElementType } from 'react';
 import { ArtifactProvider, CodeBlockProvider } from '~/Providers';
 import { splitMarkdownIntoBlocks } from './splitMarkdown';
 import { createFadePlugin } from './animate';
+import { urlTransform } from './sandbox';
 
 type SharedProps = {
   remarkPlugins: PluggableList;
@@ -68,6 +69,7 @@ const MarkdownBlock = memo(
             /** @ts-ignore */
             rehypePlugins={blockRehypePlugins}
             components={components}
+            urlTransform={urlTransform}
           >
             {content}
           </ReactMarkdown>
