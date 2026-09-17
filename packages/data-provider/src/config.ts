@@ -1921,20 +1921,29 @@ export const balanceSchema = z.object({
 
 export const creditPackagesSchema = z.object({
   currency: z.string().trim().min(1).default('BDT'),
-  list: z.array(z.object({
-    id: z.string().trim().min(1),
-    label: z.string().trim().min(1),
-    price: z.number().nonnegative(),
-    credits: z.number().int().positive(),
-  })).min(1).superRefine((packages, ctx) => {
-    const ids = new Set<string>();
-    packages.forEach((pkg, index) => {
-      if (ids.has(pkg.id)) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [index, 'id'], message: 'Package IDs must be unique' });
-      }
-      ids.add(pkg.id);
-    });
-  }),
+  list: z
+    .array(
+      z.object({
+        id: z.string().trim().min(1),
+        label: z.string().trim().min(1),
+        price: z.number().nonnegative(),
+        credits: z.number().int().positive(),
+      }),
+    )
+    .min(1)
+    .superRefine((packages, ctx) => {
+      const ids = new Set<string>();
+      packages.forEach((pkg, index) => {
+        if (ids.has(pkg.id)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: [index, 'id'],
+            message: 'Package IDs must be unique',
+          });
+        }
+        ids.add(pkg.id);
+      });
+    }),
 });
 
 export const transactionsSchema = z.object({
@@ -2502,6 +2511,20 @@ export function validateVisionModel({
   }
 
   return visionModels.concat(additionalModels).some((visionModel) => model.includes(visionModel));
+}
+
+/**
+ * Substrings naming models whose reply carries a generated image inline on the chat completion
+ * (e.g. `google/gemini-3.1-flash-image` through OpenRouter), rather than through a tool call.
+ */
+export const imageOutputModels = ['-image'];
+
+/** Whether a model returns generated images inline on its chat completion. */
+export function isImageOutputModel(model?: string | null): boolean {
+  if (!model) {
+    return false;
+  }
+  return imageOutputModels.some((imageModel) => model.includes(imageModel));
 }
 
 export const imageGenTools = new Set([

@@ -1346,6 +1346,21 @@ const prepareUploadAutomatically = async ({ req, res, metadata, sseStream }) => 
     ocrApplied: extracted?.ocrApplied === true,
   });
 
+  /* Why a file went where it did. Without this, a document that quietly lands on the wrong
+   * route looks identical to one that was routed correctly — the only visible difference is
+   * a worse answer several turns later. */
+  logger.debug('[processAgentFileUpload] prepared upload', {
+    filename: file.originalname,
+    mimetype: file.mimetype,
+    textTokens,
+    conversationUsedTokens,
+    availability,
+    assistantTools: assistantTools == null ? 'not narrowed' : Array.from(assistantTools),
+    spec: metadata.spec ?? null,
+    agent_id: agent_id ?? null,
+    delivery: plan.delivery,
+  });
+
   if (plan.delivery === DeliveryMethod.provider) {
     return await deliverToProvider();
   }

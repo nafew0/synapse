@@ -157,6 +157,7 @@ function MessageParts(props: TMessageProps) {
             enterEdit={enterEdit}
             siblingIdx={siblingIdx}
             attachments={attachments}
+            model={message.model ?? conversation?.model}
             isSubmitting={isSubmitting}
             searchResults={searchResults}
             manualSkills={message.manualSkills}

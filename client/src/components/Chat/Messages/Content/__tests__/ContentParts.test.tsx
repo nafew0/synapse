@@ -94,6 +94,18 @@ jest.mock('../ActivityPhaseGroup', () => ({
   ),
 }));
 
+jest.mock('../GeneratingImage', () => ({
+  __esModule: true,
+  default: () => <div data-testid="generating-image" />,
+}));
+
+jest.mock('../Image', () => ({
+  __esModule: true,
+  default: ({ imagePath }: { imagePath: string }) => (
+    <div data-testid="generated-image" data-path={imagePath} />
+  ),
+}));
+
 jest.mock('../Container', () => ({
   __esModule: true,
   default: ({ children }: { children: React.ReactNode }) => (
@@ -564,5 +576,76 @@ describe('ContentParts — activity phase state', () => {
       'data-animate-entrance',
       'false',
     );
+  });
+});
+
+describe('ContentParts — image model replies', () => {
+  const IMAGE_MODEL = 'google/gemini-3.1-flash-image';
+  const submittingProps = { ...baseProps, isSubmitting: true, isLatestMessage: true };
+  const caption = [
+    { type: ContentTypes.TEXT, text: 'I changed the dress to blue.' },
+  ] as TMessageContentParts[];
+  const generatedImage = {
+    type: 'image/png',
+    filepath: '/images/user/generated.png',
+    filename: 'generated.png',
+  } as TAttachment;
+
+  it('holds the caption and shows the creating-image placeholder until the image lands', () => {
+    render(<ContentParts {...submittingProps} model={IMAGE_MODEL} content={caption} />);
+
+    expect(screen.getByTestId('generating-image')).toBeInTheDocument();
+    expect(screen.queryByTestId('real-part-text')).toBeNull();
+  });
+
+  it('shows the placeholder instead of the empty cursor before any text arrives', () => {
+    render(<ContentParts {...submittingProps} model={IMAGE_MODEL} />);
+
+    expect(screen.getByTestId('generating-image')).toBeInTheDocument();
+    expect(screen.queryByTestId('empty-text')).toBeNull();
+  });
+
+  it('releases the caption, below the image, once the image attachment arrives', () => {
+    render(
+      <ContentParts
+        {...submittingProps}
+        model={IMAGE_MODEL}
+        content={caption}
+        attachments={[generatedImage]}
+      />,
+    );
+
+    expect(screen.queryByTestId('generating-image')).toBeNull();
+    const image = screen.getByTestId('generated-image');
+    const text = screen.getByTestId('real-part-text');
+    expect(image.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('releases the caption when the run ends without an image, so no text is lost', () => {
+    render(<ContentParts {...baseProps} model={IMAGE_MODEL} content={caption} />);
+
+    expect(screen.queryByTestId('generating-image')).toBeNull();
+    expect(screen.getByTestId('real-part-text')).toBeInTheDocument();
+  });
+
+  it('never holds text for a text model', () => {
+    render(<ContentParts {...submittingProps} model="openai/gpt-5.6-luna" content={caption} />);
+
+    expect(screen.queryByTestId('generating-image')).toBeNull();
+    expect(screen.getByTestId('real-part-text')).toBeInTheDocument();
+  });
+
+  it('does not treat a tool-produced image as the reply image', () => {
+    const toolImage = { ...generatedImage, toolCallId: 'call-1' } as TAttachment;
+    render(
+      <ContentParts
+        {...submittingProps}
+        model={IMAGE_MODEL}
+        content={caption}
+        attachments={[toolImage]}
+      />,
+    );
+
+    expect(screen.getByTestId('generating-image')).toBeInTheDocument();
   });
 });

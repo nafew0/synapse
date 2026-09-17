@@ -201,6 +201,7 @@ const ContentRender = memo(function ContentRender({
         siblingIdx={siblingIdx}
         messageId={msg.messageId}
         attachments={attachments}
+        model={msg.model ?? conversation?.model}
         searchResults={searchResults}
         manualSkills={msg.manualSkills}
         authorHeader={authorHeader}
