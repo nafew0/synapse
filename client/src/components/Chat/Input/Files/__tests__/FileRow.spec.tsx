@@ -18,6 +18,8 @@ jest.mock('~/hooks/Files', () => ({
 }));
 
 jest.mock('~/utils', () => ({
+  /** Real file helpers, so the chip's type and preparation labels come from actual logic. */
+  ...jest.requireActual('~/utils/files'),
   logger: {
     log: jest.fn(),
   },

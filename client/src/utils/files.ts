@@ -17,6 +17,7 @@ import {
   retrievalMimeTypes,
   isBedrockDocumentType,
   isPermissiveMimeConfig,
+  AUTO_TOOL_RESOURCE,
   codeInterpreterMimeTypes,
   isDocumentSupportedProvider,
   fileConfig as defaultFileConfig,
@@ -484,6 +485,88 @@ export const getViableUploadOptions = (
     options.push(EToolResources.context);
   }
   return options;
+};
+
+/**
+ * Placeholder destination meaning "work it out for each file". The composer passes this when the
+ * user chose "Upload file", and `resolveUploadRoute` replaces it per file — with a real tool
+ * resource, with the provider path, or with `AUTO_TOOL_RESOURCE` when the server decides.
+ */
+export const PER_FILE_UPLOAD_ROUTE = 'per-file';
+
+/**
+ * Where a single file goes when the user chose "Upload file" instead of a destination.
+ * `undefined` is the provider's own attachment path; `AUTO_TOOL_RESOURCE` hands the decision to
+ * the server, which can see the extracted text the browser cannot.
+ */
+export type UploadRoute = EToolResources | typeof AUTO_TOOL_RESOURCE | undefined;
+
+export type UploadRouteContext = {
+  /** The server prepares uploads itself, so route decisions are deferred to it. */
+  serverPreparesUploads: boolean;
+  fileSearchEnabled: boolean;
+  codeEnabled: boolean;
+  contextEnabled: boolean;
+  fileSearchAllowedByAgent: boolean;
+  codeAllowedByAgent: boolean;
+};
+
+/**
+ * Size past which a text-based file is searched rather than read in full. The browser knows a
+ * file's bytes but not how much text it holds, so this is deliberately generous; the server's
+ * own token budgets are what actually decide once the text exists.
+ */
+export const AUTO_SEARCH_MIN_BYTES = megabyte;
+
+const spreadsheetOrDataMimeTypes =
+  /^(text\/(csv|tab-separated-values)|application\/(csv|json|x-parquet|vnd\.apache\.parquet|vnd\.oasis\.opendocument\.spreadsheet))$/;
+
+/**
+ * Picks the upload destination for one file from its type, its size, and the tools this chat can
+ * reach. Pure, so the same decision can be asserted in tests and reused by the paste, drag and
+ * menu flows. A file is never rejected for a missing tool: each route falls through to the next
+ * one that exists.
+ */
+export const resolveUploadRoute = (file: File, ctx: UploadRouteContext): UploadRoute => {
+  const type = inferMimeType(file.name, file.type) ?? file.type;
+  if (type.startsWith('image/')) {
+    return undefined;
+  }
+
+  const search = ctx.fileSearchEnabled && ctx.fileSearchAllowedByAgent;
+  const sandbox = ctx.codeEnabled && ctx.codeAllowedByAgent;
+
+  if (ctx.serverPreparesUploads) {
+    return AUTO_TOOL_RESOURCE;
+  }
+
+  const isDataFile = excelMimeTypes.test(type) || spreadsheetOrDataMimeTypes.test(type);
+  if (isDataFile && sandbox) {
+    return EToolResources.execute_code;
+  }
+
+  /** PDFs stay on the text route whatever their size: a large PDF is often mostly images, and
+   * the text route is the one that gains OCR once it is configured. */
+  const isPdf = type === 'application/pdf';
+  if (
+    !isPdf &&
+    file.size > AUTO_SEARCH_MIN_BYTES &&
+    search &&
+    checkType(type, retrievalMimeTypes)
+  ) {
+    return EToolResources.file_search;
+  }
+
+  if (ctx.contextEnabled) {
+    return EToolResources.context;
+  }
+  if (search && checkType(type, retrievalMimeTypes)) {
+    return EToolResources.file_search;
+  }
+  if (sandbox && checkType(type, codeInterpreterMimeTypes)) {
+    return EToolResources.execute_code;
+  }
+  return undefined;
 };
 
 /**

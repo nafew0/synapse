@@ -97,11 +97,13 @@ const addFileToResource = ({
 };
 
 /**
- * Categorizes a file into the appropriate tool resource based on its properties
- * Files are categorized as:
- * - execute_code: Files with a code-environment ref (`codeEnvRef`)
- * - file_search: Files marked as embedded
- * - image_edit: Image files in the request file set with dimensions
+ * Categorizes a file into every tool resource its properties qualify it for. Automatic
+ * preparation gives one file several roles at once — a report that is searchable through RAG
+ * and also sits in the sandbox so it can be edited — so the checks are independent rather than
+ * mutually exclusive:
+ * - execute_code: files with a code-environment ref (`codeEnvRef`)
+ * - file_search: files marked as embedded
+ * - image_edit: image files in the request file set with dimensions
  * @param params - Parameters object
  * @param params.file - The file to categorize
  * @param params.tool_resources - The agent's tool resources to update
@@ -126,7 +128,6 @@ const categorizeFileForToolResources = ({
       tool_resources,
       processedResourceFiles,
     });
-    return;
   }
 
   if (file.embedded === true) {
@@ -136,7 +137,6 @@ const categorizeFileForToolResources = ({
       tool_resources,
       processedResourceFiles,
     });
-    return;
   }
 
   if (

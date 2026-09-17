@@ -3,6 +3,18 @@ import { FileContext, FileSources } from 'librechat-data-provider';
 import type { IMongoFile } from '~/types';
 import { codeEnvRefMapSchema, codeEnvRefSchema } from './codeEnvRef';
 
+const preparationSchema = new Schema(
+  {
+    delivery: { type: String },
+    label: { type: String },
+    contextText: { type: Boolean },
+    ocrApplied: { type: Boolean },
+    contextTokens: { type: Number },
+    pageCount: { type: Number },
+  },
+  { _id: false },
+);
+
 const file: Schema<IMongoFile> = new Schema(
   {
     user: {
@@ -133,6 +145,12 @@ const file: Schema<IMongoFile> = new Schema(
        *  newer task's same-named output. */
       sourceDispatchedAt: {
         type: Number,
+        default: undefined,
+      },
+      /** Result of automatic upload preparation: how the text was obtained and how it is
+       * delivered. Drives the attachment chip and the conversation's full-text budget. */
+      preparation: {
+        type: preparationSchema,
         default: undefined,
       },
     },

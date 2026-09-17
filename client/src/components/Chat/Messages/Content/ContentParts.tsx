@@ -79,6 +79,7 @@ type PartWithContextProps = {
   isCreatedByUser: boolean;
   isLast: boolean;
   partAttachments: TAttachment[] | undefined;
+  messageAttachments?: TAttachment[];
   hideAttachments?: boolean;
   onToolExpand?: () => void;
 };
@@ -95,6 +96,7 @@ const PartWithContext = memo(function PartWithContext({
   isCreatedByUser,
   isLast,
   partAttachments,
+  messageAttachments,
   hideAttachments,
   onToolExpand,
 }: PartWithContextProps) {
@@ -107,8 +109,9 @@ const PartWithContext = memo(function PartWithContext({
       nextType,
       isSubmitting,
       isLatestMessage,
+      attachments: messageAttachments,
     }),
-    [messageId, conversationId, idx, nextType, isSubmitting, isLatestMessage],
+    [messageId, conversationId, idx, nextType, isSubmitting, isLatestMessage, messageAttachments],
   );
 
   return (
@@ -337,11 +340,13 @@ const ContentParts = memo(function ContentParts({
             attachmentMap[getToolCallId(part)],
             getPartAgentId(part),
           )}
+          messageAttachments={attachments}
         />
       );
     },
     [
       attachmentMap,
+      attachments,
       content,
       contentIndexOffset,
       localIndexByAbsolute,
@@ -374,6 +379,7 @@ const ContentParts = memo(function ContentParts({
             attachmentMap[getToolCallId(part)],
             getPartAgentId(part),
           )}
+          messageAttachments={attachments}
           hideAttachments
           onToolExpand={onToolExpand}
         />
@@ -381,6 +387,7 @@ const ContentParts = memo(function ContentParts({
     },
     [
       attachmentMap,
+      attachments,
       content,
       contentIndexOffset,
       localIndexByAbsolute,

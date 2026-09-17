@@ -600,6 +600,8 @@ export interface ExtendedFile {
   embedded?: boolean;
   tool_resource?: string;
   metadata?: t.TFile['metadata'];
+  /** Latest preparation stage reported by the server while the upload is still processing. */
+  preparationStage?: t.UploadStageName;
 }
 
 export interface ModelItemProps {

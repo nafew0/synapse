@@ -1714,6 +1714,9 @@ export type TStartupConfig = {
   bundlerURL?: string;
   staticBundlerURL?: string;
   sharePointFilePickerEnabled?: boolean;
+  /** Whether uploads are prepared automatically, collapsing the destination menu to
+   * "Upload image" / "Upload file" and letting the server plan extraction and delivery. */
+  autoFilePreparationEnabled?: boolean;
   sharePointBaseUrl?: string;
   sharePointPickerGraphScope?: string;
   sharePointPickerSharePointScope?: string;

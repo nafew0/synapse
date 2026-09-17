@@ -40,6 +40,7 @@ import {
 } from '~/hooks';
 import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
 import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
+import { PER_FILE_UPLOAD_ROUTE } from '~/utils';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import { useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
@@ -105,7 +106,7 @@ const AttachFileMenu = ({
   const [ephemeralAgent, setEphemeralAgent] = useRecoilState(
     ephemeralAgentByConvoId(conversationId),
   );
-  const toolResourceRef = useRef<EToolResources | undefined>();
+  const toolResourceRef = useRef<string | undefined>();
   const { handleFileChange } = useFileHandlingNoChatContext(undefined, {
     files,
     setFiles,
@@ -121,6 +122,8 @@ const AttachFileMenu = ({
   const { agentsConfig } = useGetAgentsConfig();
   const { data: startupConfig } = useGetStartupConfig();
   const sharePointEnabled = startupConfig?.sharePointFilePickerEnabled;
+  /** With preparation on, the menu is two plain choices and Synapse works out the rest. */
+  const autoPreparationEnabled = startupConfig?.autoFilePreparationEnabled === true;
 
   const [isSharePointDialogOpen, setIsSharePointDialogOpen] = useState(false);
 
@@ -170,12 +173,32 @@ const AttachFileMenu = ({
   );
 
   const dropdownItems = useMemo(() => {
-    const setToolResource = (value: EToolResources | undefined) => {
+    const setToolResource = (value: string | undefined) => {
       toolResourceRef.current = value;
     };
 
     const createMenuItems = (onAction: (fileType?: FileUploadType) => void) => {
       const items: MenuItemProps[] = [];
+
+      if (autoPreparationEnabled) {
+        items.push({
+          label: localize('com_ui_upload_image_input'),
+          onClick: () => {
+            setToolResource(undefined);
+            onAction('image');
+          },
+          icon: <ImageUpIcon className="icon-md" />,
+        });
+        items.push({
+          label: localize('com_ui_upload_file'),
+          onClick: () => {
+            setToolResource(PER_FILE_UPLOAD_ROUTE);
+            onAction();
+          },
+          icon: <FileType2Icon className="icon-md" />,
+        });
+        return items;
+      }
 
       let currentProvider = provider || endpoint;
 
@@ -294,6 +317,7 @@ const AttachFileMenu = ({
     setEphemeralAgent,
     sharePointEnabled,
     codeAllowedByAgent,
+    autoPreparationEnabled,
     fileSearchAllowedByAgent,
     setIsSharePointDialogOpen,
   ]);

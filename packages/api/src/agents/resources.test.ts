@@ -1691,4 +1691,85 @@ describe('primeResources', () => {
       expect(result.tool_resources?.[EToolResources.image_edit]).toBeUndefined();
     });
   });
+  describe('files prepared for more than one tool', () => {
+    const preparedFile = (overrides: Partial<TFile>): TFile =>
+      ({
+        user: 'user1',
+        file_id: 'file1',
+        filename: 'annual-report.pdf',
+        filepath: '/uploads/annual-report.pdf',
+        object: 'file',
+        type: 'application/pdf',
+        bytes: 2048,
+        usage: 0,
+        ...overrides,
+      }) as TFile;
+
+    it('adds a searchable file that also lives in the sandbox to both resources', async () => {
+      const file = preparedFile({
+        embedded: true,
+        metadata: {
+          codeEnvRef: { kind: 'user', id: 'user1', storage_session_id: 'sess', file_id: 'fid' },
+        },
+      });
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        requestFileSet,
+        attachments: Promise.resolve([file]),
+        tool_resources: undefined,
+        agentId: 'agent_test',
+      });
+
+      expect(result.tool_resources?.[EToolResources.execute_code]?.files).toEqual([file]);
+      expect(result.tool_resources?.[EToolResources.file_search]?.files).toEqual([file]);
+    });
+
+    it('offers a request image for editing while it still reaches the sandbox', async () => {
+      const file = preparedFile({
+        file_id: 'file2',
+        filename: 'chart.png',
+        type: 'image/png',
+        width: 800,
+        height: 600,
+        metadata: {
+          codeEnvRef: { kind: 'user', id: 'user1', storage_session_id: 'sess', file_id: 'fid2' },
+        },
+      });
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        requestFileSet,
+        attachments: Promise.resolve([file]),
+        tool_resources: undefined,
+        agentId: 'agent_test',
+      });
+
+      expect(result.tool_resources?.[EToolResources.execute_code]?.files).toEqual([file]);
+      expect(result.tool_resources?.[EToolResources.image_edit]?.files).toEqual([file]);
+    });
+
+    it('still lists a file only once per resource', async () => {
+      const file = preparedFile({ embedded: true });
+
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        filterFiles: mockFilterFiles,
+        requestFileSet,
+        attachments: Promise.resolve([file, file]),
+        tool_resources: undefined,
+        agentId: 'agent_test',
+      });
+
+      expect(result.tool_resources?.[EToolResources.file_search]?.files).toHaveLength(1);
+    });
+  });
 });

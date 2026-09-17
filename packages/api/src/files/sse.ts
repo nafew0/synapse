@@ -32,9 +32,23 @@ export function shouldUseUploadSse(req: Request): boolean {
   );
 }
 
+/**
+ * Stages an automatically prepared upload passes through, in order. The client shows the latest
+ * one on the attachment chip so a long extraction reads as progress rather than as a stall.
+ */
+export enum UploadStage {
+  uploading = 'uploading',
+  reading = 'reading',
+  recognizing = 'recognizing',
+  indexing = 'indexing',
+  ready = 'ready',
+}
+
 export interface UploadSseStream {
   /** Emits the successful upload payload as an `event:data` message. */
   sendData: <T>(data: T) => void;
+  /** Emits the current preparation stage as an `event:progress` message. */
+  sendProgress: (stage: UploadStage) => void;
   /** Emits a failure payload as an `event:error` message. */
   sendError: <T>(data: T) => void;
   /** Emits the terminal `event:close` message, stops the heartbeat, and ends the response. */
@@ -70,6 +84,7 @@ export function startUploadSseStream(res: Response): UploadSseStream {
 
   return {
     sendData: (data) => writeSseEvent(res, 'data', data),
+    sendProgress: (stage) => writeSseEvent(res, 'progress', { stage }),
     sendError: (data) => writeSseEvent(res, 'error', data),
     close: () => {
       clearInterval(intervalId);

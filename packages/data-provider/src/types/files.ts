@@ -50,6 +50,21 @@ export type EndpointFileConfig = {
   supportedMimeTypes?: RegexLike[];
 };
 
+/**
+ * Thresholds for the automatic "Upload file" preparation pipeline: how much extracted text may
+ * be read in full versus delivered through retrieval, and when a PDF counts as scanned.
+ */
+export type AutoPreparationConfig = {
+  /** Per-file ceiling for reading a document's text in full. */
+  fullTextTokens: number;
+  /** Total full-text budget shared by every document in one conversation. */
+  conversationTextTokens: number;
+  /** Text preview kept alongside a data file that was routed to the code sandbox. */
+  previewTokens: number;
+  /** Average characters per page below which a PDF is treated as a scan and sent to OCR. */
+  ocrMinCharsPerPage: number;
+};
+
 export type FileConfig = {
   endpoints: {
     [key: string]: EndpointFileConfig;
@@ -58,6 +73,7 @@ export type FileConfig = {
     fileSizeLimit?: number;
   };
   fileTokenLimit?: number;
+  autoPreparation: AutoPreparationConfig;
   serverFileSizeLimit?: number;
   avatarSizeLimit?: number;
   clientImageResize?: {
@@ -87,6 +103,7 @@ export type FileConfigInput = {
   skills?: {
     fileSizeLimit?: number;
   };
+  autoPreparation?: Partial<AutoPreparationConfig>;
   serverFileSizeLimit?: number;
   avatarSizeLimit?: number;
   clientImageResize?: {
@@ -105,6 +122,25 @@ export type FileConfigInput = {
     supportedMimeTypes?: string[];
   };
   checkType?: (fileType: string, supportedTypes: RegexLike[]) => boolean;
+};
+
+/**
+ * What automatic preparation did with an upload: how its text was obtained and how that text
+ * reaches the model. Read by the attachment chip and by the conversation's full-text budget.
+ */
+export type FilePreparationMetadata = {
+  /** How the prepared file reaches the model (`full_text`, `search`, `sandbox`, `vision`, `provider`). */
+  delivery?: string;
+  /** Chip label key, e.g. `read_in_full` or `searchable`. */
+  label?: string;
+  /** The stored `text` belongs in the conversation, even though the record is not text-sourced. */
+  contextText?: boolean;
+  /** Text recognition was used, which the chip surfaces so users can tell OCR output apart. */
+  ocrApplied?: boolean;
+  /** Tokens this file charges to the conversation's shared full-text budget. */
+  contextTokens?: number;
+  /** Pages the extractor saw, used to judge whether a PDF is a scan. */
+  pageCount?: number;
 };
 
 export type TFile = {
@@ -165,6 +201,7 @@ export type TFile = {
      */
     codeEnvRef?: CodeEnvRef;
     codeEnvRefs?: CodeEnvRefMap;
+    preparation?: FilePreparationMetadata;
   };
   createdAt?: string | Date;
   updatedAt?: string | Date;

@@ -4,7 +4,9 @@ const mime = require('mime');
 const { v4 } = require('uuid');
 const {
   isUUID,
+  Tools,
   megabyte,
+  Constants,
   FileContext,
   FileSources,
   imageExtRegex,
@@ -14,19 +16,31 @@ const {
   mergeFileConfig,
   AgentCapabilities,
   checkOpenAIStorage,
+  AUTO_TOOL_RESOURCE,
   removeNullishValues,
   isAssistantsEndpoint,
+  isEphemeralAgentId,
+  stripAgentIdSuffix,
   getEndpointFileConfig,
   documentParserMimeTypes,
+  defaultAutoPreparation,
   isPermissiveMimeConfig,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
-  sanitizeFilename,
   parseText,
+  UploadStage,
+  countTokens,
+  DeliveryMethod,
+  FileCategory,
+  categorizeFile,
+  planPreparation,
+  sanitizeFilename,
   processAudioFile,
   sendUploadSuccess,
   getStorageMetadata,
+  shouldEscalateToOcr,
+  processTextWithTokenLimit,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
 } = require('@librechat/api');
@@ -657,6 +671,775 @@ const processFileUpload = async ({ req, res, metadata, sseStream }) => {
   sendUploadSuccess(res, sseStream, 'File uploaded and processed successfully', result);
 };
 
+/** Whether the free built-in parser can open this type without a paid OCR call. */
+const isDocumentParserType = (mimetype) =>
+  documentParserMimeTypes.some((regex) => regex.test(mimetype));
+
+/**
+ * Copies an upload into the code interpreter's file store and returns the `codeEnvRef` metadata
+ * that points at it. Chat attachments bucket per user, agent setup files per agent.
+ *
+ * @param {object} params
+ * @param {ServerRequest} params.req
+ * @param {Express.Multer.File} params.file
+ * @param {string} [params.agent_id]
+ * @param {boolean} params.messageAttachment
+ * @returns {Promise<object>} `metadata` carrying the structured `codeEnvRef`.
+ */
+const uploadToCodeEnvironment = async ({ req, file, agent_id, messageAttachment }) => {
+  const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
+  const stream = fs.createReadStream(file.path);
+  /** A read stream that fails to open emits `error` with no listener attached, which takes the
+   * process down instead of failing this one upload. The uploader surfaces the real failure. */
+  stream.once('error', (err) => {
+    logger.error(
+      `[processAgentFileUpload] Could not read "${file.originalname}" for the code sandbox:`,
+      err,
+    );
+  });
+  /* Resource identity for codeapi's sessionKey:
+   * - chat attachments (messageAttachment=true): `kind: 'user'`, codeapi
+   *   buckets under `<tenant>:user:<authContext.userId>` regardless of `id`.
+   * - agent setup files (messageAttachment=false): `kind: 'agent'`, shared
+   *   per agent identity. `id` carries the agent id. */
+  const codeKind = messageAttachment === true ? 'user' : 'agent';
+  const codeId = messageAttachment === true ? req.user.id : agent_id;
+  /* Upload under the same sanitized filename LC stores in its DB
+   * (`fileInfo.filename` below uses `sanitizeFilename(originalname)`).
+   * Codeapi/file_server use this as the on-disk name in the sandbox
+   * — `/mnt/data/<filename>` — and `primeFiles`'s `toolContext` text
+   * + `_injected_files.name` both reference `file.filename`. Sending
+   * the unsanitized `file.originalname` here makes the sandbox path
+   * (with spaces / special chars) drift from what LC tells the model
+   * is available, causing FileNotFoundError on the first reference. */
+  const sandboxFilename = sanitizeFilename(file.originalname);
+  const uploaded = await uploadCodeEnvFile({
+    req,
+    stream,
+    filename: sandboxFilename,
+    kind: codeKind,
+    id: codeId,
+  });
+  /* Persist under the structured `codeEnvRef` shape — the only key the
+   * post-cutover schema (`metadata.codeEnvRef`) and downstream readers
+   * (`primeFiles`, `getCodeFilesByIds`, `categorizeFileForToolResources`,
+   * controller filtering) accept. Storing under the legacy
+   * `fileIdentifier` key would be silently dropped by mongoose strict
+   * mode and the file would lose its sandbox reference on subsequent
+   * priming turns. */
+  return mergeCodeEnvRef(undefined, {
+    kind: codeKind,
+    id: codeId,
+    storage_session_id: uploaded.storage_session_id,
+    file_id: uploaded.file_id,
+    executionProfile: 'default',
+  });
+};
+
+/**
+ * Extracts a document's text, free parser first. OCR bills per page, so it runs only when the
+ * parser found nothing, or so little text per page that the file reads as a scan. This reverses
+ * the historical order, where a configured OCR ran on every matching file.
+ *
+ * @param {object} params
+ * @param {ServerRequest} params.req
+ * @param {Express.Multer.File} params.file
+ * @param {boolean} params.ocrAvailable - A configured OCR service may be used for this file.
+ * @param {number} params.ocrMinCharsPerPage
+ * @param {() => void} [params.onRecognize] - Called just before the OCR request goes out.
+ * @returns {Promise<{ text: string, bytes: number, filepath?: string, pages?: number, ocrApplied: boolean } | undefined>}
+ */
+const extractDocumentText = async ({
+  req,
+  file,
+  ocrAvailable,
+  ocrMinCharsPerPage,
+  onRecognize,
+}) => {
+  let parsed;
+  if (isDocumentParserType(file.mimetype)) {
+    try {
+      const { handleFileUpload } = getStrategyFunctions(FileSources.document_parser);
+      parsed = await handleFileUpload({ req, file, loadAuthValues });
+    } catch (err) {
+      logger.warn(
+        `[processAgentFileUpload] Document parser found no text in "${file.originalname}":`,
+        err,
+      );
+    }
+  }
+
+  const readsAsScan = shouldEscalateToOcr({
+    text: parsed?.text,
+    pageCount: parsed?.pages,
+    ocrMinCharsPerPage,
+  });
+
+  const ocrStrategy = req.config?.ocr?.strategy ?? FileSources.document_parser;
+  const wouldRepeatTheParser = ocrStrategy === FileSources.document_parser && parsed != null;
+
+  if (!ocrAvailable || !readsAsScan || wouldRepeatTheParser) {
+    return parsed ? { ...parsed, ocrApplied: false } : undefined;
+  }
+
+  onRecognize?.();
+  try {
+    const { handleFileUpload } = getStrategyFunctions(ocrStrategy);
+    const recognized = await handleFileUpload({ req, file, loadAuthValues });
+    if (recognized?.text?.trim()) {
+      return { ...recognized, ocrApplied: ocrStrategy !== FileSources.document_parser };
+    }
+  } catch (err) {
+    logger.error(
+      `[processAgentFileUpload] Text recognition failed for "${file.originalname}":`,
+      err,
+    );
+  }
+
+  return parsed ? { ...parsed, ocrApplied: false } : undefined;
+};
+
+/**
+ * Resolves the text for a `context` upload: document extraction, speech-to-text, or a text parse,
+ * in the order the file's type and the admin's configuration allow.
+ *
+ * @returns {Promise<{ text: string, bytes: number, filepath?: string, type?: string, ocrApplied: boolean, pages?: number }>}
+ */
+const resolveContextExtraction = async ({ req, file, metadata, appConfig, onRecognize }) => {
+  const fileConfig = mergeFileConfig(appConfig.fileConfig);
+  const { file_id } = metadata;
+
+  const isOcrConfigured =
+    appConfig?.ocr != null &&
+    fileConfig.checkType(file.mimetype, fileConfig.ocr?.supportedMimeTypes || []);
+
+  if (isOcrConfigured && !(await checkCapability(req, AgentCapabilities.ocr))) {
+    throw new Error('OCR capability is not enabled for Agents');
+  }
+
+  const isDocumentParserEligible = isDocumentParserType(file.mimetype);
+
+  /**
+   * When an admin narrows `fileConfig.text.supportedMimeTypes` to a non-permissive allowlist that
+   * includes a document type and a RAG API is configured, honor that intent by sending the file to
+   * RAG `/text` instead of the built-in document parser. The permissive default catch-all is
+   * excluded via `isPermissiveMimeConfig`, so RAG deployments that never customized text handling
+   * keep the built-in parser introduced in #11900.
+   */
+  const shouldUseConfiguredText =
+    !!process.env.RAG_API_URL &&
+    isDocumentParserEligible &&
+    !isPermissiveMimeConfig(fileConfig.text?.supportedMimeTypes) &&
+    fileConfig.checkType(file.mimetype, fileConfig.text?.supportedMimeTypes || []);
+
+  const shouldExtractDocument =
+    isOcrConfigured || (!shouldUseConfiguredText && isDocumentParserEligible);
+
+  const autoConfig = fileConfig.autoPreparation ?? defaultAutoPreparation;
+
+  if (shouldExtractDocument) {
+    const extracted = await extractDocumentText({
+      req,
+      file,
+      ocrAvailable: isOcrConfigured,
+      ocrMinCharsPerPage: autoConfig.ocrMinCharsPerPage,
+      onRecognize,
+    });
+    if (extracted) {
+      return extracted;
+    }
+    throw new Error(
+      `Unable to extract text from "${file.originalname}". The document may be image-based and requires an OCR service to process.`,
+    );
+  }
+
+  const shouldUseSTT = fileConfig.checkType(
+    file.mimetype,
+    fileConfig.stt?.supportedMimeTypes || [],
+  );
+
+  if (shouldUseSTT) {
+    const sttService = await STTService.getInstance();
+    const { text, bytes } = await processAudioFile({ req, file, sttService });
+    return { text, bytes, ocrApplied: false };
+  }
+
+  const shouldUseText = fileConfig.checkType(
+    file.mimetype,
+    fileConfig.text?.supportedMimeTypes || [],
+  );
+
+  if (!shouldUseText) {
+    throw new Error(`File type ${file.mimetype} is not supported for text parsing.`);
+  }
+
+  /**
+   * A document type the admin routed to configured text extraction: prefer RAG `/text`, but fall
+   * back to the built-in document parser (not raw native text) when RAG is unavailable, so a
+   * transient outage doesn't degrade a docx/pdf to unreadable bytes. Only the RAG extraction is
+   * inside the fallback catch: a downstream persistence failure (size guard, DB, agent-resource
+   * mutation) must surface as itself, not trigger a second extraction attempt.
+   */
+  if (shouldUseConfiguredText) {
+    try {
+      const configuredText = await parseText({ req, file, file_id, allowNativeFallback: false });
+      return {
+        text: configuredText.text,
+        bytes: configuredText.bytes,
+        type: file.mimetype,
+        ocrApplied: false,
+      };
+    } catch (err) {
+      logger.warn(
+        `[processAgentFileUpload] Configured RAG text extraction unavailable for "${file.originalname}", using built-in document parser:`,
+        err,
+      );
+      const documentText = await extractDocumentText({
+        req,
+        file,
+        ocrAvailable: isOcrConfigured,
+        ocrMinCharsPerPage: autoConfig.ocrMinCharsPerPage,
+        onRecognize,
+      });
+      if (!documentText) {
+        throw new Error(
+          `Unable to extract text from "${file.originalname}". RAG text extraction was unavailable and the built-in parser produced no result.`,
+        );
+      }
+      return documentText;
+    }
+  }
+
+  const { text, bytes } = await parseText({ req, file, file_id });
+  return { text, bytes, type: file.mimetype, ocrApplied: false };
+};
+
+/**
+ * Persists extracted text as a file record. Shared by the `context` branch and by automatic
+ * preparation, which additionally records how the file was prepared so the attachment chip and
+ * the conversation's full-text budget can read it back.
+ *
+ * @returns {Promise<MongoFile>} The created file record.
+ */
+const persistExtractedText = async ({
+  req,
+  file,
+  metadata,
+  messageAttachment,
+  tool_resource,
+  agent_id,
+  text,
+  bytes,
+  filepath,
+  type = 'text/plain',
+  source = FileSources.text,
+  embedded,
+  fileMetadata,
+  storageMetadata,
+}) => {
+  const { file_id, temp_file_id = null, conversationId } = metadata;
+  const textBytes = Buffer.byteLength(text, 'utf8');
+  if (textBytes > 15 * megabyte) {
+    throw new Error(
+      `Extracted text from "${file.originalname}" exceeds the 15MB storage limit (${Math.round(textBytes / megabyte)}MB). Try a shorter document.`,
+    );
+  }
+  const retentionExpiry = await getAgentFileRetentionExpiry({
+    req,
+    messageAttachment,
+    tool_resource,
+  });
+  const fileInfo = {
+    ...removeNullishValues({
+      text,
+      bytes,
+      file_id,
+      temp_file_id,
+      user: req.user.id,
+      type,
+      filepath: filepath ?? file.path,
+      source,
+      embedded,
+      metadata: fileMetadata,
+      ...storageMetadata,
+      filename: file.originalname,
+      conversationId: messageAttachment ? conversationId : undefined,
+      model: messageAttachment ? undefined : req.body.model,
+      context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
+      tenantId: req.user.tenantId,
+    }),
+    ...retentionExpiry,
+  };
+
+  if (!messageAttachment && tool_resource) {
+    await db.addAgentResourceFile({
+      file_id,
+      agent_id,
+      tool_resource,
+      updatingUserId: req?.user?.id,
+    });
+  }
+
+  return db.createFile(fileInfo, true);
+};
+
+/**
+ * Full-text tokens this conversation has already committed. Later documents switch to retrieval
+ * once the shared budget is spent, so a handful of individually small files cannot become a large
+ * payload re-sent on every turn.
+ *
+ * @returns {Promise<number>}
+ */
+const getConversationTextTokens = async ({ req, conversationId }) => {
+  if (!conversationId || conversationId === Constants.NEW_CONVO) {
+    return 0;
+  }
+  try {
+    const files = await db.getFiles(
+      {
+        user: req.user.id,
+        conversationId,
+        'metadata.preparation.contextTokens': { $gt: 0 },
+      },
+      null,
+      { metadata: 1 },
+    );
+    return (files ?? []).reduce(
+      (total, record) => total + (record.metadata?.preparation?.contextTokens ?? 0),
+      0,
+    );
+  } catch (err) {
+    logger.warn('[processAgentFileUpload] Could not read the conversation text budget:', err);
+    return 0;
+  }
+};
+
+/**
+ * Sends the file to the vector store. When Synapse has already extracted text, that text is what
+ * gets embedded: the RAG API has no OCR of its own, so a scan would otherwise index as nothing.
+ * Either way it is embedded under the same `file_id`, so citations and deletion keep working.
+ *
+ * @returns {Promise<{ embedded: boolean, filename?: string }>}
+ */
+const embedForSearch = async ({ req, file, file_id, entity_id, text, storageMetadata }) => {
+  const { uploadVectors } = require('./VectorDB/crud');
+  if (!text) {
+    return await uploadVectors({ req, file, file_id, entity_id, storageMetadata });
+  }
+
+  const textPath = `${file.path}.extracted.txt`;
+  await fs.promises.writeFile(textPath, text, 'utf8');
+  try {
+    return await uploadVectors({
+      req,
+      file: {
+        ...file,
+        path: textPath,
+        mimetype: 'text/plain',
+        size: Buffer.byteLength(text, 'utf8'),
+        originalname: `${path.parse(file.originalname).name}.txt`,
+      },
+      file_id,
+      entity_id,
+      storageMetadata,
+    });
+  } finally {
+    await fs.promises.unlink(textPath).catch(() => undefined);
+  }
+};
+
+/**
+ * Registers a sandbox copy as an agent resource. Chat attachments need no registration — the file
+ * is categorized from its own `codeEnvRef` on every turn — but a file saved to an agent does.
+ */
+const registerSandboxResource = async ({
+  req,
+  agent_id,
+  metadata,
+  messageAttachment,
+  sandboxRef,
+}) => {
+  if (messageAttachment || !sandboxRef || !agent_id) {
+    return;
+  }
+  await db.addAgentResourceFile({
+    file_id: metadata.file_id,
+    agent_id,
+    tool_resource: EToolResources.execute_code,
+    updatingUserId: req?.user?.id,
+  });
+};
+
+/**
+ * Stores the original bytes and creates the record for a prepared file that keeps its own format:
+ * a searchable document or a spreadsheet in the sandbox. One record can hold several roles at
+ * once — a sandbox reference for editing, the vector-store flag for search, and a short preview
+ * the model reads in the conversation.
+ *
+ * @returns {Promise<MongoFile>} The created file record.
+ */
+const persistPreparedFile = async ({
+  req,
+  file,
+  metadata,
+  messageAttachment,
+  agent_id,
+  entity_id,
+  tool_resource,
+  previewText,
+  searchable,
+  searchText,
+  sandboxRef,
+  preparation,
+}) => {
+  const appConfig = req.config;
+  const { file_id, temp_file_id = null, conversationId } = metadata;
+  const source = getFileStrategy(appConfig, { isImage: false });
+  const { handleFileUpload } = getStrategyFunctions(source);
+  const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
+  const storageResult = await sanitizedUploadFn({
+    req,
+    file,
+    file_id,
+    basePath: 'uploads',
+    entity_id,
+  });
+
+  const storageMetadata = getStorageMetadata({
+    filepath: storageResult.filepath,
+    source,
+    storageKey: storageResult.storageKey,
+    storageRegion: storageResult.storageRegion,
+  });
+
+  let embedded;
+  let filename = storageResult.filename;
+  if (searchable) {
+    const embedding = await embedForSearch({
+      req,
+      file,
+      file_id,
+      entity_id,
+      text: searchText,
+      storageMetadata,
+    });
+    embedded = embedding?.embedded;
+    filename = embedding?.filename || filename;
+  }
+
+  if (!messageAttachment && tool_resource) {
+    await db.addAgentResourceFile({
+      file_id,
+      agent_id,
+      tool_resource,
+      updatingUserId: req?.user?.id,
+    });
+  }
+
+  const retentionExpiry = await getAgentFileRetentionExpiry({
+    req,
+    messageAttachment,
+    tool_resource,
+  });
+
+  const fileInfo = {
+    ...removeNullishValues({
+      user: req.user.id,
+      file_id,
+      temp_file_id,
+      bytes: storageResult.bytes,
+      filepath: storageResult.filepath,
+      ...storageMetadata,
+      filename: filename ?? sanitizeFilename(file.originalname),
+      conversationId: messageAttachment ? conversationId : undefined,
+      context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
+      model: messageAttachment ? undefined : req.body.model,
+      metadata: { ...sandboxRef, preparation },
+      text: previewText,
+      type: file.mimetype,
+      embedded,
+      source,
+      tenantId: req.user.tenantId,
+    }),
+    ...retentionExpiry,
+  };
+
+  return db.createFile(fileInfo, true);
+};
+
+/**
+ * Extracts whatever text the upload can give up, in the order that costs least: speech-to-text
+ * for audio, the free document parser (escalating to OCR only for scans) for documents, and a
+ * plain text parse for everything else. Returns `undefined` when the file has no readable text,
+ * which is a valid outcome — the caller then falls back on a route that does not need any.
+ *
+ * @returns {Promise<{ text: string, bytes: number, filepath?: string, type?: string, pages?: number, ocrApplied: boolean } | undefined>}
+ */
+const extractPreparedText = async ({
+  req,
+  file,
+  metadata,
+  fileConfig,
+  availability,
+  autoConfig,
+  category,
+  sseStream,
+}) => {
+  if (category === FileCategory.audio) {
+    if (!fileConfig.checkType(file.mimetype, fileConfig.stt?.supportedMimeTypes || [])) {
+      return undefined;
+    }
+    const sttService = await STTService.getInstance();
+    const { text, bytes } = await processAudioFile({ req, file, sttService });
+    return { text, bytes, ocrApplied: false };
+  }
+
+  if (isDocumentParserType(file.mimetype) || availability.ocr) {
+    const extracted = await extractDocumentText({
+      req,
+      file,
+      ocrAvailable: availability.ocr,
+      ocrMinCharsPerPage: autoConfig.ocrMinCharsPerPage,
+      onRecognize: () => sseStream?.sendProgress(UploadStage.recognizing),
+    });
+    if (extracted?.text?.trim()) {
+      return extracted;
+    }
+  }
+
+  if (!fileConfig.checkType(file.mimetype, fileConfig.text?.supportedMimeTypes || [])) {
+    return undefined;
+  }
+
+  try {
+    const { text, bytes } = await parseText({ req, file, file_id: metadata.file_id });
+    return text?.trim() ? { text, bytes, type: file.mimetype, ocrApplied: false } : undefined;
+  } catch (err) {
+    logger.warn(
+      `[processAgentFileUpload] Text extraction found nothing in "${file.originalname}":`,
+      err,
+    );
+    return undefined;
+  }
+};
+
+/**
+ * The tools this chat's assistant will actually be handed, or `null` when that cannot be
+ * determined and preparation should not narrow itself.
+ *
+ * `checkCapability` answers the deployment-wide question ("is file search enabled for Agents?"),
+ * but `ToolService` equips `file_search` and `execute_code` only when they appear in the
+ * assistant's own tool list. Preparing a file for a tool the model never receives is worse than
+ * not preparing it at all: a long document would be embedded and billed, then be unreadable.
+ *
+ * @returns {Promise<Set<string> | null>}
+ */
+const resolveAssistantTools = async ({ req, metadata }) => {
+  const { agent_id, spec } = metadata;
+
+  if (agent_id && !isEphemeralAgentId(agent_id)) {
+    try {
+      const agent = await db.getAgent({ id: stripAgentIdSuffix(agent_id) });
+      return Array.isArray(agent?.tools) ? new Set(agent.tools) : null;
+    } catch (err) {
+      logger.warn(`[processAgentFileUpload] Could not read tools for agent "${agent_id}":`, err);
+      return null;
+    }
+  }
+
+  /** Ephemeral chats take their tools from the model spec (`loadEphemeralAgent`). */
+  const modelSpecs = req.config?.modelSpecs?.list;
+  const modelSpec = spec ? modelSpecs?.find((entry) => entry.name === spec) : undefined;
+  if (!modelSpec) {
+    return null;
+  }
+
+  const tools = new Set();
+  if (modelSpec.executeCode === true) {
+    tools.add(Tools.execute_code);
+  }
+  if (modelSpec.fileSearch === true) {
+    tools.add(Tools.file_search);
+  }
+  return tools;
+};
+
+/**
+ * Handles an upload the user attached without choosing a destination. Extraction and delivery are
+ * decided here rather than in the composer: the browser knows a file's bytes but not how much text
+ * it holds, whether a PDF is a scan, or how much of the conversation's budget is already spent.
+ *
+ * @param {Object} params - The parameters object.
+ * @param {ServerRequest} params.req - The Express request object.
+ * @param {Express.Response} params.res - The Express response object.
+ * @param {FileMetadata} params.metadata - Additional metadata for the file.
+ * @param {import('@librechat/api').UploadSseStream | null} [params.sseStream] - Active upload SSE stream, if enabled.
+ * @returns {Promise<void>}
+ */
+const prepareUploadAutomatically = async ({ req, res, metadata, sseStream }) => {
+  const { file } = req;
+  const appConfig = req.config;
+  const { agent_id } = metadata;
+  const messageAttachment = !!metadata.message_file;
+  const category = categorizeFile(file.mimetype);
+
+  /** Images have nothing to extract and nothing to search: the model simply looks at them. */
+  const deliverToProvider = () =>
+    processAgentFileUpload({
+      req,
+      res,
+      sseStream,
+      metadata: { ...metadata, tool_resource: undefined },
+    });
+
+  if (category === FileCategory.image) {
+    return await deliverToProvider();
+  }
+
+  const fileConfig = mergeFileConfig(appConfig.fileConfig);
+  const autoConfig = fileConfig.autoPreparation ?? defaultAutoPreparation;
+  const isOcrConfigured =
+    appConfig?.ocr != null &&
+    fileConfig.checkType(file.mimetype, fileConfig.ocr?.supportedMimeTypes || []);
+
+  const [fullText, fileSearch, codeExecution, ocr, assistantTools] = await Promise.all([
+    checkCapability(req, AgentCapabilities.context),
+    checkCapability(req, AgentCapabilities.file_search),
+    checkCapability(req, AgentCapabilities.execute_code),
+    isOcrConfigured ? checkCapability(req, AgentCapabilities.ocr) : Promise.resolve(false),
+    resolveAssistantTools({ req, metadata }),
+  ]);
+
+  /** Reading text in full needs no tool, so only the tool-backed routes are narrowed. */
+  const equipped = (tool) => assistantTools == null || assistantTools.has(tool);
+
+  const availability = {
+    fullText,
+    search: fileSearch && !!process.env.RAG_API_URL && equipped(Tools.file_search),
+    sandbox: codeExecution && equipped(Tools.execute_code),
+    ocr: isOcrConfigured && ocr,
+  };
+
+  sseStream?.sendProgress(UploadStage.reading);
+  const extracted = await extractPreparedText({
+    req,
+    file,
+    metadata,
+    fileConfig,
+    availability,
+    autoConfig,
+    category,
+    sseStream,
+  });
+
+  const [textTokens, conversationUsedTokens] = await Promise.all([
+    extracted?.text ? countTokens(extracted.text) : 0,
+    getConversationTextTokens({ req, conversationId: metadata.conversationId }),
+  ]);
+
+  const plan = planPreparation({
+    mimetype: file.mimetype,
+    textTokens,
+    conversationUsedTokens,
+    availability,
+    config: autoConfig,
+    ocrApplied: extracted?.ocrApplied === true,
+  });
+
+  if (plan.delivery === DeliveryMethod.provider) {
+    return await deliverToProvider();
+  }
+
+  const entity_id = messageAttachment === true ? undefined : agent_id;
+  const needsSandboxCopy = plan.sandboxCopy || plan.delivery === DeliveryMethod.sandbox;
+  const sandboxRef = needsSandboxCopy
+    ? await uploadToCodeEnvironment({ req, file, agent_id, messageAttachment })
+    : undefined;
+
+  const preparation = {
+    delivery: plan.delivery,
+    label: plan.label,
+    ocrApplied: plan.ocrApplied,
+    pageCount: extracted?.pages,
+  };
+
+  if (plan.delivery === DeliveryMethod.full_text) {
+    const result = await persistExtractedText({
+      req,
+      file,
+      metadata,
+      messageAttachment,
+      tool_resource: EToolResources.context,
+      agent_id,
+      text: extracted.text,
+      bytes: extracted.bytes,
+      filepath: extracted.filepath,
+      type: extracted.type,
+      fileMetadata: {
+        ...sandboxRef,
+        preparation: { ...preparation, contextText: true, contextTokens: textTokens },
+      },
+    });
+    await registerSandboxResource({ req, agent_id, metadata, messageAttachment, sandboxRef });
+    sseStream?.sendProgress(UploadStage.ready);
+    return sendUploadSuccess(
+      res,
+      sseStream,
+      'Agent file uploaded and processed successfully',
+      result,
+    );
+  }
+
+  const searchable = plan.delivery === DeliveryMethod.search;
+  if (searchable) {
+    sseStream?.sendProgress(UploadStage.indexing);
+  }
+
+  /** A data file the model works on with code still gets a short preview, so it can see the
+   * column names and shape before writing a single line. */
+  const previewText =
+    plan.delivery === DeliveryMethod.sandbox && availability.fullText && extracted?.text
+      ? (
+          await processTextWithTokenLimit({
+            text: extracted.text,
+            tokenLimit: autoConfig.previewTokens,
+            tokenCountFn: countTokens,
+          })
+        ).text
+      : undefined;
+
+  const result = await persistPreparedFile({
+    req,
+    file,
+    metadata,
+    messageAttachment,
+    agent_id,
+    entity_id,
+    tool_resource: plan.toolResource,
+    previewText,
+    searchable,
+    searchText: extracted?.text,
+    sandboxRef,
+    preparation: {
+      ...preparation,
+      contextText: previewText != null,
+      contextTokens: previewText != null ? Math.min(textTokens, autoConfig.previewTokens) : 0,
+    },
+  });
+
+  if (plan.delivery === DeliveryMethod.search) {
+    await registerSandboxResource({ req, agent_id, metadata, messageAttachment, sandboxRef });
+  }
+
+  sseStream?.sendProgress(UploadStage.ready);
+  return sendUploadSuccess(
+    res,
+    sseStream,
+    'Agent file uploaded and processed successfully',
+    result,
+  );
+};
+
 /**
  * Applies the current strategy for file uploads.
  * Saves file metadata to the database with an expiry TTL.
@@ -670,6 +1453,10 @@ const processFileUpload = async ({ req, res, metadata, sseStream }) => {
  * @returns {Promise<void>}
  */
 const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
+  if (metadata.tool_resource === AUTO_TOOL_RESOURCE) {
+    return await prepareUploadAutomatically({ req, res, metadata, sseStream });
+  }
+
   const { file } = req;
   const appConfig = req.config;
   const { agent_id, tool_resource, file_id, temp_file_id = null } = metadata;
@@ -697,44 +1484,11 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     if (!isCodeEnabled) {
       throw new Error('Code execution is not enabled for Agents');
     }
-    const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
-    const stream = fs.createReadStream(file.path);
-    /* Resource identity for codeapi's sessionKey:
-     * - chat attachments (messageAttachment=true): `kind: 'user'`, codeapi
-     *   buckets under `<tenant>:user:<authContext.userId>` regardless of `id`.
-     * - agent setup files (messageAttachment=false): `kind: 'agent'`, shared
-     *   per agent identity. `id` carries the agent id. */
-    const codeKind = messageAttachment === true ? 'user' : 'agent';
-    const codeId = messageAttachment === true ? req.user.id : agent_id;
-    /* Upload under the same sanitized filename LC stores in its DB
-     * (`fileInfo.filename` below uses `sanitizeFilename(originalname)`).
-     * Codeapi/file_server use this as the on-disk name in the sandbox
-     * — `/mnt/data/<filename>` — and `primeFiles`'s `toolContext` text
-     * + `_injected_files.name` both reference `file.filename`. Sending
-     * the unsanitized `file.originalname` here makes the sandbox path
-     * (with spaces / special chars) drift from what LC tells the model
-     * is available, causing FileNotFoundError on the first reference. */
-    const sandboxFilename = sanitizeFilename(file.originalname);
-    const uploaded = await uploadCodeEnvFile({
+    fileInfoMetadata = await uploadToCodeEnvironment({
       req,
-      stream,
-      filename: sandboxFilename,
-      kind: codeKind,
-      id: codeId,
-    });
-    /* Persist under the structured `codeEnvRef` shape — the only key the
-     * post-cutover schema (`metadata.codeEnvRef`) and downstream readers
-     * (`primeFiles`, `getCodeFilesByIds`, `categorizeFileForToolResources`,
-     * controller filtering) accept. Storing under the legacy
-     * `fileIdentifier` key would be silently dropped by mongoose strict
-     * mode and the file would lose its sandbox reference on subsequent
-     * priming turns. */
-    fileInfoMetadata = mergeCodeEnvRef(undefined, {
-      kind: codeKind,
-      id: codeId,
-      storage_session_id: uploaded.storage_session_id,
-      file_id: uploaded.file_id,
-      executionProfile: 'default',
+      file,
+      agent_id,
+      messageAttachment,
     });
   } else if (tool_resource === EToolResources.file_search) {
     const isFileSearchEnabled = await checkCapability(req, AgentCapabilities.file_search);
@@ -743,179 +1497,38 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     }
     // Note: File search processing continues to dual storage logic below
   } else if (tool_resource === EToolResources.context) {
-    const { file_id, temp_file_id = null } = metadata;
-
-    /**
-     * @param {object} params
-     * @param {string} params.text
-     * @param {number} params.bytes
-     * @param {string} params.filepath
-     * @param {string} params.type
-     * @return {Promise<void>}
-     */
-    const createTextFile = async ({ text, bytes, filepath, type = 'text/plain' }) => {
-      const textBytes = Buffer.byteLength(text, 'utf8');
-      if (textBytes > 15 * megabyte) {
-        throw new Error(
-          `Extracted text from "${file.originalname}" exceeds the 15MB storage limit (${Math.round(textBytes / megabyte)}MB). Try a shorter document.`,
-        );
-      }
-      const retentionExpiry = await getAgentFileRetentionExpiry({
-        req,
-        messageAttachment,
-        tool_resource,
-      });
-      const fileInfo = {
-        ...removeNullishValues({
-          text,
-          bytes,
-          file_id,
-          temp_file_id,
-          user: req.user.id,
-          type,
-          filepath: filepath ?? file.path,
-          source: FileSources.text,
-          filename: file.originalname,
-          model: messageAttachment ? undefined : req.body.model,
-          context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
-          tenantId: req.user.tenantId,
-        }),
-        ...retentionExpiry,
-      };
-
-      if (!messageAttachment && tool_resource) {
-        await db.addAgentResourceFile({
-          file_id,
-          agent_id,
-          tool_resource,
-          updatingUserId: req?.user?.id,
-        });
-      }
-      const result = await db.createFile(fileInfo, true);
-      sendUploadSuccess(res, sseStream, 'Agent file uploaded and processed successfully', result);
-    };
-
-    const fileConfig = mergeFileConfig(appConfig.fileConfig);
-
-    const shouldUseConfiguredOCR =
-      appConfig?.ocr != null &&
-      fileConfig.checkType(file.mimetype, fileConfig.ocr?.supportedMimeTypes || []);
-
-    const isDocumentParserEligible = documentParserMimeTypes.some((regex) =>
-      regex.test(file.mimetype),
+    const extracted = await resolveContextExtraction({
+      req,
+      file,
+      metadata,
+      appConfig,
+      onRecognize: () => sseStream?.sendProgress(UploadStage.recognizing),
+    });
+    const result = await persistExtractedText({
+      req,
+      file,
+      metadata,
+      messageAttachment,
+      tool_resource,
+      agent_id,
+      text: extracted.text,
+      bytes: extracted.bytes,
+      filepath: extracted.filepath,
+      type: extracted.type,
+      fileMetadata: {
+        preparation: {
+          delivery: DeliveryMethod.full_text,
+          ocrApplied: extracted.ocrApplied === true,
+          pageCount: extracted.pages,
+        },
+      },
+    });
+    return sendUploadSuccess(
+      res,
+      sseStream,
+      'Agent file uploaded and processed successfully',
+      result,
     );
-
-    /**
-     * When an admin narrows `fileConfig.text.supportedMimeTypes` to a non-permissive allowlist that
-     * includes a document type and a RAG API is configured, honor that intent by sending the file to
-     * RAG `/text` instead of the built-in document parser. The permissive default catch-all is
-     * excluded via `isPermissiveMimeConfig`, so RAG deployments that never customized text handling
-     * keep the built-in parser introduced in #11900.
-     */
-    const shouldUseConfiguredText =
-      !!process.env.RAG_API_URL &&
-      isDocumentParserEligible &&
-      !isPermissiveMimeConfig(fileConfig.text?.supportedMimeTypes) &&
-      fileConfig.checkType(file.mimetype, fileConfig.text?.supportedMimeTypes || []);
-
-    const shouldUseDocumentParser =
-      !shouldUseConfiguredOCR && !shouldUseConfiguredText && isDocumentParserEligible;
-
-    const shouldUseOCR = shouldUseConfiguredOCR || shouldUseDocumentParser;
-
-    const resolveDocumentText = async () => {
-      if (shouldUseConfiguredOCR) {
-        try {
-          const ocrStrategy = appConfig?.ocr?.strategy ?? FileSources.document_parser;
-          const { handleFileUpload } = getStrategyFunctions(ocrStrategy);
-          return await handleFileUpload({ req, file, loadAuthValues });
-        } catch (err) {
-          logger.error(
-            `[processAgentFileUpload] Configured OCR failed for "${file.originalname}", falling back to document_parser:`,
-            err,
-          );
-        }
-      }
-      try {
-        const { handleFileUpload } = getStrategyFunctions(FileSources.document_parser);
-        return await handleFileUpload({ req, file, loadAuthValues });
-      } catch (err) {
-        logger.error(
-          `[processAgentFileUpload] Document parser failed for "${file.originalname}":`,
-          err,
-        );
-      }
-    };
-
-    if (shouldUseConfiguredOCR && !(await checkCapability(req, AgentCapabilities.ocr))) {
-      throw new Error('OCR capability is not enabled for Agents');
-    }
-
-    if (shouldUseOCR) {
-      const ocrResult = await resolveDocumentText();
-      if (ocrResult) {
-        const { text, bytes, filepath: ocrFileURL } = ocrResult;
-        return await createTextFile({ text, bytes, filepath: ocrFileURL });
-      }
-      throw new Error(
-        `Unable to extract text from "${file.originalname}". The document may be image-based and requires an OCR service to process.`,
-      );
-    }
-
-    const shouldUseSTT = fileConfig.checkType(
-      file.mimetype,
-      fileConfig.stt?.supportedMimeTypes || [],
-    );
-
-    if (shouldUseSTT) {
-      const sttService = await STTService.getInstance();
-      const { text, bytes } = await processAudioFile({ req, file, sttService });
-      return await createTextFile({ text, bytes });
-    }
-
-    const shouldUseText = fileConfig.checkType(
-      file.mimetype,
-      fileConfig.text?.supportedMimeTypes || [],
-    );
-
-    if (!shouldUseText) {
-      throw new Error(`File type ${file.mimetype} is not supported for text parsing.`);
-    }
-
-    /**
-     * A document type the admin routed to configured text extraction: prefer RAG `/text`, but fall
-     * back to the built-in document parser (not raw native text) when RAG is unavailable, so a
-     * transient outage doesn't degrade a docx/pdf to unreadable bytes. Only the RAG extraction is
-     * inside the fallback catch: a downstream persistence failure (size guard, DB, agent-resource
-     * mutation) must surface as itself, not trigger a second extraction attempt.
-     */
-    if (shouldUseConfiguredText) {
-      let configuredText;
-      try {
-        configuredText = await parseText({ req, file, file_id, allowNativeFallback: false });
-      } catch (err) {
-        logger.warn(
-          `[processAgentFileUpload] Configured RAG text extraction unavailable for "${file.originalname}", using built-in document parser:`,
-          err,
-        );
-        const documentText = await resolveDocumentText();
-        if (!documentText) {
-          throw new Error(
-            `Unable to extract text from "${file.originalname}". RAG text extraction was unavailable and the built-in parser produced no result.`,
-          );
-        }
-        const { text, bytes, filepath: docFileURL } = documentText;
-        return await createTextFile({ text, bytes, filepath: docFileURL });
-      }
-      return await createTextFile({
-        text: configuredText.text,
-        bytes: configuredText.bytes,
-        type: file.mimetype,
-      });
-    }
-
-    const { text, bytes } = await parseText({ req, file, file_id });
-    return await createTextFile({ text, bytes, type: file.mimetype });
   }
 
   // Dual storage pattern for RAG files: Storage + Vector DB

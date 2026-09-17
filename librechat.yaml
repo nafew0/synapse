@@ -65,6 +65,34 @@ interface:
   fileCitations: true
 
 
+# Automatic upload preparation. Files attached with "Upload file" are extracted and delivered
+# without the user choosing a mode: short documents are read in full, long ones are searched,
+# spreadsheets and data files go to the code sandbox. Thresholds are in tokens.
+fileConfig:
+  autoPreparation:
+    # Per-file ceiling for reading a document's text straight into the conversation.
+    fullTextTokens: 20000
+    # Shared budget across one conversation; further documents are searched instead, so several
+    # individually small files cannot become a large payload re-sent on every turn.
+    conversationTextTokens: 40000
+    # Preview kept alongside a spreadsheet or data file that lives in the code sandbox.
+    previewTokens: 2000
+    # Average characters per page below which a PDF is treated as a scan and sent to OCR.
+    ocrMinCharsPerPage: 100
+
+# Text recognition for scanned documents. The free parser always runs first; OCR is billed per
+# page and is reached only when a document has no usable text layer.
+#
+# Two options are still open and need testing against real Bangla scans before one is picked:
+#   1. Mistral direct (config only) — uncomment the block below and set OCR_API_KEY.
+#   2. OpenRouter (`strategy: custom_ocr`) — the enum exists but has no implementation yet;
+#      it would post the PDF to OpenRouter with the `file-parser` plugin.
+# ocr:
+#   strategy: 'mistral_ocr'
+#   apiKey: '${OCR_API_KEY}'
+#   baseURL: 'https://api.mistral.ai/v1'
+#   mistralModel: 'mistral-ocr-latest'
+
 speech:
   stt:
     openai:
@@ -127,6 +155,9 @@ modelSpecs:
     - name: gpt-5.6-luna
       label: ChatGPT
       askUserQuestion: true
+      # Retrieval only: long attachments are searchable, but editing a file needs the
+      # code sandbox, which belongs to the Office Assistant alone.
+      fileSearch: true
       preset:
         endpoint: OpenRouter
         model: openai/gpt-5.6-luna
@@ -140,6 +171,10 @@ modelSpecs:
           clarification questions for one request.
           Do not ask for passwords, payment information, or other unnecessary
           sensitive data. Do not ask for greetings or simple factual questions.
+          You can read attached files and answer questions about them. You cannot
+          edit a document or build a spreadsheet — when the user asks for that,
+          say so plainly in one sentence and tell them to switch to the Office
+          Assistant, which can return the edited file.
 
     # - name: claude-sonnet-4-5
     #   label: Sonnet 4.5
@@ -155,6 +190,9 @@ modelSpecs:
     - name: claude-haiku-4-5
       label: Claude
       askUserQuestion: true
+      # Retrieval only: long attachments are searchable, but editing a file needs the
+      # code sandbox, which belongs to the Office Assistant alone.
+      fileSearch: true
       preset:
         endpoint: Claude
         model: claude-haiku-4-5
@@ -169,6 +207,10 @@ modelSpecs:
           clarification questions for one request.
           Do not ask for passwords, payment information, or other unnecessary
           sensitive data. Do not ask for greetings or simple factual questions.
+          You can read attached files and answer questions about them. You cannot
+          edit a document or build a spreadsheet — when the user asks for that,
+          say so plainly in one sentence and tell them to switch to the Office
+          Assistant, which can return the edited file.
 
     # - name: nvidia/nemotron-3.5-lightning
     #   label: Nemotron-3.5
@@ -188,6 +230,9 @@ modelSpecs:
     - name: z-ai-glm-5-2
       label: GLM 5.2
       askUserQuestion: true
+      # Retrieval only: long attachments are searchable, but editing a file needs the
+      # code sandbox, which belongs to the Office Assistant alone.
+      fileSearch: true
       preset:
         endpoint: NVIDIA
         model: z-ai/glm-5.2
@@ -199,6 +244,7 @@ endpoints:
     # OCR'd document text) gets inserted into the conversation per call — without
     # this, a large-document read/edit can dump tens of thousands of characters
     # into context on one turn.
+    maxToolResultChars: 25000
     capabilities:
       - 'subagents'
       - 'execute_code'
@@ -208,6 +254,10 @@ endpoints:
       - 'tools'
       - 'context'
       - 'ask_user_question'
+      # Required before automatic preparation may send a scanned document to OCR.
+      # Without it, uploads that need text recognition fail with
+      # "OCR capability is not enabled for Agents".
+      - 'ocr'
 
   anthropic:
     apiKey: '${ANTHROPIC_API_KEY}'

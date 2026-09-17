@@ -31,6 +31,9 @@ const publicSharedLinksEnabled =
   sharedLinksEnabled && isEnabled(process.env.ALLOW_SHARED_LINKS_PUBLIC);
 
 const sharePointFilePickerEnabled = isEnabled(process.env.ENABLE_SHAREPOINT_FILEPICKER);
+/** Automatic upload preparation is the default; set `AUTO_FILE_PREPARATION=false` to restore the
+ * destination menu where users pick how each file is processed. */
+const autoFilePreparationEnabled = isEnabled(process.env.AUTO_FILE_PREPARATION ?? 'true');
 const openidReuseTokens = isEnabled(process.env.OPENID_REUSE_TOKENS);
 
 /**
@@ -311,6 +314,7 @@ router.get('/', async function (req, res) {
       ...(cloudFront ? { cloudFront } : {}),
       ...(rum ? { rum } : {}),
       fileUploadSseEnabled: isEnabled(process.env.FILE_UPLOAD_SSE_ENABLED),
+      autoFilePreparationEnabled,
     };
 
     const webSearch = buildWebSearchConfig(appConfig);

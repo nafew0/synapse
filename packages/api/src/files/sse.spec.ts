@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import type { Request, Response } from 'express';
-import { sendUploadSuccess, shouldUseUploadSse, startUploadSseStream } from './sse';
+import { UploadStage, sendUploadSuccess, shouldUseUploadSse, startUploadSseStream } from './sse';
 
 describe('sse', () => {
   const createMockReq = (accept?: string): Request =>
@@ -64,6 +64,21 @@ describe('sse', () => {
 
     afterEach(() => {
       jest.useRealTimers();
+    });
+
+    it('reports preparation stages as progress events', () => {
+      const res = createMockRes();
+      const stream = startUploadSseStream(res);
+
+      stream.sendProgress(UploadStage.reading);
+      stream.sendProgress(UploadStage.recognizing);
+      stream.close();
+
+      const progress = parseEvents(res).filter((entry) => entry.event === 'progress');
+      expect(progress).toEqual([
+        { event: 'progress', data: { stage: 'reading' } },
+        { event: 'progress', data: { stage: 'recognizing' } },
+      ]);
     });
 
     it('writes the SSE headers and flushes them immediately', () => {
@@ -183,6 +198,7 @@ describe('sse', () => {
       const res = createMockRes();
       const sseStream = {
         sendData: jest.fn(),
+        sendProgress: jest.fn(),
         sendError: jest.fn(),
         close: jest.fn(),
       };

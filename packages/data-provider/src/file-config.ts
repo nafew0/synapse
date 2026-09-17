@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import type { EndpointFileConfig, FileConfig, RegexLike } from './types/files';
+import type {
+  RegexLike,
+  FileConfig,
+  EndpointFileConfig,
+  AutoPreparationConfig,
+} from './types/files';
 import { EModelEndpoint, isAgentsEndpoint, isDocumentSupportedProvider } from './schemas';
 import { normalizeEndpointName } from './utils';
 
@@ -447,6 +452,36 @@ export const megabyte = 1024 * 1024;
 /** Helper function to get megabytes value */
 export const mbToBytes = (mb: number): number => mb * megabyte;
 
+/**
+ * Sentinel `tool_resource` meaning "the server decides". Sent by the single "Upload file"
+ * action so extraction and delivery are planned from the file itself rather than from a
+ * destination the user had to pick.
+ */
+export const AUTO_TOOL_RESOURCE = 'auto';
+
+/** Defaults for the automatic preparation pipeline; overridable via `fileConfig.autoPreparation`. */
+/** Applies only the thresholds an admin actually set, so a partial block keeps the rest of the defaults. */
+const mergeAutoPreparation = (
+  base: AutoPreparationConfig,
+  overrides: Partial<AutoPreparationConfig>,
+): AutoPreparationConfig => {
+  const merged: AutoPreparationConfig = { ...base };
+  for (const key of Object.keys(merged) as Array<keyof AutoPreparationConfig>) {
+    const value = overrides[key];
+    if (typeof value === 'number') {
+      merged[key] = value;
+    }
+  }
+  return merged;
+};
+
+export const defaultAutoPreparation: AutoPreparationConfig = {
+  fullTextTokens: 20000,
+  conversationTextTokens: 40000,
+  previewTokens: 2000,
+  ocrMinCharsPerPage: 100,
+};
+
 const defaultSizeLimit = mbToBytes(512);
 const defaultSkillImportSizeLimit = mbToBytes(50);
 const defaultTokenLimit = 100000;
@@ -484,6 +519,7 @@ export const fileConfig = {
   serverFileSizeLimit: defaultSizeLimit,
   avatarSizeLimit: mbToBytes(2),
   fileTokenLimit: defaultTokenLimit,
+  autoPreparation: defaultAutoPreparation,
   clientImageResize: {
     enabled: false,
     maxWidth: 1900,
@@ -519,12 +555,20 @@ const skillFileConfigSchema = z.object({
   fileSizeLimit: z.number().min(0).optional(),
 });
 
+const autoPreparationSchema = z.object({
+  fullTextTokens: z.number().min(0).optional(),
+  conversationTextTokens: z.number().min(0).optional(),
+  previewTokens: z.number().min(0).optional(),
+  ocrMinCharsPerPage: z.number().min(0).optional(),
+});
+
 export const fileConfigSchema = z.object({
   endpoints: z.record(endpointFileConfigSchema).optional(),
   skills: skillFileConfigSchema.optional(),
   serverFileSizeLimit: z.number().min(0).optional(),
   avatarSizeLimit: z.number().min(0).optional(),
   fileTokenLimit: z.number().min(0).optional(),
+  autoPreparation: autoPreparationSchema.optional(),
   imageGeneration: z
     .object({
       percentage: z.number().min(0).max(100).optional(),
@@ -997,9 +1041,17 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
       ...fileConfig.stt,
       supportedMimeTypes: fileConfig.stt?.supportedMimeTypes || [],
     },
+    autoPreparation: { ...defaultAutoPreparation },
   };
   if (!dynamic) {
     return mergedConfig;
+  }
+
+  if (dynamic.autoPreparation !== undefined) {
+    mergedConfig.autoPreparation = mergeAutoPreparation(
+      mergedConfig.autoPreparation,
+      dynamic.autoPreparation,
+    );
   }
 
   if (dynamic.serverFileSizeLimit !== undefined) {
