@@ -121,6 +121,7 @@ jest.mock('~/models', () => ({
   getExpiredFiles: jest.fn(),
   getFiles: jest.fn().mockResolvedValue([]),
   getAgent: jest.fn().mockResolvedValue(null),
+  getAgents: jest.fn().mockResolvedValue([]),
   addAgentResourceFile: jest.fn().mockResolvedValue({}),
   removeAgentResourceFiles: jest.fn(),
   removeAgentResourceFilesFromAllAgents: jest.fn(),
@@ -1160,6 +1161,51 @@ describe('processAgentFileUpload', () => {
 
       test('skips the sandbox copy when the agent has no execute_code tool', async () => {
         db.getAgent.mockResolvedValueOnce({ id: 'agent_office', tools: ['file_search'] });
+        const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null, path: uploadPath });
+
+        await processAgentFileUpload({
+          req,
+          res: mockRes,
+          metadata: autoMetadata({ agent_id: 'agent_office' }),
+        });
+
+        expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.execute_code);
+      });
+
+      test('prepares a sandbox copy for a router whose handoff specialist has execute_code', async () => {
+        db.getAgent.mockResolvedValueOnce({
+          id: 'agent_office',
+          tools: ['ask_user_question'],
+          edges: [
+            { from: 'agent_office', to: 'agent_office_presentations', edgeType: 'handoff' },
+            { from: 'agent_office', to: ['agent_office_mail'], edgeType: 'handoff' },
+          ],
+        });
+        db.getAgents.mockResolvedValueOnce([
+          { id: 'agent_office_presentations', tools: ['ask_user_question', 'execute_code'] },
+          { id: 'agent_office_mail', tools: [] },
+        ]);
+        const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null, path: uploadPath });
+
+        await processAgentFileUpload({
+          req,
+          res: mockRes,
+          metadata: autoMetadata({ agent_id: 'agent_office' }),
+        });
+
+        expect(db.getAgents).toHaveBeenCalledWith({
+          id: { $in: ['agent_office_presentations', 'agent_office_mail'] },
+        });
+        expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.execute_code);
+      });
+
+      test('skips the sandbox copy when neither the router nor its specialists run code', async () => {
+        db.getAgent.mockResolvedValueOnce({
+          id: 'agent_office',
+          tools: ['ask_user_question'],
+          edges: [{ from: 'agent_office', to: 'agent_office_mail', edgeType: 'handoff' }],
+        });
+        db.getAgents.mockResolvedValueOnce([{ id: 'agent_office_mail', tools: ['file_search'] }]);
         const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null, path: uploadPath });
 
         await processAgentFileUpload({

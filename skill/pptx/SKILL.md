@@ -25,12 +25,13 @@ Paths are relative to this skill's directory. Everything else is plain Python, `
 | `scripts/clean.py unpacked/` | Delete slides, media, and rels no longer referenced. Run **after** `<p:sldIdLst>` is final |
 | `scripts/office/validate.py deck.pptx [--original src.pptx]` | Schema, relationship, content-type, chart and slide checks; each failure names its fix. Pass `--original` for any template-derived deck — it baselines the schema checks against the template, so the template's own XSD errors don't read as yours |
 | `scripts/office/soffice.py --headless --convert-to pdf deck.pptx` | LibreOffice wrapper — bare `soffice` hangs in this sandbox |
+| `scripts/check_layout.py deck.pptx [--original src.pptx] [--slides 2,5] [--json]` | Slide size, overflowing text, text covered by a later shape, shapes off the canvas. Measured with the deck's own fonts; exits 2 on defects |
 
 ## Creating with pptxgenjs — gotchas
 
 `pptxgenjs` is preinstalled — do not run `npm install` first; write the script and `require('pptxgenjs')` directly. Only if that require fails: `npm install pptxgenjs`. The model knows the API; these are the footguns:
 
-- **Set `pres.layout` before adding slides.** The default canvas is `LAYOUT_16x9` = **10" × 5.625"**, not 13.3" wide. Coordinates past the edge are written, not clamped — the shape just isn't on the slide. (`LAYOUT_WIDE` is 13.3" × 7.5".)
+- **Set `pres.layout` before adding slides.** The default canvas is `LAYOUT_16x9` = **10" × 5.625"**, not 13.3" wide. Coordinates past the edge are written, not clamped — the shape just isn't on the slide. Use `pres.layout = "LAYOUT_WIDE"` (13.333" × 7.5") unless the deck you are matching says otherwise.
 - **Hex colors: never `#`, never 8 digits.** `color: "FF0000"`. Both `"#FF0000"` and alpha baked into the hex (`"00000020"`) **corrupt the file**. For translucency: `transparency: 0-100` on fills and images, `opacity: 0.0-1.0` on shadows — each is silently ignored on the other.
 - **pptxgenjs mutates option objects in place** (converts values to EMU on first use). Never share one `shadow`/options object across two `add*` calls — build a fresh object each time.
 - **Shadow `offset` must be ≥ 0** — a negative offset corrupts the file. To cast a shadow upward, use `angle: 270` with a positive offset.
@@ -48,6 +49,47 @@ Paths are relative to this skill's directory. Everything else is plain Python, `
 - **After `writeFile()`, run `python scripts/office/validate.py deck.pptx`.** It reports the two chart faults above and the slide-XML defects PowerPoint refuses, and names the fix for each. Fix them in your generator, not by hand-editing the packed XML.
 - **Never reorder the children of `<p:presentation>`.** pptxgenjs writes `<p:notesMasterIdLst>` right after `<p:sldIdLst>` and points both masters at one theme part. PowerPoint reads that happily — move the element and the same deck becomes unopenable.
 - **Icons:** render `react-icons` to SVG (`ReactDOMServer.renderToStaticMarkup`), rasterize with `sharp` at ≥256px, and insert via `addImage({ data: "image/png;base64," + buf.toString("base64") })` — the `image/png;base64,` prefix is required (`react-icons`, `react`, `react-dom`, and `sharp` are preinstalled — `npm install react-icons react react-dom sharp` only if a require fails).
+
+## Slide size
+
+**Every deck is 16:9 — 13.333" × 7.5" (`LAYOUT_WIDE`).** That is what projectors, laptops and
+PowerPoint's own default expect; a 4:3 deck (10" × 7.5") shows as a narrow panel with black bars
+either side, and is immediately visible as wrong.
+
+- `python-pptx`'s default is **4:3**. Creating a `Presentation()` without setting the size gives
+  you the wrong shape, so set both dimensions before adding any slide:
+
+  ```python
+  from pptx.util import Inches
+  presentation.slide_width = Inches(13.333)
+  presentation.slide_height = Inches(7.5)
+  ```
+
+- **Editing or redesigning: keep the source deck's dimensions,** whatever they are. Read
+  `slide_width`/`slide_height` from the original and set the same values on the output. A deck
+  rebuilt at a different size puts every carried-over position in the wrong place, even when the
+  ratio still works out to 16:9 — 10" × 5.625" is 16:9 too, and half the width of a 13.333" deck.
+- `check_layout.py` reports a deck whose slides are not 16:9, and reports a redesign whose
+  canvas differs from the original when you pass `--original`.
+
+## Redesigning a deck the user gave you
+
+A redesign changes how the deck looks. It does not change what it says.
+
+- **Move the words, never rewrite them.** Copy each string from the source deck verbatim —
+  titles, body copy, captions, footers, the lot. Shortening "A bounded assistant for a small
+  pilot cohort — useful on approved content" into "Useful on approved content" drops the
+  subject and leaves a sentence fragment on the slide; the user notices, and it reads as
+  careless in a document going to their stakeholders. `markitdown deck.pptx` gives you the
+  text to copy from.
+- **If something genuinely will not fit, say so rather than paraphrasing.** Give the slide
+  more room, use a smaller size, or split the content across two slides. Trimming a sentence
+  to make a box work is a last resort, and the final response must name every line you changed.
+- **Keep the slide count and order** unless the user asked for a different structure.
+- **Ask first when the request is ambiguous.** "Redesign this" can mean restyle these exact
+  slides, or build something new from the same material. Use `ask_user_question` — the two
+  produce very different decks.
+- **Match the source's canvas** exactly — see [Slide size](#slide-size).
 
 ## Editing existing decks and templates
 
@@ -201,6 +243,32 @@ pptxgenjs emits chart XML PowerPoint refuses to open, and every other tool
 accepts: python-pptx opens those decks, LibreOffice renders them, the XSD
 passes them. Every failure names its fix. Fix it in the generator and rebuild.
 
+### Mandatory layout gate
+
+`validate.py` proves the file opens; it says nothing about whether the slides read correctly.
+Run the layout check on every deck before you hand it over:
+
+```bash
+python scripts/check_layout.py out.pptx                        # new deck
+python scripts/check_layout.py out.pptx --original deck.pptx   # edit or redesign; add --json for parsing
+```
+
+It reports four things a reader sees immediately, measured with the deck's real font metrics:
+slides that are not 16:9 (and, with `--original`, a canvas that no longer matches the source),
+text that outgrows its box (flagged when the overshoot is large, or when the overflow lands on
+other text), text a later shape covers, and shapes off the canvas. It exits 0 when clean and 2
+when it finds defects, each named by slide and shape.
+
+- **Do not deliver a deck while the check reports defects.** Fix the generator — widen the box,
+  shorten the line, move the shape — and rerun. "It looks fine in my head" is exactly the
+  failure this catches.
+- A defect it reports is a defect regardless of what the render looks like, because a renderer
+  may substitute a narrower font than PowerPoint will use.
+- It is a floor, not a ceiling: it cannot see contrast, alignment or crowding. Do the visual
+  pass below as well.
+- If the check cannot run at all, say so plainly in your final response rather than implying
+  the deck was verified.
+
 ### Visual QA
 
 Convert the slides to images (see [Converting to Images](#converting-to-images)) and inspect every one. After staring at the generating code you tend to see what you expect rather than what rendered, so look at the images fresh (a subagent works well for this if you have one). User-visible defects to look for:
@@ -218,16 +286,24 @@ Convert the slides to images (see [Converting to Images](#converting-to-images))
 - Text boxes too narrow causing excessive wrapping
 - Leftover placeholder content
 
+**Finding a defect is half the job.** Fix it in the generator, rebuild, and re-render the slides
+you changed before delivering — a deck shipped with overlapping text after you looked at it is
+worse than one never checked, because the user reasonably assumes you looked. Say in the final
+response which slides you checked and what you fixed.
+
 ## Converting to Images
 
 Convert presentations to individual slide images for visual inspection:
 
 ```bash
-python scripts/office/soffice.py --headless --convert-to pdf output.pptx
-rm -f slide-*.jpg
-pdftoppm -jpeg -r 150 output.pdf slide
-ls -1 "$PWD"/slide-*.jpg
+mkdir -p /mnt/data/.render
+python scripts/office/soffice.py --headless --convert-to pdf --outdir /mnt/data/.render output.pptx
+rm -f /mnt/data/.render/slide-*.jpg
+pdftoppm -jpeg -r 150 /mnt/data/.render/output.pdf /mnt/data/.render/slide
+ls -1 /mnt/data/.render/slide-*.jpg
 ```
+
+**Render into `/mnt/data/.render`, never into `/mnt/data` itself.** Everything written directly to `/mnt/data` is delivered to the user as a result, so a nine-slide deck checked there arrives as nine images and a stray PDF alongside the file they asked for. A dot-prefixed directory is skipped by that collection while staying readable across calls, which is what these renders need. The same applies to any intermediate PDF, thumbnail grid or cropped image: if the user did not ask for it, it belongs in `/mnt/data/.render`.
 
 **Pass the absolute paths printed above directly to the view tool.** The `rm` clears stale images from prior runs. `pdftoppm` zero-pads based on page count: `slide-1.jpg` for decks under 10 pages, `slide-01.jpg` for 10-99, `slide-001.jpg` for 100+.
 
@@ -235,4 +311,4 @@ ls -1 "$PWD"/slide-*.jpg
 
 ## Dependencies
 
-`pptxgenjs` (npm, preinstalled — install only if `require('pptxgenjs')` fails) · `markitdown[pptx]`, `Pillow`, `defusedxml`, `lxml` (pip — text dump, thumbnail, clean, validate) · LibreOffice (`soffice`, auto-configured for sandboxed environments via `scripts/office/soffice.py`) · `pdftoppm` (Poppler)
+`pptxgenjs` (npm, preinstalled — install only if `require('pptxgenjs')` fails) · `markitdown[pptx]`, `Pillow`, `python-pptx`, `defusedxml`, `lxml` (pip — text dump, thumbnail, clean, validate, layout check) · `fontconfig` (`fc-match`, so the layout check measures with the deck's real fonts) · LibreOffice (`soffice`, auto-configured for sandboxed environments via `scripts/office/soffice.py`) · `pdftoppm` (Poppler)

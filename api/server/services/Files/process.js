@@ -1224,6 +1224,23 @@ const extractPreparedText = async ({
 };
 
 /**
+ * IDs of the agents a saved agent can hand a conversation to.
+ * @param {{ id: string, edges?: Array<{ to?: string | string[] }> }} agent
+ * @returns {string[]}
+ */
+const getHandoffTargetIds = (agent) => {
+  const targets = new Set();
+  for (const edge of agent.edges ?? []) {
+    for (const to of [].concat(edge?.to ?? [])) {
+      if (typeof to === 'string' && to !== agent.id) {
+        targets.add(to);
+      }
+    }
+  }
+  return [...targets];
+};
+
+/**
  * The tools this chat's assistant will actually be handed, or `null` when that cannot be
  * determined and preparation should not narrow itself.
  *
@@ -1231,6 +1248,10 @@ const extractPreparedText = async ({
  * but `ToolService` equips `file_search` and `execute_code` only when they appear in the
  * assistant's own tool list. Preparing a file for a tool the model never receives is worse than
  * not preparing it at all: a long document would be embedded and billed, then be unreadable.
+ *
+ * An orchestrator receives the request's files and passes them to the specialists it hands off
+ * to, so its specialists' tools count as well: a router without `execute_code` must still get a
+ * sandbox copy for the Presentation Assistant that edits the deck.
  *
  * @returns {Promise<Set<string> | null>}
  */
@@ -1240,7 +1261,15 @@ const resolveAssistantTools = async ({ req, metadata }) => {
   if (agent_id && !isEphemeralAgentId(agent_id)) {
     try {
       const agent = await db.getAgent({ id: stripAgentIdSuffix(agent_id) });
-      return Array.isArray(agent?.tools) ? new Set(agent.tools) : null;
+      if (!Array.isArray(agent?.tools)) {
+        return null;
+      }
+      const targetIds = getHandoffTargetIds(agent);
+      if (targetIds.length === 0) {
+        return new Set(agent.tools);
+      }
+      const targets = await db.getAgents({ id: { $in: targetIds } });
+      return new Set(agent.tools.concat(...targets.map((target) => target.tools ?? [])));
     } catch (err) {
       logger.warn(`[processAgentFileUpload] Could not read tools for agent "${agent_id}":`, err);
       return null;
