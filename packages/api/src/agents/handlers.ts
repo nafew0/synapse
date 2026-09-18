@@ -15,6 +15,7 @@ import type {
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { ValidationIssue } from '@librechat/data-schemas';
 import type { CodeEnvRef } from 'librechat-data-provider';
+import { dedupeInjectedFiles } from './injectedFiles';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
 import type { CodeExecutionContext } from './execution';
 import type { ServerRequest } from '~/types';
@@ -3756,7 +3757,7 @@ function buildToolCallConfig(
   if (tc.codeSessionContext && isCodeSessionAwareToolCall(tc.name, mergedConfigurable)) {
     toolCallConfig.session_id = tc.codeSessionContext.session_id;
     if (tc.codeSessionContext.files && tc.codeSessionContext.files.length > 0) {
-      toolCallConfig._injected_files = tc.codeSessionContext.files;
+      toolCallConfig._injected_files = dedupeInjectedFiles(tc.codeSessionContext.files);
       /* Last LC-controlled point before the wire. Mirrors
        * codeapi's validator context so the two log sides
        * correlate on a single grep. */
