@@ -57,6 +57,12 @@ export type EndpointFileConfig = {
 export type AutoPreparationConfig = {
   /** Per-file ceiling for reading a document's text in full. */
   fullTextTokens: number;
+  /**
+   * Lower ceiling for a document that also has a copy in the code sandbox. Its text is charged to
+   * the conversation on every turn while the same bytes already sit in the sandbox, so past this
+   * size the model is given a preview and opens the file itself.
+   */
+  editableFullTextTokens: number;
   /** Total full-text budget shared by every document in one conversation. */
   conversationTextTokens: number;
   /** Text preview kept alongside a data file that was routed to the code sandbox. */
