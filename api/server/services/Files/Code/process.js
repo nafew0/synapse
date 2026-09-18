@@ -976,12 +976,34 @@ const primeFiles = async (options) => {
   let requiredCodeFiles = 0;
   const reuploadFailureCategories = new Set();
 
-  for (let i = 0; i < dbFiles.length; i++) {
-    const file = dbFiles[i];
-    if (!file) {
+  /**
+   * A file's basename is its destination inside the sandbox, and codeapi rejects the whole
+   * request when two inputs claim one path ("Conflicting input destinations"). Re-uploading the
+   * same document — the ordinary way a user retries after a failed turn — puts several records
+   * with one filename in the conversation, so every later code call fails before running. Keep
+   * the newest record for each name; an older copy of the same document has nothing to add.
+   */
+  const newestByName = new Map();
+  for (const file of dbFiles) {
+    if (!file?.filename) {
       continue;
     }
+    const claimed = newestByName.get(file.filename);
+    const claimedAt = claimed?.createdAt ? new Date(claimed.createdAt).getTime() : -Infinity;
+    const candidateAt = file.createdAt ? new Date(file.createdAt).getTime() : -Infinity;
+    if (!claimed || candidateAt >= claimedAt) {
+      newestByName.set(file.filename, file);
+    }
+  }
+  const shadowedByNewerUpload = dbFiles.length - newestByName.size;
+  if (shadowedByNewerUpload > 0) {
+    logger.debug(
+      `[primeCodeFiles] ${shadowedByNewerUpload} duplicate filename(s) dropped; ` +
+        'keeping the newest upload of each',
+    );
+  }
 
+  for (const file of newestByName.values()) {
     const ref = getCodeEnvRefForProfile(file.metadata, executionProfile);
     const sourceRef = ref ?? getCodeEnvRefs(file.metadata)[0]?.[1];
     if (!sourceRef) {

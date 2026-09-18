@@ -1990,6 +1990,52 @@ describe('Code Process', () => {
       return { handleFileUpload, getDownloadStream };
     }
 
+    /**
+     * Regression: codeapi rejects a whole execution when two inputs claim the same
+     * destination ("Conflicting input destinations"), and a file's basename IS its
+     * destination. Re-uploading the same document — how a user retries after a failed
+     * turn — leaves several records sharing one filename, so every later code call
+     * failed before running any code.
+     */
+    it('sends one input per destination when the same file was uploaded twice', async () => {
+      const ref = (id) => ({
+        codeEnvRef: {
+          kind: 'user',
+          id: 'user-123',
+          storage_session_id: 'session-1',
+          file_id: id,
+        },
+      });
+      const files = [
+        {
+          file_id: 'older',
+          filename: 'order.pdf',
+          createdAt: '2026-09-18T06:06:00.000Z',
+          metadata: ref('sandbox-older'),
+        },
+        {
+          file_id: 'newer',
+          filename: 'order.pdf',
+          createdAt: '2026-09-18T06:32:00.000Z',
+          metadata: ref('sandbox-newer'),
+        },
+      ];
+      getFiles.mockResolvedValue(files);
+      filterFilesByAgentAccess.mockImplementation(({ files: authorized }) =>
+        Promise.resolve(authorized),
+      );
+      mockAxios.mockResolvedValue({ data: { lastModified: new Date().toISOString() } });
+
+      const result = await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        agentId: 'agent-123',
+        tool_resources: { execute_code: { file_ids: ['older', 'newer'] } },
+      });
+
+      expect(result.files.map((file) => file.name)).toEqual(['order.pdf']);
+      expect(result.files[0].id).toBe('sandbox-newer');
+    });
+
     it('uses the permission resource type established by the calling route', async () => {
       const files = [
         {

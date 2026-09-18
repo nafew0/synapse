@@ -1,3 +1,4 @@
+import { logger } from '@librechat/data-schemas';
 import { Constants } from '@librechat/agents';
 import type { FileRefs, CodeEnvFile, ToolSessionMap, CodeSessionContext } from '@librechat/agents';
 import type { StatefulCodeEnvironment } from 'librechat-data-provider';
@@ -114,12 +115,11 @@ export function collectCodeExecutionProfileRoutes(
  * representative `session_id` is preserved so a partial-cache/fresh-prime
  * collision doesn't shift which session id `ToolNode` picks for the call.
  *
- * Files are deduplicated by `storage_session_id + id` as the stable
- * identity key. Multiple agents in the same run commonly carry the same
- * primed code-execution resources (shared conversation files), and without
- * dedupe `_injected_files` would grow proportionally to agent count and
- * inflate every `/exec` POST. First-seen wins so the original ordering /
- * source is preserved.
+ * Files are deduplicated twice over: by `storage_session_id + id`, so the same object primed by
+ * several agents is mounted once (without it `_injected_files` would grow with agent count and
+ * inflate every `/exec` POST), and by `name`, because that is the destination path and codeapi
+ * refuses an execution where two inputs claim one path. First-seen wins in both cases, so the
+ * original ordering and source are preserved.
  */
 export function seedCodeFilesIntoSessions(
   files: CodeEnvFile[] | undefined,
@@ -134,17 +134,36 @@ export function seedCodeFilesIntoSessions(
   const prior = sessions.get(sessionKey) as CodeSessionContext | undefined;
 
   /**
-   * Compose `(storage_session_id, id)` as a stable identity. `name` alone
-   * isn't sufficient — two distinct primed uploads can share a filename
-   * (different storage sessions, different file_ids). The composite stays
-   * cheap to compute and the keys are short uuids.
+   * Two identities matter here and they are not the same one.
+   *
+   * `(storage_session_id, id)` identifies a sandbox object, and keeps one object from being
+   * mounted twice when several agents in a run primed it.
+   *
+   * `name` identifies the *destination path* the object is mounted at, and codeapi rejects the
+   * entire execution when two inputs claim one path ("Conflicting input destinations"). Two
+   * distinct uploads of the same document — an ordinary retry — are different objects sharing a
+   * filename, so object identity alone lets both through and every tool call in the conversation
+   * fails before running. Only one can win the path; the first seen keeps it, which favours the
+   * agent that primed earliest in the run.
    */
   const seenKeys = new Set<string>();
+  const claimedNames = new Map<string, string>();
   const mergedFiles: FileRefs = [];
   const pushIfFresh = (f: { id?: string; storage_session_id?: string; name?: string }): void => {
     const key = `${f.storage_session_id ?? ''}\0${f.id ?? ''}`;
     if (seenKeys.has(key)) return;
+    const name = typeof f.name === 'string' ? f.name : '';
+    const claimedBy = name ? claimedNames.get(name) : undefined;
+    if (claimedBy != null && claimedBy !== key) {
+      logger.debug(
+        `[codeFilesSession] dropped a second object for "${name}" — codeapi mounts one file per path`,
+      );
+      return;
+    }
     seenKeys.add(key);
+    if (name) {
+      claimedNames.set(name, key);
+    }
     mergedFiles.push(f as FileRefs[number]);
   };
   if (prior?.files) {

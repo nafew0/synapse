@@ -132,19 +132,39 @@ describe('seedCodeFilesIntoSessions', () => {
     expect(entry.files!.map((f) => f.id).sort()).toEqual(['new-1', 'shared-1', 'skill-1']);
   });
 
-  it('treats same name + same session as a duplicate; same name + different sessions as distinct', () => {
+  it('mounts one object per destination when two uploads share a filename', () => {
     /**
-     * The dedupe key is `(session_id, id)` — not `name` alone. Two
-     * primed uploads can legitimately share a filename when they live
-     * in different sandbox sessions (e.g. each agent re-uploaded the
-     * same source file). Both should land in the seed.
+     * Object identity — `(session_id, id)` — is not the only identity that matters: `name` is the
+     * path the object is mounted at, and codeapi rejects the whole execution when two inputs claim
+     * one path ("Conflicting input destinations"). Two uploads of the same document, an ordinary
+     * retry, are distinct objects sharing a filename, so identity alone let both through and every
+     * tool call in the conversation failed before running. First seen keeps the path.
      */
     const a = file('id-A', 'sess-A', 'data.csv');
     const b = file('id-B', 'sess-B', 'data.csv');
     const result = seedCodeFilesIntoSessions([a, a, b], undefined);
     const entry = result!.get(Constants.EXECUTE_CODE) as CodeSessionContext;
-    expect(entry.files).toHaveLength(2);
-    expect(entry.files!.map((f) => f.storage_session_id).sort()).toEqual(['sess-A', 'sess-B']);
+    expect(entry.files).toHaveLength(1);
+    expect(entry.files![0].id).toBe('id-A');
+  });
+
+  it('does not let a later agent claim a filename an earlier one already primed', () => {
+    const first = seedCodeFilesIntoSessions([file('master-object', 'sess-A', 'order.pdf')], undefined);
+    const merged = seedCodeFilesIntoSessions(
+      [file('specialist-object', 'sess-B', 'order.pdf')],
+      first,
+    );
+    const entry = merged!.get(Constants.EXECUTE_CODE) as CodeSessionContext;
+    expect(entry.files!.map((f) => f.id)).toEqual(['master-object']);
+  });
+
+  it('keeps files that land on different destinations', () => {
+    const result = seedCodeFilesIntoSessions(
+      [file('a', 'sess-A', 'order.pdf'), file('b', 'sess-A', 'notes.docx')],
+      undefined,
+    );
+    const entry = result!.get(Constants.EXECUTE_CODE) as CodeSessionContext;
+    expect(entry.files!.map((f) => f.name)).toEqual(['order.pdf', 'notes.docx']);
   });
 
   it('seeds only the requested code-session partition', () => {
