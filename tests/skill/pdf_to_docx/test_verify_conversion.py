@@ -7,24 +7,20 @@ The conversion tests need LibreOffice on PATH and are skipped without it. Run wi
 pdfplumber, python-docx, Pillow, opencv-python-headless, reportlab and qrcode installed:
     python -m pytest tests/skill/pdf_to_docx
 """
-import importlib.util
 import json
 import shutil
 import subprocess
 import sys
 import zipfile
-from pathlib import Path
 
 import pytest
 import qrcode
 from docx import Document
 from docx.shared import Pt
-from reportlab.lib.pagesizes import A4
 from reportlab.lib.utils import ImageReader
-from reportlab.pdfgen import canvas
 
-SCRIPTS = Path(__file__).resolve().parents[3] / 'skill' / 'pdf-to-docx' / 'scripts'
-WIDTH, HEIGHT = A4
+from helpers import HEIGHT, SCRIPTS, WIDTH, build_pdf, load
+
 QR_PAYLOAD = 'BDREN/OFFICE/ORDER/2026/0917'
 BODY = [
     'Subject: Office order regarding the deployment of the document conversion service.',
@@ -35,14 +31,6 @@ BODY = [
     '',
     'All concerned are requested to take necessary action accordingly.',
 ]
-
-
-def load(name):
-    spec = importlib.util.spec_from_file_location(name, SCRIPTS / f'{name}.py')
-    module = importlib.util.module_from_spec(spec)
-    sys.modules.setdefault(name, module)
-    spec.loader.exec_module(module)
-    return module
 
 
 sys.path.insert(0, str(SCRIPTS))
@@ -79,15 +67,6 @@ def draw_dark_page(page):
     page.drawString(72, HEIGHT - 200, 'Annexure: Rollout Timeline')
     page.setFont('Helvetica', 12)
     page.drawString(72, HEIGHT - 240, 'Phase 0 completes on 30 September 2026.')
-
-
-def build_pdf(path, pages):
-    page = canvas.Canvas(str(path), pagesize=A4)
-    for draw in pages:
-        draw(page)
-        page.showPage()
-    page.save()
-    return path
 
 
 @pytest.fixture(scope='module')
@@ -197,9 +176,11 @@ class TestConvert:
         assert summary['characters'] >= 0.7 * summary['source_characters']
         assert 'competent authority' in ' '.join(p.text for p in Document(str(output)).paragraphs)
 
-    def test_semantic_editable_refuses_a_pdf_with_images(self, order, tmp_path):
-        with pytest.raises(convert.ConversionError, match='layout-editable'):
-            convert.convert(order, tmp_path / 'semantic.docx', mode='semantic-editable')
+    def test_semantic_editable_keeps_the_pictures_of_an_illustrated_pdf(self, order, tmp_path):
+        output = tmp_path / 'semantic.docx'
+        summary = convert.convert(order, output, mode='semantic-editable')
+        assert summary['pictures'] == summary['source_images'] == 1
+        assert '<w:txbxContent>' not in zipfile.ZipFile(output).read('word/document.xml').decode()
 
     def test_visual_fidelity_makes_a_picture_of_every_page(self, order, tmp_path):
         output = tmp_path / 'visual.docx'
@@ -279,7 +260,11 @@ def _without_page_shapes(source, target):
     width, height = probe.docx_page_size(source)
     for parent in root.iter():
         for shape in list(parent):
-            if restore._is_vml_shape(shape) and restore._is_page_background(shape, width, height):
+            if (
+                restore._is_vml_shape(shape)
+                and restore._is_background_fill(shape)
+                and restore._covers_page(shape, width, height)
+            ):
                 parent.remove(shape)
     parts['word/document.xml'] = ElementTree.tostring(root, encoding='UTF-8', xml_declaration=True)
     with zipfile.ZipFile(target, 'w') as output:

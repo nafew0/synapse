@@ -204,10 +204,11 @@ def restore(pdf_path, docx_path):
     body = root.find(W + 'body')
     paragraphs = [child for child in body if child.tag == W + 'p']
     width_pt, height_pt = docx_page_size(docx_path)
+    printable = _printable_size(root, width_pt, height_pt)
 
     covered = set()
     for index, paragraph in enumerate(paragraphs, start=1):
-        found, repaired = _send_backgrounds_to_back(paragraph, width_pt, height_pt)
+        found, repaired = _send_backgrounds_to_back(paragraph, width_pt, height_pt, printable)
         summary['backgrounds_sent_to_back'] += repaired
         if found:
             covered.add(index)
@@ -234,6 +235,10 @@ def restore(pdf_path, docx_path):
         summary['backgrounds_added'] += 1
 
     if insertable:
+        # A relationships part must use the DEFAULT namespace. ElementTree otherwise serializes
+        # `<ns0:Relationships xmlns:ns0="...">`, which Word and LibreOffice both reject — the
+        # package fails to open no matter what the document itself contains.
+        ElementTree.register_namespace('', RELS[1:-1])
         rels = ElementTree.fromstring(parts[DOCUMENT_RELS])
         for index, entry in enumerate(insertable, start=1):
             name, payload = _encode_image(entry['image'], index)
@@ -254,10 +259,53 @@ def restore(pdf_path, docx_path):
     return _finish(summary, docx_path, parts, root, changed)
 
 
+def _root_namespace_declarations(xml):
+    """The `xmlns:prefix="uri"` pairs on a document's root element."""
+    start = xml.find(b'<w:document')
+    if start == -1:
+        return {}
+    end = xml.find(b'>', start)
+    if end == -1:
+        return {}
+    return dict(re.findall(r'xmlns:([A-Za-z0-9_.-]+)="([^"]+)"', xml[start:end].decode('utf-8', 'replace')))
+
+
+def _preserve_root_namespaces(original, serialized):
+    """Put back namespace declarations ElementTree dropped.
+
+    ElementTree only emits declarations for prefixes some element actually uses, but
+    `mc:Ignorable` still names the others. Word and LibreOffice both refuse a document whose
+    Ignorable list mentions an undeclared prefix — "source file could not be loaded", with the
+    package otherwise intact — so a round-trip that touches one paragraph can cost the user the
+    whole file.
+    """
+    original_declarations = _root_namespace_declarations(original)
+    if not original_declarations:
+        return serialized
+    start = serialized.find(b'<w:document')
+    if start == -1:
+        return serialized
+    end = serialized.find(b'>', start)
+    if end == -1:
+        return serialized
+    root_tag = serialized[start:end].decode('utf-8', 'replace')
+    present = set(re.findall(r'xmlns:([A-Za-z0-9_.-]+)=', root_tag))
+    missing = [
+        f' xmlns:{prefix}="{uri}"'
+        for prefix, uri in original_declarations.items()
+        if prefix not in present
+    ]
+    if not missing:
+        return serialized
+    return serialized[:end] + ''.join(missing).encode() + serialized[end:]
+
+
 def _finish(summary, docx_path, parts, root, changed):
     if not changed:
         return summary
-    parts[DOCUMENT] = ElementTree.tostring(root, encoding='UTF-8', xml_declaration=True)
+    parts[DOCUMENT] = _preserve_root_namespaces(
+        parts[DOCUMENT], ElementTree.tostring(root, encoding='UTF-8', xml_declaration=True)
+    )
     _rewrite(docx_path, parts)
     return summary
 
@@ -267,7 +315,35 @@ def _insert_run(paragraph, run):
     paragraph.insert(1 if len(paragraph) and paragraph[0].tag == W + 'pPr' else 0, run)
 
 
-def _send_backgrounds_to_back(paragraph, width_pt, height_pt):
+def _printable_size(root, width_pt, height_pt):
+    """The page minus its margins, in points.
+
+    LibreOffice writes a page fill at the size of the text area, not the sheet, and anchors it at
+    the margin. Measuring only against the sheet misses it, and an undetected fill paints over
+    every text box in the document — the page renders blank while the words sit underneath.
+    """
+    section = root.find(f'{W}body/{W}sectPr')
+    if section is None:
+        return width_pt, height_pt
+    margins = section.find(W + 'pgMar')
+    if margins is None:
+        return width_pt, height_pt
+
+    def twips(name):
+        value = margins.get(W + name)
+        try:
+            return float(value) / 20
+        except (TypeError, ValueError):
+            return 0.0
+
+    printable_width = width_pt - twips('left') - twips('right')
+    printable_height = height_pt - twips('top') - twips('bottom')
+    if printable_width <= 0 or printable_height <= 0:
+        return width_pt, height_pt
+    return printable_width, printable_height
+
+
+def _send_backgrounds_to_back(paragraph, width_pt, height_pt, printable=None):
     """Re-anchor the page-sized fills the import kept, so they sit at the page origin, behind text.
 
     Returns (page backgrounds found, page backgrounds repaired).
@@ -279,16 +355,20 @@ def _send_backgrounds_to_back(paragraph, width_pt, height_pt):
     """
     found = repaired = 0
     for shape in live_children(paragraph):
-        if not _is_vml_shape(shape) or not _is_page_background(shape, width_pt, height_pt):
+        if not _is_vml_shape(shape) or not _is_background_fill(shape):
             continue
-        found += 1
+        full_page = _covers_page(shape, width_pt, height_pt)
+        found += 1 if full_page else 0
         style = _parse_style(shape.get('style'))
         if style.get('z-index', '').startswith('-'):
             continue
-        style['mso-position-horizontal-relative'] = 'page'
-        style['mso-position-vertical-relative'] = 'page'
-        style['margin-left'] = '0pt'
-        style['margin-top'] = '0pt'
+        if full_page:
+            # Only a full-bleed fill belongs at the page origin. A band sized to part of the page
+            # is already where it should be; moving it would strand it in the corner.
+            style['mso-position-horizontal-relative'] = 'page'
+            style['mso-position-vertical-relative'] = 'page'
+            style['margin-left'] = '0pt'
+            style['margin-top'] = '0pt'
         style['z-index'] = str(BEHIND_TEXT_Z_INDEX)
         shape.set('style', _format_style(style))
         repaired += 1
@@ -299,10 +379,23 @@ def _is_vml_shape(element):
     return element.tag.startswith(VML) and element.tag[len(VML) :] in VML_SHAPES
 
 
-def _is_page_background(shape, width_pt, height_pt):
-    """A filled shape that covers the page in both directions is its background."""
-    if not (shape.get('fillcolor') or '').strip():
-        return False
+def _has_own_text(shape):
+    return any(node.tag == W + 't' and (node.text or '').strip() for node in shape.iter())
+
+
+def _is_background_fill(shape):
+    """A filled shape carrying no text of its own.
+
+    Everything the import writes as a filled shape was painted *under* the page's text in the
+    source PDF — the text was legible there — while the text itself lands in separate anchored
+    boxes. A fill that carries text is a panel with content and is left alone; one that carries
+    none has nothing to lose by sitting behind.
+    """
+    return bool((shape.get('fillcolor') or '').strip()) and not _has_own_text(shape)
+
+
+def _covers_page(shape, width_pt, height_pt):
+    """Whether the fill spans the whole sheet, which also means it should sit at the page origin."""
     style = _parse_style(shape.get('style'))
     width = _points(style.get('width'))
     height = _points(style.get('height'))

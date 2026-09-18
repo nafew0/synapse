@@ -7,8 +7,9 @@ Modes:
     layout-editable   (default) LibreOffice's Writer PDF import: editable text in positioned
                       boxes, images anchored where the PDF put them, page size preserved. Page
                       backgrounds and any image the import drops are restored afterwards.
-    semantic-editable Reflowable Word paragraphs in reading order. Coordinates are not preserved;
-                      images are not carried over. For "just make the text editable".
+    semantic-editable Reflowable Word paragraphs, headings, lists and tables in reading order,
+                      with logos, seals, signatures and QR codes kept as pictures. Coordinates are
+                      not preserved and the text repaginates. For a document to be edited.
     visual-fidelity   Each page as a full-page picture. A picture of the document, not a document:
                       the text cannot be edited, searched or copied. Only when the user asked for
                       exactly that.
@@ -30,6 +31,7 @@ from pathlib import Path
 
 import probe
 import restore
+import semantic
 from office.soffice import run_soffice
 
 LAYOUT_EDITABLE = 'layout-editable'
@@ -110,33 +112,14 @@ def _run_writer_import(pdf_path, workspace):
 
 
 def _semantic_editable(pdf_path, docx_path, repair):
-    import pdfplumber
-    from docx import Document
-    from docx.enum.text import WD_BREAK
-    from docx.shared import Pt
+    """Reflowable paragraphs, headings, lists and tables, with the pictures kept.
 
-    images = probe.pdf_image_count(pdf_path)
-    if images:
-        raise ConversionError(
-            f'{pdf_path.name} places {images} image(s) — a logo, seal or signature — and '
-            'semantic-editable cannot carry them. Use --mode layout-editable, which keeps them '
-            'anchored where the PDF put them.'
-        )
-
-    document = Document()
-    width_pt, height_pt = probe.pdf_page_size(pdf_path)
-    section = document.sections[0]
-    section.page_width, section.page_height = Pt(width_pt), Pt(height_pt)
-
-    with pdfplumber.open(str(pdf_path)) as pdf:
-        for number, page in enumerate(pdf.pages, start=1):
-            if number > 1:
-                document.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
-            for block in (page.extract_text() or '').split('\n\n'):
-                if block.strip():
-                    document.add_paragraph(block.strip())
-    document.save(str(docx_path))
-    return _measure(pdf_path, docx_path)
+    The point of this mode is that the result edits like a Word document: typing into a paragraph
+    reflows it. `layout-editable` cannot do that, because every line there is its own positioned
+    box.
+    """
+    summary = semantic.build(pdf_path, docx_path)
+    return {**_measure(pdf_path, docx_path), **summary}
 
 
 def _visual_fidelity(pdf_path, docx_path, repair):
