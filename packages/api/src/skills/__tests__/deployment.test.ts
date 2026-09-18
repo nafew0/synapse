@@ -159,6 +159,30 @@ describe('loadDeploymentSkillsFromDirectory', () => {
     });
   });
 
+  it('leaves local build artefacts out of the files it uploads', async () => {
+    const root = await makeTempRoot();
+    await writeDeploymentSkill(root, { name: 'analysis-kit' });
+    const scripts = path.join(root, 'skill', 'analysis-kit', 'scripts');
+    await fs.promises.mkdir(path.join(scripts, '__pycache__'), { recursive: true });
+    await fs.promises.writeFile(path.join(scripts, 'convert.py'), 'print("hello")\n');
+    await fs.promises.writeFile(
+      path.join(scripts, '__pycache__', 'convert.cpython-314.pyc'),
+      Buffer.from([0xcb, 0x0d, 0x0d, 0x0a]),
+    );
+    await fs.promises.writeFile(path.join(scripts, 'stale.pyc'), Buffer.from([0xcb, 0x0d]));
+
+    const registry = await loadDeploymentSkillsFromDirectory(path.join(root, 'skill'), {
+      projectRoot: root,
+    });
+    const [skill] = registry.list();
+
+    expect(skill.files.map((file) => file.relativePath)).toEqual([
+      'assets/pixel.bin',
+      'references/guide.txt',
+      'scripts/convert.py',
+    ]);
+  });
+
   it('loads a skill with an unrecognized frontmatter key and warns about it', async () => {
     const root = await makeTempRoot();
     await writeDeploymentSkill(root, {
