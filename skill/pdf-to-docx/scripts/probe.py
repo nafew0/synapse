@@ -139,8 +139,21 @@ def pdf_text(path):
         return ' '.join(page.extract_text() or '' for page in pdf.pages)
 
 
+def pdf_image_count(path):
+    """How many rasters the PDF places, counted without decoding any of them.
+
+    `pdf_media` can only report the images it manages to decode, so on its own it cannot tell
+    "this document has no pictures" from "this document has pictures I could not read". This is
+    the honest denominator for both answers.
+    """
+    import pdfplumber
+
+    with pdfplumber.open(str(path)) as pdf:
+        return sum(len(page.images) for page in pdf.pages)
+
+
 def pdf_media(path):
-    """Every embedded raster, as (page, pixel width, pixel height, PIL image)."""
+    """Every embedded raster it can decode, as (page, pixel width, pixel height, PIL image)."""
     from pypdf import PdfReader
 
     media = []

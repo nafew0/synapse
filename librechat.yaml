@@ -187,15 +187,15 @@ modelSpecs:
     #     # resend large, mostly-unchanged file/context content across turns.
     #     promptCache: true
 
-    - name: claude-haiku-4-5
+    - name: anthropic/claude-haiku-4.5
       label: Claude
       askUserQuestion: true
       # Retrieval only: long attachments are searchable, but editing a file needs the
       # code sandbox, which belongs to the Office Assistant alone.
       fileSearch: true
       preset:
-        endpoint: Claude
-        model: claude-haiku-4-5
+        endpoint: OpenRouter
+        model: anthropic/claude-haiku-4.5
         promptCache: true
         promptPrefix: |
           You assist non-technical office users with emails, letters, reports,
@@ -259,13 +259,6 @@ endpoints:
       # "OCR capability is not enabled for Agents".
       - 'ocr'
 
-  anthropic:
-    apiKey: '${ANTHROPIC_API_KEY}'
-    models:
-        - 'claude-sonnet-4-5'
-        - 'claude-haiku-4-5'
-    titleConvo: true
-    titleModel: 'claude-haiku-4-5'
 
   custom:
 
@@ -289,17 +282,6 @@ endpoints:
         fetch: false
       modelDisplayLabel: OpenAI
 
-    - name: Claude
-      provider: anthropic
-      apiKey: '${ANTHROPIC_API_KEY}'
-      baseURL: 'https://api.anthropic.com'
-      models:
-        default:
-          - 'claude-sonnet-5'
-          - 'claude-haiku-4-5'
-        fetch: false
-      modelDisplayLabel: Claude
-
     - name: OpenRouter
       apiKey: '${OPENROUTER_KEY}'
       baseURL: 'https://openrouter.ai/api/v1'
@@ -308,6 +290,7 @@ endpoints:
       models:
         default:
           - openai/gpt-5.6-luna
+          - anthropic/claude-haiku-4.5
         fetch: false
       titleConvo: true
       dropParams: ['stop']

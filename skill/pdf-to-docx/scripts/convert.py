@@ -115,6 +115,14 @@ def _semantic_editable(pdf_path, docx_path, repair):
     from docx.enum.text import WD_BREAK
     from docx.shared import Pt
 
+    images = probe.pdf_image_count(pdf_path)
+    if images:
+        raise ConversionError(
+            f'{pdf_path.name} places {images} image(s) — a logo, seal or signature — and '
+            'semantic-editable cannot carry them. Use --mode layout-editable, which keeps them '
+            'anchored where the PDF put them.'
+        )
+
     document = Document()
     width_pt, height_pt = probe.pdf_page_size(pdf_path)
     section = document.sections[0]

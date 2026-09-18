@@ -54,17 +54,18 @@ def check(pdf_path, docx_path, mode=LAYOUT_EDITABLE, min_text_ratio=DEFAULT_MIN_
     source_pages = probe.pdf_pages(pdf_path)
     output_pages = probe.docx_pages(docx_path)
     source_media = probe.pdf_media(pdf_path)
+    source_count = probe.pdf_image_count(pdf_path)
     output_media = probe.docx_media(docx_path)
 
     _check_pages(findings, source_pages, output_pages)
     if mode != VISUAL_FIDELITY:
         _check_text(findings, source_text, output_text, min_text_ratio)
         _check_picture_book(findings, docx_path, output_text, output_media, mode)
-    if mode == LAYOUT_EDITABLE:
-        _check_images(findings, source_media, output_media)
-        _check_qr(findings, source_media, output_media)
-    if mode != SEMANTIC_EDITABLE:
-        _check_page_size(findings, pdf_path, docx_path)
+        # Losing a logo, a seal or a signature is a defect in any mode that claims to be a
+        # conversion. Scoping this to layout-editable let a rebuilt, image-free document pass.
+        _check_images(findings, source_count, source_media, output_media)
+    _check_qr(findings, source_media, output_media)
+    _check_page_size(findings, pdf_path, docx_path)
 
     ratio = len(output_text) / len(source_text) if source_text else None
     return {
@@ -76,7 +77,8 @@ def check(pdf_path, docx_path, mode=LAYOUT_EDITABLE, min_text_ratio=DEFAULT_MIN_
         'source_characters': len(source_text),
         'text_ratio': round(ratio, 4) if ratio is not None else None,
         'images': len(output_media),
-        'source_images': len(source_media),
+        'source_images': source_count,
+        'source_images_read': len(source_media),
         'findings': findings,
     }
 
@@ -134,11 +136,25 @@ def _check_picture_book(findings, docx_path, output_text, output_media, mode):
         )
 
 
-def _check_images(findings, source_media, output_media):
+def _check_images(findings, source_count, source_media, output_media):
+    if source_count and not output_media:
+        _finding(
+            findings,
+            'images',
+            f'the PDF places {source_count} image(s) and the Word document has none — every logo, '
+            'seal and signature was lost',
+        )
+        return
+    if source_count > len(source_media):
+        _finding(
+            findings,
+            'images',
+            f"{source_count - len(source_media)} of the PDF's {source_count} image(s) could not be "
+            'read, so image preservation could not be verified',
+        )
     available = [(entry['width'], entry['height']) for entry in output_media]
     for entry in source_media:
-        match = _take_match(available, entry['width'], entry['height'])
-        if match is None:
+        if _take_match(available, entry['width'], entry['height']) is None:
             _finding(
                 findings,
                 'images',

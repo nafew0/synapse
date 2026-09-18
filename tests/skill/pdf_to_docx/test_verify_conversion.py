@@ -189,12 +189,17 @@ class TestConvert:
         assert 'mso-position-vertical-relative:page' in document
         assert 'z-index:-' in document
 
-    def test_semantic_editable_reflows_the_text(self, order, tmp_path):
+    def test_semantic_editable_reflows_a_text_only_pdf(self, tmp_path):
+        source = build_pdf(tmp_path / 'plain.pdf', [lambda page: draw_letter(page, with_qr=False)])
         output = tmp_path / 'semantic.docx'
-        summary = convert.convert(order, output, mode='semantic-editable')
-        assert summary['pages'] == 2
+        summary = convert.convert(source, output, mode='semantic-editable')
+        assert summary['pages'] == 1
         assert summary['characters'] >= 0.7 * summary['source_characters']
         assert 'competent authority' in ' '.join(p.text for p in Document(str(output)).paragraphs)
+
+    def test_semantic_editable_refuses_a_pdf_with_images(self, order, tmp_path):
+        with pytest.raises(convert.ConversionError, match='layout-editable'):
+            convert.convert(order, tmp_path / 'semantic.docx', mode='semantic-editable')
 
     def test_visual_fidelity_makes_a_picture_of_every_page(self, order, tmp_path):
         output = tmp_path / 'visual.docx'
@@ -297,6 +302,39 @@ class TestGate:
         result = verify.check(order, output)
         assert result['status'] == 'defects'
         assert set(checks(result)) >= {'text', 'picture_book', 'images'}
+
+    def test_a_hand_rebuilt_document_fails_however_good_its_text_is(self, order, tmp_path):
+        """The 2026-09-18 failure: a styled python-docx rebuild, every image silently gone.
+
+        Its text is the PDF's, so every text check passes; only the image check catches it. It
+        must fail in the reflow mode too, or the mode becomes a licence to drop the seal.
+        """
+        output = tmp_path / 'rebuilt.docx'
+        document = Document()
+        section = document.sections[0]
+        section.page_width, section.page_height = Pt(WIDTH), Pt(HEIGHT)
+        import pdfplumber
+
+        with pdfplumber.open(str(order)) as pdf:
+            for number, page in enumerate(pdf.pages, start=1):
+                if number > 1:
+                    from docx.enum.text import WD_BREAK
+
+                    document.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+                document.add_paragraph(page.extract_text() or '')
+        document.save(str(output))
+
+        for mode in ('layout-editable', 'semantic-editable'):
+            result = verify.check(order, output, mode=mode)
+            assert result['status'] == 'defects', mode
+            assert 'images' in checks(result), mode
+            assert 'qr' in checks(result), mode
+
+    def test_it_says_when_it_could_not_read_a_source_image(self, order, tmp_path, monkeypatch):
+        output = page_image_docx(tmp_path / 'unread.docx', order)
+        monkeypatch.setattr(probe, 'pdf_media', lambda path: [])
+        detail = ' '.join(f['detail'] for f in verify.check(order, output)['findings'])
+        assert 'could not be' in detail or 'has none' in detail
 
     def test_the_same_file_passes_as_visual_fidelity(self, order, tmp_path):
         output = page_image_docx(tmp_path / 'images2.docx', order)
