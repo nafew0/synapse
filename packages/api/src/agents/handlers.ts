@@ -1527,7 +1527,7 @@ async function handleSandboxImageRead(
     return binaryHint();
   }
 
-  const ctx = tc.codeSessionContext as SandboxSessionContext | undefined;
+  const ctx = sandboxSessionContext(tc);
   let read: { base64: string; bytes: number } | { tooLarge: true; bytes: number } | null;
   try {
     read = await readSandboxImage({
@@ -1627,7 +1627,7 @@ async function handleSandboxFileFallback(
     };
   }
 
-  const ctx = tc.codeSessionContext as SandboxSessionContext | undefined;
+  const ctx = sandboxSessionContext(tc);
   try {
     const result = await readSandboxFile({
       file_path: filePath,
@@ -1689,11 +1689,23 @@ async function handleSandboxFileFallback(
   }
 }
 
+/**
+ * The session a sandbox call runs against, with one file per destination.
+ *
+ * codeapi refuses a request whose inputs resolve to the same path, and it refuses all of it: a
+ * read of a rendered preview fails for a duplicate that has nothing to do with the file being
+ * read. The session is deduplicated here rather than at each call site so reads, writes and
+ * executions cannot disagree about what is mounted.
+ */
 function sandboxSessionContext(
   tc: ToolCallRequest,
   override?: SandboxSessionContext,
 ): SandboxSessionContext | undefined {
-  return override ?? (tc.codeSessionContext as SandboxSessionContext | undefined);
+  const context = override ?? (tc.codeSessionContext as SandboxSessionContext | undefined);
+  if (context?.files == null || context.files.length < 2) {
+    return context;
+  }
+  return { ...context, files: dedupeInjectedFiles(context.files) };
 }
 
 function cloneSandboxSessionContext(

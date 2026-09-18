@@ -429,6 +429,65 @@ describe('createToolExecuteHandler', () => {
     });
   });
 
+  describe('sandbox session deduplication', () => {
+    it('sends one file per destination when the session holds two objects for one path', async () => {
+      /**
+       * codeapi refuses a whole request whose inputs resolve to the same path, so a duplicate the
+       * session picked up earlier failed the read of an unrelated file: "Conflicting input
+       * destinations: order.pdf and order.pdf".
+       */
+      const reads: Array<{ files?: Array<{ name?: string }> }> = [];
+      const writes: Array<{ files?: Array<{ name?: string }> }> = [];
+      const readSandboxFile: ToolExecuteOptions['readSandboxFile'] = jest.fn(async (params) => {
+        reads.push(params as { files?: Array<{ name?: string }> });
+        return null;
+      });
+      const writeSandboxFile: ToolExecuteOptions['writeSandboxFile'] = jest.fn(async (params) => {
+        writes.push(params as { files?: Array<{ name?: string }> });
+        return { session_id: 'sess-1' };
+      });
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [] as never[],
+        configurable: {
+          fileAuthoringToolNames: new Set<string>(['create_file']),
+          codeEnvAvailable: true,
+          codeExecutionContext: {
+            baseUrl: 'https://code.example.com',
+            codeSessionKey: 'execute_code',
+            executionProfile: 'default',
+            statefulSessions: false,
+          },
+        },
+      }));
+      const handler = createToolExecuteHandler({ loadTools, readSandboxFile, writeSandboxFile });
+
+      const duplicate = (id: string) => ({
+        id,
+        name: 'order.pdf',
+        storage_session_id: `sess-${id}`,
+        resource_id: 'user-1',
+        kind: 'user' as const,
+      });
+
+      await invokeHandler(handler, [
+        {
+          id: 'call_create_file',
+          name: 'create_file',
+          args: { path: '/mnt/data/out.txt', content: 'hello' },
+          codeSessionContext: {
+            session_id: 'sess-1',
+            files: [duplicate('first'), duplicate('second')],
+          },
+        },
+      ]);
+
+      for (const call of [...reads, ...writes]) {
+        expect(call.files?.map((file) => file.name)).toEqual(['order.pdf']);
+      }
+      expect(reads.length + writes.length).toBeGreaterThan(0);
+    });
+  });
+
   describe('tool error handling', () => {
     it('truncates oversized tool errors in the result and log context', async () => {
       const oversizedMessage = `tool failed: ${'x'.repeat(15_000)}`;
