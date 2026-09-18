@@ -6,6 +6,7 @@ import { ThemeContext, SecretInput, Spinner, Button, Input, isDark } from '@libr
 import type { TLoginUser, TStartupConfig } from 'librechat-data-provider';
 import type { TAuthContext } from '~/common';
 import { useResendVerificationEmail, useGetStartupConfig } from '~/data-provider';
+import { useMascot, useMascotFailure } from './Mascot';
 import { validateEmail } from '~/utils';
 import { useLocalize } from '~/hooks';
 
@@ -27,6 +28,13 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
   } = useForm<TLoginUser>();
   const [showResendLink, setShowResendLink] = useState<boolean>(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const mascot = useMascot();
+
+  useMascotFailure(error, isSubmitting);
+
+  useEffect(() => {
+    mascot.setSubmitting(isSubmitting);
+  }, [isSubmitting, mascot]);
 
   const { data: config } = useGetStartupConfig();
   const useUsernameLogin = config?.ldap?.username;
@@ -65,6 +73,17 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
     ) : null;
   };
 
+  /* Registered up here so the focus handlers can chain onto react-hook-form's
+     own onBlur instead of being overwritten by the spread. */
+  const passwordField = register('password', {
+    required: localize('com_auth_password_required'),
+    minLength: {
+      value: startupConfig?.minPasswordLength || 8,
+      message: localize('com_auth_password_min_length'),
+    },
+    maxLength: { value: 128, message: localize('com_auth_password_max_length') },
+  });
+
   const handleResendEmail = () => {
     const email = getValues('email');
     if (!email) {
@@ -92,6 +111,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
         className="mt-8"
         aria-label="Login form"
         method="POST"
+        onKeyDown={mascot.noteKeystroke}
         onSubmit={handleSubmit((data) => onSubmit(data))}
       >
         <div className="mb-5">
@@ -139,14 +159,12 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
               id="password"
               autoComplete="current-password"
               aria-label={localize('com_auth_password')}
-              {...register('password', {
-                required: localize('com_auth_password_required'),
-                minLength: {
-                  value: startupConfig?.minPasswordLength || 8,
-                  message: localize('com_auth_password_min_length'),
-                },
-                maxLength: { value: 128, message: localize('com_auth_password_max_length') },
-              })}
+              {...passwordField}
+              onFocus={() => mascot.setSecretFocused(true)}
+              onBlur={(event) => {
+                mascot.setSecretFocused(false);
+                return passwordField.onBlur(event);
+              }}
               aria-invalid={!!errors.password}
               className={authSecretInputClassName}
               placeholder={localize('com_auth_password')}

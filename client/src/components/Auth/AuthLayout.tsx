@@ -5,6 +5,7 @@ import type { TStartupConfig } from 'librechat-data-provider';
 import type { LucideIcon } from 'lucide-react';
 import type { TranslationKeys } from '~/hooks';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
+import { MascotProvider, AuthLockup } from './Mascot';
 import { BlinkAnimation } from './BlinkAnimation';
 import SocialLoginRender from './SocialLoginRender';
 import NetworkBackground from './NetworkBackground';
@@ -121,51 +122,48 @@ function AuthLayout({
 
       <main className="relative z-10 flex flex-grow items-center justify-center px-4 py-10 sm:px-6 lg:py-14">
         {isLoginPage ? (
-          <section
-            className="lc-auth-login-card grid w-full max-w-6xl overflow-hidden rounded-theme-surface-lg border border-auth-border/50 bg-auth-surface/90 shadow-2xl backdrop-blur-xl lg:min-h-[44rem] lg:grid-cols-[minmax(0,0.94fr)_minmax(0,1.06fr)]"
-            aria-label={localize('com_auth_login_card')}
-          >
-            <div className="lc-auth-brand-panel flex flex-col items-center justify-center border-b border-auth-border/40 px-6 py-9 lg:border-b-0 lg:border-r lg:px-12 lg:py-12">
-              <BlinkAnimation active={isFetching}>
-                <img
-                  src={dark ? '/assets/logo_white.svg' : '/assets/logo_bdren_v1.svg'}
-                  className="h-36 w-36 lg:h-52 lg:w-52"
-                  alt={localize('com_ui_logo', { 0: appTitle })}
-                  draggable={false}
-                />
-              </BlinkAnimation>
-              {/* <span className="mt-5 text-center text-3xl font-semibold leading-tight text-auth-text lg:text-5xl">
+          <MascotProvider>
+            <section
+              className="lc-auth-login-card grid w-full max-w-6xl overflow-hidden rounded-theme-surface-lg border border-auth-border/50 bg-auth-surface/90 shadow-2xl backdrop-blur-xl lg:min-h-[44rem] lg:grid-cols-[minmax(0,0.94fr)_minmax(0,1.06fr)]"
+              aria-label={localize('com_auth_login_card')}
+            >
+              <div className="lc-auth-brand-panel flex flex-col items-center justify-center border-b border-auth-border/40 px-6 py-9 lg:border-b-0 lg:border-r lg:px-12 lg:py-12">
+                <BlinkAnimation active={isFetching}>
+                  <AuthLockup appTitle={appTitle} />
+                </BlinkAnimation>
+                {/* <span className="mt-5 text-center text-3xl font-semibold leading-tight text-auth-text lg:text-5xl">
                 {appTitle}
               </span>
               <span className="mt-7 h-1 w-14 rounded-theme-control-round bg-accent-primary" /> */}
-              <p className="mt-8 max-w-sm text-center text-2xl leading-7 text-auth-muted lg:text-2xl">
-                {localize('com_auth_brand_tagline')}
-              </p>
-              {/* <div className="mt-10 hidden w-full max-w-md grid-cols-3 divide-x divide-auth-border/40 lg:grid">
+                <p className="mt-8 max-w-sm text-center text-2xl leading-7 text-auth-muted lg:text-2xl">
+                  {localize('com_auth_brand_tagline')}
+                </p>
+                {/* <div className="mt-10 hidden w-full max-w-md grid-cols-3 divide-x divide-auth-border/40 lg:grid">
                 <AuthFeature Icon={Sparkles} label={localize('com_auth_feature_connectivity')} />
                 <AuthFeature Icon={FileText} label={localize('com_auth_feature_security')} />
                 <AuthFeature Icon={Briefcase} label={localize('com_auth_feature_collaboration')} />
               </div> */}
-            </div>
+              </div>
 
-            <div className="lc-auth-form-panel flex w-full flex-col justify-center px-6 py-9 sm:px-10 lg:px-16 lg:py-12">
-              {!hasStartupConfigError && !isFetching && header && (
-                <>
-                  <h1
-                    className="text-center text-3xl font-semibold tracking-tight text-auth-text sm:text-4xl lg:text-left"
-                    style={{ userSelect: 'none' }}
-                  >
-                    {header}
-                  </h1>
-                  <p className="mt-2 text-center text-base text-auth-muted lg:text-left">
-                    {localize('com_auth_sign_in_continue', { 0: appTitle })}
-                  </p>
-                </>
-              )}
-              {children}
-              <SocialLoginRender startupConfig={startupConfig} immersive />
-            </div>
-          </section>
+              <div className="lc-auth-form-panel flex w-full flex-col justify-center px-6 py-9 sm:px-10 lg:px-16 lg:py-12">
+                {!hasStartupConfigError && !isFetching && header && (
+                  <>
+                    <h1
+                      className="text-center text-3xl font-semibold tracking-tight text-auth-text sm:text-4xl lg:text-left"
+                      style={{ userSelect: 'none' }}
+                    >
+                      {header}
+                    </h1>
+                    <p className="mt-2 text-center text-base text-auth-muted lg:text-left">
+                      {localize('com_auth_sign_in_continue', { 0: appTitle })}
+                    </p>
+                  </>
+                )}
+                {children}
+                <SocialLoginRender startupConfig={startupConfig} immersive />
+              </div>
+            </section>
+          </MascotProvider>
         ) : (
           <div className="w-authPageWidth overflow-hidden rounded-2xl border border-border-light bg-surface-primary px-6 py-8 shadow-xl sm:max-w-md lg:w-full lg:max-w-3xl lg:px-10">
             <div className="flex flex-col items-center gap-6 lg:flex-row lg:items-center lg:gap-10">
