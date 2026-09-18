@@ -1255,23 +1255,6 @@ const getHandoffTargetIds = (agent) => {
  *
  * @returns {Promise<Set<string> | null>}
  */
-/**
- * IDs of the agents a saved agent can hand a conversation to.
- * @param {{ id: string, edges?: Array<{ to?: string | string[] }> }} agent
- * @returns {string[]}
- */
-const getHandoffTargetIds = (agent) => {
-  const targets = new Set();
-  for (const edge of agent.edges ?? []) {
-    for (const to of [].concat(edge?.to ?? [])) {
-      if (typeof to === 'string' && to !== agent.id) {
-        targets.add(to);
-      }
-    }
-  }
-  return [...targets];
-};
-
 const resolveAssistantTools = async ({ req, metadata }) => {
   const { agent_id, spec } = metadata;
 
