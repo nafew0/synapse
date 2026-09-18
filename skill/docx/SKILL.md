@@ -37,10 +37,13 @@ A `.docx` is a ZIP archive of XML files. Choose your approach by task:
 After writing a `.docx`, render it and look at it:
 
 ```bash
-python scripts/office/soffice.py --headless --convert-to pdf output.docx
-pdftoppm -jpeg -r 100 output.pdf page
-ls page-*.jpg   # then Read the images
+mkdir -p /mnt/data/.render
+python scripts/office/soffice.py --headless --convert-to pdf --outdir /mnt/data/.render output.docx
+pdftoppm -jpeg -r 100 /mnt/data/.render/output.pdf /mnt/data/.render/page
+ls /mnt/data/.render/page-*.jpg   # then Read the images
 ```
+
+**Render into `/mnt/data/.render`, never into `/mnt/data` itself.** Everything written directly to `/mnt/data` is delivered to the user as a result, so a checked document arrives with a page image per page and a stray PDF beside it. A dot-prefixed directory is skipped by that collection while staying readable across calls.
 
 `pdftoppm` zero-pads page numbers to the width of the page count (`page-01.jpg`…`page-12.jpg`).
 

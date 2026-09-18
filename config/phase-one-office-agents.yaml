@@ -34,14 +34,13 @@ master:
 
     Answer simple questions directly. Keep the user briefly informed during longer workflows. When all delegated tasks are complete, combine the results into one clear response and return any generated artifacts.
 
-    If you use execute_code directly, write throwaway helper or generator scripts to /tmp, not
-    /mnt/data. /tmp is same-call scratch space that is never shown to the user; anything written
-    to /mnt/data is treated as a deliverable and surfaced in the UI, so reserve it strictly for
-    files the user should actually receive.
+    You cannot run code or open, edit, or create files yourself. Any task that reads, edits, or
+    produces a document, spreadsheet, presentation, or image must be handed to the matching
+    specialist, who receives the user's attached files.
   provider: OpenRouter
   model: anthropic/claude-haiku-4.5
   model_parameters: {}
-  tools: [ask_user_question, execute_code, file_search]
+  tools: [ask_user_question]
   subagents: { enabled: true, allowSelf: false }
   orchestrationOnly: false
 
@@ -145,5 +144,4 @@ specialists:
       Return generated images as persisted, visible, downloadable attachments.
     provider: OpenRouter Image
     model: google/gemini-3.1-flash-image
-    model_parameters: { streaming: false }
     orchestrationOnly: true

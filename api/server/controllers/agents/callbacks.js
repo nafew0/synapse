@@ -962,7 +962,14 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null, jo
       );
     }
 
-    if (output.artifact.content) {
+    /**
+     * `read_file` hands an image to the model so it can look at it: a slide
+     * render during a deck's visual check, a cropped page during PDF work.
+     * Those are the agent's working views, not deliverables — a nine-slide
+     * deck would otherwise arrive with nine near-duplicate images beside the
+     * file itself. The model still receives `artifact.content` either way.
+     */
+    if (output.artifact.content && output.name !== Tools.read_file) {
       /** @type {FormattedContent[]} */
       const content = output.artifact.content;
       for (let i = 0; i < content.length; i++) {
@@ -1281,7 +1288,14 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
       );
     }
 
-    if (output.artifact.content) {
+    /**
+     * `read_file` hands an image to the model so it can look at it: a slide
+     * render during a deck's visual check, a cropped page during PDF work.
+     * Those are the agent's working views, not deliverables — a nine-slide
+     * deck would otherwise arrive with nine near-duplicate images beside the
+     * file itself. The model still receives `artifact.content` either way.
+     */
+    if (output.artifact.content && output.name !== Tools.read_file) {
       /** @type {FormattedContent[]} */
       const content = output.artifact.content;
       for (let i = 0; i < content.length; i++) {
