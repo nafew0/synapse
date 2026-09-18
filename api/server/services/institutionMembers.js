@@ -717,7 +717,53 @@ async function ensureNoCrossTenantConflict(email, tenantId) {
   return existing;
 }
 
-async function sendInstitutionInviteEmail({ email, token, appName, name }) {
+const INSTITUTION_NAME_TTL_MS = 60 * 1000;
+const institutionNameCache = new Map();
+
+/** Bulk resends mail one invitation per member, so the institution is read once
+ *  per burst rather than once per message. */
+async function getInstitutionName(tenantId) {
+  if (!tenantId) {
+    return '';
+  }
+
+  const cached = institutionNameCache.get(tenantId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.name;
+  }
+
+  const institution = await runAsSystem(() =>
+    models.Institution.findOne({ tenantId }).select('name').lean().exec(),
+  );
+  const name = String(institution?.name || '').trim();
+  institutionNameCache.set(tenantId, { name, expiresAt: Date.now() + INSTITUTION_NAME_TTL_MS });
+  return name;
+}
+
+function formatInviteExpiry(expiresAt) {
+  if (!expiresAt) {
+    return '';
+  }
+
+  const date = expiresAt instanceof Date ? expiresAt : new Date(expiresAt);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  /** The reader is told when the link lapses, so the date has to be the one the
+   *  sending deployment keeps. Leaving locale and zone unset takes the host's
+   *  own (TZ, then the system), which is what a regional install is configured
+   *  with; the env vars are for overriding a host that is set to something else,
+   *  such as a container left on UTC. */
+  return new Intl.DateTimeFormat(process.env.INVITE_EMAIL_LOCALE || undefined, {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: process.env.INVITE_EMAIL_TIMEZONE || undefined,
+  }).format(date);
+}
+
+async function sendInstitutionInviteEmail({ email, token, appName, name, tenantId, expiresAt }) {
   /** DOMAIN_CLIENT is where a browser reaches the app, which in local dev is the
    *  Vite server, not the API. */
   const appUrl = (process.env.DOMAIN_CLIENT || '').replace(/\/+$/, '');
@@ -727,14 +773,22 @@ async function sendInstitutionInviteEmail({ email, token, appName, name }) {
     return { inviteLink };
   }
 
+  const institutionName = await getInstitutionName(tenantId);
+
   try {
     await sendEmail({
       email,
-      subject: `You're invited to join ${appName}`,
+      subject: institutionName
+        ? `${institutionName} has invited you to ${appName}`
+        : `You're invited to join ${appName}`,
       payload: {
         appName,
         appUrl,
         inviteLink,
+        email,
+        institutionName,
+        expiresOn: formatInviteExpiry(expiresAt),
+        supportEmail: process.env.SUPPORT_EMAIL || '',
         year: new Date().getFullYear(),
         name: String(name || '').trim(),
       },
@@ -830,6 +884,8 @@ async function createInstitutionInvite({
     token: rawToken,
     appName,
     name: invite.name,
+    tenantId,
+    expiresAt: invite.expiresAt,
   });
 
   await recordMemberAudit({
@@ -861,7 +917,13 @@ async function createStandaloneInvite({ email, username, creditPackageId, invite
   const tokenHash = await hashToken(rawToken);
   const name = requestedUsername || normalizedEmail.split('@')[0];
   const invite = await runAsSystem(() => models.InstitutionInvite.create({ accountScope: InstitutionInviteAccountScopes.STANDALONE, tenantId: null, email: normalizedEmail, name, requestedUsername, requestedRole: SystemRoles.USER, creditPackageId: pkg.id, status: InstitutionInviteStatuses.PENDING, tokenHash, invitedBy: toObjectId(invitedBy?.id ?? invitedBy?._id ?? invitedBy), lastSentAt: new Date(), expiresAt: new Date(Date.now() + getInviteExpiryMs()), source: InstitutionInviteSources.MANUAL }));
-  const emailResult = await sendInstitutionInviteEmail({ email: normalizedEmail, token: rawToken, appName: process.env.APP_TITLE || 'LibreChat', name: invite.name });
+  const emailResult = await sendInstitutionInviteEmail({
+    email: normalizedEmail,
+    token: rawToken,
+    appName: process.env.APP_TITLE || 'LibreChat',
+    name: invite.name,
+    expiresAt: invite.expiresAt,
+  });
   await recordMemberAudit({ tenantId: undefined, action: 'member.invited', actor: actorFromUser(invitedBy), target: { type: 'standalone_invite', id: invite._id, name: normalizedEmail }, metadata: { accountScope: InstitutionInviteAccountScopes.STANDALONE, packageId: pkg.id }, context });
   return { invite, ...emailResult };
 }
@@ -937,6 +999,8 @@ async function reissueInvite(invite, { actor, context, tenantId, standalone }) {
     token: rawToken,
     appName: process.env.APP_TITLE || 'LibreChat',
     name: invite.name,
+    tenantId: standalone ? null : tenantId,
+    expiresAt: invite.expiresAt,
   });
 
   await recordMemberAudit({
