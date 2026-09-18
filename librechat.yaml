@@ -10,11 +10,108 @@ cache: true
 # every subsequent turn of a long editing session.
 summarization:
   enabled: true
+  # No `trigger` on purpose. A checkpoint is only ever considered when the pruned
+  # conversation still does not fit the budget, so a trigger can make summarization rarer
+  # but never earlier — the levers that matter here are what survives it.
+  #
+  # The provider and model are left unset, so the checkpoint is written by the agent's own
+  # model through its own client options.
+  #
+  # Headroom off the context budget. Document edits arrive in bursts of large tool results,
+  # and 5% is not enough slack to absorb one: the run overflows, recovers, and pays for the
+  # round trip.
+  reserveRatio: 0.1
+  # Room for the checkpoint itself. It has to carry file paths, applied-versus-pending work
+  # and the user's accumulated corrections, and it is re-sent on every later turn.
+  maxSummaryTokens: 2500
+  retainRecent:
+    # Turns kept verbatim after a checkpoint is written (default 2). An editing session is a
+    # back-and-forth of short corrections — "no, keep the heading" — and two turns loses the
+    # thread of what was just asked for.
+    turns: 4
+  prompt: |
+    Hold on, before you continue I need you to write me a checkpoint of everything so far.
+    Your context window is filling up and this checkpoint replaces the messages above, so
+    capture everything you need to pick right back up.
+
+    Don't second-guess or fact-check anything you did, your tool results reflect exactly what
+    happened. If a tool result appears truncated, that's a display artifact from context
+    management: the tool executed fully. Only the checkpoint, don't respond to me or continue
+    the conversation.
+
+    ## Checkpoint
+
+    ## Goal
+    What I asked you to do, including every correction I made along the way, in my words
+    where the wording matters.
+
+    ## Files
+    Every file in play by its exact path under /mnt/data: which one is the deliverable I am
+    waiting for, which are my inputs, which are intermediates. Name the skill or script that
+    produced each one.
+
+    ## Applied and pending
+    What is already written into each file, and what I asked for that is not in it yet.
+
+    ## Constraints and preferences
+    Rules that still hold: fonts, sizes, page size, layout, language, names, numbers, and
+    anything I rejected and why.
+
+    ## Key decisions
+    Decisions you made and why.
+
+    ## Next steps
+    Concrete remaining actions, in priority order.
+
+    ## Critical context
+    Exact identifiers, paths, error messages and verification output to preserve verbatim.
+
+    Rules:
+    - Record what you did and observed, don't judge or re-evaluate it
+    - For each tool call: the tool name, key inputs, and the outcome
+    - Do not retell what the documents say. They are on disk and can be reopened; a
+      checkpoint that spends its room on their contents loses the work instead.
+    - Preserve exact identifiers, names, errors, and references verbatim
+    - Short declarative sentences
+    - Skip empty sections
+  updatePrompt: |
+    Hold on again, update your checkpoint. Merge the new messages into your existing
+    checkpoint and give me a single consolidated replacement.
+
+    Keep it roughly the same length as your last checkpoint. Compress older details to make
+    room for what's new, don't just append. Give recent actions more detail, compress older
+    items to one-liners.
+
+    Don't fact-check or second-guess anything, your tool results are ground truth. If a tool
+    result appears truncated, that's a display artifact: the tool executed fully. Only the
+    checkpoint, don't respond to me or continue the conversation.
+
+    Rules:
+    - Merge new progress into existing sections, don't duplicate headers
+    - Correct the Files section rather than appending to it: a path that changed, a file that
+      was replaced or delivered, is wrong information if it is left standing
+    - Move items from pending to applied when the file actually holds them
+    - Compress older completed items into one-line entries
+    - Update "Next steps" to reflect current task priorities
+    - For each new tool call: the tool name, key inputs, and the outcome
+    - Preserve exact identifiers, names, errors, and references verbatim
+    - Skip empty sections
   contextPruning:
     enabled: true
-    keepLastAssistants: 3
-    softTrimRatio: 0.7
-    hardClearRatio: 0.9
+    # Assistant turns protected from pruning, counted back from the end. Four covers the
+    # current edit-verify-deliver cycle rather than cutting into the middle of one.
+    keepLastAssistants: 4
+    # Position thresholds, measured as distance from the end of the conversation: 1.0 is the
+    # oldest message, 0 the newest. Lower values prune more.
+    #
+    # Tool output in this deployment is re-derivable — the files live in the sandbox and can
+    # be reopened — while the conversation cannot be recovered once summarized. So the budget
+    # is freed by discarding old tool dumps early rather than by summarizing away the
+    # back-and-forth: soft-trim the oldest half, hard-clear the oldest quarter.
+    softTrimRatio: 0.5
+    hardClearRatio: 0.75
+    # Results below this are left alone; a conversion summary or a gate verdict is small and
+    # worth keeping whole.
     minPrunableToolChars: 2000
 
 balance:
@@ -69,6 +166,72 @@ interface:
 # without the user choosing a mode: short documents are read in full, long ones are searched,
 # spreadsheets and data files go to the code sandbox. Thresholds are in tokens.
 fileConfig:
+  # Uploads are limited to what this deployment can actually do something with. Anything not
+  # listed is refused by the attach menu, by client validation and by the server's upload filter.
+  # Types left out on purpose:
+  #   video/*            nothing reads it — no ffmpeg in the sandbox, no vision model takes it
+  #   audio/* on agents  the sandbox has no speech-to-text; audio belongs to the Transcriber
+  #   m4a, mp4, aac, webm audio — MAI-Transcribe returns 400 for these (tested 2026-09-10)
+  #   archives on single models — nothing can open them without the code sandbox
+  endpoints:
+    # Office Assistant: the code sandbox, LibreOffice and the document skills.
+    agents:
+      supportedMimeTypes:
+        # Vision for the model; Pillow, OpenCV and cairosvg in the sandbox
+        - '^image/(jpeg|png|gif|webp|heic|heif|svg\+xml)$'
+        # pdfplumber, pypdf, qpdf, poppler, and the pdf-to-docx skill
+        - '^application/pdf$'
+        # Word, Excel and PowerPoint — legacy and OOXML, via the docx/xlsx/pptx skills
+        - '^application/(msword|vnd\.ms-excel|vnd\.ms-powerpoint)$'
+        - '^application/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.(presentation|template))$'
+        # OpenDocument — LibreOffice Writer, Calc and Impress are installed
+        - '^application/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)$'
+        - '^application/(epub\+zip|rtf)$'
+        # Text, markup and tabular data — pandas, pyarrow, chdb
+        - '^text/(plain|markdown|csv|tab-separated-values|html|xml|css|calendar|vtt)$'
+        - '^application/(json|xml|yaml|sql|csv)$'
+        - '^application/(x-parquet|vnd\.apache\.parquet)$'
+        # Source files the sandbox can read or run
+        - '^text/(javascript|x-c|x-c\+\+|x-h|x-csharp|x-java|x-php|x-python|x-script\.python|x-ruby|x-tex)$'
+        - '^application/(typescript|x-sh|vnd\.coffeescript)$'
+        # Archives and mail, opened with code
+        - '^application/(zip|x-zip-compressed|x-tar)$'
+        - '^message/rfc822$'
+
+    # Single models read files, they cannot edit them: only what the parser or the RAG API can
+    # turn into text, plus images for vision.
+    custom: &readOnlyUploads
+      supportedMimeTypes:
+        - '^image/(jpeg|png|gif|webp|heic|heif)$'
+        - '^application/pdf$'
+        - '^application/(msword|vnd\.ms-excel|vnd\.ms-powerpoint)$'
+        - '^application/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation)$'
+        - '^application/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation)$'
+        - '^application/epub\+zip$'
+        - '^text/(plain|markdown|csv|tab-separated-values|html|xml)$'
+        - '^application/(json|xml|csv)$'
+
+    # Same as above, plus the four audio formats MAI-Transcribe accepts, for the Transcriber.
+    OpenRouter:
+      supportedMimeTypes:
+        - '^image/(jpeg|png|gif|webp|heic|heif)$'
+        - '^application/pdf$'
+        - '^application/(msword|vnd\.ms-excel|vnd\.ms-powerpoint)$'
+        - '^application/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation)$'
+        - '^application/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation)$'
+        - '^application/epub\+zip$'
+        - '^text/(plain|markdown|csv|tab-separated-values|html|xml)$'
+        - '^application/(json|xml|csv)$'
+        - '^audio/(mpeg|mp3|wav|wave|x-wav|ogg|vorbis|flac|x-flac)$'
+
+    # Image generation takes pictures and nothing else.
+    OpenRouter Image:
+      supportedMimeTypes:
+        - '^image/(jpeg|png|gif|webp|heic|heif)$'
+
+    # Any endpoint without its own entry falls here rather than to the sandbox list.
+    default: *readOnlyUploads
+
   autoPreparation:
     # Per-file ceiling for reading a document's text straight into the conversation.
     fullTextTokens: 20000
@@ -135,6 +298,9 @@ modelSpecs:
     - name: transcriber
       label: Transcriber
       description: Upload an audio file with "Upload as Text" to get its full transcript.
+      # Tools are chosen by the backend, never by the user: no badge row, no skills picker.
+      hideBadgeRow: true
+      skills: false
       preset:
         endpoint: OpenRouter
         model: openai/gpt-5.6-luna
@@ -158,10 +324,43 @@ modelSpecs:
       # Retrieval only: long attachments are searchable, but editing a file needs the
       # code sandbox, which belongs to the Office Assistant alone.
       fileSearch: true
+      # Single models are a plain "ask about your file" surface. The tool badge row and
+      # the skills picker belong to building an assistant, not to using one — office work
+      # goes to the Office Assistant, which carries its own tools and skills.
+      hideBadgeRow: true
+      skills: false
       preset:
         endpoint: OpenRouter
         model: openai/gpt-5.6-luna
         promptPrefix: |
+          ## When a file is attached
+
+          Call file_search first. Always. Before you write anything else.
+
+          Do this even when you already know the topic well. Do this even when the
+          user's message is only a topic or two words, such as "matrix
+          multiplication" — a bare topic with a file attached means "tell me what
+          the document says about this".
+
+          Build the answer from what file_search returns, and name the section or
+          page it came from so the user can check it.
+
+          Answer in the language of the attached document. If the document is in
+          Bangla, answer in Bangla; if it is in English, answer in English. Follow
+          the document rather than the language the user happened to type in. The
+          one exception is an explicit request — if the user asks for a particular
+          language, or asks for a translation, that always wins.
+
+          If the search returns nothing useful, say exactly this before continuing:
+          "I could not find that in the attached document." Then you may answer
+          from your own knowledge.
+
+          Never answer from your own knowledge while a file is attached without
+          saying that is what you are doing. An answer that looks right but did not
+          come from the user's document is worse than no answer.
+
+          ## Everything else
+
           You assist non-technical office users with emails, letters, reports,
           research, document editing, meeting materials, and presentations.
 
@@ -171,6 +370,7 @@ modelSpecs:
           clarification questions for one request.
           Do not ask for passwords, payment information, or other unnecessary
           sensitive data. Do not ask for greetings or simple factual questions.
+
           You can read attached files and answer questions about them. You cannot
           edit a document or build a spreadsheet — when the user asks for that,
           say so plainly in one sentence and tell them to switch to the Office
@@ -193,11 +393,44 @@ modelSpecs:
       # Retrieval only: long attachments are searchable, but editing a file needs the
       # code sandbox, which belongs to the Office Assistant alone.
       fileSearch: true
+      # Single models are a plain "ask about your file" surface. The tool badge row and
+      # the skills picker belong to building an assistant, not to using one — office work
+      # goes to the Office Assistant, which carries its own tools and skills.
+      hideBadgeRow: true
+      skills: false
       preset:
         endpoint: OpenRouter
         model: anthropic/claude-haiku-4.5
         promptCache: true
         promptPrefix: |
+          ## When a file is attached
+
+          Call file_search first. Always. Before you write anything else.
+
+          Do this even when you already know the topic well. Do this even when the
+          user's message is only a topic or two words, such as "matrix
+          multiplication" — a bare topic with a file attached means "tell me what
+          the document says about this".
+
+          Build the answer from what file_search returns, and name the section or
+          page it came from so the user can check it.
+
+          Answer in the language of the attached document. If the document is in
+          Bangla, answer in Bangla; if it is in English, answer in English. Follow
+          the document rather than the language the user happened to type in. The
+          one exception is an explicit request — if the user asks for a particular
+          language, or asks for a translation, that always wins.
+
+          If the search returns nothing useful, say exactly this before continuing:
+          "I could not find that in the attached document." Then you may answer
+          from your own knowledge.
+
+          Never answer from your own knowledge while a file is attached without
+          saying that is what you are doing. An answer that looks right but did not
+          come from the user's document is worse than no answer.
+
+          ## Everything else
+
           You assist non-technical office users with emails, letters, reports,
           research, document editing, meeting materials, and presentations.
 
@@ -207,21 +440,18 @@ modelSpecs:
           clarification questions for one request.
           Do not ask for passwords, payment information, or other unnecessary
           sensitive data. Do not ask for greetings or simple factual questions.
+
           You can read attached files and answer questions about them. You cannot
           edit a document or build a spreadsheet — when the user asks for that,
           say so plainly in one sentence and tell them to switch to the Office
           Assistant, which can return the edited file.
 
-    # - name: nvidia/nemotron-3.5-lightning
-    #   label: Nemotron-3.5
-    #   askUserQuestion: true
-    #   preset:
-    #     endpoint: OpenRouter
-    #     model: nvidia/nemotron-3.5-lightning
-    #     promptCache: true
     
     - name: google/gemini-3.1-flash-image
       label: Image Generation
+      # Tools are chosen by the backend, never by the user: no badge row, no skills picker.
+      hideBadgeRow: true
+      skills: false
       preset:
         endpoint: OpenRouter Image
         model: google/gemini-3.1-flash-image
@@ -233,9 +463,45 @@ modelSpecs:
       # Retrieval only: long attachments are searchable, but editing a file needs the
       # code sandbox, which belongs to the Office Assistant alone.
       fileSearch: true
+      # Single models are a plain "ask about your file" surface. The tool badge row and
+      # the skills picker belong to building an assistant, not to using one — office work
+      # goes to the Office Assistant, which carries its own tools and skills.
+      hideBadgeRow: true
+      skills: false
       preset:
         endpoint: NVIDIA
         model: z-ai/glm-5.2
+        promptPrefix: |
+          ## When a file is attached
+
+          Call file_search first. Always. Before you write anything else.
+
+          Do this even when you already know the topic well. Do this even when the
+          user's message is only a topic or two words, such as "matrix
+          multiplication" — a bare topic with a file attached means "tell me what
+          the document says about this".
+
+          Build the answer from what file_search returns, and name the section or
+          page it came from so the user can check it.
+
+          Answer in the language of the attached document. If the document is in
+          Bangla, answer in Bangla; if it is in English, answer in English. Follow
+          the document rather than the language the user happened to type in. The
+          one exception is an explicit request — if the user asks for a particular
+          language, or asks for a translation, that always wins.
+
+          If the search returns nothing useful, say exactly this before continuing:
+          "I could not find that in the attached document." Then you may answer
+          from your own knowledge.
+
+          Never answer from your own knowledge while a file is attached without
+          saying that is what you are doing. An answer that looks right but did not
+          come from the user's document is worse than no answer.
+
+          You can read attached files and answer questions about them. You cannot
+          edit a document or build a spreadsheet — when the user asks for that,
+          say so plainly in one sentence and tell them to switch to the Office
+          Assistant, which can return the edited file.
 
 endpoints:
   agents:
@@ -259,7 +525,6 @@ endpoints:
       # "OCR capability is not enabled for Agents".
       - 'ocr'
 
-
   custom:
 
     # - name: BdREN AI
@@ -281,6 +546,7 @@ endpoints:
           - 'gpt-5.6-luna'
         fetch: false
       modelDisplayLabel: OpenAI
+
 
     - name: OpenRouter
       apiKey: '${OPENROUTER_KEY}'

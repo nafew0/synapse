@@ -1,5 +1,5 @@
 import { memo, useRef, useMemo, useEffect, useCallback, Fragment } from 'react';
-import { ContentTypes } from 'librechat-data-provider';
+import { ContentTypes, isImageOutputModel } from 'librechat-data-provider';
 import type {
   TMessageContentParts,
   SearchResultData,
@@ -19,9 +19,10 @@ import { hasPendingApprovalInPart } from '~/utils';
 import EditContentParts from './EditContentParts';
 import { EmptyText, AgentUpdate } from './Parts';
 import ApprovalProvider from './ApprovalContext';
-import GeneratedImageArtifacts from './GeneratedImageArtifacts';
+import GeneratedImageArtifacts, { isGeneratedImageAttachment } from './GeneratedImageArtifacts';
 import Sources from '~/components/Web/Sources';
 import ToolCallGroup from './ToolCallGroup';
+import GeneratingImage from './GeneratingImage';
 import Container from './Container';
 import Part from './Part';
 
@@ -153,6 +154,8 @@ type ContentPartsProps = {
   authorHeader?: ReactNode;
   conversationId?: string | null;
   attachments?: TAttachment[];
+  /** The model producing this message, used to hold an image model's caption until its image lands. */
+  model?: string | null;
   searchResults?: { [key: string]: SearchResultData };
   isCreatedByUser: boolean;
   isLast: boolean;
@@ -192,6 +195,7 @@ const ContentParts = memo(function ContentParts({
   enterEdit,
   siblingIdx,
   attachments,
+  model,
   isSubmitting,
   setSiblingIdx,
   searchResults,
@@ -627,6 +631,14 @@ const ContentParts = memo(function ContentParts({
       part?.type === ContentTypes.TOOL_CALL ||
       part?.type === ContentTypes.AGENT_UPDATE,
   );
+  /** An image model's caption arrives with the completion, but its picture only once it has been
+   *  saved. Hold the caption until the image lands so the reply reads image first. A run that ends
+   *  without an image stops submitting, which releases the text, so nothing is ever lost. */
+  const awaitingGeneratedImage =
+    !nestedActivityPhase &&
+    effectiveIsSubmitting &&
+    isImageOutputModel(model) &&
+    !(attachments ?? []).some(isGeneratedImageAttachment);
   const sequentialContent = (
     <SearchContext.Provider value={{ searchResults }}>
       {!nestedActivityPhase && <MemoryArtifacts attachments={attachments} />}
@@ -634,7 +646,8 @@ const ContentParts = memo(function ContentParts({
         <GeneratedImageArtifacts attachments={attachments} />
       )}
       {!nestedActivityPhase && renderPendingSkills()}
-      {showEmptyCursor && (
+      {awaitingGeneratedImage && <GeneratingImage />}
+      {showEmptyCursor && !awaitingGeneratedImage && (
         <Container>
           {/** Nudge only when the dot is truly first under the header — leading
            * memory/skill rows and nested phases keep it flush. */}
@@ -646,6 +659,7 @@ const ContentParts = memo(function ContentParts({
         </Container>
       )}
       {!showEmptyCursor &&
+        !awaitingGeneratedImage &&
         groupedParts.flatMap((group) => {
           const firstIdx = group.type === 'single' ? group.part.idx : (group.parts[0]?.idx ?? -1);
           const nodes: ReactElement[] = [];

@@ -171,7 +171,33 @@ export default function useMentions({
     });
   }, [startupConfig, agentsMap]);
 
+  /** Mirrors `ModelSelector`: with `modelSpecs.enforce` on, the curated spec list is the only
+   *  thing users should see. Endpoints, the raw provider/model tree, bare agents and presets are
+   *  the developer-facing layer underneath it, and `@` must not be a way back into them. */
+  const specsEnforced = startupConfig?.modelSpecs?.enforce === true;
+
   const options: MentionOption[] = useMemo(() => {
+    const specMentions = (modelSpecs.length > 0 ? modelSpecs : []).map((modelSpec) => ({
+      value: modelSpec.name,
+      label: modelSpec.label,
+      description: modelSpec.description,
+      icon: EndpointIcon({
+        conversation: {
+          ...modelSpec.preset,
+          endpoint: resolveModelSpecEndpoint(modelSpec) ?? null,
+          iconURL: modelSpec.iconURL,
+        },
+        endpointsConfig,
+        context: 'menu-item',
+        size: 20,
+      }),
+      type: 'modelSpec' as const,
+    }));
+
+    if (specsEnforced) {
+      return specMentions;
+    }
+
     const modelOptions = validEndpoints.flatMap((endpoint) => {
       if (isAssistantsEndpoint(endpoint) || isAgentsEndpoint(endpoint)) {
         return [];
@@ -196,22 +222,7 @@ export default function useMentions({
     });
 
     const mentions = [
-      ...(modelSpecs.length > 0 ? modelSpecs : []).map((modelSpec) => ({
-        value: modelSpec.name,
-        label: modelSpec.label,
-        description: modelSpec.description,
-        icon: EndpointIcon({
-          conversation: {
-            ...modelSpec.preset,
-            endpoint: resolveModelSpecEndpoint(modelSpec) ?? null,
-            iconURL: modelSpec.iconURL,
-          },
-          endpointsConfig,
-          context: 'menu-item',
-          size: 20,
-        }),
-        type: 'modelSpec' as const,
-      })),
+      ...specMentions,
       ...(interfaceConfig.modelSelect === true ? validEndpoints : []).map((endpoint) => ({
         value: endpoint,
         label: alternateName[endpoint as string] ?? endpoint ?? '',
@@ -265,6 +276,7 @@ export default function useMentions({
     agentsList,
     assistantMap,
     modelsConfig,
+    specsEnforced,
     validEndpoints,
     validEndpointSet,
     endpointsConfig,

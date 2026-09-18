@@ -1691,6 +1691,61 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       });
     });
 
+    describe('agents a user is not meant to pick', () => {
+      const makeAgent = async (name, overrides) =>
+        Agent.create({
+          id: `agent_${nanoid(12)}`,
+          name,
+          description: name,
+          provider: 'openai',
+          model: 'gpt-4',
+          author: userA,
+          versions: [
+            {
+              name,
+              description: name,
+              provider: 'openai',
+              model: 'gpt-4',
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+          ],
+          ...overrides,
+        });
+
+      const listFor = async (agents) => {
+        mockReq.user.id = userA.toString();
+        findAccessibleResources.mockResolvedValue(agents.map((agent) => agent._id));
+        findPubliclyAccessibleResources.mockResolvedValue([]);
+        await getListAgentsHandler(mockReq, mockRes);
+        return mockRes.json.mock.calls[0][0].data.map((agent) => agent.name);
+      };
+
+      test('leaves out an orchestration-only specialist the user can view', async () => {
+        const specialist = await makeAgent('Document Assistant', { orchestrationOnly: true });
+        const master = await makeAgent('Office Assistant', {});
+
+        const names = await listFor([specialist, master]);
+
+        expect(names).toEqual(['Office Assistant']);
+      });
+
+      test('leaves out an agent that is not directly selectable', async () => {
+        const internal = await makeAgent('Internal Worker', { directSelection: false });
+        const master = await makeAgent('Office Assistant', {});
+
+        const names = await listFor([internal, master]);
+
+        expect(names).toEqual(['Office Assistant']);
+      });
+
+      test('keeps agents that predate both fields', async () => {
+        const legacy = await makeAgent('Legacy Agent', {});
+
+        expect(await listFor([legacy])).toEqual(['Legacy Agent']);
+      });
+    });
+
     test('should return empty list when user has no accessible agents', async () => {
       // User B has no permissions and no owned agents
       mockReq.user.id = userB.toString();
@@ -2517,9 +2572,13 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
         expect(listSpy).toHaveBeenCalledWith(
           expect.objectContaining({ otherParams: { 'avatar.source': FileSources.s3 } }),
         );
-        /** The user-facing list query keeps the request filter, not the refresh scope. */
+        /** The user-facing list query keeps the request filter — the base visibility rule
+         *  that hides orchestration-only specialists — and never the refresh scope. */
         expect(listSpy).toHaveBeenCalledWith(
-          expect.objectContaining({ includeSkillConfig: true, otherParams: {} }),
+          expect.objectContaining({
+            includeSkillConfig: true,
+            otherParams: { orchestrationOnly: { $ne: true }, directSelection: { $ne: false } },
+          }),
         );
 
         expect(refreshS3Url).not.toHaveBeenCalled();

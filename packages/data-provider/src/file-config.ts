@@ -477,6 +477,8 @@ const mergeAutoPreparation = (
 
 export const defaultAutoPreparation: AutoPreparationConfig = {
   fullTextTokens: 20000,
+  /** Around twenty pages of prose: an order, a memo or a note is read in full, a report is not. */
+  editableFullTextTokens: 6000,
   conversationTextTokens: 40000,
   previewTokens: 2000,
   ocrMinCharsPerPage: 100,

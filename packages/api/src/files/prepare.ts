@@ -166,10 +166,19 @@ export function shouldEscalateToOcr({
   return trimmed.length / pageCount < ocrMinCharsPerPage;
 }
 
+/** Whether this upload also gets a copy in the sandbox, which is what makes it editable. */
+export function hasSandboxCopy(category: FileCategory, availability: PreparationAvailability): boolean {
+  return availability.sandbox && category !== FileCategory.image;
+}
+
 /**
  * Chooses how the extracted text reaches the model. Full text is used only while it fits both
  * the per-file ceiling and what the conversation has left, so a handful of individually small
  * documents cannot quietly become a large payload re-sent on every turn.
+ *
+ * A document that is also in the sandbox has a lower ceiling of its own. Its text would otherwise
+ * be re-sent on every turn while the same bytes already sit in the sandbox, and past a certain
+ * size that duplication costs more than it buys: the model can open the file instead.
  */
 export function planDelivery({
   category,
@@ -177,6 +186,7 @@ export function planDelivery({
   conversationUsedTokens,
   availability,
   config,
+  sandboxCopy = false,
 }: {
   category: FileCategory;
   /** Tokens in the extracted text; `0` when nothing was extracted. */
@@ -185,6 +195,8 @@ export function planDelivery({
   conversationUsedTokens: number;
   availability: PreparationAvailability;
   config: AutoPreparationConfig;
+  /** Whether a copy of this file will also be mounted in the sandbox. */
+  sandboxCopy?: boolean;
 }): DeliveryPlan {
   if (category === FileCategory.image) {
     return {
@@ -204,9 +216,19 @@ export function planDelivery({
     };
   }
 
+  /**
+   * An office document the user can edit. The chip says so whatever the text does, because what
+   * matters to someone who uploaded a file to change it is that they can, not which route its
+   * words took to the model.
+   */
+  const editable = sandboxCopy && category === FileCategory.document;
+  const fullTextCeiling = editable
+    ? Math.min(config.fullTextTokens, config.editableFullTextTokens)
+    : config.fullTextTokens;
+
   const fitsInFullText =
     textTokens > 0 &&
-    textTokens <= config.fullTextTokens &&
+    textTokens <= fullTextCeiling &&
     conversationUsedTokens + textTokens <= config.conversationTextTokens;
 
   if (availability.fullText && fitsInFullText) {
@@ -214,8 +236,9 @@ export function planDelivery({
       delivery: DeliveryMethod.full_text,
       toolResource: EToolResources.context,
       budgetTokens: textTokens,
-      label:
-        category === FileCategory.audio
+      label: editable
+        ? PreparationLabel.sandbox
+        : category === FileCategory.audio
           ? PreparationLabel.transcribed
           : PreparationLabel.read_in_full,
     };
@@ -226,7 +249,21 @@ export function planDelivery({
       delivery: DeliveryMethod.search,
       toolResource: EToolResources.file_search,
       budgetTokens: 0,
-      label: PreparationLabel.searchable,
+      label: editable ? PreparationLabel.sandbox : PreparationLabel.searchable,
+    };
+  }
+
+  /**
+   * Too long to read in full, with no retrieval to fall back on. The sandbox already holds the
+   * file, so the model gets a preview and opens the rest itself rather than a truncated copy of
+   * the text charged to every turn.
+   */
+  if (editable) {
+    return {
+      delivery: DeliveryMethod.sandbox,
+      toolResource: EToolResources.execute_code,
+      budgetTokens: Math.min(textTokens, config.previewTokens),
+      label: PreparationLabel.sandbox,
     };
   }
 
@@ -281,12 +318,14 @@ export function planPreparation({
   ocrApplied?: boolean;
 }): PreparationPlan {
   const category = categorizeFile(mimetype);
+  const sandboxCopy = hasSandboxCopy(category, availability);
   const delivery = planDelivery({
     category,
     textTokens,
     conversationUsedTokens,
     availability,
     config,
+    sandboxCopy,
   });
 
   return {
@@ -294,10 +333,7 @@ export function planPreparation({
     category,
     extraction: ocrApplied ? ExtractionMethod.ocr : planExtraction(category, mimetype),
     /** Editing works by opening the file in the sandbox, never by re-typing it through context. */
-    sandboxCopy:
-      availability.sandbox &&
-      category !== FileCategory.image &&
-      delivery.delivery !== DeliveryMethod.sandbox,
+    sandboxCopy: sandboxCopy && delivery.delivery !== DeliveryMethod.sandbox,
     ocrApplied,
   };
 }

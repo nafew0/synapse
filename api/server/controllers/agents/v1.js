@@ -1358,8 +1358,20 @@ const getListAgentsHandler = async (req, res) => {
      * only editable agents, so it needs no second lookup to know which ones those are.
      */
     const needsEditableLookup = !hasEditBit(requiredPermission);
-    // Base filter
-    const filter = {};
+    /* Base filter.
+     *
+     * Orchestration-only agents are the specialists a master agent delegates to; they are not
+     * something a user picks. Leaving them in this list surfaced them in the `@` mention
+     * picker and the model selector, letting anyone start a conversation with an internal
+     * worker. `directSelection: false` says the same thing for agents that are otherwise
+     * ordinary. Both default to "selectable", so records predating the fields are unaffected,
+     * and neither changes any ACL — delegation reads its specialists by id, not through here.
+     * The platform catalog (`routes/platform/agentsCatalog.js`) remains the admin view that
+     * does show them. */
+    const filter = {
+      orchestrationOnly: { $ne: true },
+      directSelection: { $ne: false },
+    };
 
     // Handle category filter - only apply if category is defined
     if (category !== undefined && category.trim() !== '') {

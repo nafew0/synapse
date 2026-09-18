@@ -1119,7 +1119,12 @@ describe('processAgentFileUpload', () => {
         }),
       });
 
-      test('reads a long document in full when the agent has no file_search tool', async () => {
+      test('previews a long document for an agent that can open it but not search it', async () => {
+        /**
+         * Without file_search there is nowhere to index it, and reading it in full would charge
+         * the whole document to every later turn. The sandbox already holds the file, so the
+         * model gets a preview and opens the rest itself.
+         */
         db.getAgent.mockResolvedValueOnce({ id: 'agent_office', tools: ['execute_code'] });
         routeStrategies({ parser: oversized() });
         const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null, path: uploadPath });
@@ -1133,9 +1138,8 @@ describe('processAgentFileUpload', () => {
         expect(uploadVectors).not.toHaveBeenCalled();
         expect(db.createFile).toHaveBeenCalledWith(
           expect.objectContaining({
-            source: FileSources.text,
             metadata: expect.objectContaining({
-              preparation: expect.objectContaining({ delivery: 'full_text' }),
+              preparation: expect.objectContaining({ delivery: 'sandbox', label: 'sandbox' }),
             }),
           }),
           true,
@@ -1173,6 +1177,12 @@ describe('processAgentFileUpload', () => {
       });
 
       test('prepares a sandbox copy for a router whose handoff specialist has execute_code', async () => {
+        /**
+         * The Office Assistant delegates: its own tools are `[ask_user_question]` and
+         * `execute_code` belongs to the specialists it hands off to. Reading the router's list
+         * alone left an uploaded spreadsheet out of the sandbox entirely, so the specialist that
+         * was supposed to edit it never received the file.
+         */
         db.getAgent.mockResolvedValueOnce({
           id: 'agent_office',
           tools: ['ask_user_question'],
@@ -1264,8 +1274,9 @@ describe('processAgentFileUpload', () => {
       );
     });
 
-    test('falls back to full text when no RAG API is configured', async () => {
+    test('falls back to full text when neither retrieval nor a sandbox is reachable', async () => {
       delete process.env.RAG_API_URL;
+      db.getAgent.mockResolvedValueOnce({ id: 'agent_reader', tools: [] });
       routeStrategies({
         parser: {
           handleFileUpload: jest.fn().mockResolvedValue({
@@ -1277,7 +1288,11 @@ describe('processAgentFileUpload', () => {
       });
       const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null, path: uploadPath });
 
-      await processAgentFileUpload({ req, res: mockRes, metadata: autoMetadata() });
+      await processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: autoMetadata({ agent_id: 'agent_reader' }),
+      });
 
       expect(uploadVectors).not.toHaveBeenCalled();
       expect(db.createFile).toHaveBeenCalledWith(

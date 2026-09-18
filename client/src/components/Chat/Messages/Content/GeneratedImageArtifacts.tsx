@@ -10,23 +10,20 @@ import Image from './Image';
  * find a content part to attach to and render under. Mirrors `MemoryArtifacts`:
  * an unconditional, tool-call-independent slot filtered by attachment shape.
  */
-export default function GeneratedImageArtifacts({
-  attachments,
-}: {
-  attachments?: TAttachment[];
-}) {
+/** An image a model returned inline on its reply, as opposed to one a tool produced. */
+export const isGeneratedImageAttachment = (attachment?: TAttachment | null): boolean =>
+  attachment != null &&
+  !attachment.toolCallId &&
+  typeof attachment.type === 'string' &&
+  attachment.type.startsWith('image/') &&
+  typeof attachment.filepath === 'string';
+
+export default function GeneratedImageArtifacts({ attachments }: { attachments?: TAttachment[] }) {
   if (!attachments || attachments.length === 0) {
     return null;
   }
 
-  const images = attachments.filter(
-    (attachment) =>
-      attachment != null &&
-      !attachment.toolCallId &&
-      typeof attachment.type === 'string' &&
-      attachment.type.startsWith('image/') &&
-      typeof attachment.filepath === 'string',
-  );
+  const images = attachments.filter(isGeneratedImageAttachment);
 
   if (images.length === 0) {
     return null;

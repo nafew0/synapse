@@ -215,12 +215,15 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     return () => debouncedDisplayToast.cancel();
   }, [errors, debouncedDisplayToast]);
 
-  /** Preparation runs server-side, so the chip's only window into it is this stage stream. */
+  /** Preparation runs server-side, so the chip's only window into it is this stage stream.
+   * A stage also stands the delay warning down: it proves the upload is alive, and the chip is
+   * now saying something specific ("Indexing…") where the toast only says "slower than usual". */
   const handleUploadStage = useCallback(
     (fileId: string, stage: UploadStageName) => {
+      clearUploadTimer(fileId);
       updateFileById(fileId, { preparationStage: stage });
     },
-    [updateFileById],
+    [updateFileById, clearUploadTimer],
   );
 
   const uploadFile = useUploadFileMutation(

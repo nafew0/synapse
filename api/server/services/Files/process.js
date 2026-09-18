@@ -1255,6 +1255,23 @@ const getHandoffTargetIds = (agent) => {
  *
  * @returns {Promise<Set<string> | null>}
  */
+/**
+ * IDs of the agents a saved agent can hand a conversation to.
+ * @param {{ id: string, edges?: Array<{ to?: string | string[] }> }} agent
+ * @returns {string[]}
+ */
+const getHandoffTargetIds = (agent) => {
+  const targets = new Set();
+  for (const edge of agent.edges ?? []) {
+    for (const to of [].concat(edge?.to ?? [])) {
+      if (typeof to === 'string' && to !== agent.id) {
+        targets.add(to);
+      }
+    }
+  }
+  return [...targets];
+};
+
 const resolveAssistantTools = async ({ req, metadata }) => {
   const { agent_id, spec } = metadata;
 
@@ -1373,6 +1390,21 @@ const prepareUploadAutomatically = async ({ req, res, metadata, sseStream }) => 
     availability,
     config: autoConfig,
     ocrApplied: extracted?.ocrApplied === true,
+  });
+
+  /* Why a file went where it did. Without this, a document that quietly lands on the wrong
+   * route looks identical to one that was routed correctly — the only visible difference is
+   * a worse answer several turns later. */
+  logger.debug('[processAgentFileUpload] prepared upload', {
+    filename: file.originalname,
+    mimetype: file.mimetype,
+    textTokens,
+    conversationUsedTokens,
+    availability,
+    assistantTools: assistantTools == null ? 'not narrowed' : Array.from(assistantTools),
+    spec: metadata.spec ?? null,
+    agent_id: agent_id ?? null,
+    delivery: plan.delivery,
   });
 
   if (plan.delivery === DeliveryMethod.provider) {
