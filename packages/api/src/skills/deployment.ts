@@ -26,6 +26,9 @@ export const DEPLOYMENT_SKILL_FILE_SOURCE = 'deployment';
 
 const SKILL_MD = 'SKILL.md';
 const MAX_CACHED_TEXT_BYTES = 512 * 1024;
+/** Build artefacts a skill directory accumulates locally and must never upload to a sandbox. */
+const IGNORED_SKILL_DIRECTORIES = new Set(['__pycache__', '.pytest_cache', '.ruff_cache']);
+const IGNORED_SKILL_FILE_EXTENSIONS = new Set(['.pyc', '.pyo']);
 
 let deploymentAuthorId: Types.ObjectId | undefined;
 
@@ -819,9 +822,9 @@ async function collectSkillFiles(root: string, directory: string): Promise<strin
         throw new Error(`${relativePath}: symlinks are not allowed in deployment skills`);
       }
       if (entry.isDirectory()) {
-        return collectSkillFiles(root, filePath);
+        return IGNORED_SKILL_DIRECTORIES.has(entry.name) ? [] : collectSkillFiles(root, filePath);
       }
-      if (!entry.isFile()) {
+      if (!entry.isFile() || IGNORED_SKILL_FILE_EXTENSIONS.has(path.extname(entry.name))) {
         return [];
       }
       return [filePath];
