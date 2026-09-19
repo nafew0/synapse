@@ -18,6 +18,7 @@ const {
   getExtractedTextFormat,
   getStorageMetadata,
   getCodeExecutionBaseUrl,
+  dedupeInjectedFiles,
   buildCodeEnvDownloadQuery,
   CODE_API_EXPECTED_PROFILE_HEADER,
 } = require('@librechat/api');
@@ -1242,7 +1243,10 @@ async function readSandboxFile({
     postData.runtime_session_hint = runtime_session_hint;
   }
   if (files && files.length > 0) {
-    postData.files = files;
+    /* codeapi rejects the whole request when two inputs claim one destination, so the rule is
+     * applied here as well as at the call sites: a builder that trusts its caller is one
+     * forgotten caller away from failing every execution in a conversation. */
+    postData.files = dedupeInjectedFiles(files);
   }
 
   try {
@@ -1453,7 +1457,10 @@ async function execSandboxImageChunk({
     postData.runtime_session_hint = runtime_session_hint;
   }
   if (files && files.length > 0) {
-    postData.files = files;
+    /* codeapi rejects the whole request when two inputs claim one destination, so the rule is
+     * applied here as well as at the call sites: a builder that trusts its caller is one
+     * forgotten caller away from failing every execution in a conversation. */
+    postData.files = dedupeInjectedFiles(files);
   }
 
   try {
@@ -1573,7 +1580,10 @@ async function writeSandboxFile({
     postData.runtime_session_hint = runtime_session_hint;
   }
   if (files && files.length > 0) {
-    postData.files = files;
+    /* codeapi rejects the whole request when two inputs claim one destination, so the rule is
+     * applied here as well as at the call sites: a builder that trusts its caller is one
+     * forgotten caller away from failing every execution in a conversation. */
+    postData.files = dedupeInjectedFiles(files);
   }
 
   try {

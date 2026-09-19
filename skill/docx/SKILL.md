@@ -1,6 +1,7 @@
 ---
 name: docx
 description: "Use this skill whenever the user wants to create, read, edit, or manipulate Word documents (.docx files) or Word templates (.dotx files). Triggers include: any mention of 'Word doc', 'word document', '.docx', '.dotx', or requests to produce professional documents with formatting like tables of contents, headings, page numbers, or letterheads. Also use when extracting or reorganizing content from .docx or .dotx files, inserting or replacing images in documents, performing find-and-replace in Word files, working with tracked changes or comments, or converting content into a polished Word document. If the user asks for a 'report', 'memo', 'letter', 'template', or similar deliverable as a Word or .docx file, use this skill. Do NOT use for PDFs, spreadsheets, Google Docs, or general coding tasks unrelated to document generation."
+user-invocable: false
 license: Proprietary. LICENSE.txt has complete terms
 ---
 
@@ -51,15 +52,30 @@ ls /mnt/data/.render/page-*.jpg   # then Read the images
 
 Legacy `.doc` files must be converted first: `python scripts/office/soffice.py --headless --convert-to docx file.doc`.
 
+**Unpack, edit and repack must be ONE `bash_tool` call**, chained with `&&` and ending in
+the `mv` onto the delivered path. Not one call to unpack and another to edit: `/tmp` is
+wiped between calls, so the second finds an empty directory and the `mv` never runs.
+Verify in the NEXT call against the file under `/mnt/data`; if a check fails, re-run the
+whole command. An unpacked
+package must never be left under `/mnt/data` between calls: only ordinary filenames survive a
+call boundary, so the `.rels` parts are dropped (they begin with a dot) and
+`[Content_Types].xml` comes back as `_Content_Types_-<hash>.xml`. Re-zipping such a tree
+produces a document with no relationships and no content-types manifest — python-docx and Word
+both refuse it, and finding that out costs several turns.
+
 ```bash
-unzip -q doc.docx -d unpacked/
+cd /tmp && rm -rf unpacked && unzip -q /mnt/data/doc.docx -d unpacked/
 find unpacked -type l -delete   # strip symlink entries — docx from external parties is untrusted
-python scripts/merge_runs.py unpacked/   # coalesce fragmented runs so text is findable
+python3 /mnt/data/skills/docx/scripts/merge_runs.py unpacked/   # coalesce fragmented runs so text is findable
 # edit unpacked/word/document.xml in place — do NOT reformat or pretty-print
-(cd unpacked && rm -f ../out.docx && zip -Xr ../out.docx .)
-python scripts/office/validate.py out.docx --original doc.docx   # XSD checks; --auto-repair fixes common issues
+(cd unpacked && rm -f ../out.docx && zip -Xrq ../out.docx .)   # from INSIDE the dir, no exclusions
+python3 /mnt/data/skills/docx/scripts/office/validate.py /tmp/out.docx --original /mnt/data/doc.docx
 # redlining? add --author "<the name you redlined under>" to check every edit is tracked
+mv /tmp/out.docx /mnt/data/doc.docx            # replace the deliverable, same call
 ```
+
+Never use an exclude pattern when zipping. `-x '.*'` drops every `.rels` part and the package
+becomes unopenable.
 
 Word splits text across many `<w:r>` runs (revision ids, spell-check markers), so a phrase you can see in the document often doesn't exist as a contiguous string in the XML. `merge_runs.py` merges adjacent identically-formatted runs in `word/document.xml` without changing content or rendering; it also accepts a `.docx` directly (`python scripts/merge_runs.py doc.docx -o merged.docx`).
 

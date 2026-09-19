@@ -11,17 +11,34 @@ import { isBinaryBuffer } from '~/skills/binary';
 
 export const MAX_TEXT_CACHE_BYTES: number = 512 * 1024;
 
-/** Default inline-preview extraction ceiling: 2 MB. Office/text artifacts
- * larger than this skip inline preview and fall back to download-only. */
-const DEFAULT_MAX_TEXT_EXTRACT_BYTES = 2 * 1024 * 1024;
+/**
+ * Ceiling for an office HTML preview specifically, which is a different
+ * proposition from inlined text: the whole renderer document — library
+ * bootstrap plus the source file as base64 — is the preview, so it is
+ * roughly 1.35x the file and there is no useful way to shorten it. At the
+ * old shared 512 KB the cap bound at about a 350 KB file, which every
+ * rasterised PDF-to-deck conversion exceeds: a 502 KB deck of two page
+ * images fell through to a text-only slide list showing nothing but the
+ * slide captions. Text artifacts keep the smaller
+ * {@link MAX_TEXT_CACHE_BYTES}; nothing is gained by inlining megabytes of
+ * plain text into a message.
+ */
+export const MAX_OFFICE_HTML_CACHE_BYTES: number = 3.5 * 1024 * 1024;
+
+/** Default inline-preview extraction ceiling: 4 MB. Office/text artifacts
+ * larger than this skip inline preview and fall back to download-only.
+ * Sits above {@link MAX_OFFICE_HTML_CACHE_BYTES} so the office caps, not
+ * this gate, decide what gets a rendered preview. */
+const DEFAULT_MAX_TEXT_EXTRACT_BYTES = 4 * 1024 * 1024;
 
 /**
  * Resolve the inline-preview extraction ceiling from
  * `FILE_PREVIEW_MAX_EXTRACT_BYTES`, falling back to the 2 MB default when
  * the value is missing, non-numeric, or non-positive. Raising it lets
  * larger documents render an inline preview; the rendered HTML is still
- * independently capped at {@link MAX_TEXT_CACHE_BYTES} (512 KB), so
- * image-heavy files over that show the "too large" banner instead.
+ * independently capped at {@link MAX_OFFICE_HTML_CACHE_BYTES} for office
+ * previews and {@link MAX_TEXT_CACHE_BYTES} for text, so files over those
+ * show the "too large" banner instead.
  */
 export function resolveMaxTextExtractBytes(value: string | undefined): number {
   if (value == null || value.trim() === '') {
@@ -222,7 +239,7 @@ const OVERSIZED_HTML_BANNER = `<!DOCTYPE html>
  * and that path was a real vulnerability; see Codex P1 review on
  * PR #12934 (commit b06f08a) for the original bug and remediation.
  *
- * On oversized output (>`MAX_TEXT_CACHE_BYTES`), returns a small
+ * On oversized output (>`MAX_OFFICE_HTML_CACHE_BYTES`), returns a small
  * "preview too large" banner document instead of byte-truncating the
  * producer's HTML — slicing mid-tag would ship malformed markup to the
  * iframe.
@@ -243,7 +260,7 @@ const renderOfficeHtml = async (
     if (html == null) {
       return null;
     }
-    if (Buffer.byteLength(html, 'utf-8') > MAX_TEXT_CACHE_BYTES) {
+    if (Buffer.byteLength(html, 'utf-8') > MAX_OFFICE_HTML_CACHE_BYTES) {
       return OVERSIZED_HTML_BANNER;
     }
     return html;

@@ -121,3 +121,37 @@ export async function buildAgentScopedContext({
 
   return new Map(entries.filter(([, context]) => Boolean(context)));
 }
+
+/** The fields an artifact can be identified by, cheapest and most stable first. */
+interface ArtifactAttachment {
+  file_id?: string | null;
+  filepath?: string | null;
+  filename?: string | null;
+}
+
+/**
+ * One entry per artifact, however many times the turn emitted it.
+ *
+ * A tool that writes the same path more than once in a turn — a deck rebuilt
+ * twice by its own visual-QA loop, a workbook corrected after a failed check —
+ * resolves one artifact promise per write. The file record is already upserted
+ * by `file_id`, so those writes collapse to a single stored file, but the
+ * message kept every emission and the chat showed the same deck three times.
+ *
+ * Keyed the same way `mergeAttachments` keys the resumed path, so a turn that
+ * pauses and one that does not agree on what the message holds. Position comes
+ * from the first emission (the order the user watched them arrive); the value
+ * comes from the last, which carries the newest size and lifecycle status.
+ */
+export function dedupeAttachments<T extends ArtifactAttachment>(attachments: T[]): T[] {
+  if (attachments.length < 2) {
+    return attachments;
+  }
+  const byArtifact = new Map<string | symbol, T>();
+  for (const attachment of attachments) {
+    const key = attachment.file_id ?? attachment.filepath ?? attachment.filename;
+    /** An artifact with nothing to identify it cannot be proven a duplicate. */
+    byArtifact.set(key == null || key === '' ? Symbol() : key, attachment);
+  }
+  return [...byArtifact.values()];
+}

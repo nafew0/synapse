@@ -962,7 +962,13 @@ const persistExtractedText = async ({
       embedded,
       metadata: fileMetadata,
       ...storageMetadata,
-      filename: file.originalname,
+      /* The sanitized name, matching `createSanitizedUploadWrapper` and the sandbox copy, which
+       * `uploadToCodeEnvironment` uploads as `sanitizeFilename(originalname)`. This record's
+       * filename is what `primeFiles` tells the model is on disk (`/mnt/data/<filename>`) and
+       * what it sends as the injected ref's name, so the raw `originalname` hands the model a
+       * path that does not exist and makes the sandbox's echo of that input look like a second
+       * file — which codeapi rejects as conflicting destinations. */
+      filename: sanitizeFilename(file.originalname),
       conversationId: messageAttachment ? conversationId : undefined,
       model: messageAttachment ? undefined : req.body.model,
       context: messageAttachment ? FileContext.message_attachment : FileContext.agents,

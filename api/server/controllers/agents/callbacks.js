@@ -25,6 +25,8 @@ const {
   createBackgroundCodeResultHandler: createCodeHarvestHandler,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
   isCodeSessionToolName,
+  isSandboxDirkeep,
+  isSandboxWorkingFile,
   shouldSignalSandboxStart,
   getToolInputValidationDetails,
 } = require('@librechat/api');
@@ -1038,6 +1040,12 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null, jo
         continue;
       }
       const { id, name } = file;
+      /* codeapi's empty-directory marker, not an artifact: persisting it
+       * re-injects a zero-byte sentinel whose download 403s and fails the
+       * whole execution on the next call. */
+      if (isSandboxDirkeep(name)) {
+        continue;
+      }
       const toolCallId = output.tool_call_id;
       artifactPromises.push(
         (async () => {
@@ -1072,6 +1080,16 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null, jo
           const fileMetadata = result?.file ?? null;
           const finalize = result?.finalize;
           if (!fileMetadata) {
+            return null;
+          }
+          /* Working material: the record is kept so `primeFiles` re-injects it
+           * and the next call can read it back, but it is never attached to the
+           * message and never rendered as a preview. This is the one place the
+           * two can be separated — codeapi has to collect a file for it to
+           * survive the call, and anything it collects used to become an
+           * attachment, so a deck checked visually arrived with ten slide
+           * JPEGs beside it. */
+          if (isSandboxWorkingFile(name)) {
             return null;
           }
           /* Initial emit: ship the attachment to the client immediately
@@ -1372,6 +1390,12 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
         continue;
       }
       const { id, name } = file;
+      /* codeapi's empty-directory marker, not an artifact: persisting it
+       * re-injects a zero-byte sentinel whose download 403s and fails the
+       * whole execution on the next call. */
+      if (isSandboxDirkeep(name)) {
+        continue;
+      }
       const toolCallId = output.tool_call_id;
       artifactPromises.push(
         (async () => {
@@ -1406,6 +1430,16 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
           const fileMetadata = result?.file ?? null;
           const finalize = result?.finalize;
           if (!fileMetadata) {
+            return null;
+          }
+          /* Working material: the record is kept so `primeFiles` re-injects it
+           * and the next call can read it back, but it is never attached to the
+           * message and never rendered as a preview. This is the one place the
+           * two can be separated — codeapi has to collect a file for it to
+           * survive the call, and anything it collects used to become an
+           * attachment, so a deck checked visually arrived with ten slide
+           * JPEGs beside it. */
+          if (isSandboxWorkingFile(name)) {
             return null;
           }
 

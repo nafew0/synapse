@@ -8,6 +8,7 @@ import type { MentionOption } from '~/common';
 import useInitPopoverInput from '~/hooks/Input/useInitPopoverInput';
 import { useLocalize, useSkillActiveState } from '~/hooks';
 import { useSkillsInfiniteQuery } from '~/data-provider';
+import { isUserInvocable } from '~/utils/skills';
 import { useAgentsMapContext } from '~/Providers';
 import { ephemeralAgentByConvoId } from '~/store';
 import { isEphemeralAgent } from '~/common';
@@ -18,16 +19,7 @@ const commandChar = '$';
 const ROW_HEIGHT = 44;
 const skillIcon = <ScrollText className="icon-md text-cyan-500" />;
 
-/**
- * Determines whether a skill should appear in the `$` command popover.
- * Reads the persisted `userInvocable` field (mirrors the `user-invocable`
- * frontmatter). Defaults to visible when the field is absent so older
- * skills authored before Phase 6 stay user-invocable without a migration;
- * only an explicit `false` hides them.
- */
-export function isUserInvocable(skill: TSkillSummary): boolean {
-  return skill.userInvocable !== false;
-}
+export { isUserInvocable };
 
 /**
  * Filters the skills list down to what should appear in the `$` popover.

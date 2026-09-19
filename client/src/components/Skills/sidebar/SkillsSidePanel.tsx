@@ -6,6 +6,7 @@ import type { TSkillListResponse } from 'librechat-data-provider';
 import { useLocalize, useDebounce, useNavScrolling } from '~/hooks';
 import SkillListSkeleton from '../lists/SkillListSkeleton';
 import { useSkillsInfiniteQuery } from '~/data-provider';
+import { isUserInvocable } from '~/utils/skills';
 import SkillListPanel from '../lists/SkillList';
 import { PanelContent } from '~/components/ui';
 import FilterSkills from './FilterSkills';
@@ -31,7 +32,12 @@ export default function SkillsSidePanel({ className }: SkillsSidePanelProps) {
   const listQuery = useSkillsInfiniteQuery({ search: debouncedSearch || undefined, limit: 20 });
 
   const pages = useMemo(() => listQuery.data?.pages ?? [], [listQuery.data]);
-  const skills = useMemo(() => pages.flatMap((page) => page.skills), [pages]);
+  /** Same rule as the `$` popover: a skill the user cannot invoke is not the user's to browse. */
+  /** Same rule as the `$` popover: a skill the user cannot invoke is not the user's to browse. */
+  const skills = useMemo(
+    () => pages.flatMap((page) => page.skills.filter(isUserInvocable)),
+    [pages],
+  );
 
   const lastPage = pages[pages.length - 1];
   const nextCursor = lastPage?.has_more === true ? lastPage.after : null;

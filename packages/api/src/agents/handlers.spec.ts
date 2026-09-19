@@ -11,7 +11,11 @@ import type {
   ToolCallRequest,
 } from '@librechat/agents';
 import type { CodeExecutionContext } from './execution';
-import { createToolExecuteHandler, ToolExecuteOptions } from './handlers';
+import {
+  createToolExecuteHandler,
+  mergeSandboxSessionArtifact,
+  ToolExecuteOptions,
+} from './handlers';
 import { markSandboxReady } from './prewarm';
 
 function createMockTool(
@@ -485,6 +489,32 @@ describe('createToolExecuteHandler', () => {
         expect(call.files?.map((file) => file.name)).toEqual(['order.pdf']);
       }
       expect(reads.length + writes.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('sandbox session write-back', () => {
+    it('stores one file per destination when the sandbox echoes a name back', () => {
+      /**
+       * The read and write paths clean the session as they send it, but the SDK's in-process tool
+       * node builds `_injected_files` straight from the stored session. A duplicate kept here
+       * therefore reaches codeapi untouched — "Conflicting input destinations: order.docx and
+       * order.docx" — and fails every execution for the rest of the conversation.
+       */
+      const context = { session_id: 'sess-1', files: [] } as Parameters<
+        typeof mergeSandboxSessionArtifact
+      >[0];
+
+      mergeSandboxSessionArtifact(context, {
+        session_id: 'sess-1',
+        files: [
+          { id: 'first', name: 'order.docx', storage_session_id: 'sess-1' },
+          { id: 'second', name: 'order.docx', storage_session_id: 'sess-2' },
+          { id: 'third', name: 'notes.txt', storage_session_id: 'sess-1' },
+        ],
+      } as never);
+
+      expect(context.files?.map((file) => file.name)).toEqual(['order.docx', 'notes.txt']);
+      expect(context.files?.map((file) => file.id)).toEqual(['first', 'third']);
     });
   });
 
@@ -3538,6 +3568,63 @@ describe('createToolExecuteHandler', () => {
 
         expect(result.status).toBe('error');
         expect(result.artifact).toBeUndefined();
+        expect(result.errorMessage).toContain('image file');
+        expect(result.errorMessage).toContain('bash_tool');
+      });
+
+      it('says a rendered slide is missing rather than calling it unreadable', async () => {
+        /**
+         * The sandbox reader raises the python error verbatim, so a path that
+         * was never written arrives as ENOENT. Answering that with the binary
+         * hint told the model the JPEG "cannot be read as text" and sent it to
+         * `file`/`python3` the bytes of a file that does not exist — while the
+         * real fault was a generator script that threw before saving the deck.
+         */
+        const readSandboxImage = jest.fn(async () => {
+          throw new Error(
+            "[Errno 2] No such file or directory: '/mnt/data/.render/slide-2.jpg'",
+          );
+        });
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxImage,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_missing_render',
+            name: Constants.READ_FILE,
+            args: { path: '/mnt/data/.render/slide-2.jpg' },
+          },
+        ]);
+
+        expect(result.status).toBe('error');
+        expect(result.errorMessage).toContain('does not exist in the sandbox');
+        expect(result.errorMessage).toContain('never written');
+        /* The misleading half of the old message must not come back. */
+        expect(result.errorMessage).not.toContain('cannot be read as text');
+      });
+
+      it('still gives the binary hint when the read fails for another reason', async () => {
+        const readSandboxImage = jest.fn(async () => {
+          throw new Error('sandbox session expired');
+        });
+        const handler = makeReadFileHandler({
+          codeEnvAvailable: true,
+          accessibleSkillIds: skillsInScope(),
+          readSandboxImage,
+        });
+
+        const [result] = await invokeHandler(handler, [
+          {
+            id: 'call_read_broke',
+            name: Constants.READ_FILE,
+            args: { path: '/mnt/data/chart.png' },
+          },
+        ]);
+
+        expect(result.status).toBe('error');
         expect(result.errorMessage).toContain('image file');
         expect(result.errorMessage).toContain('bash_tool');
       });

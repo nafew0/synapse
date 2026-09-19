@@ -4,6 +4,7 @@ import {
   extractCodeArtifactText,
   getExtractedTextFormat,
   resolveMaxTextExtractBytes,
+  MAX_OFFICE_HTML_CACHE_BYTES,
   MAX_TEXT_CACHE_BYTES,
   MAX_TEXT_EXTRACT_BYTES,
 } from './extract';
@@ -347,7 +348,7 @@ describe('extractCodeArtifactText', () => {
        * markup like `<table><tr><td>con\n…[truncated]` to the iframe.
        * The new behavior swaps the entire payload for a small valid
        * HTML banner — under the cap by construction. */
-      const huge = 'X'.repeat(MAX_TEXT_CACHE_BYTES + 5_000);
+      const huge = 'X'.repeat(MAX_OFFICE_HTML_CACHE_BYTES + 5_000);
       mockOfficeHtml.mockResolvedValueOnce(huge);
       const text = await extractCodeArtifactText(
         Buffer.from('PK'),
@@ -357,7 +358,7 @@ describe('extractCodeArtifactText', () => {
       );
       expect(text).not.toBeNull();
       // Always under the cap.
-      expect(Buffer.byteLength(text!, 'utf-8')).toBeLessThanOrEqual(MAX_TEXT_CACHE_BYTES);
+      expect(Buffer.byteLength(text!, 'utf-8')).toBeLessThanOrEqual(MAX_OFFICE_HTML_CACHE_BYTES);
       // Valid HTML doc, not byte-truncated markup.
       expect(text!).toMatch(/^<!DOCTYPE html>/);
       expect(text!).toContain('</html>');
@@ -692,12 +693,18 @@ describe('extractCodeArtifactText office-html concurrency', () => {
 });
 
 describe('resolveMaxTextExtractBytes', () => {
-  const TWO_MB = 2 * 1024 * 1024;
+  /** Above the office-preview cache cap, so the office caps decide what
+   *  gets a rendered preview and this gate is never the binding one. */
+  const DEFAULT_BYTES = 4 * 1024 * 1024;
 
-  it('defaults to 2 MB when unset or blank', () => {
-    expect(resolveMaxTextExtractBytes(undefined)).toBe(TWO_MB);
-    expect(resolveMaxTextExtractBytes('')).toBe(TWO_MB);
-    expect(resolveMaxTextExtractBytes('   ')).toBe(TWO_MB);
+  it('defaults to 4 MB when unset or blank', () => {
+    expect(resolveMaxTextExtractBytes(undefined)).toBe(DEFAULT_BYTES);
+    expect(resolveMaxTextExtractBytes('')).toBe(DEFAULT_BYTES);
+    expect(resolveMaxTextExtractBytes('   ')).toBe(DEFAULT_BYTES);
+  });
+
+  it('leaves room for an office preview at the binary cap', () => {
+    expect(resolveMaxTextExtractBytes(undefined)).toBeGreaterThan(MAX_OFFICE_HTML_CACHE_BYTES);
   });
 
   it('honors a valid positive byte override', () => {
@@ -710,14 +717,14 @@ describe('resolveMaxTextExtractBytes', () => {
   });
 
   it('falls back to the default on non-numeric or non-positive input', () => {
-    expect(resolveMaxTextExtractBytes('nope')).toBe(TWO_MB);
-    expect(resolveMaxTextExtractBytes('0')).toBe(TWO_MB);
-    expect(resolveMaxTextExtractBytes('-100')).toBe(TWO_MB);
+    expect(resolveMaxTextExtractBytes('nope')).toBe(DEFAULT_BYTES);
+    expect(resolveMaxTextExtractBytes('0')).toBe(DEFAULT_BYTES);
+    expect(resolveMaxTextExtractBytes('-100')).toBe(DEFAULT_BYTES);
   });
 
   it('falls back to the default for sub-byte values that floor to zero', () => {
-    expect(resolveMaxTextExtractBytes('0.5')).toBe(TWO_MB);
-    expect(resolveMaxTextExtractBytes('0.999')).toBe(TWO_MB);
+    expect(resolveMaxTextExtractBytes('0.5')).toBe(DEFAULT_BYTES);
+    expect(resolveMaxTextExtractBytes('0.999')).toBe(DEFAULT_BYTES);
   });
 
   it('wires the exported ceiling through the resolver for the current env', () => {

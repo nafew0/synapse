@@ -19,9 +19,39 @@ import contextlib
 import os
 import socket
 import subprocess
+import sys
 import tempfile
 from collections.abc import Iterable
 from pathlib import Path
+
+
+"""Lines LibreOffice always prints in this image and that mean nothing here.
+
+`javaldx` probes for a Java runtime; the sandbox ships LibreOffice without one,
+so the probe fails and LibreOffice warns that "java may not function correctly"
+before converting the file perfectly well. Java is only needed for Base, Report
+Builder, Java macros and a few niche filters -- never for --convert-to. The
+warning is worth hiding because it is not free: an agent reading stderr reads it
+as a defect and spends a turn trying to fix a conversion that already succeeded.
+"""
+_BENIGN_STDERR_MARKERS = (
+    "failed to launch javaldx",
+    "Could not find a Java Runtime Environment",
+)
+
+
+def _strip_benign_stderr(stderr):
+    """Drop the known-harmless lines, preserving the caller's str/bytes type."""
+    if not stderr:
+        return stderr
+    binary = isinstance(stderr, (bytes, bytearray))
+    text = stderr.decode("utf-8", "replace") if binary else stderr
+    kept = "".join(
+        line
+        for line in text.splitlines(keepends=True)
+        if not any(marker in line for marker in _BENIGN_STDERR_MARKERS)
+    )
+    return kept.encode("utf-8") if binary else kept
 
 
 def get_soffice_env() -> dict:
@@ -43,7 +73,22 @@ def run_soffice(args: Iterable[str], **kwargs) -> subprocess.CompletedProcess:
                 tempfile.TemporaryDirectory(prefix="lo_profile_", ignore_cleanup_errors=True)
             )
             args = [f"-env:UserInstallation={Path(profile).as_uri()}"] + args
-        return subprocess.run(["soffice"] + args, env=get_soffice_env(), **kwargs)
+        """Capture stderr so the benign warnings can be dropped, then pass the
+        remainder through to this process's stderr -- unless the caller is
+        already handling stderr itself, in which case the filtered text reaches
+        them on the result and nothing is written here."""
+        caller_handles_stderr = "stderr" in kwargs or kwargs.get("capture_output")
+        if not caller_handles_stderr:
+            kwargs["stderr"] = subprocess.PIPE
+        result = subprocess.run(["soffice"] + args, env=get_soffice_env(), **kwargs)
+        result.stderr = _strip_benign_stderr(result.stderr)
+        if not caller_handles_stderr and result.stderr:
+            if isinstance(result.stderr, (bytes, bytearray)):
+                sys.stderr.buffer.write(result.stderr)
+            else:
+                sys.stderr.write(result.stderr)
+            sys.stderr.flush()
+        return result
 
 
 
@@ -187,6 +232,5 @@ int close(int fd) {
 
 
 if __name__ == "__main__":
-    import sys
     result = run_soffice(sys.argv[1:])
     sys.exit(result.returncode)

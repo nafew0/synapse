@@ -6,6 +6,7 @@ const {
   checkBalance,
   getBalanceConfig,
   buildMessageFiles,
+  dedupeAttachments,
   sanitizeFileForTransmit,
   extractFileContext,
   getReferencedQuotes,
@@ -1035,7 +1036,14 @@ class BaseClient {
     }
 
     if (this.artifactPromises) {
-      responseMessage.attachments = (await Promise.all(this.artifactPromises)).filter((a) => a);
+      /* One entry per artifact: a tool that rewrites the same path during its own
+       * verify-and-fix loop resolves a promise per write, and the message used to
+       * keep all of them — the chat showed one deck three times. The resumed path
+       * already collapses these in `mergeAttachments`; this is the same rule for
+       * a turn that never paused. */
+      responseMessage.attachments = dedupeAttachments(
+        (await Promise.all(this.artifactPromises)).filter((a) => a),
+      );
     }
 
     if (this.options.attachments) {

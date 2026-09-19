@@ -589,6 +589,21 @@ class BaseSchemaValidator:
                 except Exception:
                     continue  
 
+            """The reverse direction: an Override naming a part the package does not
+            contain. Only the forward check existed, so a stale declaration was
+            invisible here while breaking readers that trust it — pptx-preview
+            walks the Overrides by content type and dereferences each PartName,
+            and one missing part throws inside a catch-all that leaves it with
+            zero slides, so the artifact panel showed a deck with no content.
+            PowerPoint and LibreOffice both tolerate it, which is why it survived
+            to delivery."""
+            for part_name in sorted(declared_parts):
+                if not (self.unpacked_dir / part_name).exists():
+                    errors.append(
+                        f"  [Content_Types].xml declares /{part_name}, which is not in the "
+                        f"package. Remove the <Override>, or write the part."
+                    )
+
             for file_path in all_files:
                 if file_path.suffix.lower() in {".xml", ".rels"}:
                     continue

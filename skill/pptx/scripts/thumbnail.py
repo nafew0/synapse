@@ -41,6 +41,14 @@ FONT_SIZE_RATIO = 0.10
 LABEL_PADDING_RATIO = 0.4
 
 
+"""The sandbox delivers everything written directly under /mnt/data to the user, apart
+from the working directory, which is carried between calls but never attached. A QA grid
+is working material, not a deliverable, so it belongs there unless the caller says
+otherwise. A dot-prefixed directory would be hidden from the user too, but is wiped
+between calls and so cannot be read back."""
+SCRATCH_DIR = Path("/mnt/data/qa")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Create thumbnail grids from PowerPoint slides."
@@ -50,7 +58,11 @@ def main():
         "output_prefix",
         nargs="?",
         default="thumbnails",
-        help="Output prefix for image files (default: thumbnails)",
+        help=(
+            f"Output prefix for image files (default: thumbnails, written to {SCRATCH_DIR}). "
+            "A relative prefix is resolved against the scratch directory; pass an absolute "
+            "path to write somewhere else."
+        ),
     )
     parser.add_argument(
         "--cols",
@@ -70,7 +82,15 @@ def main():
         print(f"Error: Invalid PowerPoint file: {args.input}", file=sys.stderr)
         sys.exit(1)
 
-    output_path = Path(f"{args.output_prefix}.jpg")
+    """A bare prefix is resolved against the scratch directory rather than the working
+    directory. Defaulting alone was not enough: asked for a named grid the caller passes
+    something like `phishing_awareness`, which lands in /mnt/data and is delivered to the
+    user next to the deck. An absolute path is an explicit choice and is honoured."""
+    prefix = Path(args.output_prefix)
+    if not prefix.is_absolute():
+        prefix = SCRATCH_DIR / prefix
+    output_path = prefix.with_suffix(".jpg")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
         slide_info = get_slide_info(input_path)

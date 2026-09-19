@@ -51,12 +51,46 @@ jest.mock('../FilterSkills', () => ({
 
 jest.mock('../../lists/SkillListItem', () => ({
   __esModule: true,
-  default: () => null,
+  default: ({ skill }: { skill: { name: string } }) => <div data-testid="skill-row">{skill.name}</div>,
 }));
 
 describe('SkillsSidePanel', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('hides skills the user cannot invoke', () => {
+    /**
+     * Deployment skills (docx, xlsx, pdf-to-docx…) ship with the product and carry
+     * `user-invocable: false`. They are the model's tools, not the user's, and listing them in
+     * "My Skills" invites the user to pick something they cannot use.
+     */
+    mockUseSkillsInfiniteQuery.mockReturnValueOnce({
+      data: {
+        pages: [
+          {
+            skills: [
+              { _id: '1', name: 'my-own-skill' },
+              { _id: '2', name: 'pdf-to-docx', userInvocable: false },
+            ],
+            has_more: false,
+            after: null,
+          },
+        ],
+      },
+      isFetchingNextPage: false,
+      fetchNextPage: mockFetchNextPage,
+      isLoading: false,
+    } as never);
+
+    render(
+      <MemoryRouter>
+        <SkillsSidePanel />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('my-own-skill')).toBeInTheDocument();
+    expect(screen.queryByText('pdf-to-docx')).not.toBeInTheDocument();
   });
 
   it('disables automatic pagination while My Skills is collapsed', () => {

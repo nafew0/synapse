@@ -1362,6 +1362,25 @@ function lowercaseExtension(filePath: string): string {
  * `handleSandboxImageRead`); this image branch is only reached when that
  * read is unavailable (codeapi off) or fails.
  */
+/**
+ * A sandbox read that failed because the path is not there is not a
+ * binary-format problem, and answering it with the binary hint sends the model
+ * to fix the wrong thing: it goes off to `file`/`python3` the bytes of a file
+ * that was never written. The usual cause is an earlier build step that threw
+ * before saving, so say that instead.
+ */
+const MISSING_SANDBOX_FILE = /no such file or directory|errno 2\b/i;
+
+function buildMissingFileError(filePath: string): string {
+  return (
+    `"${filePath}" does not exist in the sandbox. Nothing read it wrong — it was ` +
+    `never written. Check the step that was supposed to create it (a generator ` +
+    `script that raised before saving leaves no file behind), then re-run that ` +
+    `step. \`bash_tool\` with \`ls -la\` on the parent directory shows what is ` +
+    `actually there.`
+  );
+}
+
 function buildBinaryFileError(filePath: string, ext: string): string {
   if (IMAGE_EXTENSIONS_FOR_HINT.has(ext)) {
     return `"${filePath}" is an image file (${ext}) and cannot be read as text. To process it programmatically, use \`bash_tool\` (e.g. \`file ${filePath}\` for metadata, or \`python3 -c '...'\` to operate on the bytes).`;
@@ -1541,6 +1560,14 @@ async function handleSandboxImageRead(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn(`[handleReadFileCall] Sandbox image read failed for "${filePath}": ${message}`);
+    if (MISSING_SANDBOX_FILE.test(message)) {
+      return {
+        toolCallId: tc.id,
+        status: 'error',
+        content: '',
+        errorMessage: buildMissingFileError(filePath),
+      };
+    }
     return binaryHint();
   }
 
@@ -1717,7 +1744,8 @@ function cloneSandboxSessionContext(
   };
 }
 
-function mergeSandboxSessionArtifact(
+/** Exported for tests: the session it writes is closure-held and has no other seam. */
+export function mergeSandboxSessionArtifact(
   context: SandboxSessionContext,
   artifact: ToolExecuteResult['artifact'],
 ): void {
@@ -1759,7 +1787,17 @@ function mergeSandboxSessionArtifact(
     });
   }
   if (files.length > 0) {
-    context.files = files;
+    /**
+     * Deduplicated on the way in, not only on the way out. The sandbox echoes its own names back
+     * after a write, so a file the session already holds returns as a second object with the same
+     * destination — and codeapi refuses a request carrying both (`job.ts:920` compares raw names
+     * and rejects two distinct objects that claim one destination).
+     *
+     * The read and write paths clean the session as they send it, but the SDK's in-process tool
+     * node builds `_injected_files` straight from the stored session, so a duplicate kept here
+     * reaches codeapi untouched and fails every execution for the rest of the conversation.
+     */
+    context.files = dedupeInjectedFiles(files);
   }
 }
 
@@ -3769,7 +3807,8 @@ function buildToolCallConfig(
   if (tc.codeSessionContext && isCodeSessionAwareToolCall(tc.name, mergedConfigurable)) {
     toolCallConfig.session_id = tc.codeSessionContext.session_id;
     if (tc.codeSessionContext.files && tc.codeSessionContext.files.length > 0) {
-      toolCallConfig._injected_files = dedupeInjectedFiles(tc.codeSessionContext.files);
+      const injected = dedupeInjectedFiles(tc.codeSessionContext.files);
+      toolCallConfig._injected_files = injected;
       /* Last LC-controlled point before the wire. Mirrors
        * codeapi's validator context so the two log sides
        * correlate on a single grep. */
@@ -3798,13 +3837,29 @@ function buildToolCallConfig(
         const k = typeof s.kind === 'string' ? s.kind : 'unknown';
         kindCounts[k] = (kindCounts[k] ?? 0) + 1;
       }
+      /**
+       * The destinations actually sent, not the candidates. codeapi rejects a request whose
+       * inputs collide and the SDK reports every 400 as one fixed sentence with the body
+       * discarded (`CodeExecutor.cjs`), so this line is the only place the wire payload can be
+       * recovered from when an execution is refused.
+       *
+       * Skill files are excluded: a run primes every file of every skill, which is sixty-odd
+       * paths that are identical on every call and push the line past the logger's own message
+       * cap, taking the handful of destinations that actually vary with them.
+       */
+      const variable = (injected as Array<{ kind?: unknown; name?: unknown }>)
+        .filter((file) => file.kind !== 'skill')
+        .map((file) => String(file.name ?? ''));
       logger.debug(
-        `[code-env:inject] tool=${tc.name} files=${refs.length} ` +
-          `missingResourceId=${missingResourceId} ` +
-          `missingStorageSessionId=${missingStorageSessionId} ` +
-          `missingVersion=${missingVersion} ` +
-          `kinds=${JSON.stringify(kindCounts)}`,
+        `[code-env:inject] ${tc.name} sent=${injected.length}/${refs.length} ` +
+          `kinds=${JSON.stringify(kindCounts)} dest=${JSON.stringify(variable)}`,
       );
+      if (missingStorageSessionId > 0 || missingVersion > 0) {
+        logger.debug(
+          `[code-env:inject] ${tc.name} missingStorageSessionId=${missingStorageSessionId} ` +
+            `missingVersion=${missingVersion}`,
+        );
+      }
       if (missingResourceId > 0) {
         logger.warn(
           `[code-env:inject] ${missingResourceId}/${refs.length} files missing resource_id ` +

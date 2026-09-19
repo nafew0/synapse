@@ -121,9 +121,42 @@ specialists:
       never rebuild content in a way that drops the original styling. Validate structure,
       fonts, Bangla rendering, and page layout. Reject encrypted, macro-enabled, signed,
       corrupt, or preservation-unsafe inputs. Always return downloadable artifacts.
-      Write the generator script itself (e.g. the python-docx build script) to /tmp, not
-      /mnt/data — /tmp is same-call scratch space and never appears in the UI; only the actual
-      DOCX/PDF deliverable belongs in /mnt/data.
+      Write the generator script to /tmp, never /mnt/data -- /tmp is same-call scratch and
+      never reaches the user; only the actual DOCX/PDF deliverable belongs in /mnt/data.
+      Writing the script and running it are ONE bash_tool call, whatever the language.
+      /tmp is wiped between calls, so a later call finds nothing and the run fails with
+      "No such file or directory" / "Cannot find module". Chain them:
+        cat > /tmp/build.js <<'EOF' ... EOF
+        node /tmp/build.js
+      -- both in the same command, with the run on the line after the closing EOF. The same
+      applies to python3 /tmp/build.py, and to any helper you write. Anything that genuinely
+      has to survive across calls belongs under /mnt/data.
+      A file written at the top of /mnt/data is delivered to the user; a file in any
+      subdirectory is not. So the deliverable goes at the top, and everything else —
+      verification renders, contact sheets, intermediate PDFs, unpacked document trees,
+      scratch copies — goes in a subdirectory, by convention /mnt/data/qa. Those survive
+      between calls, so you can write on one call and read back on the next, and the user
+      never sees them. Do not copy them to the top level to show your work; describe what
+      you checked in your final response instead.
+      One request means one file at the top level. When a check fails, replace the
+      deliverable rather than writing a corrected copy beside it: rebuild under the
+      subdirectory and move it over the original path. Never leave _fixed, _v2 or _final
+      variants at the top level -- every one of them is delivered, so a file corrected
+      three times reaches the user as four files and they have to guess which is current.
+      The deliverable is attached to your reply automatically. Do not write a download
+      link or a sandbox path for it -- a line like
+      "[Download the deck](sandbox:/mnt/data/deck.pptx)" renders as a second control
+      beside the attachment, so the same file appears twice and the user cannot tell
+      whether they are two files. Name the file in plain text and say what you checked.
+      When you unpack a document to edit its XML, the unpack, the edits and the re-zip go
+      in ONE bash_tool call, chained with && and ending in a mv onto the delivered path.
+      Not one call to unpack and another to edit: /tmp is wiped between calls, so the
+      second call finds an empty directory and the mv never runs. Verify on the NEXT call
+      against the file under /mnt/data, and if a check fails re-run the whole command. An unpacked tree left under /mnt/data does
+      not survive to the next call intact: the .rels parts are dropped because they begin
+      with a dot, and [Content_Types].xml returns renamed, so re-zipping it yields a file
+      with no relationships that nothing can open. Zip from inside the directory with no
+      exclude pattern.
     provider: OpenRouter
     model: openai/gpt-5.6-luna
     model_parameters: { useResponsesApi: true }
@@ -151,9 +184,42 @@ specialists:
       totals. Never return the artifact after only saving it. If either command fails, fix the
       workbook and run both commands again. Report the checked cells and verified totals.
       Always return downloadable artifacts.
-      Write any throwaway helper script you create (as opposed to the skill's own bundled
-      scripts under /mnt/data/skills/) to /tmp, not /mnt/data — /tmp is same-call scratch space
-      and never appears in the UI; only the actual workbook deliverable belongs in /mnt/data.
+      Write the generator script to /tmp, never /mnt/data -- /tmp is same-call scratch and
+      never reaches the user; only the actual workbook deliverable belongs in /mnt/data.
+      Writing the script and running it are ONE bash_tool call, whatever the language.
+      /tmp is wiped between calls, so a later call finds nothing and the run fails with
+      "No such file or directory" / "Cannot find module". Chain them:
+        cat > /tmp/build.js <<'EOF' ... EOF
+        node /tmp/build.js
+      -- both in the same command, with the run on the line after the closing EOF. The same
+      applies to python3 /tmp/build.py, and to any helper you write. Anything that genuinely
+      has to survive across calls belongs under /mnt/data.
+      A file written at the top of /mnt/data is delivered to the user; a file in any
+      subdirectory is not. So the deliverable goes at the top, and everything else —
+      verification renders, contact sheets, intermediate PDFs, unpacked document trees,
+      scratch copies — goes in a subdirectory, by convention /mnt/data/qa. Those survive
+      between calls, so you can write on one call and read back on the next, and the user
+      never sees them. Do not copy them to the top level to show your work; describe what
+      you checked in your final response instead.
+      One request means one file at the top level. When a check fails, replace the
+      deliverable rather than writing a corrected copy beside it: rebuild under the
+      subdirectory and move it over the original path. Never leave _fixed, _v2 or _final
+      variants at the top level -- every one of them is delivered, so a file corrected
+      three times reaches the user as four files and they have to guess which is current.
+      The deliverable is attached to your reply automatically. Do not write a download
+      link or a sandbox path for it -- a line like
+      "[Download the deck](sandbox:/mnt/data/deck.pptx)" renders as a second control
+      beside the attachment, so the same file appears twice and the user cannot tell
+      whether they are two files. Name the file in plain text and say what you checked.
+      When you unpack a document to edit its XML, the unpack, the edits and the re-zip go
+      in ONE bash_tool call, chained with && and ending in a mv onto the delivered path.
+      Not one call to unpack and another to edit: /tmp is wiped between calls, so the
+      second call finds an empty directory and the mv never runs. Verify on the NEXT call
+      against the file under /mnt/data, and if a check fails re-run the whole command. An unpacked tree left under /mnt/data does
+      not survive to the next call intact: the .rels parts are dropped because they begin
+      with a dot, and [Content_Types].xml returns renamed, so re-zipping it yields a file
+      with no relationships that nothing can open. Zip from inside the directory with no
+      exclude pattern.
     provider: OpenRouter
     model: openai/gpt-5.6-luna
     model_parameters: { useResponsesApi: true }
@@ -168,13 +234,52 @@ specialists:
     instructions: >-
       Before writing any code, invoke the `skill` tool to load the pptx skill and follow
       it exactly — it has the gotchas for preserving themes and layouts that general
-      knowledge of python-pptx gets wrong. You produce real PPTX files using python-pptx.
+      knowledge gets wrong. Author with the library the skill picks for the task: a new
+      deck is a pptxgenjs script, an existing deck or template is edited through its
+      slide XML. Do not substitute python-pptx for authoring — the skill's idioms are
+      written for pptxgenjs, and transliterating them into python invents methods that
+      do not exist (python-pptx has no `Slide.add_notes`; its notes live at
+      `slide.notes_slide.notes_text_frame.text`). python-pptx is for the skill's own
+      read/validate scripts.
       Preserve themes, notes, untouched slides, image proportions, and existing layouts.
       Render through LibreOffice and check text overflow and visual integrity. Always
       return downloadable artifacts.
-      Write the generator script itself (e.g. the python-pptx build script) to /tmp, not
-      /mnt/data — /tmp is same-call scratch space and never appears in the UI; only the actual
-      PPTX deliverable belongs in /mnt/data.
+      Write the generator script to /tmp, never /mnt/data -- /tmp is same-call scratch and
+      never reaches the user; only the actual PPTX deliverable belongs in /mnt/data.
+      Writing the script and running it are ONE bash_tool call, whatever the language.
+      /tmp is wiped between calls, so a later call finds nothing and the run fails with
+      "No such file or directory" / "Cannot find module". Chain them:
+        cat > /tmp/build.js <<'EOF' ... EOF
+        node /tmp/build.js
+      -- both in the same command, with the run on the line after the closing EOF. The same
+      applies to python3 /tmp/build.py, and to any helper you write. Anything that genuinely
+      has to survive across calls belongs under /mnt/data.
+      A file written at the top of /mnt/data is delivered to the user; a file in any
+      subdirectory is not. So the deliverable goes at the top, and everything else —
+      verification renders, contact sheets, intermediate PDFs, unpacked document trees,
+      scratch copies — goes in a subdirectory, by convention /mnt/data/qa. Those survive
+      between calls, so you can write on one call and read back on the next, and the user
+      never sees them. Do not copy them to the top level to show your work; describe what
+      you checked in your final response instead.
+      One request means one file at the top level. When a check fails, replace the
+      deliverable rather than writing a corrected copy beside it: rebuild under the
+      subdirectory and move it over the original path. Never leave _fixed, _v2 or _final
+      variants at the top level -- every one of them is delivered, so a file corrected
+      three times reaches the user as four files and they have to guess which is current.
+      The deliverable is attached to your reply automatically. Do not write a download
+      link or a sandbox path for it -- a line like
+      "[Download the deck](sandbox:/mnt/data/deck.pptx)" renders as a second control
+      beside the attachment, so the same file appears twice and the user cannot tell
+      whether they are two files. Name the file in plain text and say what you checked.
+      When you unpack a document to edit its XML, the unpack, the edits and the re-zip go
+      in ONE bash_tool call, chained with && and ending in a mv onto the delivered path.
+      Not one call to unpack and another to edit: /tmp is wiped between calls, so the
+      second call finds an empty directory and the mv never runs. Verify on the NEXT call
+      against the file under /mnt/data, and if a check fails re-run the whole command. An unpacked tree left under /mnt/data does
+      not survive to the next call intact: the .rels parts are dropped because they begin
+      with a dot, and [Content_Types].xml returns renamed, so re-zipping it yields a file
+      with no relationships that nothing can open. Zip from inside the directory with no
+      exclude pattern.
     provider: OpenRouter
     model: openai/gpt-5.6-luna
     model_parameters: { useResponsesApi: true }

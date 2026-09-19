@@ -1,6 +1,7 @@
 ---
 name: pptx
 description: "Use this skill any time a .pptx or .potx file is involved in any way — as input, output, or both. This includes: creating slide decks, pitch decks, or presentations; reading, parsing, or extracting text from any .pptx or .potx file (even if the extracted content will be used elsewhere, like in an email or summary); editing, modifying, or updating existing presentations; combining or splitting slide files; working with templates (.potx), layouts, speaker notes, or comments. Trigger whenever the user mentions \"deck,\" \"slides,\" \"presentation,\" or references a .pptx or .potx filename, regardless of what they plan to do with the content afterward. If a .pptx or .potx file needs to be opened, created, or touched, use this skill."
+user-invocable: false
 license: Proprietary. LICENSE.txt has complete terms
 ---
 
@@ -14,14 +15,56 @@ A `.pptx` is a ZIP archive of XML files. Choose your approach by task:
 | **Edit** an existing deck, or build from a template | unzip → edit `ppt/slides/slideN.xml` → zip |
 | **Read** content | `markitdown deck.pptx` (one block per slide under `<!-- Slide number: N -->` markers); visual grid: `python scripts/thumbnail.py deck.pptx` |
 
+## Where working files go
+
+**A file written at the top of `/mnt/data` is delivered to the user. A file in any
+subdirectory is not.** That is the whole rule: `/mnt/data/deck.pptx` is the deliverable,
+`/mnt/data/qa/slide-1.jpg` is yours.
+
+**One request, one file at the top level.** Fixing a defect means *replacing* the deck, not
+writing a second one beside it:
+
+```bash
+rm -f /tmp/rebuilt.pptx && zip -Xrq /tmp/rebuilt.pptx .   # from INSIDE the unpacked tree
+mv /tmp/rebuilt.pptx /mnt/data/deck.pptx
+```
+
+Zip from inside the directory with no exclusions. A package is mostly dot-files —
+`_rels/.rels`, `ppt/_rels/presentation.xml.rels`, one per slide — and an exclude pattern like
+`-x '.*'` silently drops every one of them. The result has no relationships at all: python-pptx
+raises `no relationship of type '...officeDocument'`, LibreOffice says "source file could not
+be loaded", and the deck is unopenable.
+
+Never `deck_fixed.pptx`, `deck_v2.pptx`, `deck_final.pptx`. Each one is delivered, so a deck
+corrected three times arrives as four decks and the user has to guess which is current.
+
+Renders, intermediate PDFs, thumbnail grids, montages and cropped images go in a
+subdirectory — use **`/mnt/data/qa/`** so there is one place to find and clear them. Those
+survive between calls, so you can render on one call and read them back on the next, and the
+user never sees them.
+
+**An unpacked package is the exception: never leave one under `/mnt/data`.** Unzip, edit and
+re-zip inside a SINGLE call, with the tree in `/tmp`. Only ordinary filenames survive a call
+boundary: `.rels` parts are dropped because they begin with a dot, and `[Content_Types].xml`
+comes back renamed to `_Content_Types_-<hash>.xml`. Re-zipping a tree that has crossed a call
+therefore produces a package with no relationships and no content-types manifest — a deck that
+cannot be opened, and several wasted turns discovering it.
+
+Do not use a dot-prefixed directory. It is hidden from the user, but it is also wiped between
+calls, so a render written to `.render/` cannot be read back at all.
+
 ## Scripts
 
-Paths are relative to this skill's directory. Everything else is plain Python, `node`, or shell.
+This skill is mounted at **`/mnt/data/skills/pptx/`** — the script paths in the table below are
+relative to it, so `scripts/check_layout.py` is run as
+`python3 /mnt/data/skills/pptx/scripts/check_layout.py`. Do not guess another root: a wrong guess
+costs a round trip per script. Everything else is plain Python, `node`, or shell.
 
 | Script | What it does |
 |---|---|
-| `scripts/thumbnail.py deck.pptx [prefix]` | Labeled grid of every slide, for picking template layouts. `.pptx` only. Pass `prefix` — it defaults to `thumbnails`, which overwrites the grids of any other deck done in the same directory |
+| `scripts/thumbnail.py deck.pptx [prefix]` | Labeled contact sheet of every slide — the visual-QA grid, and how you pick template layouts. `.pptx` only. Writes to `/mnt/data/qa/thumbnails.jpg` and prints the path. Pass `prefix` when two decks are in flight at once, or the second overwrites the first's grid |
 | `scripts/add_slide.py unpacked/ slide2.xml [--after slideN.xml]` | Duplicate a slide (or a `slideLayoutN.xml`) with all the package bookkeeping. Also takes a `.pptx` directly with `-o out.pptx` |
+| `scripts/fix_content_types.py deck.pptx` | Removes `[Content_Types].xml` overrides naming parts the package does not contain. **Run on every pptxgenjs deck right after `writeFile()`** — pptxgenjs declares one slideMaster per *slide*, so an N-slide deck claims N masters and writes one. Idempotent |
 | `scripts/clean.py unpacked/` | Delete slides, media, and rels no longer referenced. Run **after** `<p:sldIdLst>` is final |
 | `scripts/office/validate.py deck.pptx [--original src.pptx]` | Schema, relationship, content-type, chart and slide checks; each failure names its fix. Pass `--original` for any template-derived deck — it baselines the schema checks against the template, so the template's own XSD errors don't read as yours |
 | `scripts/office/soffice.py --headless --convert-to pdf deck.pptx` | LibreOffice wrapper — bare `soffice` hangs in this sandbox |
@@ -95,13 +138,36 @@ A redesign changes how the deck looks. It does not change what it says.
 
 Pick layouts first: `python scripts/thumbnail.py template.pptx template-thumbs` writes a labeled grid of every slide and prints the file(s) it created — `template-thumbs.jpg`, split into `template-thumbs-N.jpg` past 12 slides. **Always pass that second argument, named after the deck.** It defaults to `thumbnails`, so two decks thumbnailed in one directory silently overwrite each other's grids — the first deck's are simply gone (template analysis only — visual QA needs the full-resolution renders from [Converting to Images](#converting-to-images); it only accepts `.pptx`, so copy a `.potx` to a `.pptx` name first). Use it with `markitdown` to map each content section onto a template slide, and vary the layouts — don't put every section on the same title-and-bullets slide.
 
+**Unpack, edit and repack must be ONE `bash_tool` call.** Not one call to unpack and another
+to edit: `/tmp` is wiped between calls, so the second call finds an empty directory and the
+`mv` that produces the deliverable never runs. Chain the whole thing with `&&` in a single
+command:
+
 ```bash
-python3 -c "import sys,zipfile; zipfile.ZipFile(sys.argv[1]).extractall('unpacked')" deck.pptx
+cd /tmp && rm -rf unpacked && unzip -q /mnt/data/deck.pptx -d unpacked && \
+python3 - <<'XML_EDIT' && \
+from defusedxml.minidom import parse
+doc = parse('unpacked/ppt/slides/slide1.xml')
+# ... your edits ...
+open('unpacked/ppt/slides/slide1.xml', 'w').write(doc.toxml())
+XML_EDIT
+(cd unpacked && rm -f ../out.pptx && zip -Xrq ../out.pptx .) && \
+mv /tmp/out.pptx /mnt/data/deck.pptx
+```
+
+Verify in the NEXT call, against `/mnt/data/deck.pptx` — that is the copy that persists. If a
+check fails, re-run the whole command above; it always starts from the delivered file.
+
+The individual steps:
+
+```bash
+cd /tmp && rm -rf unpacked && python3 -c "import sys,zipfile; zipfile.ZipFile(sys.argv[1]).extractall('unpacked')" /mnt/data/deck.pptx
 python scripts/add_slide.py unpacked/ slide2.xml --after slide2.xml   # duplicate a slide (or slideLayoutN.xml); prints the new slide's path
 # reorder / delete slides = edit <p:sldIdLst> in ppt/presentation.xml
 python scripts/clean.py unpacked/                                     # after deletions: removes orphaned slides, media, rels
 # edit slide content in ppt/slides/slideN.xml
-(cd unpacked && rm -f ../out.pptx && zip -Xr ../out.pptx .)           # zip from INSIDE the dir; rm first or deleted parts survive
+(cd unpacked && rm -f ../out.pptx && zip -Xrq ../out.pptx .)          # from INSIDE the dir, no exclusions; rm first or deleted parts survive
+mv /tmp/out.pptx /mnt/data/deck.pptx                                  # replace the deliverable, same call
 python scripts/office/validate.py out.pptx --original deck.pptx
 ```
 
@@ -228,9 +294,17 @@ If grep returns results, fix them before declaring success.
 ### File QA (required)
 
 ```bash
-python scripts/office/validate.py output.pptx                      # built from scratch
-python scripts/office/validate.py output.pptx --original src.pptx  # built from a template
+python3 /mnt/data/skills/pptx/scripts/fix_content_types.py output.pptx                    # pptxgenjs decks: always
+python3 /mnt/data/skills/pptx/scripts/office/validate.py output.pptx                      # built from scratch
+python3 /mnt/data/skills/pptx/scripts/office/validate.py output.pptx --original src.pptx  # built from a template
 ```
+
+**Run `fix_content_types.py` first on anything pptxgenjs wrote.** It declares a slideMaster
+per slide and writes one, so a four-slide deck claims `slideMaster1..4` and ships
+`slideMaster1`. PowerPoint and LibreOffice ignore the strays; a reader that walks the
+overrides does not — the artifact preview dereferences each one and a single missing part
+leaves it with zero slides, so the user sees an empty deck. `validate.py` reports the same
+fault, but this is the only thing that fixes it: the bug is in the library, not your code.
 
 **If the deck came from a template, always pass `--original`.** A template may itself
 contain parts the XSD rejects, so a bare run can report failures you never caused — and
@@ -249,8 +323,8 @@ passes them. Every failure names its fix. Fix it in the generator and rebuild.
 Run the layout check on every deck before you hand it over:
 
 ```bash
-python scripts/check_layout.py out.pptx                        # new deck
-python scripts/check_layout.py out.pptx --original deck.pptx   # edit or redesign; add --json for parsing
+python3 /mnt/data/skills/pptx/scripts/check_layout.py out.pptx                        # new deck
+python3 /mnt/data/skills/pptx/scripts/check_layout.py out.pptx --original deck.pptx   # edit or redesign; add --json for parsing
 ```
 
 It reports four things a reader sees immediately, measured with the deck's real font metrics:
@@ -271,7 +345,27 @@ when it finds defects, each named by slide and shape.
 
 ### Visual QA
 
-Convert the slides to images (see [Converting to Images](#converting-to-images)) and inspect every one. After staring at the generating code you tend to see what you expect rather than what rendered, so look at the images fresh (a subagent works well for this if you have one). User-visible defects to look for:
+**Use the bundled grid — do not hand-roll a montage.** One command renders every slide and
+stitches a labelled contact sheet, into the scratch directory, and prints the path to read back:
+
+```bash
+python3 /mnt/data/skills/pptx/scripts/thumbnail.py out.pptx
+# Created 1 grid(s):
+#   /mnt/data/qa/thumbnails.jpg
+```
+
+Read that path and look at it. For a slide the grid makes you suspicious of, read its full-size
+render — `/mnt/data/qa/slide-N.jpg`, produced by
+[Converting to Images](#converting-to-images) — rather than squinting at the thumbnail.
+
+Writing your own PIL montage is the one thing to avoid here: every hand-rolled one so far has been
+saved to `/mnt/data/montage.png` and shipped to the user alongside the deck. Deleting it afterwards
+does not help — an output is collected at the end of the call that wrote it, and nothing retracts
+it later.
+
+Inspect every slide. After staring at the generating code you tend to see what you expect rather
+than what rendered, so look at the images fresh (a subagent works well for this if you have one).
+User-visible defects to look for:
 
 - **Text overflow or text cut off at a box or slide boundary — check this first.** It is the most common defect and always user-visible. (For a font the previewer renders unreliably per Typography, the preview is approximate: trust the ~10% slack you left, not its apparent fit.)
 - Overlapping elements (text through shapes, lines through words, stacked elements)
@@ -296,14 +390,14 @@ response which slides you checked and what you fixed.
 Convert presentations to individual slide images for visual inspection:
 
 ```bash
-mkdir -p /mnt/data/.render
-python scripts/office/soffice.py --headless --convert-to pdf --outdir /mnt/data/.render output.pptx
-rm -f /mnt/data/.render/slide-*.jpg
-pdftoppm -jpeg -r 150 /mnt/data/.render/output.pdf /mnt/data/.render/slide
-ls -1 /mnt/data/.render/slide-*.jpg
+mkdir -p /mnt/data/qa
+python3 /mnt/data/skills/pptx/scripts/office/soffice.py --headless --convert-to pdf --outdir /mnt/data/qa output.pptx
+rm -f /mnt/data/qa/slide-*.jpg
+pdftoppm -jpeg -r 150 /mnt/data/qa/output.pdf /mnt/data/qa/slide
+ls -1 /mnt/data/qa/slide-*.jpg
 ```
 
-**Render into `/mnt/data/.render`, never into `/mnt/data` itself.** Everything written directly to `/mnt/data` is delivered to the user as a result, so a nine-slide deck checked there arrives as nine images and a stray PDF alongside the file they asked for. A dot-prefixed directory is skipped by that collection while staying readable across calls, which is what these renders need. The same applies to any intermediate PDF, thumbnail grid or cropped image: if the user did not ask for it, it belongs in `/mnt/data/.render`.
+**Render into `/mnt/data/qa`, never into `/mnt/data` itself.** Everything written directly to `/mnt/data` is delivered to the user as a result, so a nine-slide deck checked there arrives as nine images and a stray PDF alongside the file they asked for. A dot-prefixed directory is skipped by that collection while staying readable across calls, which is what these renders need. The same applies to any intermediate PDF, thumbnail grid or cropped image: if the user did not ask for it, it belongs in `/mnt/data/qa`.
 
 **Pass the absolute paths printed above directly to the view tool.** The `rm` clears stale images from prior runs. `pdftoppm` zero-pads based on page count: `slide-1.jpg` for decks under 10 pages, `slide-01.jpg` for 10-99, `slide-001.jpg` for 100+.
 

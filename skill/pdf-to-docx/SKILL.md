@@ -1,6 +1,7 @@
 ---
 name: pdf-to-docx
 description: "Use when converting a PDF into an editable Word document (.docx) — 'convert this PDF to Word', 'make this editable', or any request that starts from a .pdf and ends in a .docx. Not for reading a PDF's text (use the pdf skill) or for producing a new document from scratch (use the docx skill)."
+user-invocable: false
 license: Proprietary. LICENSE.txt has complete terms
 ---
 

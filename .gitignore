@@ -205,3 +205,5 @@ scripts/activity-labels/results/
 ./claude
 config/graphify-out
 graphify-out
+config/.agent-instructions.backup.json
+docs/auth-mascot.md

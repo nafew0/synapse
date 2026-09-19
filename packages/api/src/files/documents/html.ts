@@ -318,10 +318,10 @@ const DOCX_EXTRA_CSS = `
  *     any parser bug from the API process.
  *   − base64 inflates the binary by ~33%, so files above
  *     `MAX_DOCX_CDN_BINARY_BYTES` fall back to the mammoth path so the
- *     wrapped HTML doesn't blow the `MAX_TEXT_CACHE_BYTES` (512KB) cap
- *     on `attachment.text`. Telemetry should track how often we hit the
- *     fallback — if it's frequent, the next move is to lift the cap
- *     for office types specifically rather than embed via signed URL.
+ *     wrapped HTML doesn't blow the office-preview cap on
+ *     `attachment.text`. That cap was lifted for office types
+ *     specifically (`MAX_OFFICE_HTML_CACHE_BYTES`), which is the move
+ *     this note anticipated.
  *
  * Library + version pinning (jsdelivr SRI hashes computed at the
  * version listed; refresh by `openssl dgst -sha384 -binary FILE |
@@ -345,24 +345,29 @@ const DOCX_PREVIEW_CDN = {
 
 /**
  * Maximum DOCX binary size (in bytes) we'll embed via the CDN-rendered
- * path. Empirical headroom: with ~33% base64 inflation and ~5KB of
- * wrapper boilerplate, 350KB of binary fits well under the 512KB
- * `MAX_TEXT_CACHE_BYTES` cap on `attachment.text` with margin to spare.
+ * path. With ~33% base64 inflation plus the wrapper boilerplate, 2.5 MB
+ * of binary lands around 3.4 MB — inside the 3.5 MB
+ * `MAX_OFFICE_HTML_CACHE_BYTES` cap on `attachment.text`.
+ *
+ * The old 350 KB ceiling was set against a shared 512 KB text cap and
+ * sent anything with real embedded media down the mammoth path, which
+ * renders text without the document's layout.
  */
-const MAX_DOCX_CDN_BINARY_BYTES = 350 * 1024;
+const MAX_DOCX_CDN_BINARY_BYTES = 2.5 * 1024 * 1024;
 
 /**
- * Mirror of `MAX_TEXT_CACHE_BYTES` from `~/files/code/extract` — the
- * 512 KB ceiling that `attachment.text` is truncated to before hitting
- * the SSE wire and the database. We mirror (rather than import) to
- * avoid the cycle: `extract.ts` already imports `bufferToOfficeHtml`
- * from this module. The dispatcher uses this to drop CDN-with-fallback
- * docs that would exceed the cap and fall back to mammoth-only.
+ * Mirror of `MAX_OFFICE_HTML_CACHE_BYTES` from `~/files/code/extract` —
+ * the ceiling an office preview may reach before `attachment.text` is
+ * replaced with the "too large" banner on its way to the SSE wire and
+ * the database. We mirror (rather than import) to avoid the cycle:
+ * `extract.ts` already imports `bufferToOfficeHtml` from this module.
+ * The dispatcher uses this to drop CDN-with-fallback docs that would
+ * exceed the cap and fall back to mammoth-only.
  *
  * If the upstream constant ever changes, update this value too. The
  * `cap-mirrors-extract` test in `html.spec.ts` pins the relationship.
  */
-const OFFICE_HTML_OUTPUT_CAP = 512 * 1024;
+const OFFICE_HTML_OUTPUT_CAP = 3.5 * 1024 * 1024;
 
 /**
  * Build the CDN-rendered HTML document for a DOCX. The base64 payload
@@ -435,26 +440,37 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
 .lc-docx-loading { display: flex; align-items: center; justify-content: center; height: 60vh; color: var(--muted); font-size: 14px; }
 ${DOCX_EXTRA_CSS}
 /* docx-preview emits its own per-document <style> tags inside #lc-render
- * — leave them be. These rules just keep the host frame consistent with
- * dark mode and bound the rendered document width. */
-/* docx-preview wraps each section in .docx-wrapper and sets explicit
- * inline width on .docx from the source pageSize. With ignoreWidth:true
- * set on the renderer those inline widths are skipped, but we override
- * defensively so the doc fills the artifact panel even if a future
- * library version regresses. padding:0 on the wrapper drops the margin
- * docx-preview otherwise reserves for page-edge whitespace. */
+ * — leave them be. These rules only restyle the host frame. */
+/* The document keeps its real page geometry. Forcing every section to
+ * width:100% with padding:0 (what this used to do) threw away the page
+ * size AND the page margins, so an A4 office order rendered as one
+ * unbroken column of text running edge to edge across the panel, with
+ * nothing to show where one page ended and the next began. Each page is
+ * now wrapped and scaled to the panel width by the bootstrap below, the
+ * same treatment the PPTX path gives a slide. */
 #lc-render .docx-wrapper {
   background: transparent !important;
   padding: 0 !important;
-  width: 100% !important;
 }
-#lc-render .docx-wrapper > section.docx {
-  width: 100% !important;
-  max-width: 100% !important;
-  min-height: 0 !important;
-  padding: 0 !important;
+.lc-page-wrap {
+  position: relative;
+  overflow: hidden;
+  margin: 0 0 16px;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.lc-page-wrap > * {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: top left;
+  /* The wrap is exactly page-sized and already centred by the
+   * librarys flex column, so the sections own centring margins and
+   * page shadow would only double up. */
+  margin: 0 !important;
   box-shadow: none !important;
-  margin: 0 0 1em 0 !important;
 }
 /* Removed dark-mode override here — locking the CDN doc to
  * color-scheme: light means --fg is always the light-mode dark-grey.
@@ -493,6 +509,75 @@ ${DOCX_EXTRA_CSS}
       console.warn('[docx-preview] CDN renderer fell through to mammoth:', reasonText);
     }
   }
+  /* A4 at 96dpi, the size docx-preview falls back to when a document
+   * carries no page size of its own. Only used if a page measures zero. */
+  var PAGE_W = 794, PAGE_H = 1123;
+
+  function renderSlot() { return document.getElementById('lc-render'); }
+
+  function availableWidth() {
+    var slot = renderSlot();
+    /* clientWidth includes the 16px padding either side via
+     * box-sizing, so subtract both to get the content box. */
+    var w = (slot ? slot.clientWidth : window.innerWidth) - 32;
+    return w > 0 ? w : 600;
+  }
+
+  /* Wrap each rendered page and scale it to the panel width, so the
+   * page keeps its real proportions and margins instead of being
+   * re-flowed. Same technique as the PPTX slide wrap. Idempotent: a
+   * page already inside a wrap is skipped, so resize handling can call
+   * straight through to refitPages. */
+  function fitPages() {
+    var slot = renderSlot();
+    if (!slot) { return; }
+    var pages = Array.prototype.slice.call(slot.querySelectorAll('section.docx'));
+    for (var i = 0; i < pages.length; i++) {
+      var page = pages[i];
+      var parent = page.parentNode;
+      if (!parent || (parent.classList && parent.classList.contains('lc-page-wrap'))) {
+        continue;
+      }
+      /* Measure before any transform: a scaled box no longer reports
+       * native pixels and would feed wrong numbers back on resize. */
+      var nativeW = page.offsetWidth || PAGE_W;
+      var nativeH = page.offsetHeight || PAGE_H;
+      if (page.dataset) {
+        page.dataset.lcNativeW = String(nativeW);
+        page.dataset.lcNativeH = String(nativeH);
+      }
+      var wrap = document.createElement('div');
+      wrap.className = 'lc-page-wrap';
+      parent.insertBefore(wrap, page);
+      wrap.appendChild(page);
+    }
+    refitPages();
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(refitPages).observe(document.body);
+    } else {
+      window.addEventListener('resize', refitPages);
+    }
+  }
+
+  function refitPages() {
+    var slot = renderSlot();
+    if (!slot) { return; }
+    var wraps = slot.querySelectorAll('.lc-page-wrap');
+    var width = availableWidth();
+    for (var i = 0; i < wraps.length; i++) {
+      var wrap = wraps[i];
+      var page = wrap.firstElementChild;
+      if (!page || !page.dataset) { continue; }
+      var nativeW = parseFloat(page.dataset.lcNativeW) || PAGE_W;
+      var nativeH = parseFloat(page.dataset.lcNativeH) || PAGE_H;
+      var scale = width / nativeW;
+      wrap.style.width = (nativeW * scale) + 'px';
+      wrap.style.height = (nativeH * scale) + 'px';
+      page.style.transformOrigin = 'top left';
+      page.style.transform = 'scale(' + scale + ')';
+    }
+  }
+
   if (typeof docx === 'undefined' || typeof docx.renderAsync !== 'function') {
     showFallback('renderer-not-loaded');
     return;
@@ -503,12 +588,12 @@ ${DOCX_EXTRA_CSS}
     docx.renderAsync(bytes.buffer, document.getElementById('lc-render'), null, {
       className: 'docx',
       inWrapper: true,
-      /* ignoreWidth: true tells docx-preview to skip the document's
-       * native page width (8.5in / 21cm typically) and render at the
-       * iframe container's full width. Without this the rendered doc
-       * floats with whitespace on either side in a wide artifact
-       * panel — fine on letter-sized screens, ugly in our context. */
-      ignoreWidth: true,
+      /* Keep the documents native page width (8.5in / 21cm typically).
+       * Skipping it renders one full-bleed column with no page edges
+       * and no margins, which is not what the document looks like. The
+       * panel is filled by scaling each whole page instead, so a wide
+       * panel gets a bigger page rather than re-flowed text. */
+      ignoreWidth: false,
       ignoreHeight: false,
       ignoreFonts: false,
       breakPages: true,
@@ -524,6 +609,7 @@ ${DOCX_EXTRA_CSS}
     }).then(function () {
       var loading = document.querySelector('.lc-docx-loading');
       if (loading) { loading.remove(); }
+      fitPages();
     }).catch(function (err) {
       showFallback(err && err.message);
     });
@@ -599,7 +685,7 @@ function isOfficePreviewCdnDisabled(): boolean {
  *      when the CDN path is explicitly disabled via
  *      `OFFICE_PREVIEW_DISABLE_CDN=true`)**: server-side semantic HTML
  *      conversion. Lower fidelity (flat paragraphs, no shading) but
- *      produces compact output that fits the `MAX_TEXT_CACHE_BYTES`
+ *      produces compact output that fits the office-preview cache
  *      (512 KB) cap on `attachment.text` even for large documents,
  *      and works without external network.
  *
@@ -1061,12 +1147,15 @@ const PPTX_PREVIEW_CDN = {
 } as const;
 
 /**
- * Same 350 KB binary cap as DOCX — keeps the base64-inflated wrapped
- * HTML under `MAX_TEXT_CACHE_BYTES` (512 KB) on `attachment.text`.
- * PPTX files often exceed this once embedded media is involved; the
- * dispatcher's slide-list fallback handles the larger cases.
+ * Same 2.5 MB binary cap as DOCX — keeps the base64-inflated wrapped
+ * HTML under `MAX_OFFICE_HTML_CACHE_BYTES` (3.5 MB) on
+ * `attachment.text`. A deck whose slides are page rasters runs to
+ * several hundred KB with no trouble, so the previous 350 KB ceiling
+ * sent every PDF-to-deck conversion to the text-only slide list — which
+ * for an image slide has nothing to show. The slide-list fallback still
+ * catches decks past this.
  */
-const MAX_PPTX_CDN_BINARY_BYTES = 350 * 1024;
+const MAX_PPTX_CDN_BINARY_BYTES = 2.5 * 1024 * 1024;
 
 /**
  * Build the CDN-rendered HTML document for a PPTX. Same wrapper shape
@@ -1147,6 +1236,13 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
   top: 0;
   left: 0;
   transform-origin: top left;
+  /* pptx-preview gives each slide "margin: 0 auto 10px" for centring inside
+   * its own host. Lifted out and absolutely positioned here, those auto
+   * margins resolve against the wrap instead and push the slide right by
+   * half the scale-up, so it sits offset and the far edge is clipped by the
+   * wraps hidden overflow. The wrap is already exactly slide-sized: no
+   * centring is wanted. */
+  margin: 0 !important;
 }
 #lc-fallback { padding: 16px; font-size: 14px; line-height: 1.5; color: var(--fg); }
 #lc-fallback-notice { font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--border); padding-bottom: 8px; margin: 0 0 16px; }
@@ -1277,14 +1373,24 @@ ${PPTX_SLIDE_LIST_CSS}
     /* Wrap each rendered slide and apply the scale. Called ONCE,
      * after pptx-preview is done — wrapping during streaming would
      * move slides out from under the librarys references and break
-     * its internal state. */
+     * its internal state.
+     *
+     * The slides are NOT direct children of the container. pptx-preview
+     * 1.0.7 builds ONE host div (class pptx-preview-wrapper), fixed at
+     * the init size of 960x540 with overflow-y auto, and stacks every
+     * slide inside it. Treating the containers children as slides
+     * therefore wrapped that one host and clipped it to exactly one
+     * slides height: slide 1 rendered, every later slide sat below the
+     * fold of a scroll box whose scrollbar the wraps hidden overflow
+     * had already cut off, and the hosts black background showed
+     * through. Query the slide nodes wherever they sit and lift each
+     * one out to the top level instead. */
     function wrapSlides() {
-      var children = Array.prototype.slice.call(container.children);
-      for (var i = 0; i < children.length; i++) {
-        var slide = children[i];
-        if (!slide.classList || slide.classList.contains('lc-slide-wrap') || slide.classList.contains('lc-pptx-loading')) {
-          continue;
-        }
+      var slides = Array.prototype.slice.call(
+        container.querySelectorAll('.pptx-preview-slide-wrapper')
+      );
+      for (var i = 0; i < slides.length; i++) {
+        var slide = slides[i];
         /* Cache the slides actual rendered size BEFORE applying any
          * transform — measurements after a CSS scale no longer reflect
          * native pixels and would feed back into wrong sizing on
@@ -1302,8 +1408,22 @@ ${PPTX_SLIDE_LIST_CSS}
         wrap.style.height = (nativeH * scale) + 'px';
         slide.style.transformOrigin = 'top left';
         slide.style.transform = 'scale(' + scale + ')';
-        container.insertBefore(wrap, slide);
+        /* Append, not insertBefore: the slide is being moved out of the
+         * renderers host and the emptied hosts are dropped below, so
+         * append order is document order. */
+        container.appendChild(wrap);
         wrap.appendChild(slide);
+      }
+      /* The host is a black, fixed-size scroll box carrying pagination
+       * chrome for a viewport we no longer use. Once its slides have
+       * been lifted out it contributes nothing but a black band. */
+      var hosts = Array.prototype.slice.call(
+        container.querySelectorAll('.pptx-preview-wrapper')
+      );
+      for (var h = 0; h < hosts.length; h++) {
+        if (hosts[h].querySelectorAll('.pptx-preview-slide-wrapper').length === 0) {
+          hosts[h].parentNode.removeChild(hosts[h]);
+        }
       }
     }
 

@@ -57,6 +57,11 @@ jest.mock('@librechat/api', () => {
   const http = require('http');
   const https = require('https');
   return {
+    /** Passthrough: this suite covers what the builders send, not the collision rule, which is
+     * exercised against codeapi's semantics in `packages/api/src/agents/injectedFiles.spec.ts`.
+     * The real module cannot be loaded here — requiring it inside this factory runs its
+     * initialisation against the mocks this file installs. */
+    dedupeInjectedFiles: (files) => files,
     logAxiosError: jest.fn(),
     getBasePath: jest.fn(() => ''),
     sanitizeArtifactPath: jest.fn((name) => name),

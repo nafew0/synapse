@@ -13,6 +13,7 @@ import {
   sanitizeOfficeHtml,
   wordDocToHtml,
 } from './html';
+import { MAX_OFFICE_HTML_CACHE_BYTES } from '~/files/code/extract';
 import { ZipBombError } from './zipSafety';
 
 const fixturesDir = __dirname;
@@ -167,19 +168,26 @@ describe('Office HTML producers', () => {
         expect(html).toContain('render.hidden = true');
       });
 
-      test('size-fallback threshold is the documented 350 KB', async () => {
+      test('size-fallback threshold is the documented 2.5 MB', async () => {
         /* Lock the public threshold so a future refactor doesn't drift
-         * away from the value referenced in the JSDoc and the
-         * `MAX_TEXT_CACHE_BYTES` reasoning above it. */
-        expect(_internal.MAX_DOCX_CDN_BINARY_BYTES).toBe(350 * 1024);
+         * away from the value referenced in the JSDoc and the cache-cap
+         * reasoning above it. */
+        expect(_internal.MAX_DOCX_CDN_BINARY_BYTES).toBe(2.5 * 1024 * 1024);
       });
 
-      test('output cap mirrors `MAX_TEXT_CACHE_BYTES` from extract.ts', async () => {
-        /* Pin the cycle-avoidance constant. If the upstream
-         * `MAX_TEXT_CACHE_BYTES` ever changes (e.g. lifting the cap
-         * for office types specifically), update both at the same
-         * time or the dispatcher's size-budget path will misfire. */
-        expect(_internal.OFFICE_HTML_OUTPUT_CAP).toBe(512 * 1024);
+      test('output cap mirrors `MAX_OFFICE_HTML_CACHE_BYTES` from extract.ts', async () => {
+        /* Pin the cycle-avoidance constant against the real upstream
+         * value rather than a copy of the number: the two drifting
+         * apart makes the dispatcher's size-budget path misfire. */
+        expect(_internal.OFFICE_HTML_OUTPUT_CAP).toBe(MAX_OFFICE_HTML_CACHE_BYTES);
+      });
+
+      test('the binary cap leaves room for base64 inflation under the output cap', async () => {
+        /* The two caps are only meaningful together: a file at the
+         * binary cap must still produce a document that fits. base64 is
+         * 4/3 of the input plus the wrapper boilerplate. */
+        const inflated = _internal.MAX_DOCX_CDN_BINARY_BYTES * (4 / 3);
+        expect(inflated).toBeLessThan(_internal.OFFICE_HTML_OUTPUT_CAP);
       });
 
       test('output stays within the cache cap for the standard fixture', async () => {
@@ -188,7 +196,7 @@ describe('Office HTML producers', () => {
          * `attachment.text` doesn't get truncated mid-document.
          * Pinning this on the standard fixture catches regressions
          * where wrapper boilerplate or DOCX_EXTRA_CSS grows past the
-         * 512 KB ceiling. Codex P2 review on PR #12934. */
+         * ceiling. Codex P2 review on PR #12934. */
         const html = await wordDocToHtml(readFixture('sample.docx'));
         expect(Buffer.byteLength(html, 'utf-8')).toBeLessThanOrEqual(
           _internal.OFFICE_HTML_OUTPUT_CAP,
@@ -526,8 +534,17 @@ describe('Office HTML producers', () => {
         expect(html).toContain("console.error('[pptx-preview] fallback fired:'");
       });
 
-      test('size-fallback threshold is the documented 350 KB', () => {
-        expect(_internal.MAX_PPTX_CDN_BINARY_BYTES).toBe(350 * 1024);
+      test('size-fallback threshold is the documented 2.5 MB', () => {
+        /* A deck of page rasters — what every PDF-to-deck conversion
+         * produces — runs to several hundred KB, and at the old 350 KB
+         * ceiling all of them fell through to the text-only slide list,
+         * which for an image slide has nothing to show. */
+        expect(_internal.MAX_PPTX_CDN_BINARY_BYTES).toBe(2.5 * 1024 * 1024);
+      });
+
+      test('the binary cap leaves room for base64 inflation under the output cap', () => {
+        const inflated = _internal.MAX_PPTX_CDN_BINARY_BYTES * (4 / 3);
+        expect(inflated).toBeLessThan(_internal.OFFICE_HTML_OUTPUT_CAP);
       });
 
       test('embeds the slide-list fallback in the CDN doc with empty-render detection', async () => {

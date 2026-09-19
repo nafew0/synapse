@@ -3,7 +3,7 @@ const axios = require('axios');
 const FormData = require('form-data');
 const { logger } = require('@librechat/data-schemas');
 const { FileSources } = require('librechat-data-provider');
-const { logAxiosError, generateShortLivedToken } = require('@librechat/api');
+const { logAxiosError, generateShortLivedToken, sanitizeFilename } = require('@librechat/api');
 
 /**
  * Deletes a file from the vector database. This function takes a file object, constructs the full path, and
@@ -104,9 +104,19 @@ async function uploadVectors({ req, file, file_id, entity_id, storageMetadata })
       throw new Error('File embedding failed.');
     }
 
+    /* The sanitized name, because this one wins: `processAgentFileUpload` and
+     * `processFileUpload` both overwrite the storage strategy's filename with
+     * whatever comes back from here. Returning the raw `originalname` undoes
+     * `createSanitizedUploadWrapper` and leaves the record's filename spelled
+     * differently from the sandbox copy, which is uploaded under
+     * `sanitizeFilename(originalname)` — the model is then told
+     * `/mnt/data/My File.pdf` for a file mounted at `My_File.pdf`, and the
+     * sandbox's echo of that input comes back under its real name as a second
+     * ref for one stored object, which codeapi rejects as conflicting
+     * destinations. */
     return {
       bytes: file.size,
-      filename: file.originalname,
+      filename: sanitizeFilename(file.originalname),
       filepath: FileSources.vectordb,
       embedded: Boolean(responseData.known_type),
     };

@@ -64,7 +64,9 @@ jest.mock('@librechat/api', () => {
     planPreparation: (...args) => real().planPreparation(...args),
     shouldEscalateToOcr: (...args) => real().shouldEscalateToOcr(...args),
     processTextWithTokenLimit: (...args) => real().processTextWithTokenLimit(...args),
-    sanitizeFilename: jest.fn((n) => n),
+    /** Real: the sandbox copy is uploaded under this exact transform, and a record whose
+     *  filename disagrees with it hands the model a path that does not exist. */
+    sanitizeFilename: (...args) => real().sanitizeFilename(...args),
     parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
     processAudioFile: jest.fn(),
     sendUploadSuccess: jest.fn((res, sseStream, message, result) => {
@@ -975,6 +977,28 @@ describe('processAgentFileUpload', () => {
               ocrApplied: false,
             }),
           }),
+        }),
+        true,
+      );
+    });
+
+    test('stores the sanitized filename, the one the sandbox copy is mounted under', async () => {
+      /**
+       * `uploadToCodeEnvironment` uploads under `sanitizeFilename(originalname)`, and this
+       * record's filename is both what `primeFiles` tells the model is on disk
+       * (`/mnt/data/<filename>`) and the injected ref's name. Storing the raw name handed the
+       * model `/mnt/data/527. Dr. …pdf` for a file mounted at `527._Dr._…pdf` — "No such file or
+       * directory" — and the sandbox's echo of that input then arrived as a second ref for one
+       * stored object, which codeapi rejects: "Conflicting input destinations".
+       */
+      const req = makeReq({ mimetype: PDF_MIME, ocrConfig: null, path: uploadPath });
+      req.file.originalname = '527. Dr. Md. Tarikat Islam- Office Order.pdf';
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: autoMetadata() });
+
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filename: '527._Dr._Md._Tarikat_Islam-_Office_Order.pdf',
         }),
         true,
       );
