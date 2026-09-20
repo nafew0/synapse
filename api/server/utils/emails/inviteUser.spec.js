@@ -35,6 +35,7 @@ const text = (payload) =>
     .replace(/&quot;/g, '"')
     .replace(/&nbsp;/g, ' ')
     .replace(/&mdash;/g, '\u2014')
+    .replace(/&middot;/g, '\u00b7')
     .replace(/&rarr;/g, '\u2192')
     .replace(/&amp;/g, '&')
     .replace(/\s+/g, ' ');
@@ -43,7 +44,7 @@ describe('inviteUser email template', () => {
   it('renders every invitation detail it was given', () => {
     const html = text(fullPayload);
 
-    expect(html).toContain('University of Dhaka has invited you to Synapse.');
+    expect(html).toContain('Invitation \u00b7 University of Dhaka');
     expect(html).toContain('nafisa.rahman@du.ac.bd');
     expect(html).toContain('25 September 2026');
     expect(html).toContain('info@bdren.ai');
@@ -53,27 +54,28 @@ describe('inviteUser email template', () => {
   it('links the team name and the footer to the organisation website', () => {
     const html = text(fullPayload);
 
-    expect(html).toContain("href='https://bdren.net.bd'");
     expect(html).toContain('BdREN Innovation Team</a>');
     expect(html).toContain('Synapse is operated by BdREN');
+    expect(html).toContain('href="https://bdren.net.bd"');
     expect(html).toContain('>bdren.net.bd</a>');
   });
 
   it('still reads as a sentence when no organisation website is configured', () => {
     const html = text({ ...fullPayload, orgUrl: '', orgLabel: '' });
 
-    expect(html).toContain('developed by the BdREN Innovation Team.');
-    expect(html).not.toContain('is operated by BdREN');
-    expect(html).not.toMatch(/href='\s*'/);
+    expect(html).toContain('built by the BdREN Innovation Team for universities');
+    expect(html).toContain('operated by BdREN, Bangladesh Research and Education Network');
+    expect(html).not.toContain('bdren.net.bd');
+    expect(html).not.toMatch(/href="\s*"/);
   });
 
   it('drops the optional rows for a standalone invitation', () => {
     const html = text(basePayload);
 
-    expect(html).toContain('You have been invited to Synapse.');
-    expect(html).not.toContain('Institution');
-    expect(html).not.toContain('Open before');
-    expect(html).not.toContain('Account');
+    expect(html).toContain('A seat is waiting for you.');
+    expect(html).not.toContain('INSTITUTION');
+    expect(html).not.toContain('OPEN BEFORE');
+    expect(html).not.toContain('ACCOUNT');
     expect(html).not.toContain('undefined');
   });
 
