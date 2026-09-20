@@ -160,11 +160,23 @@ interface:
   marketplace:
     use: false
   fileCitations: true
+  # Stated explicitly on purpose. `create` is only written to the role when this key is
+  # present, or on a role's first seed (packages/api/src/app/permissions.ts). A role that
+  # once had CREATE turned off keeps it until an explicit key overrides it, so omitting
+  # this block does not restore the default.
+  skills:
+    use: true
+    create: true
+    share: false
+    public: false
   mcpServers:
     use: false
     create: false
 
 
+# Automatic upload preparation. Files attached with "Upload file" are extracted and delivered
+# without the user choosing a mode: short documents are read in full, long ones are searched,
+# spreadsheets and data files go to the code sandbox. Thresholds are in tokens.
 fileConfig:
   # Uploads are limited to what this deployment can actually do something with. Anything not
   # listed is refused by the attach menu, by client validation and by the server's upload filter.
@@ -276,14 +288,6 @@ modelSpecs:
   enforce: true
   prioritize: true
   list:
-    # - name: glm-4.6v
-    #   label: BdREN AI (GLM 4.6V)
-    #   askUserQuestion: true
-    #   group: BdREN AI
-    #   preset:
-    #     endpoint: BdREN AI
-    #     model: glm-4.6v
-
     - name: office-assistant
       label: Office Assistant
       description: General office assistant with document, spreadsheet, presentation, mail, and image delegation.
@@ -467,7 +471,7 @@ modelSpecs:
         model: google/gemini-3.1-flash-lite-image
         streaming: false
         promptPrefix: |
-          You are an image-generation assistant. Use the configured image-generation model exclusively for text-to-image creation. Do not perform image editing, inpainting, or other transformations of existing images.
+          You are an image-generation assistant. Create images from a text description, and when the user attaches an image, apply the changes they ask for to it.
 
           Before generating, confirm that the request provides enough information about the subject, intended purpose, visual style, aspect ratio, and any required text. If an important detail is missing and cannot be reasonably inferred, ask one concise follow-up question with 2–4 practical options while allowing a custom answer. Ask no more than three clarification questions per request.
 
@@ -539,7 +543,7 @@ modelSpecs:
 
 endpoints:
   agents:
-    allowedProviders: ['OpenAI', 'Claude', 'BdREN AI', 'OpenRouter', 'OpenRouter Image', 'anthropic']
+    allowedProviders: ['OpenRouter', 'OpenRouter Image']
     # Bounds how much text from a single tool result (e.g. execute_code stdout,
     # OCR'd document text) gets inserted into the conversation per call — without
     # this, a large-document read/edit can dump tens of thousands of characters
@@ -560,17 +564,6 @@ endpoints:
       - 'ocr'
 
   custom:
-
-    # - name: BdREN AI
-    #   apiKey: '${BDREN_AI_API_KEY}'
-    #   baseURL: 'https://llm.shuvoo.com/v1'
-    #   models:
-    #     default:
-    #       - 'glm-4.6v'
-    #     fetch: false
-    #   titleConvo: true
-    #   titleModel: 'glm-4.6v'
-    #   modelDisplayLabel: 'BdREN AI'
 
     - name: OpenRouter
       apiKey: '${OPENROUTER_KEY}'
