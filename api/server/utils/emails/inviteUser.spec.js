@@ -19,6 +19,8 @@ const fullPayload = {
   institutionName: 'University of Dhaka',
   expiresOn: '25 September 2026',
   supportEmail: 'info@bdren.ai',
+  orgUrl: 'https://bdren.net.bd',
+  orgLabel: 'bdren.net.bd',
 };
 
 const render = (payload) => handlebars.compile(fs.readFileSync(TEMPLATE_PATH, 'utf8'))(payload);
@@ -46,6 +48,23 @@ describe('inviteUser email template', () => {
     expect(html).toContain('25 September 2026');
     expect(html).toContain('info@bdren.ai');
     expect(html).toContain(fullPayload.inviteLink);
+  });
+
+  it('links the team name and the footer to the organisation website', () => {
+    const html = text(fullPayload);
+
+    expect(html).toContain("href='https://bdren.net.bd'");
+    expect(html).toContain('BdREN Innovation Team</a>');
+    expect(html).toContain('Synapse is operated by BdREN');
+    expect(html).toContain('>bdren.net.bd</a>');
+  });
+
+  it('still reads as a sentence when no organisation website is configured', () => {
+    const html = text({ ...fullPayload, orgUrl: '', orgLabel: '' });
+
+    expect(html).toContain('developed by the BdREN Innovation Team.');
+    expect(html).not.toContain('is operated by BdREN');
+    expect(html).not.toMatch(/href='\s*'/);
   });
 
   it('drops the optional rows for a standalone invitation', () => {

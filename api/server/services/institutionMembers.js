@@ -740,6 +740,27 @@ async function getInstitutionName(tenantId) {
   return name;
 }
 
+const DEFAULT_ORG_WEBSITE_URL = 'https://bdren.net.bd';
+
+/** Set ORG_WEBSITE_URL to an empty value to drop the links entirely. */
+function resolveOrgWebsite() {
+  const configured = process.env.ORG_WEBSITE_URL;
+  const raw = (configured === undefined ? DEFAULT_ORG_WEBSITE_URL : configured).trim();
+  if (!raw) {
+    return { orgUrl: '', orgLabel: '' };
+  }
+
+  try {
+    const url = new URL(raw);
+    return { orgUrl: url.href.replace(/\/$/, ''), orgLabel: url.host.replace(/^www\./, '') };
+  } catch {
+    logger.warn('[institutionMembers] ORG_WEBSITE_URL is not a valid URL; omitting from email', {
+      configured: raw,
+    });
+    return { orgUrl: '', orgLabel: '' };
+  }
+}
+
 function formatInviteExpiry(expiresAt) {
   if (!expiresAt) {
     return '';
@@ -789,6 +810,7 @@ async function sendInstitutionInviteEmail({ email, token, appName, name, tenantI
         institutionName,
         expiresOn: formatInviteExpiry(expiresAt),
         supportEmail: process.env.SUPPORT_EMAIL || '',
+        ...resolveOrgWebsite(),
         year: new Date().getFullYear(),
         name: String(name || '').trim(),
       },

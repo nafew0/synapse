@@ -125,8 +125,11 @@
                 </p>
                 <p class='u-body'
                   style='margin:18px 0 0 0;font-size:15px;line-height:25px;color:#3d5553;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                  {{appName}} is an AI workspace developed by the BdREN Innovation Team. Set your
-                  password to activate your account and start getting work done with {{appName}}.
+                  {{appName}} is an AI workspace developed by the
+                  {{#if orgUrl}}<a href='{{orgUrl}}' target='_blank' class='u-link'
+                    style='color:#146a68;text-decoration:underline;'>BdREN Innovation
+                    Team</a>{{else}}BdREN Innovation Team{{/if}}. Set your password to activate your
+                  account and start getting work done with {{appName}}.
                 </p>
               </td>
             </tr>
@@ -353,6 +356,14 @@
                     to <a href='mailto:{{supportEmail}}' class='u-link'
                       style='color:#146a68;text-decoration:underline;'>{{supportEmail}}</a>.{{/if}}
                   </p>
+                  {{#if orgUrl}}
+                  <p class='u-faint'
+                    style='margin:6px 0 0 0;font-size:11px;line-height:18px;color:#8aa3a1;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
+                    {{appName}} is operated by BdREN &mdash; <a href='{{orgUrl}}' target='_blank'
+                      class='u-link'
+                      style='color:#146a68;text-decoration:underline;'>{{orgLabel}}</a>
+                  </p>
+                  {{/if}}
                 </div>
               </td>
             </tr>
