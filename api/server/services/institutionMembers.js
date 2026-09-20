@@ -771,17 +771,35 @@ function formatInviteExpiry(expiresAt) {
     return '';
   }
 
-  /** The reader is told when the link lapses, so the date has to be the one the
-   *  sending deployment keeps. Leaving locale and zone unset takes the host's
-   *  own (TZ, then the system), which is what a regional install is configured
-   *  with; the env vars are for overriding a host that is set to something else,
-   *  such as a container left on UTC. */
-  return new Intl.DateTimeFormat(process.env.INVITE_EMAIL_LOCALE || undefined, {
+  /** Invitations are read from anywhere, so a bare date is ambiguous by a day
+   *  either way and the host's own zone is the wrong answer for everyone not
+   *  sitting next to it. The deadline states a time and names the zone it is
+   *  stated in. UTC is the default because it disadvantages no reader;
+   *  INVITE_EMAIL_TIMEZONE pins a local zone when a deployment prefers one, and
+   *  the label follows whatever is chosen. */
+  const options = {
     day: 'numeric',
     month: 'long',
     year: 'numeric',
-    timeZone: process.env.INVITE_EMAIL_TIMEZONE || undefined,
-  }).format(date);
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    timeZoneName: 'short',
+  };
+  const locale = process.env.INVITE_EMAIL_LOCALE || undefined;
+
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      ...options,
+      timeZone: process.env.INVITE_EMAIL_TIMEZONE || 'UTC',
+    }).format(date);
+  } catch {
+    logger.warn('[institutionMembers] invalid INVITE_EMAIL_LOCALE or TIMEZONE; using en-GB UTC', {
+      locale,
+      timeZone: process.env.INVITE_EMAIL_TIMEZONE,
+    });
+    return new Intl.DateTimeFormat('en-GB', { ...options, timeZone: 'UTC' }).format(date);
+  }
 }
 
 async function sendInstitutionInviteEmail({ email, token, appName, name, tenantId, expiresAt }) {
