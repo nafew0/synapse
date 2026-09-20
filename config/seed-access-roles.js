@@ -30,14 +30,30 @@ createModels(mongoose);
  *   node config/seed-access-roles.js --apply           # seed global (untenanted) roles
  *   node config/seed-access-roles.js --tenant=bdren    # what is bdren missing?
  *   node config/seed-access-roles.js --tenant=bdren --apply
+ *   node config/seed-access-roles.js --all-tenants     # every tenant in `institutions`
+ *   node config/seed-access-roles.js --all-tenants --apply
  */
 
 function parseArgs(argv) {
   const tenantArg = argv.find((arg) => arg.startsWith('--tenant='));
   return {
     apply: argv.includes('--apply'),
+    allTenants: argv.includes('--all-tenants'),
     tenantId: tenantArg ? tenantArg.slice('--tenant='.length) : undefined,
   };
+}
+
+/**
+ * Every tenant on the deployment, newest last. Read through the raw driver: `institutions` has
+ * no model here, and the collection is the registry the rest of the product treats as
+ * authoritative for what a tenant is.
+ */
+async function readTenantIds() {
+  const rows = await mongoose.connection.db
+    .collection('institutions')
+    .find({}, { projection: { tenantId: 1, name: 1, status: 1, _id: 0 } })
+    .toArray();
+  return rows.filter((row) => typeof row.tenantId === 'string' && row.tenantId !== '');
 }
 
 /** Reads every role regardless of tenant, so the listing is a true inventory. */
@@ -78,14 +94,75 @@ function report(roles, tenantId) {
   }
 }
 
+/** Seeds one tenant and reports what it created. Returns the number of rows inserted. */
+async function seedOneTenant(tenantId, before) {
+  const seeded = await tenantStorage.run({ tenantId }, () => seedDefaultRoles());
+  const after = await readAllRoles();
+  const key = (role) => `${role.accessRoleId}\u0000${role.tenantId ?? ''}`;
+  const beforeKeys = new Set(before.map(key));
+  const created = after.filter((role) => !beforeKeys.has(key(role)));
+
+  if (created.length === 0) {
+    console.log(`  ${tenantId.padEnd(16)} already complete`);
+  } else {
+    console.log(`  ${tenantId.padEnd(16)} created ${created.length}`);
+  }
+
+  return { created: created.length, after, checked: Object.keys(seeded).length };
+}
+
+async function runAllTenants(apply) {
+  const tenants = await readTenantIds();
+  console.log(`\nTenants found (${tenants.length}):`);
+
+  let roles = await readAllRoles();
+  const idsFor = (tenant) =>
+    new Set(roles.filter((role) => role.tenantId === tenant).map((role) => role.accessRoleId));
+  const allIds = [...new Set(roles.map((role) => role.accessRoleId))];
+
+  for (const tenant of tenants) {
+    const scoped = idsFor(tenant.tenantId);
+    const missing = allIds.filter((id) => !scoped.has(id)).length;
+    const suspended = tenant.status && tenant.status !== 'active' ? ` [${tenant.status}]` : '';
+    console.log(
+      `  ${tenant.tenantId.padEnd(16)} visible ${String(scoped.size).padStart(2)}, missing ${String(missing).padStart(2)}${suspended}`,
+    );
+  }
+
+  if (!apply) {
+    console.log('\nDry run complete. Re-run with --apply to seed every tenant listed above.');
+    return;
+  }
+
+  console.log('\nSeeding:');
+  let total = 0;
+  for (const tenant of tenants) {
+    const result = await seedOneTenant(tenant.tenantId, roles);
+    roles = result.after;
+    total += result.created;
+  }
+
+  console.log(`\n✓ Seeding complete: ${total} role(s) created across ${tenants.length} tenant(s)`);
+}
+
 async function main() {
-  const { apply, tenantId } = parseArgs(process.argv.slice(2));
+  const { apply, tenantId, allTenants } = parseArgs(process.argv.slice(2));
 
   console.log('\n=== Access Role Seeding ===');
   console.log(`MODE:   ${apply ? 'APPLY' : 'DRY RUN'}`);
-  console.log(`TENANT: ${tenantId ? tenantId : '(global / untenanted)'}`);
+  console.log(
+    `TENANT: ${allTenants ? 'every tenant in institutions' : tenantId ? tenantId : '(global / untenanted)'}`,
+  );
 
   await connect();
+
+  if (allTenants) {
+    if (tenantId) {
+      throw new Error('Pass either --all-tenants or --tenant=<id>, not both.');
+    }
+    await runAllTenants(apply);
+    return;
+  }
 
   const before = await readAllRoles();
   report(before, tenantId);
