@@ -1,377 +1,205 @@
 <!doctype html>
-<html xmlns='http://www.w3.org/1999/xhtml' xmlns:v='urn:schemas-microsoft-com:vml'
-  xmlns:o='urn:schemas-microsoft-com:office:office' lang='en'>
+<html lang="en" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
+<meta name="color-scheme" content="light">
+<meta name="supported-color-schemes" content="light">
+<title>{{appName}}</title>
+<!--[if mso]>
+<xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml>
+<![endif]-->
+<style>
+  /* Client resets */
+  body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+  table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+  img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
+  body { margin: 0 !important; padding: 0 !important; width: 100% !important; }
+  a { color: #0E4B4A; }
 
-  <head>
-    <!--[if gte mso 9]>
-      <xml>
-        <o:OfficeDocumentSettings>
-          <o:AllowPNG />
-          <o:PixelsPerInch>96</o:PixelsPerInch>
-        </o:OfficeDocumentSettings>
-      </xml>
-    <![endif]-->
-    <meta http-equiv='Content-Type' content='text/html; charset=UTF-8' />
-    <meta name='viewport' content='width=device-width, initial-scale=1.0' />
-    <meta name='x-apple-disable-message-reformatting' />
-    <meta name='color-scheme' content='light dark' />
-    <meta name='supported-color-schemes' content='light dark' />
-    <title>{{appName}}</title>
-    <style type='text/css'>
-      body { margin: 0; padding: 0; background-color: #eef4f3; }
-      table, tr, td { border-collapse: collapse; }
-      p { margin: 0; }
-      img { -ms-interpolation-mode: bicubic; }
-      a[x-apple-data-detectors='true'] { color: inherit !important; text-decoration: none !important; }
+  /* Phones */
+  @media only screen and (max-width: 620px) {
+    .sheet { width: 100% !important; }
+    .pad { padding-left: 24px !important; padding-right: 24px !important; }
+    .stack { display: block !important; width: 100% !important; text-align: left !important; }
+    .stack-team { padding: 14px 0 0 0 !important; border-left: 0 !important; text-align: left !important; }
+    .h1 { font-size: 31px !important; line-height: 38px !important; }
+    .lede { font-size: 15px !important; line-height: 25px !important; }
+    .btn-wrap { width: 100% !important; }
+    .btn-a { display: block !important; text-align: center !important; }
+    .btn-note { display: block !important; padding: 12px 0 0 0 !important; text-align: center !important; }
+    .label-col { display: block !important; width: 100% !important; padding-bottom: 3px !important; }
+    .value-col { display: block !important; width: 100% !important; }
+  }
+</style>
+</head>
+<body style="margin: 0; padding: 0; background-color: #EFE7DA;">
 
-      @media only screen and (max-width: 620px) {
-        .u-container { width: 100% !important; }
-        .u-pad { padding-left: 22px !important; padding-right: 22px !important; }
-        .u-display { font-size: 27px !important; line-height: 35px !important; }
-        .u-credit { display: none !important; }
-      }
+<!-- Preheader: shown in the inbox preview, hidden in the email -->
+<div style="display: none; max-height: 0; overflow: hidden; mso-hide: all; font-size: 1px; line-height: 1px; color: #EFE7DA;">
+  Set your password and your {{#if institutionName}}{{institutionName}} {{/if}}account on {{appName}} is ready.{{#if expiresOn}} The link is open until {{expiresOn}}.{{/if}}
+  &#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;
+</div>
 
-      @media (prefers-color-scheme: dark) {
-        .u-page { background-color: #0a0d0e !important; }
-        .u-card { background-color: #15191b !important; }
-        .u-panel { background-color: #1c2426 !important; }
-        .u-panel-line { border-color: #2c3739 !important; }
-        .u-display { color: #dfeeeb !important; }
-        .u-ink { color: #e3ebea !important; }
-        .u-body { color: #c2cfcd !important; }
-        .u-muted { color: #8fa5a3 !important; }
-        .u-faint { color: #7b908e !important; }
-        .u-hair { border-color: #28302f !important; }
-        .u-link { color: #6fc5b8 !important; }
-        .u-btn-bg { background-color: #2f8e8a !important; }
-        .u-btn { background-color: #2f8e8a !important; color: #04201f !important; }
-        .u-logo-light { display: none !important; width: 0 !important; max-height: 0 !important; overflow: hidden !important; }
-        .u-logo-dark { display: block !important; width: auto !important; max-height: inherit !important; overflow: visible !important; }
-      }
-    </style>
-  </head>
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #EFE7DA;">
+  <tr>
+    <td align="center" style="padding: 40px 12px;">
 
-  <body class='u-page'
-    style='margin:0;padding:0;background-color:#eef4f3;-webkit-font-smoothing:antialiased;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'
-  >
-    <div
-      style='display:none;font-size:1px;color:#eef4f3;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;'
-    >
-      Set your password to activate your {{appName}} account.
-    </div>
+      <table role="presentation" class="sheet" cellpadding="0" cellspacing="0" border="0" width="600" style="width: 600px; max-width: 600px; background-color: #FCF9F4; border: 1px solid #E1D6C4;">
 
-    <table role='presentation' class='u-page' width='100%' cellpadding='0' cellspacing='0' border='0'
-      style='background-color:#eef4f3;'>
-      <tr>
-        <td align='center' style='padding:32px 12px;'>
+        <!-- Accent band -->
+        <tr>
+          <td style="height: 5px; line-height: 5px; font-size: 0; background-color: #0E4B4A;">&nbsp;</td>
+        </tr>
 
-          <table role='presentation' class='u-container u-card' width='600' cellpadding='0'
-            cellspacing='0' border='0'
-            style='width:600px;max-width:600px;background-color:#ffffff;border-radius:18px;overflow:hidden;'>
-
-            <tr>
-              <td class='u-pad' bgcolor='#0f4145'
-                style='padding:26px 40px;background-color:#0f4145;background-image:radial-gradient(circle at 78% -30%, rgba(94,173,168,0.30), transparent 58%);'>
-                <table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0'>
-                  <tr>
-                    <td width='46' valign='middle' style='width:46px;padding-right:16px;'>
-                      <!--[if !mso]><!-->
-                      <div class='u-logo-light'>
-                        <img src='{{appUrl}}/assets/synapse-email-icon.png' alt='' width='46'
-                          height='46' style='display:block;width:46px;height:46px;border:0;' />
-                      </div>
-                      <div class='u-logo-dark'
-                        style='display:none;width:0;max-height:0;overflow:hidden;mso-hide:all;'>
-                        <img src='{{appUrl}}/assets/synapse-email-icon-white.png' alt='' width='46'
-                          height='46' style='display:block;width:46px;height:46px;border:0;' />
-                      </div>
-                      <!--<![endif]-->
-                      <!--[if mso]>
-                      <img src="{{appUrl}}/assets/synapse-email-icon.png" alt="" width="46" height="46" style="display:block;width:46px;height:46px;border:0;" />
-                      <![endif]-->
-                    </td>
-                    <td valign='middle'>
-                      <p
-                        style='margin:0;font-size:24px;line-height:30px;font-weight:700;letter-spacing:0.05em;color:#ffffff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
+        <!-- Masthead -->
+        <tr>
+          <td class="pad" style="padding: 30px 44px 24px 44px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+              <tr>
+                <td class="stack" valign="middle">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                    <tr>
+                      <td width="44" valign="middle" style="width: 44px; padding-right: 14px;">
+                        <a href="{{appUrl}}" target="_blank" style="text-decoration: none;"><img src="{{appUrl}}/assets/synapse-email-icon.png" width="44" height="44" alt="{{appName}}" style="display: block; width: 44px; height: 44px; border: 0;"></a>
+                      </td>
+                      <td valign="middle" style="font-family: Georgia, 'Times New Roman', serif; font-size: 23px; line-height: 27px; font-weight: bold; letter-spacing: 3px; text-transform: uppercase; color: #12302E;">
                         {{appName}}
-                      </p>
-                      <p
-                        style='margin:4px 0 0 0;font-size:10px;line-height:16px;letter-spacing:0.17em;color:rgba(248,243,236,0.78);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                        SMARTER WORK WITH AFFORDABLE AI
-                      </p>
-                    </td>
-                    <td class='u-credit' width='140' valign='middle'
-                      style='width:140px;padding-left:18px;border-left:1px solid rgba(248,243,236,0.28);'>
-                      <p
-                        style='margin:0;font-size:10px;line-height:17px;letter-spacing:0.14em;color:rgba(248,243,236,0.74);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                        DEVELOPED BY THE<br />BdREN INNOVATION<br />TEAM
-                      </p>
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
+                        <div style="padding-top: 4px; font-family: Helvetica, Arial, sans-serif; font-size: 10px; line-height: 15px; font-weight: normal; letter-spacing: 1.4px; text-transform: uppercase; color: #6A6458;">Smarter work with affordable AI</div>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+                <td class="stack stack-team" valign="middle" align="right" style="border-left: 1px solid #E1D6C4; padding-left: 16px; font-family: Helvetica, Arial, sans-serif; font-size: 10px; line-height: 16px; letter-spacing: 1px; color: #6A6458; text-align: right;">
+                  DEVELOPED BY THE<br>BdREN INNOVATION TEAM
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="height: 1px; line-height: 1px; font-size: 0; background-color: #E8DECD;">&nbsp;</td>
+        </tr>
 
-            <tr>
-              <td class='u-pad' align='left' style='padding:34px 40px 0 40px;'>
-                <p class='u-muted'
-                  style='margin:0;font-size:15px;line-height:23px;color:#6d8c89;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                  Hi{{#if name}} {{name}}{{/if}},
-                </p>
-                <p class='u-display'
-                  style='margin:14px 0 0 0;font-family:Georgia,"Times New Roman",Times,serif;font-size:34px;line-height:43px;color:#0f3f42;'>
-                  {{#if institutionName}}{{institutionName}} has invited you to
-                  {{appName}}.{{else}}You have been invited to {{appName}}.{{/if}}
-                </p>
-                <p class='u-body'
-                  style='margin:18px 0 0 0;font-size:15px;line-height:25px;color:#3d5553;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                  {{appName}} is an AI workspace developed by the
-                  {{#if orgUrl}}<a href='{{orgUrl}}' target='_blank' class='u-link'
-                    style='color:#146a68;text-decoration:underline;'>BdREN Innovation
-                    Team</a>{{else}}BdREN Innovation Team{{/if}}. Set your password to activate your
-                  account and start getting work done with {{appName}}.
-                </p>
-              </td>
-            </tr>
+        <!-- Letter -->
+        <tr>
+          <td class="pad" style="padding: 40px 44px 0 44px; font-family: Helvetica, Arial, sans-serif;">
+            <div style="font-size: 11px; line-height: 16px; letter-spacing: 1.6px; text-transform: uppercase; color: #A04A28;">Invitation{{#if institutionName}} &middot; {{institutionName}}{{/if}}</div>
+            <div style="padding-top: 20px; font-family: Georgia, 'Times New Roman', serif; font-size: 19px; line-height: 26px; color: #2F3A37;">Hi{{#if name}} {{name}}{{/if}},</div>
+            <h1 class="h1" style="margin: 10px 0 0 0; font-family: Georgia, 'Times New Roman', serif; font-size: 38px; line-height: 46px; font-weight: normal; color: #12302E;">{{#if institutionName}}Your university has a seat waiting for you.{{else}}A seat is waiting for you.{{/if}}</h1>
+            <p class="lede" style="margin: 22px 0 0 0; font-size: 16px; line-height: 27px; color: #45504C;">{{appName}} is an AI workspace built by the {{#if orgUrl}}<a href="{{orgUrl}}" target="_blank" style="color: #0E4B4A; text-decoration: underline;">BdREN Innovation Team</a>{{else}}BdREN Innovation Team{{/if}} for universities across Bangladesh. Set a password and the account below is yours &mdash; nothing to install, nothing to pay for.</p>
+          </td>
+        </tr>
 
-            <tr>
-              <td class='u-pad' align='left' style='padding:28px 40px 0 40px;'>
-                <table role='presentation' class='u-panel' width='100%' cellpadding='0' cellspacing='0'
-                  border='0' style='background-color:#e9f3f0;border-radius:16px;'>
-                  <tr>
-                    <td style='padding:24px;'>
+        <!-- Invitation details -->
+        <tr>
+          <td class="pad" style="padding: 34px 44px 0 44px; font-family: Helvetica, Arial, sans-serif;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+              <tr>
+                <td width="118" valign="middle" style="font-size: 11px; line-height: 16px; letter-spacing: 1.6px; color: #6A6458; white-space: nowrap;">YOUR INVITATION</td>
+                <td valign="middle" style="padding-left: 14px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="height: 1px; line-height: 1px; font-size: 0; background-color: #E8DECD;">&nbsp;</td></tr></table>
+                </td>
+              </tr>
+            </table>
 
-                      <p class='u-muted'
-                        style='margin:0 0 18px 0;font-size:12px;line-height:18px;font-weight:600;color:#6d8c89;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                        Your invitation
-                      </p>
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top: 6px;">
+{{#if email}}
+              <tr>
+                <td class="label-col" width="122" valign="top" style="padding: 15px 16px 15px 0; font-size: 11px; line-height: 20px; letter-spacing: 1.3px; color: #6A6458;">ACCOUNT</td>
+                <td class="value-col" valign="top" style="padding: 15px 0; font-size: 16px; line-height: 22px; font-weight: bold; color: #1B2A28; word-break: break-all;">{{email}}</td>
+              </tr>
+              <tr><td colspan="2" style="height: 1px; line-height: 1px; font-size: 0; background-color: #EDE4D5;">&nbsp;</td></tr>
+{{/if}}
+{{#if institutionName}}
+              <tr>
+                <td class="label-col" width="122" valign="top" style="padding: 15px 16px 15px 0; font-size: 11px; line-height: 20px; letter-spacing: 1.3px; color: #6A6458;">INSTITUTION</td>
+                <td class="value-col" valign="top" style="padding: 15px 0; font-size: 16px; line-height: 22px; font-weight: bold; color: #1B2A28;">{{institutionName}}</td>
+              </tr>
+              <tr><td colspan="2" style="height: 1px; line-height: 1px; font-size: 0; background-color: #EDE4D5;">&nbsp;</td></tr>
+{{/if}}
+{{#if expiresOn}}
+              <tr>
+                <td class="label-col" width="122" valign="top" style="padding: 15px 16px 15px 0; font-size: 11px; line-height: 20px; letter-spacing: 1.3px; color: #6A6458;">OPEN BEFORE</td>
+                <td class="value-col" valign="top" style="padding: 15px 0; font-size: 16px; line-height: 22px; font-weight: bold; color: #1B2A28;">{{expiresOn}}<span style="font-weight: normal; color: #6A6458;">, after which the link expires</span></td>
+              </tr>
+              <tr><td colspan="2" style="height: 1px; line-height: 1px; font-size: 0; background-color: #EDE4D5;">&nbsp;</td></tr>
+{{/if}}
+            </table>
+          </td>
+        </tr>
 
-                      <div style='font-size:0;'>
-                        <!--[if mso]><table role="presentation" width="100%"><tr><td width="300" valign="top"><![endif]-->
-                        <div
-                          style='display:inline-block;width:300px;max-width:100%;vertical-align:top;'>
-                          <table role='presentation' width='100%' cellpadding='0' cellspacing='0'
-                            border='0'>
-                            {{#if email}}
-                            <tr>
-                              <td width='38' valign='middle' style='width:38px;padding:0 14px 16px 0;'>
-                                <img src='{{appUrl}}/assets/synapse-email-chip-account.png' alt=''
-                                  width='38' height='38'
-                                  style='display:block;width:38px;height:38px;border:0;' />
-                              </td>
-                              <td valign='middle' style='padding-bottom:16px;'>
-                                <p class='u-muted'
-                                  style='margin:0;font-size:12px;line-height:18px;color:#6d8c89;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                                  Account
-                                </p>
-                                <p class='u-ink'
-                                  style='margin:0;font-size:15px;line-height:22px;font-weight:600;color:#17302f;word-break:break-all;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                                  {{email}}
-                                </p>
-                              </td>
-                            </tr>
-                            {{/if}}
-                            {{#if institutionName}}
-                            <tr>
-                              <td width='38' valign='middle' style='width:38px;padding:0 14px 16px 0;'>
-                                <img src='{{appUrl}}/assets/synapse-email-chip-institution.png' alt=''
-                                  width='38' height='38'
-                                  style='display:block;width:38px;height:38px;border:0;' />
-                              </td>
-                              <td valign='middle' style='padding-bottom:16px;'>
-                                <p class='u-muted'
-                                  style='margin:0;font-size:12px;line-height:18px;color:#6d8c89;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                                  Institution
-                                </p>
-                                <p class='u-ink'
-                                  style='margin:0;font-size:15px;line-height:22px;font-weight:600;color:#17302f;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                                  {{institutionName}}
-                                </p>
-                              </td>
-                            </tr>
-                            {{/if}}
-                            {{#if expiresOn}}
-                            <tr>
-                              <td width='38' valign='middle' style='width:38px;padding-right:14px;'>
-                                <img src='{{appUrl}}/assets/synapse-email-chip-expires.png' alt=''
-                                  width='38' height='38'
-                                  style='display:block;width:38px;height:38px;border:0;' />
-                              </td>
-                              <td valign='middle'>
-                                <p class='u-muted'
-                                  style='margin:0;font-size:12px;line-height:18px;color:#6d8c89;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                                  Open before
-                                </p>
-                                <p class='u-ink'
-                                  style='margin:0;font-size:15px;line-height:22px;font-weight:600;color:#17302f;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                                  {{expiresOn}}
-                                </p>
-                              </td>
-                            </tr>
-                            {{/if}}
-                          </table>
-                        </div>
-                        <!--[if mso]></td><td width="172" valign="middle"><![endif]-->
-                        <div class='u-panel-line'
-                          style='display:inline-block;width:160px;vertical-align:middle;padding-left:24px;border-left:1px solid #cfe3de;'>
-                          <!--[if !mso]><!-->
-                          <div class='u-logo-light' style='text-align:center;'>
-                            <img src='{{appUrl}}/assets/synapse-email-icon.png' alt='' width='74'
-                              height='74'
-                              style='display:inline-block;width:74px;height:74px;border:0;' />
-                          </div>
-                          <div class='u-logo-dark'
-                            style='display:none;width:0;max-height:0;overflow:hidden;mso-hide:all;text-align:center;'>
-                            <img src='{{appUrl}}/assets/synapse-email-icon-white.png' alt=''
-                              width='74' height='74'
-                              style='display:inline-block;width:74px;height:74px;border:0;' />
-                          </div>
-                          <!--<![endif]-->
-                          <!--[if mso]>
-                          <img src="{{appUrl}}/assets/synapse-email-icon.png" alt="" width="74" height="74" style="display:block;width:74px;height:74px;border:0;" />
-                          <![endif]-->
-                          <p class='u-ink'
-                            style='margin:12px 0 0 0;font-size:13px;line-height:19px;color:#17302f;text-align:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                            Your AI workspace<br />for everyday work
-                          </p>
-                        </div>
-                        <!--[if mso]></td></tr></table><![endif]-->
-                      </div>
+        <!-- Call to action -->
+        <tr>
+          <td class="pad" style="padding: 28px 44px 0 44px; font-family: Helvetica, Arial, sans-serif;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td class="btn-wrap" bgcolor="#0E4B4A" style="background-color: #0E4B4A; border-radius: 4px;">
+                  <!--[if mso]><v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{inviteLink}}" style="height:56px;v-text-anchor:middle;width:212px;" arcsize="7%" stroke="f" fillcolor="#0E4B4A"><w:anchorlock/><center style="color:#FCF9F4;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;"><![endif]-->
+                  <a class="btn-a" href="{{inviteLink}}" target="_blank" style="display: inline-block; padding: 17px 32px; font-family: Helvetica, Arial, sans-serif; font-size: 16px; line-height: 22px; font-weight: bold; color: #FCF9F4; text-decoration: none; border-radius: 4px;">Set your password</a>
+                  <!--[if mso]></center></v:roundrect><![endif]-->
+                </td>
+                <td class="btn-note" valign="middle" style="padding-left: 20px; font-size: 13px; line-height: 20px; color: #6A6458;">Takes under a minute.<br>The link works once.</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
 
-                      <table role='presentation' width='100%' cellpadding='0' cellspacing='0'
-                        border='0' style='margin-top:22px;'>
-                        <tr>
-                          <td align='center' class='u-btn-bg' bgcolor='#0f4145'
-                            style='background-color:#0f4145;border-radius:999px;'>
-                            <!--[if mso]><v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{inviteLink}}" style="height:54px;v-text-anchor:middle;width:460px;" arcsize="50%" stroke="f" fillcolor="#0f4145"><w:anchorlock/><center style="color:#ffffff;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;"><![endif]-->
-                            <a href='{{inviteLink}}' target='_blank' class='u-btn'
-                              style='display:block;padding:16px 28px;font-size:16px;line-height:22px;font-weight:600;color:#ffffff;text-decoration:none;background-color:#0f4145;border-radius:999px;text-align:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                              Create your account &nbsp;&rarr;
-                            </a>
-                            <!--[if mso]></center></v:roundrect><![endif]-->
-                          </td>
-                        </tr>
-                      </table>
+        <!-- What you can do -->
+        <tr>
+          <td class="pad" style="padding: 42px 44px 0 44px; font-family: Helvetica, Arial, sans-serif;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+              <tr>
+                <td width="176" valign="middle" style="font-size: 11px; line-height: 16px; letter-spacing: 1.6px; color: #6A6458; white-space: nowrap;">WHAT YOU CAN DO WITH IT</td>
+                <td valign="middle" style="padding-left: 14px;">
+                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="height: 1px; line-height: 1px; font-size: 0; background-color: #E8DECD;">&nbsp;</td></tr></table>
+                </td>
+              </tr>
+            </table>
 
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top: 14px;">
+              <tr>
+                <td width="26" valign="top" style="padding: 6px 12px 6px 0; font-family: Georgia, 'Times New Roman', serif; font-size: 13px; line-height: 22px; color: #A04A28;">01</td>
+                <td valign="top" style="padding: 6px 0; font-size: 15px; line-height: 22px; color: #35403D;">Draft, edit and mark up documents</td>
+              </tr>
+              <tr>
+                <td width="26" valign="top" style="padding: 6px 12px 6px 0; font-family: Georgia, 'Times New Roman', serif; font-size: 13px; line-height: 22px; color: #A04A28;">02</td>
+                <td valign="top" style="padding: 6px 0; font-size: 15px; line-height: 22px; color: #35403D;">Build spreadsheets and work through the numbers</td>
+              </tr>
+              <tr>
+                <td width="26" valign="top" style="padding: 6px 12px 6px 0; font-family: Georgia, 'Times New Roman', serif; font-size: 13px; line-height: 22px; color: #A04A28;">03</td>
+                <td valign="top" style="padding: 6px 0; font-size: 15px; line-height: 22px; color: #35403D;">Put a presentation together from your notes</td>
+              </tr>
+              <tr>
+                <td width="26" valign="top" style="padding: 6px 12px 6px 0; font-family: Georgia, 'Times New Roman', serif; font-size: 13px; line-height: 22px; color: #A04A28;">04</td>
+                <td valign="top" style="padding: 6px 0; font-size: 15px; line-height: 22px; color: #35403D;">Read, search and fill in PDF files</td>
+              </tr>
+              <tr>
+                <td width="26" valign="top" style="padding: 6px 12px 6px 0; font-family: Georgia, 'Times New Roman', serif; font-size: 13px; line-height: 22px; color: #A04A28;">05</td>
+                <td valign="top" style="padding: 6px 0; font-size: 15px; line-height: 22px; color: #35403D;">Generate images for your slides and papers</td>
+              </tr>
+            </table>
 
-            <tr>
-              <td class='u-pad' align='left' style='padding:32px 40px 0 40px;'>
-                <p class='u-muted'
-                  style='margin:0 0 16px 0;font-size:12px;line-height:18px;font-weight:600;color:#6d8c89;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                  Get your work done with {{appName}}
-                </p>
-                <div style='font-size:0;text-align:center;'>
-                  <!--[if mso]><table role="presentation" width="100%"><tr><td width="20%" valign="top"><![endif]-->
-                  <div
-                    style='display:inline-block;width:102px;vertical-align:top;padding-bottom:4px;'>
-                    <img src='{{appUrl}}/assets/synapse-email-feat-documents.png' alt='' width='46'
-                      height='46' style='display:inline-block;width:46px;height:46px;border:0;' />
-                    <p class='u-ink'
-                      style='margin:10px 0 0 0;font-size:13px;line-height:19px;font-weight:600;color:#17302f;text-align:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                      Create &amp; edit
-                    </p>
-                    <p class='u-muted'
-                      style='margin:0;font-size:13px;line-height:19px;color:#6d8c89;text-align:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                      documents
-                    </p>
-                  </div>
-                  <!--[if mso]></td><td width="20%" valign="top"><![endif]-->
-                  <div
-                    style='display:inline-block;width:102px;vertical-align:top;padding-bottom:4px;'>
-                    <img src='{{appUrl}}/assets/synapse-email-feat-spreadsheets.png' alt='' width='46'
-                      height='46' style='display:inline-block;width:46px;height:46px;border:0;' />
-                    <p class='u-ink'
-                      style='margin:10px 0 0 0;font-size:13px;line-height:19px;font-weight:600;color:#17302f;text-align:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                      Work with
-                    </p>
-                    <p class='u-muted'
-                      style='margin:0;font-size:13px;line-height:19px;color:#6d8c89;text-align:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                      spreadsheets
-                    </p>
-                  </div>
-                  <!--[if mso]></td><td width="20%" valign="top"><![endif]-->
-                  <div
-                    style='display:inline-block;width:102px;vertical-align:top;padding-bottom:4px;'>
-                    <img src='{{appUrl}}/assets/synapse-email-feat-presentations.png' alt='' width='46'
-                      height='46' style='display:inline-block;width:46px;height:46px;border:0;' />
-                    <p class='u-ink'
-                      style='margin:10px 0 0 0;font-size:13px;line-height:19px;font-weight:600;color:#17302f;text-align:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                      Build
-                    </p>
-                    <p class='u-muted'
-                      style='margin:0;font-size:13px;line-height:19px;color:#6d8c89;text-align:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                      presentations
-                    </p>
-                  </div>
-                  <!--[if mso]></td><td width="20%" valign="top"><![endif]-->
-                  <div
-                    style='display:inline-block;width:102px;vertical-align:top;padding-bottom:4px;'>
-                    <img src='{{appUrl}}/assets/synapse-email-feat-pdf.png' alt='' width='46'
-                      height='46' style='display:inline-block;width:46px;height:46px;border:0;' />
-                    <p class='u-ink'
-                      style='margin:10px 0 0 0;font-size:13px;line-height:19px;font-weight:600;color:#17302f;text-align:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                      Handle
-                    </p>
-                    <p class='u-muted'
-                      style='margin:0;font-size:13px;line-height:19px;color:#6d8c89;text-align:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                      PDF files
-                    </p>
-                  </div>
-                  <!--[if mso]></td><td width="20%" valign="top"><![endif]-->
-                  <div
-                    style='display:inline-block;width:102px;vertical-align:top;padding-bottom:4px;'>
-                    <img src='{{appUrl}}/assets/synapse-email-feat-images.png' alt='' width='46'
-                      height='46' style='display:inline-block;width:46px;height:46px;border:0;' />
-                    <p class='u-ink'
-                      style='margin:10px 0 0 0;font-size:13px;line-height:19px;font-weight:600;color:#17302f;text-align:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                      Generate
-                    </p>
-                    <p class='u-muted'
-                      style='margin:0;font-size:13px;line-height:19px;color:#6d8c89;text-align:center;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                      images
-                    </p>
-                  </div>
-                  <!--[if mso]></td></tr></table><![endif]-->
-                </div>
-              </td>
-            </tr>
+            <p style="margin: 30px 0 0 0; font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-size: 17px; line-height: 26px; color: #2F3A37;">See you inside,<br>the BdREN Innovation Team</p>
+          </td>
+        </tr>
 
-            <tr>
-              <td class='u-pad' align='left' style='padding:28px 40px 30px 40px;'>
-                <div class='u-hair' style='border-top:1px solid #e2ecea;padding-top:20px;'>
-                  <p class='u-faint'
-                    style='margin:0;font-size:11px;line-height:18px;color:#8aa3a1;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                    Button not working? Open <a href='{{inviteLink}}' target='_blank' class='u-link'
-                      style='color:#146a68;text-decoration:underline;word-break:break-all;'>{{inviteLink}}</a>
-                  </p>
-                  <p class='u-faint'
-                    style='margin:6px 0 0 0;font-size:11px;line-height:18px;color:#8aa3a1;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                    {{#if email}}Sent to {{email}}. {{/if}}If you were not expecting this, ignore it
-                    &mdash; no account exists until the link is opened.{{#if supportEmail}} Questions go
-                    to <a href='mailto:{{supportEmail}}' class='u-link'
-                      style='color:#146a68;text-decoration:underline;'>{{supportEmail}}</a>.{{/if}}
-                  </p>
-                  {{#if orgUrl}}
-                  <p class='u-faint'
-                    style='margin:6px 0 0 0;font-size:11px;line-height:18px;color:#8aa3a1;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                    {{appName}} is operated by BdREN &mdash; <a href='{{orgUrl}}' target='_blank'
-                      class='u-link'
-                      style='color:#146a68;text-decoration:underline;'>{{orgLabel}}</a>
-                  </p>
-                  {{/if}}
-                </div>
-              </td>
-            </tr>
+        <!-- Fine print -->
+        <tr>
+          <td class="pad" style="padding: 32px 44px 36px 44px; font-family: Helvetica, Arial, sans-serif;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="height: 1px; line-height: 1px; font-size: 0; background-color: #E8DECD;">&nbsp;</td></tr></table>
+            <p style="margin: 20px 0 0 0; font-size: 12px; line-height: 19px; color: #6A6458;">Button not working? Open <a href="{{inviteLink}}" target="_blank" style="color: #0E4B4A; text-decoration: underline; word-break: break-all;">{{inviteLink}}</a></p>
+            <p style="margin: 7px 0 0 0; font-size: 12px; line-height: 19px; color: #6A6458;">{{#if email}}Sent to {{email}}. {{/if}}If you were not expecting this, ignore it &mdash; no account exists until the link is opened.{{#if supportEmail}} Questions go to <a href="mailto:{{supportEmail}}" style="color: #0E4B4A; text-decoration: underline;">{{supportEmail}}</a>.{{/if}}</p>
+            <p style="margin: 7px 0 0 0; font-size: 12px; line-height: 19px; color: #6A6458;">{{appName}} is operated by BdREN, Bangladesh Research and Education Network{{#if orgUrl}} &mdash; <a href="{{orgUrl}}" target="_blank" style="color: #0E4B4A; text-decoration: underline;">{{orgLabel}}</a>{{/if}}</p>
+          </td>
+        </tr>
 
-          </table>
+      </table>
 
-        </td>
-      </tr>
-    </table>
-  </body>
+    </td>
+  </tr>
+</table>
+
+</body>
 </html>
