@@ -1004,6 +1004,56 @@ describe('processAgentFileUpload', () => {
       );
     });
 
+    test('keeps the upload name on a searched document, not the .txt it was embedded as', async () => {
+      /**
+       * Search embeds the extracted text as `<name>.txt`, and the vector store's reply used to
+       * rename the record. The Document Assistant was then told the manuscript was at
+       * `/mnt/data/Publication_Paper.txt`, found nothing there beside the sandbox copy mounted as
+       * `Publication_Paper.docx`, and told the user the file had never arrived.
+       */
+      routeStrategies({
+        parser: {
+          handleFileUpload: jest.fn().mockResolvedValue({
+            text: 'm'.repeat(oversizedTextLength()),
+            bytes: 1000,
+            filepath: 'doc://result',
+          }),
+        },
+        storage: {
+          handleFileUpload: jest
+            .fn()
+            .mockResolvedValue({ bytes: 42, filepath: '/uploads/Publication_Paper.docx' }),
+        },
+      });
+      uploadVectors.mockResolvedValueOnce({
+        bytes: 1000,
+        filename: 'Publication_Paper.txt',
+        filepath: FileSources.vectordb,
+        embedded: true,
+      });
+      const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null, path: uploadPath });
+      req.file.originalname = 'Publication Paper.docx';
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: autoMetadata() });
+
+      expect(uploadVectors).toHaveBeenCalledWith(
+        expect.objectContaining({
+          file: expect.objectContaining({ originalname: 'Publication Paper.txt' }),
+        }),
+      );
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filename: 'Publication_Paper.docx',
+          embedded: true,
+          metadata: expect.objectContaining({
+            codeEnvRef: expect.objectContaining({ file_id: 'code-file-1' }),
+            preparation: expect.objectContaining({ delivery: 'search' }),
+          }),
+        }),
+        true,
+      );
+    });
+
     test('recognises a scanned PDF and indexes the recognised text, not the scan', async () => {
       mergeFileConfig.mockReturnValue(
         makeFileConfig({

@@ -1118,20 +1118,23 @@ const persistPreparedFile = async ({
     storageRegion: storageResult.storageRegion,
   });
 
-  let embedded;
-  let filename = storageResult.filename;
-  if (searchable) {
-    const embedding = await embedForSearch({
-      req,
-      file,
-      file_id,
-      entity_id,
-      text: searchText,
-      storageMetadata,
-    });
-    embedded = embedding?.embedded;
-    filename = embedding?.filename || filename;
-  }
+  /* The upload's own name, never the one the vector store reports back. Search embeds the
+   * extracted text as `<name>.txt`, and that name used to replace this one — so a searched
+   * `paper.docx` was announced to the model as `/mnt/data/paper.txt`, a path that does not exist
+   * beside the sandbox copy mounted as `paper.docx`, and the specialist concluded the file had
+   * never arrived. */
+  const embedded = searchable
+    ? (
+        await embedForSearch({
+          req,
+          file,
+          file_id,
+          entity_id,
+          text: searchText,
+          storageMetadata,
+        })
+      )?.embedded
+    : undefined;
 
   if (!messageAttachment && tool_resource) {
     await db.addAgentResourceFile({
@@ -1156,7 +1159,7 @@ const persistPreparedFile = async ({
       bytes: storageResult.bytes,
       filepath: storageResult.filepath,
       ...storageMetadata,
-      filename: filename ?? sanitizeFilename(file.originalname),
+      filename: storageResult.filename ?? sanitizeFilename(file.originalname),
       conversationId: messageAttachment ? conversationId : undefined,
       context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
       model: messageAttachment ? undefined : req.body.model,

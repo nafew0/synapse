@@ -893,6 +893,59 @@ describe('initializeAgent — attachment scoping', () => {
       tenantId: undefined,
     });
   });
+
+  /** A long upload as automatic preparation stores it: searched, sandboxed, no text in context. */
+  const searchedUpload = {
+    file_id: 'searched-file',
+    filename: 'Rokeya_Chair_Nomination.pdf',
+    type: 'application/pdf',
+    embedded: true,
+    metadata: {
+      codeEnvRef: { kind: 'user', id: 'user-1', storage_session_id: 's-1', file_id: 'c-1' },
+      preparation: { delivery: 'search', contextText: false },
+    },
+  };
+
+  const initializeWithRequestFile = async (tools: string[]) => {
+    const { primeResources } = jest.requireMock('../resources') as {
+      primeResources: jest.Mock;
+    };
+    primeResources.mockResolvedValueOnce({
+      attachments: [searchedUpload],
+      requestAttachments: [searchedUpload],
+      agentContextAttachments: undefined,
+      tool_resources: undefined,
+    });
+    const { agent, req, res, loadTools, db } = createMocks();
+    agent.tools = tools;
+
+    return initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+  };
+
+  it('tells an orchestrator with no file tools which attachments arrived', async () => {
+    const result = await initializeWithRequestFile(['ask_user_question']);
+
+    expect(result.dynamicToolContextMap?.unreachable_attachments).toContain(
+      '- Rokeya_Chair_Nomination.pdf (indexed for search, in the code sandbox)',
+    );
+  });
+
+  it('adds no attachment note for an agent that can search the upload itself', async () => {
+    const result = await initializeWithRequestFile([Tools.file_search]);
+
+    expect(result.dynamicToolContextMap).not.toHaveProperty('unreachable_attachments');
+  });
 });
 
 describe('initializeAgent — maxContextTokens', () => {

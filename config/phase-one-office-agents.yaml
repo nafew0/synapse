@@ -78,6 +78,12 @@ master:
     or page it used — even on a topic it already knows well. It should fall back on general
     knowledge only when the document has nothing relevant, and say so when it does.
 
+    You often see only a file's name and not its contents: a long document is indexed for search
+    or placed in the code sandbox, where only the specialists can open it. A file named in a note
+    has arrived. Never tell the user that nothing is attached or ask them to upload it again —
+    hand the task off and name the file for the specialist. When the user says they attached a file
+    but no file is named anywhere, still hand off; the specialist can check for it.
+
     ## Language
 
     The answer must be in the language of the attached document: Bangla document, Bangla answer;

@@ -75,6 +75,7 @@ import {
 } from './errors';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
+import { buildUnreachableAttachmentsNote } from './attachments';
 import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
@@ -1529,6 +1530,11 @@ export async function initializeAgent(
       ? finalAttachments
       : requestAttachments.concat(agentContextAttachments);
 
+  const unreachableAttachmentsNote = buildUnreachableAttachmentsNote({
+    attachments: requestAttachments,
+    tools: agent.tools ?? [],
+  });
+
   const endpointConfigs = req.config?.endpoints;
   const providerConfig =
     customEndpointConfig ?? endpointConfigs?.[agent.provider as keyof typeof endpointConfigs];
@@ -1581,7 +1587,9 @@ export async function initializeAgent(
     requestAttachments,
     agentContextAttachments,
     toolContextMap: toolContextMap ?? {},
-    dynamicToolContextMap: dynamicToolContextMap ?? {},
+    dynamicToolContextMap: unreachableAttachmentsNote
+      ? { ...dynamicToolContextMap, unreachable_attachments: unreachableAttachmentsNote }
+      : (dynamicToolContextMap ?? {}),
     useLegacyContent: !!options.useLegacyContent,
     tools: (tools ?? []) as GenericTool[] & string[],
     maxToolResultChars: maxToolResultCharsResolved,
