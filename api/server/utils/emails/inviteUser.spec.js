@@ -46,7 +46,7 @@ describe('inviteUser email template', () => {
 
     expect(html).toContain('Invitation \u00b7 University of Dhaka');
     expect(html).toContain('ORGANIZATION');
-    expect(html).toContain('Your organization has a seat waiting for you.');
+    expect(html).toContain('University of Dhaka has invited you to join Synapse.');
     expect(html).toContain('nafisa.rahman@du.ac.bd');
     expect(html).toContain('25 September 2026');
     expect(html).toContain('info@bdren.ai');
@@ -74,7 +74,7 @@ describe('inviteUser email template', () => {
   it('drops the optional rows for a standalone invitation', () => {
     const html = text(basePayload);
 
-    expect(html).toContain('A seat is waiting for you.');
+    expect(html).toContain('You have been invited to join Synapse.');
     expect(html).not.toContain('ORGANIZATION');
     expect(html).not.toContain('OPEN BEFORE');
     expect(html).not.toContain('ACCOUNT');
