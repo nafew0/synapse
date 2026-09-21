@@ -1,10 +1,11 @@
-import { FileSources } from 'librechat-data-provider';
+import { Tools, FileSources } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest } from '~/types';
 import {
   collectFileIds,
   buildAgentScopedContext,
   getAgentContextAttachments,
+  buildUnreachableAttachmentsNote,
   buildAgentContextAttachmentsByAgentId,
 } from './attachments';
 
@@ -93,5 +94,92 @@ describe('agent attachment helpers', () => {
     expect(scopedContext.get('agent-a')).toContain('Scoped private context');
     expect(scopedContext.get('agent-a')).not.toContain('Shared duplicate context');
     expect(scopedContext.has('agent-b')).toBe(false);
+  });
+});
+
+describe('buildUnreachableAttachmentsNote', () => {
+  const codeEnvRef = {
+    kind: 'user',
+    id: 'user-1',
+    storage_session_id: 'session-1',
+    file_id: 'code-file-1',
+  };
+
+  /** A long document as automatic preparation stores it: indexed for search, copied to the
+   * sandbox, and none of its text in the conversation. */
+  const makeSearchedDocument = (filename: string): IMongoFile =>
+    ({
+      file_id: `id-${filename}`,
+      filename,
+      type: 'application/pdf',
+      source: FileSources.local,
+      embedded: true,
+      metadata: { codeEnvRef, preparation: { delivery: 'search', contextText: false } },
+    }) as unknown as IMongoFile;
+
+  it('names a searched document for an agent with neither file_search nor execute_code', () => {
+    const note = buildUnreachableAttachmentsNote({
+      attachments: [makeSearchedDocument('1788428549_6a994105719e0.pdf')],
+      tools: ['ask_user_question'],
+    });
+
+    expect(note).toContain(
+      '- 1788428549_6a994105719e0.pdf (indexed for search, in the code sandbox)',
+    );
+    expect(note).toContain('never tell the user that nothing is attached');
+  });
+
+  it('stays silent when the agent can search the document itself', () => {
+    const note = buildUnreachableAttachmentsNote({
+      attachments: [makeSearchedDocument('paper.docx')],
+      tools: [Tools.file_search],
+    });
+
+    expect(note).toBeUndefined();
+  });
+
+  it('stays silent when the agent can open the sandbox copy', () => {
+    const note = buildUnreachableAttachmentsNote({
+      attachments: [makeSearchedDocument('paper.docx')],
+      tools: [Tools.execute_code],
+    });
+
+    expect(note).toBeUndefined();
+  });
+
+  it('skips files whose contents are already in the conversation', () => {
+    const readInFull = makeTextFile('file-1', 'order.pdf', 'Office order text');
+    const spreadsheetWithPreview = {
+      file_id: 'file-2',
+      filename: 'budget.xlsx',
+      source: FileSources.local,
+      metadata: { codeEnvRef, preparation: { delivery: 'sandbox', contextText: true } },
+    } as unknown as IMongoFile;
+    const image = {
+      file_id: 'file-3',
+      filename: 'photo.png',
+      type: 'image/png',
+      source: FileSources.local,
+    } as IMongoFile;
+
+    const note = buildUnreachableAttachmentsNote({
+      attachments: [readInFull, spreadsheetWithPreview, image],
+      tools: [],
+    });
+
+    expect(note).toBeUndefined();
+  });
+
+  it('lists only the attachments the agent cannot reach', () => {
+    const note = buildUnreachableAttachmentsNote({
+      attachments: [
+        makeTextFile('file-1', 'order.pdf', 'Office order text'),
+        makeSearchedDocument('manuscript.docx'),
+      ],
+      tools: [],
+    });
+
+    expect(note).toContain('- manuscript.docx');
+    expect(note).not.toContain('order.pdf');
   });
 });
