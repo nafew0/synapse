@@ -2,7 +2,12 @@ import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { EModelEndpoint, EToolResources, Providers } from 'librechat-data-provider';
+import {
+  Providers,
+  EModelEndpoint,
+  EToolResources,
+  convertStringsToRegex,
+} from 'librechat-data-provider';
 import AttachFileMenu from '../AttachFileMenu';
 
 jest.mock('~/hooks', () => ({
@@ -396,6 +401,80 @@ describe('AttachFileMenu', () => {
         expect.any(Object),
         EToolResources.file_search,
       );
+    });
+  });
+
+  describe('Picker filter', () => {
+    const endpointFileConfig = {
+      supportedMimeTypes: convertStringsToRegex([
+        '^image/(jpeg|png)$',
+        '^application/pdf$',
+        '^text/x-python$',
+      ]),
+    };
+
+    /** Records the input's `accept` at the moment the picker opens. */
+    function captureAcceptOnClick(select: () => void): string {
+      const originalClick = HTMLInputElement.prototype.click;
+      let accept = 'not-opened';
+      HTMLInputElement.prototype.click = function click() {
+        accept = this.accept;
+      };
+      try {
+        select();
+      } finally {
+        HTMLInputElement.prototype.click = originalClick;
+      }
+      return accept;
+    }
+
+    it('limits the auto-prepared "Upload file" picker to the endpoint allowlist', () => {
+      setupMocks();
+      mockUseGetStartupConfig.mockReturnValue({ data: { autoFilePreparationEnabled: true } });
+      renderMenu({ endpointType: EModelEndpoint.agents, endpointFileConfig });
+      openMenu();
+      const accept = captureAcceptOnClick(() =>
+        fireEvent.click(screen.getByText('com_ui_upload_file')),
+      );
+      expect(new Set(accept.split(','))).toEqual(
+        new Set(['image/*', '.heif', '.heic', '.pdf', 'application/pdf', '.py', 'text/x-python']),
+      );
+    });
+
+    it('limits the File Search picker to the endpoint allowlist', () => {
+      setupMocks();
+      mockUseAgentCapabilities.mockReturnValue({
+        contextEnabled: false,
+        fileSearchEnabled: true,
+        codeEnabled: false,
+      });
+      mockUseAgentToolPermissions.mockReturnValue({
+        fileSearchAllowedByAgent: true,
+        codeAllowedByAgent: false,
+        provider: undefined,
+      });
+      renderMenu({ endpointType: EModelEndpoint.agents, endpointFileConfig });
+      openMenu();
+      const accept = captureAcceptOnClick(() =>
+        fireEvent.click(screen.getByText('Upload for File Search')),
+      );
+      expect(accept.split(',')).toContain('.pdf');
+      expect(accept.split(',')).not.toContain('video/*');
+    });
+
+    it('leaves the "Upload as Text" picker open, since it is checked against the text/OCR lists', () => {
+      setupMocks();
+      mockUseAgentCapabilities.mockReturnValue({
+        contextEnabled: true,
+        fileSearchEnabled: false,
+        codeEnabled: false,
+      });
+      renderMenu({ endpointType: EModelEndpoint.agents, endpointFileConfig });
+      openMenu();
+      const accept = captureAcceptOnClick(() =>
+        fireEvent.click(screen.getByText('Upload as Text')),
+      );
+      expect(accept).toBe('');
     });
   });
 

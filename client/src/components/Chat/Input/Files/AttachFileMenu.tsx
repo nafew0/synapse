@@ -19,6 +19,7 @@ import {
   Providers,
   EToolResources,
   EModelEndpoint,
+  getUploadMimeAccept,
   getConfiguredMimeAccept,
   bedrockDocumentMimeTypes,
   defaultAgentCapabilities,
@@ -163,8 +164,10 @@ const AttachFileMenu = ({
         inputRef.current.accept = `image/*,.heif,.heic,${bedrockDocumentExtensions}`;
       } else if (fileType === 'image_document_video_audio') {
         inputRef.current.accept = 'image/*,.heif,.heic,.pdf,application/pdf,video/*,audio/*';
-      } else {
+      } else if (toolResourceRef.current === EToolResources.context) {
         inputRef.current.accept = '';
+      } else {
+        inputRef.current.accept = getUploadMimeAccept(endpointFileConfig?.supportedMimeTypes);
       }
       inputRef.current.click();
       inputRef.current.accept = '';

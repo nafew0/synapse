@@ -5,6 +5,7 @@ import {
   fileConfigSchema,
   isAnthropicTextDocumentType,
   getConfiguredMimeAccept,
+  getUploadMimeAccept,
   bedrockDocumentMimeTypes,
   isAnthropicDocumentType,
   isPermissiveMimeConfig,
@@ -1550,10 +1551,18 @@ describe('getConfiguredMimeAccept', () => {
     expect(getConfiguredMimeAccept([/^application\/x-librechat-unknown$/], ALL)).toBeUndefined();
   });
 
-  it('falls back when any configured type is unrepresentable, rather than emitting a partial accept', () => {
+  it('falls back when a pattern reaches unlisted document types, rather than emitting a partial accept', () => {
     expect(
-      getConfiguredMimeAccept([/^application\/pdf$/, /^text\/x-python$/], IMAGE_DOC),
+      getConfiguredMimeAccept([/^application\/pdf$/, /^text\/.*$/], IMAGE_DOC),
     ).toBeUndefined();
+  });
+
+  it('translates source-file types to their extensions', () => {
+    const accept = toSet(
+      getConfiguredMimeAccept([/^text\/x-python$/, /^application\/typescript$/], IMAGE_DOC),
+    );
+    expect(accept.has('.py')).toBe(true);
+    expect(accept.has('.ts')).toBe(true);
   });
 
   it('translates a fully-representable mixed pdf + audio allowlist on a media-capable path', () => {
@@ -1656,6 +1665,62 @@ describe('getConfiguredMimeAccept', () => {
     );
     expect(accept.has('.epub')).toBe(true);
     expect(accept.has('.parquet')).toBe(true);
+  });
+});
+
+describe('getUploadMimeAccept', () => {
+  const toSet = (accept: string) => new Set(accept.split(',').filter(Boolean));
+
+  it("returns '' when there is no allowlist or it is permissive", () => {
+    expect(getUploadMimeAccept(undefined)).toBe('');
+    expect(getUploadMimeAccept([])).toBe('');
+    expect(getUploadMimeAccept(convertStringsToRegex(['.*']))).toBe('');
+  });
+
+  it("returns '' when a pattern reaches types the picker cannot list", () => {
+    expect(getUploadMimeAccept([/^application\/.*$/])).toBe('');
+  });
+
+  it('lists every category of a finite allowlist, not only what a provider path forwards', () => {
+    const accept = toSet(
+      getUploadMimeAccept(
+        convertStringsToRegex([
+          '^image/(jpeg|png)$',
+          '^application/pdf$',
+          '^text/(plain|x-python)$',
+          '^application/(zip|x-tar)$',
+          '^message/rfc822$',
+        ]),
+      ),
+    );
+    expect(accept).toEqual(
+      new Set([
+        'image/*',
+        '.heif',
+        '.heic',
+        '.pdf',
+        'application/pdf',
+        '.txt',
+        'text/plain',
+        '.py',
+        'text/x-python',
+        '.zip',
+        'application/zip',
+        '.tar',
+        'application/x-tar',
+        '.eml',
+        'message/rfc822',
+      ]),
+    );
+    expect(accept.has('video/*')).toBe(false);
+    expect(accept.has('audio/*')).toBe(false);
+  });
+
+  it('filters the built-in default allowlist instead of leaving the picker open', () => {
+    const accept = toSet(getUploadMimeAccept(supportedMimeTypes));
+    expect(accept.has('.pdf')).toBe(true);
+    expect(accept.has('.docx')).toBe(true);
+    expect(accept.has('image/*')).toBe(true);
   });
 });
 
