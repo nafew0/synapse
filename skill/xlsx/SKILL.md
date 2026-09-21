@@ -27,6 +27,7 @@ license: Proprietary. LICENSE.txt has complete terms
 - **Document every assumption and hardcoded number** where the reader will see it — a cell comment, or an adjacent cell at a table's end. Cite a real source when one exists (`Source: Company 10-K, FY2024, Page 45, Revenue Note, [SEC EDGAR URL]`); when the number came from the user, say so plainly.
 - **A workbook *you create* for someone to fill in** needs a short legend naming which cells to edit, and one example row of realistic values showing the expected format. Never add such a row to a file you were asked to edit.
 - **Editing an existing file: match its conventions exactly.** They override every guideline here. Find its designated input cells first — a distinct font color, fill, or shading marks them — write only there, and leave every existing formula untouched. Follow **Editing a user's workbook** below, and never deliver an edit that has not passed the structure preservation gate.
+- **A tab modeled on the user's sheet is an edit, not a new workbook.** "Make a similar one", "same format as", or "fill a new tab like this one" means copying their sheet, and its fonts, colors and layout override the font, color and number rules here. Follow **Adding a tab modeled on an existing sheet** below. When the user says "new file or edit, whichever is easier", adding the tab is always the answer.
 
 ## Editing a user's workbook
 
@@ -59,7 +60,49 @@ prove nothing else moved.
 6. **Fill the inputs and let the existing formulas compute.** Write quantities and unit costs,
    leave the estimated-cost and total formulas in place, and extend a `SUM` range only when you
    were asked to add rows.
-7. **Pass the structure preservation gate before you deliver.**
+7. **Fit your content to the form; never fit the form to your content.** Column widths, row
+   heights, margins, the page header and footer, print titles and fit-to-page are part of the
+   form. They decide how it prints on the one page the office signs. Never change them unless
+   the user asked. When text or a number is too big for its cell, change the content instead:
+   use the template's own wording style, abbreviate ("2nd mtg, 24 Nov 2025"), move detail into
+   Remarks, or group rows. If it still cannot fit, ask with `ask_user_question`. The gate reports
+   anything that no longer fits as a `fit` issue and any changed print layout as a `layout` issue.
+8. **Pass the structure preservation gate before you deliver.**
+
+## Adding a tab modeled on an existing sheet
+
+Never rebuild a form by hand. Retyping its cells, merges, widths and borders cannot reproduce it
+and is what leaves the new tab broken. Copy the sheet itself, then fill it like any other edit:
+
+1. **Copy it with `copy_sheet.py`,** never with a fresh `Workbook()` or by hand:
+   ```bash
+   python /mnt/data/skills/xlsx/scripts/copy_sheet.py /mnt/data/original.xlsx /mnt/data/original_updated.xlsx \
+     --template 'Sheet1' --name 'Investigation Committee'
+   ```
+   Then load `original_updated.xlsx` with openpyxl, fill the new tab, and save it under the same
+   name. Plain `copy_worksheet` keeps widths, heights, margins and merges but silently drops the
+   page header and footer, print titles, print area, page breaks, freeze panes, zoom, data
+   validation and conditional formatting. The script copies all of these and places the tab
+   right after its template. Neither can copy images or charts, so when `not_copied` lists any,
+   tell the user their logo will be missing from the new tab.
+2. **Inspect the copy with addresses and map the source data onto the template's columns.**
+   Decide which source figure goes into each column before writing (for example: gross amount,
+   VAT, tax deducted at source). Keep each row's formulas (such as `=D8-E8-F8`) and the totals.
+3. **Clear every leftover value from the template in the item rows,** including the numbers and
+   remarks in rows you do not fill. Clear values only and keep the cells' styles and formulas, so
+   empty rows stay part of the printed form.
+4. **Rewrite every hardcoded field for the new subject,** in the template's exact style: header
+   fields (`: 80,000/=`, `: 20/06/2025`), purpose, the advance or deduction lines, and the
+   amount in words, which must match the new total. A field you skip still shows the old
+   sheet's figures.
+5. **Make the items fit the rows the template has.** If there are more items than rows, group
+   them naturally (one row per meeting with the head count as quantity, instead of one row per
+   person) and say so, or ask with `ask_user_question`. Never `insert_rows`: it moves values but
+   leaves every merged range, formula reference and row height where it was, so the signature
+   block and totals end up misaligned.
+6. **Run the gate with the new tab declared against its template:**
+   `--new-sheet 'Investigation Committee:Sheet1'`, with `--allow` ranges on the new tab only. The
+   original sheet gets no `--allow` at all, because it must come back unchanged.
 
 ## Mandatory structure preservation gate
 
@@ -74,10 +117,23 @@ python /mnt/data/skills/xlsx/scripts/verify_structure.py /mnt/data/original.xlsx
 - `--allow` names exactly the ranges you meant to change: a cell (`A19`), a block (`B12:D14`),
   whole rows (`12:14`) or whole columns (`B:D`). Decide them from the task before you run the
   check, and never widen them to make a failing check pass.
-- It compares sheets, merged ranges, column widths, row heights, data validation, conditional
-  formatting, images and charts, and the value and formatting of every cell outside the allowed
-  ranges. It already tolerates what LibreOffice rewrites on save: rounded row heights, explicit
-  default alignment and color alpha bytes.
+- **Every tab you add must be declared with `--new-sheet`,** or the check fails on the sheet list.
+  `--new-sheet 'NEW:TEMPLATE'` declares a tab copied from `TEMPLATE`. It is then compared with
+  that template like an edit, so everything outside its `--allow` ranges must still match.
+  `--new-sheet 'NEW'` declares a tab with no template (a summary, say), which only has to exist.
+  Original sheets must keep their order. New tabs may go anywhere around them.
+- It compares sheets, merged ranges, column widths, row heights, hidden rows and columns, the
+  print layout (orientation, paper, fit to page, margins, page header and footer, print area and
+  titles, page breaks, centering, freeze panes), data validation, conditional formatting, images
+  and charts, and the value and formatting of every cell outside the allowed ranges.
+- **It also checks that every cell's content fits the sheet's existing widths and heights**
+  (`fit` issues): a number that would print as `####`, text cut off by a merged cell or a filled
+  neighbour, wrapped text taller than a fixed-height row. A cell that already overflowed in the
+  original is not reported. Fix a `fit` issue by changing the content, as in step 7 of
+  **Editing a user's workbook**, never by resizing the column or row. It already
+  tolerates what LibreOffice rewrites on save: rounded row heights, explicit default alignment,
+  color alpha bytes, the automatic color (`indexed 64`) saved as `auto`, and page options the
+  original left unset.
 - It prints JSON: `status: success` exits 0; `changes_found` exits 2 and lists every difference;
   an `error` key exits 1 for bad arguments.
 - **Do not return or attach the workbook unless it reports `success`.** On failure, start again
@@ -146,6 +202,9 @@ literal `#NAME?` baked into the file you deliver.
 - **Reading a model takes two loads.** `data_only=True` yields cached values with the formulas gone; the default yields formula strings with no values. One pass cannot give you both.
 - **`data_only=True` is destructive if you save.** That workbook has no formulas left, so saving replaces every one with a literal — permanently.
 - **`data_only=True` on a file openpyxl just wrote returns `None` everywhere** — run `recalc.py` first. (A formula whose result is `""` also reads back as `None`.)
+- **`insert_rows` / `delete_rows` only shift cell values.** Merged ranges, formula references (`=SUM(D8:D17)` stays as it was), row heights and data validation stay put, so everything below the insertion point breaks. Avoid them in any user's form.
+- **`copy_worksheet` works within one workbook only,** and leaves out the page header and footer, print titles, print area, page breaks, freeze panes, data validation, conditional formatting, images and charts. Use `scripts/copy_sheet.py` instead.
+- **`ws.print_title_rows = None` does nothing,** and neither does it for `print_area`. The old value is kept.
 - **Merged cells: write the top-left anchor only.** Every other cell in the range is a `MergedCell` whose `.value` is read-only. **Never unmerge to get past that error** — it means the address is wrong.
 - **`.xlsm` loses its macros unless you pass `keep_vba=True`** to `load_workbook`.
 - **A sheet name containing a space must be quoted** in a cross-sheet reference: `='Assumptions Inputs'!$B$5`. Unquoted, it evaluates to `#VALUE!`.

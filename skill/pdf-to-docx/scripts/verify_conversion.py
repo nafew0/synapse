@@ -7,6 +7,8 @@ Checks, in the order they matter:
 
     pages        the Word document has as many pages as the PDF
     text         the recovered text is at least --min-text of the PDF's, and not a token amount
+    script       no glyph came through as a `(cid:N)` placeholder, and no Bangla vowel sign stands
+                 before its consonant, as it does when text is copied in drawn order
     picture_book no page-sized image stands in for a page, and a document with pictures has text
     images       every raster in the PDF appears in word/media, matched by pixel size, not by name
     qr           every QR that decodes in the PDF still decodes from the output's media
@@ -36,6 +38,14 @@ PAGE_DRIFT = 0.25
 DEFAULT_MIN_TEXT_RATIO = 0.70
 # Under this, "some text came through" is indistinguishable from a caption on a page image.
 MIN_CHARACTERS = 200
+PLACEHOLDER = re.compile(r'\(cid:\d+\)')
+DRAWN_ORDER = re.compile(r'(?:^|[\s(\[‘“"\'/-])[\u09be-\u09cc\u09d7]')
+"""A dependent vowel sign at the start of a word. Typed Bangla never has one: ি, ে and ৈ follow their
+consonant in the text even though they are drawn before it. Text copied in drawn order has one in
+nearly every line."""
+MAX_DRAWN_ORDER = 2
+"""Misplaced vowel signs tolerated before the Bangla counts as unrecovered: a source may carry a
+typo or two of its own."""
 # A picture this close to the page in both directions has replaced the page rather than sat on it.
 PAGE_IMAGE_COVERAGE = 0.9
 PAGE_SIZE_TOLERANCE_POINTS = 1.0
@@ -87,6 +97,7 @@ def check(pdf_path, docx_path, mode=LAYOUT_EDITABLE, min_text_ratio=DEFAULT_MIN_
         _check_columns(findings, pdf_path)
     if mode != VISUAL_FIDELITY:
         _check_text(findings, source_text, output_text, min_text_ratio)
+        _check_script(findings, probe.docx_paragraphs(docx_path))
         _check_picture_book(findings, docx_path, output_text, output_media, mode)
         # Losing a logo, a seal or a signature is a defect in any mode that claims to be a
         # conversion. Scoping this to layout-editable let a rebuilt, image-free document pass.
@@ -262,6 +273,30 @@ def _gutter(chars, middle):
         if abs(centre - middle) <= COLUMN_DRIFT:
             return centre
     return None
+
+
+def _check_script(findings, paragraphs):
+    """Text that exists but cannot be read: glyph placeholders, and Bangla in drawn order.
+
+    Both come from a PDF whose font maps its conjuncts to nothing and its vowel signs in the order
+    they are drawn. The character count cannot see either — the damage has as many characters as
+    the text it replaced — but a reader sees it in every line.
+    """
+    placeholders = sum(len(PLACEHOLDER.findall(text)) for text in paragraphs)
+    drawn = sum(len(DRAWN_ORDER.findall(text)) for text in paragraphs)
+    if placeholders:
+        _finding(
+            findings,
+            'script',
+            f'{placeholders} glyph(s) came through as (cid:N) placeholders instead of letters',
+        )
+    if drawn > MAX_DRAWN_ORDER:
+        _finding(
+            findings,
+            'script',
+            f'{drawn} Bangla vowel sign(s) stand before their consonant: the text is in drawn order, '
+            'not typed order. Install the PDF\'s Bangla font so convert.py can recover it',
+        )
 
 
 def _check_text(findings, source_text, output_text, min_text_ratio):

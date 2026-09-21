@@ -89,6 +89,16 @@ def docx_text(path):
     )
 
 
+def docx_paragraphs(path):
+    """The text of every paragraph a reader sees, runs joined as Word joins them."""
+    return [
+        ''.join(node.text or '' for node in live_children(paragraph) if node.tag == W + 't')
+        for _, root in _visible_parts(path)
+        for paragraph in live_children(root)
+        if paragraph.tag == W + 'p'
+    ]
+
+
 def docx_pages(path):
     """LibreOffice separates pages with explicit breaks, so counting them counts the pages."""
     root = _document_root(path)
@@ -272,10 +282,15 @@ def pdf_page_size(path):
 
 
 def pdf_text(path):
+    """The PDF's readable text; see `bangla.readable_text`. Falls back to the raw text layer."""
+    import bangla
     import pdfplumber
 
-    with pdfplumber.open(str(path)) as pdf:
-        return ' '.join(page.extract_text() or '' for page in pdf.pages)
+    try:
+        return bangla.readable_text(path)
+    except Exception:  # noqa: BLE001 - the raw layer is still a yardstick, if a harsher one
+        with pdfplumber.open(str(path)) as pdf:
+            return ' '.join(page.extract_text() or '' for page in pdf.pages)
 
 
 def pdf_image_count(path):

@@ -77,13 +77,37 @@ python /mnt/data/skills/pdf-to-docx/scripts/convert.py /mnt/data/input.pdf /mnt/
 ```
 
 It prints one line of JSON — mode, pages, characters recovered against the source, images carried
-over — and exits non-zero without writing a file when it cannot honour the mode. It does not fall
-back to another mode; neither should you.
+over, and a `bangla` block when the PDF sets Bangla — and exits non-zero without writing a file
+when it cannot honour the mode. It does not fall back to another mode; neither should you.
 
 For `layout-editable` it also repairs what LibreOffice's import leaves broken: a full-bleed page
 fill is re-anchored to the page origin *behind* the text (untouched, it paints over the text and a
 dark page turns into a solid block), and any raster the import dropped is re-inserted at its
 source rectangle. `--no-restore` skips that repair; use it only to isolate a problem.
+
+## Bangla PDFs
+
+Most Bangla PDFs from Bangladeshi offices — anything printed from a website, wkhtmltopdf, Qt — look
+right and carry a broken text layer: conjuncts (ক্ষ, ন্ত, ম্ব) map to no character at all, ি ে ৈ come
+out in front of their consonant, and bold is faked by printing every glyph twice. Copied as-is,
+বিশ্ববিদ্যালয় arrives in Word as `িব(cid:10)িবদ(cid:11)ালয়`.
+
+`semantic-editable` repairs this by itself. It matches each glyph the PDF drew to the same font
+installed here, reads back which characters the glyph stands for, puts them in typed order, and
+checks every word by shaping it again with HarfBuzz. It also drops the fake-bold copies and keeps
+those words bold, names each run's font by its real family (`SolaimanLipi`, not
+`SolaimanLipiNormal`), and sets the size, weight and language Word reads for Bangla (`w:szCs`,
+`w:bCs`, `bn-BD`).
+
+Read the `bangla` block in the JSON:
+
+- `verified` equal to `recovered`, `mismatched` 0 — every Bangla word was recovered and checked.
+- `fonts_missing` not empty — the PDF uses a Bangla font that is not installed, and the text set in
+  it cannot be recovered. The gate fails on it. Tell the user which font, and do not deliver.
+- `unchecked` above 0 — HarfBuzz is not installed; the text was recovered but not verified. Say so.
+
+`layout-editable` goes through LibreOffice's own PDF import, which reads the broken layer as-is.
+For a Bangla PDF, use `semantic-editable`.
 
 ## Mandatory gate before delivery
 
@@ -97,7 +121,9 @@ python /mnt/data/skills/pdf-to-docx/scripts/verify_conversion.py /mnt/data/input
 It checks page count, text recovered against the PDF (70% floor, and never a token few hundred
 characters), that no page-sized image stands in for a page, that every raster in the PDF is in
 `word/media`, that every QR still decodes, that the file actually opens, and that the Word page
-matches the PDF page. Text and pictures are counted across the headers and footers too, so a
+matches the PDF page, and that no text came through as `(cid:N)` placeholders or as Bangla in
+drawn order (a vowel sign starting a word). Text and pictures are counted across the headers and
+footers too, so a
 letterhead moved into a real Word header is not read as content that went missing. The image and QR checks run in every mode — a lost seal is a defect however
 the file was produced.
 
@@ -131,6 +157,11 @@ not adjectives:
 > passed: the text reflows as paragraphs, all images present, QR code still decodable, page size
 > unchanged.
 
+For a Bangla PDF, add the Bangla line: "978 Bangla words recovered from the PDF's broken text layer
+and each verified against the glyphs it drew; fonts kept as SolaimanLipi and Nikosh." Page numbers
+in a repeated footer become Word fields, which count in Latin digits (১ / ৪ becomes 1 / 4); say so
+when the source numbered its pages in Bangla.
+
 Never describe a file as editable, or its layout as preserved, without a clean gate run behind the
 claim.
 
@@ -159,3 +190,4 @@ claim.
 | `scripts/semantic.py` | The `semantic-editable` rebuild: paragraphs, headings, lists, tables, pictures |
 | `scripts/restore.py` | Page-background and dropped-image repair, run by `convert.py` |
 | `scripts/probe.py` | Shared PDF and .docx measurements used by both scripts |
+| `scripts/bangla.py` | Bangla recovery from a broken text layer, used by `semantic.py` and the gate |

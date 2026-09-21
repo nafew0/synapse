@@ -277,10 +277,17 @@ class TestSemantic:
     def test_a_block_of_short_lines_stays_a_stack_of_lines(self):
         """A letterhead is lines that never reached the edge; prose is lines that wrapped at it."""
         frame = {'left': 72.0, 'right': 523.0}
-        lines = [{'x1': 258.0}, {'x1': 241.0}]
+        lines = [{'x0': 96.0, 'x1': 258.0}, {'x0': 110.0, 'x1': 241.0}]
         assert semantic._is_stacked({'x0': 96.0, 'x1': 258.0, 'lines': lines}, frame) is True
-        wrapped = [{'x1': 520.0}, {'x1': 388.0}]
+        wrapped = [{'x0': 72.0, 'x1': 520.0}, {'x0': 72.0, 'x1': 388.0}]
         assert semantic._is_stacked({'x0': 72.0, 'x1': 520.0, 'lines': wrapped}, frame) is False
+
+    def test_a_signer_block_against_the_right_margin_is_still_a_stack(self):
+        """Name and designation reach the right edge without filling a line; joined, they read as
+        one sentence."""
+        frame = {'left': 72.0, 'right': 523.0}
+        signer = [{'x0': 440.0, 'x1': 520.0}, {'x0': 425.0, 'x1': 521.0}]
+        assert semantic._is_stacked({'x0': 425.0, 'x1': 521.0, 'lines': signer}, frame) is True
 
     def test_it_refuses_a_page_with_nothing_on_it(self, tmp_path):
         blank = build_pdf(tmp_path / 'blank.pdf', [lambda page: None])
