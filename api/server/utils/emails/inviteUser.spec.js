@@ -45,6 +45,8 @@ describe('inviteUser email template', () => {
     const html = text(fullPayload);
 
     expect(html).toContain('Invitation \u00b7 University of Dhaka');
+    expect(html).toContain('ORGANIZATION');
+    expect(html).toContain('Your organization has a seat waiting for you.');
     expect(html).toContain('nafisa.rahman@du.ac.bd');
     expect(html).toContain('25 September 2026');
     expect(html).toContain('info@bdren.ai');
@@ -73,7 +75,7 @@ describe('inviteUser email template', () => {
     const html = text(basePayload);
 
     expect(html).toContain('A seat is waiting for you.');
-    expect(html).not.toContain('INSTITUTION');
+    expect(html).not.toContain('ORGANIZATION');
     expect(html).not.toContain('OPEN BEFORE');
     expect(html).not.toContain('ACCOUNT');
     expect(html).not.toContain('undefined');
