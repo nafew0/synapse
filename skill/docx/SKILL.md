@@ -19,13 +19,15 @@ A `.docx` is a ZIP archive of XML files. Choose your approach by task:
 
 ## Creating with docx-js — gotchas
 
+Write the build script to `/mnt/data/qa/build.js` and run it in the same call: `mkdir -p /mnt/data/qa && cat > /mnt/data/qa/build.js <<'EOF' … EOF` then `node /mnt/data/qa/build.js`. `qa/` is never shown to the user and survives between calls, so if the run fails, fix that file on the next call and run it again. A script in `/tmp` is gone by then.
+
 `docx` is preinstalled — do not run `npm install` first; write the script and `require('docx')` directly. Only if that require fails: `npm install docx`. The model knows the API; these are the footguns:
 
 - **Page size defaults to A4.** For US Letter set `page: { size: { width: 12240, height: 15840 } }` (DXA; 1440 = 1″).
 - **Landscape:** pass portrait dimensions and `orientation: PageOrientation.LANDSCAPE` — docx-js swaps width/height internally.
 - **Tables need dual widths:** set `columnWidths` on the table AND `width` on every cell, both in `WidthType.DXA` (PERCENTAGE breaks in Google Docs). Column widths must sum to the table width.
 - **Table shading:** use `ShadingType.CLEAR`, never `SOLID` (renders black).
-- **Lists:** never insert `•` literally; use a `numbering` config with `LevelFormat.BULLET`.
+- **Lists:** never insert `•` literally; use a `numbering` config with `LevelFormat.BULLET`. The key is `config` and it takes an array: `new Document({ numbering: { config: [{ reference: "bullets", levels: [{ level: 0, format: LevelFormat.BULLET, text: "•", alignment: AlignmentType.LEFT }] }] }, sections })`, then `new Paragraph({ numbering: { reference: "bullets", level: 0 }, children })`. `configurations`, or a single object instead of an array, fails with `options.config is not iterable`.
 - **`ImageRun` requires `type:`** (`"png"`, `"jpg"`, …).
 - **`PageBreak` must be inside a `Paragraph`.**
 - **Never use `\n`** — use separate `Paragraph` elements.
@@ -38,13 +40,15 @@ A `.docx` is a ZIP archive of XML files. Choose your approach by task:
 After writing a `.docx`, render it and look at it:
 
 ```bash
-mkdir -p /mnt/data/.render
-python scripts/office/soffice.py --headless --convert-to pdf --outdir /mnt/data/.render output.docx
-pdftoppm -jpeg -r 100 /mnt/data/.render/output.pdf /mnt/data/.render/page
-ls /mnt/data/.render/page-*.jpg   # then Read the images
+mkdir -p /mnt/data/qa && \
+python3 /mnt/data/skills/docx/scripts/office/soffice.py --headless --convert-to pdf --outdir /mnt/data/qa /mnt/data/output.docx && \
+pdftoppm -jpeg -r 100 /mnt/data/qa/output.pdf /mnt/data/qa/page && \
+ls /mnt/data/qa/page-*.jpg   # then Read the images
 ```
 
-**Render into `/mnt/data/.render`, never into `/mnt/data` itself.** Everything written directly to `/mnt/data` is delivered to the user as a result, so a checked document arrives with a page image per page and a stray PDF beside it. A dot-prefixed directory is skipped by that collection while staying readable across calls.
+**Render into `/mnt/data/qa`, never into `/mnt/data` itself.** A file at the top of `/mnt/data` is delivered to the user, so a checked document would arrive with a page image per page and a stray PDF beside it. A file in a subdirectory is not delivered, and it survives between calls, so the images can still be read on the next call.
+
+**Do not use a dot-prefixed directory such as `.render/`.** It is hidden from the user, but it is also wiped between calls, so a render written there cannot be read back at all.
 
 `pdftoppm` zero-pads page numbers to the width of the page count (`page-01.jpg`…`page-12.jpg`).
 

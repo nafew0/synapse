@@ -127,23 +127,29 @@ specialists:
       never rebuild content in a way that drops the original styling. Validate structure,
       fonts, Bangla rendering, and page layout. Reject encrypted, macro-enabled, signed,
       corrupt, or preservation-unsafe inputs. Always return downloadable artifacts.
-      Write the generator script to /tmp, never /mnt/data -- /tmp is same-call scratch and
-      never reaches the user; only the actual DOCX/PDF deliverable belongs in /mnt/data.
-      Writing the script and running it are ONE bash_tool call, whatever the language.
-      /tmp is wiped between calls, so a later call finds nothing and the run fails with
-      "No such file or directory" / "Cannot find module". Chain them:
-        cat > /tmp/build.js <<'EOF' ... EOF
-        node /tmp/build.js
-      -- both in the same command, with the run on the line after the closing EOF. The same
-      applies to python3 /tmp/build.py, and to any helper you write. Anything that genuinely
-      has to survive across calls belongs under /mnt/data.
+      Write the generator script to /mnt/data/qa, never the top of /mnt/data -- qa is a
+      subdirectory, so the user never sees it, and unlike /tmp it survives between calls.
+      Only the actual DOCX/PDF deliverable belongs at the top of /mnt/data. Write and run the
+      script in the same bash_tool call:
+        mkdir -p /mnt/data/qa && cat > /mnt/data/qa/build.js <<'EOF' ... EOF
+        node /mnt/data/qa/build.js
+      If it fails, fix /mnt/data/qa/build.js on the next call -- with sed, or by rewriting
+      it -- and run it again; it is still there. The same applies to python3
+      /mnt/data/qa/build.py and to any helper you write. Never leave a script in /tmp: /tmp
+      is wiped between calls, so a script there cannot be patched afterwards. /tmp is only
+      for an unpacked document tree, which is unzipped, edited and re-zipped in one call.
       A file written at the top of /mnt/data is delivered to the user; a file in any
       subdirectory is not. So the deliverable goes at the top, and everything else —
       verification renders, contact sheets, intermediate PDFs, unpacked document trees,
-      scratch copies — goes in a subdirectory, by convention /mnt/data/qa. Those survive
-      between calls, so you can write on one call and read back on the next, and the user
-      never sees them. Do not copy them to the top level to show your work; describe what
-      you checked in your final response instead.
+      scratch copies — goes in a subdirectory, by convention the directory /mnt/data/qa/
+      (create it first: mkdir -p /mnt/data/qa). qa is a directory, not a name prefix: a
+      path like /mnt/data/qa_notes.txt is a top-level file and is delivered to the user.
+      Files under /mnt/data/qa/ survive between calls, so you can write on one call and read
+      back on the next, and the user never sees them. Do not copy them to the top level to
+      show your work; describe what you checked in your final response instead.
+      To read a document's text, print it rather than writing a file beside the deliverable:
+      pdftotext -layout file.pdf - | sed -n '1,200p'. A text dump the user did not ask for
+      must not be written at the top of /mnt/data.
       One request means one file at the top level. When a check fails, replace the
       deliverable rather than writing a corrected copy beside it: rebuild under the
       subdirectory and move it over the original path. Never leave _fixed, _v2 or _final
@@ -195,23 +201,29 @@ specialists:
       totals. Never return the artifact after only saving it. If either command fails, fix the
       workbook and run both commands again. Report the checked cells and verified totals.
       Always return downloadable artifacts.
-      Write the generator script to /tmp, never /mnt/data -- /tmp is same-call scratch and
-      never reaches the user; only the actual workbook deliverable belongs in /mnt/data.
-      Writing the script and running it are ONE bash_tool call, whatever the language.
-      /tmp is wiped between calls, so a later call finds nothing and the run fails with
-      "No such file or directory" / "Cannot find module". Chain them:
-        cat > /tmp/build.js <<'EOF' ... EOF
-        node /tmp/build.js
-      -- both in the same command, with the run on the line after the closing EOF. The same
-      applies to python3 /tmp/build.py, and to any helper you write. Anything that genuinely
-      has to survive across calls belongs under /mnt/data.
+      Write the generator script to /mnt/data/qa, never the top of /mnt/data -- qa is a
+      subdirectory, so the user never sees it, and unlike /tmp it survives between calls.
+      Only the actual workbook deliverable belongs at the top of /mnt/data. Write and run the
+      script in the same bash_tool call:
+        mkdir -p /mnt/data/qa && cat > /mnt/data/qa/build.js <<'EOF' ... EOF
+        node /mnt/data/qa/build.js
+      If it fails, fix /mnt/data/qa/build.js on the next call -- with sed, or by rewriting
+      it -- and run it again; it is still there. The same applies to python3
+      /mnt/data/qa/build.py and to any helper you write. Never leave a script in /tmp: /tmp
+      is wiped between calls, so a script there cannot be patched afterwards. /tmp is only
+      for an unpacked document tree, which is unzipped, edited and re-zipped in one call.
       A file written at the top of /mnt/data is delivered to the user; a file in any
       subdirectory is not. So the deliverable goes at the top, and everything else —
       verification renders, contact sheets, intermediate PDFs, unpacked document trees,
-      scratch copies — goes in a subdirectory, by convention /mnt/data/qa. Those survive
-      between calls, so you can write on one call and read back on the next, and the user
-      never sees them. Do not copy them to the top level to show your work; describe what
-      you checked in your final response instead.
+      scratch copies — goes in a subdirectory, by convention the directory /mnt/data/qa/
+      (create it first: mkdir -p /mnt/data/qa). qa is a directory, not a name prefix: a
+      path like /mnt/data/qa_notes.txt is a top-level file and is delivered to the user.
+      Files under /mnt/data/qa/ survive between calls, so you can write on one call and read
+      back on the next, and the user never sees them. Do not copy them to the top level to
+      show your work; describe what you checked in your final response instead.
+      To read a document's text, print it rather than writing a file beside the deliverable:
+      pdftotext -layout file.pdf - | sed -n '1,200p'. A text dump the user did not ask for
+      must not be written at the top of /mnt/data.
       One request means one file at the top level. When a check fails, replace the
       deliverable rather than writing a corrected copy beside it: rebuild under the
       subdirectory and move it over the original path. Never leave _fixed, _v2 or _final
@@ -255,23 +267,29 @@ specialists:
       Preserve themes, notes, untouched slides, image proportions, and existing layouts.
       Render through LibreOffice and check text overflow and visual integrity. Always
       return downloadable artifacts.
-      Write the generator script to /tmp, never /mnt/data -- /tmp is same-call scratch and
-      never reaches the user; only the actual PPTX deliverable belongs in /mnt/data.
-      Writing the script and running it are ONE bash_tool call, whatever the language.
-      /tmp is wiped between calls, so a later call finds nothing and the run fails with
-      "No such file or directory" / "Cannot find module". Chain them:
-        cat > /tmp/build.js <<'EOF' ... EOF
-        node /tmp/build.js
-      -- both in the same command, with the run on the line after the closing EOF. The same
-      applies to python3 /tmp/build.py, and to any helper you write. Anything that genuinely
-      has to survive across calls belongs under /mnt/data.
+      Write the generator script to /mnt/data/qa, never the top of /mnt/data -- qa is a
+      subdirectory, so the user never sees it, and unlike /tmp it survives between calls.
+      Only the actual PPTX deliverable belongs at the top of /mnt/data. Write and run the
+      script in the same bash_tool call:
+        mkdir -p /mnt/data/qa && cat > /mnt/data/qa/build.js <<'EOF' ... EOF
+        node /mnt/data/qa/build.js
+      If it fails, fix /mnt/data/qa/build.js on the next call -- with sed, or by rewriting
+      it -- and run it again; it is still there. The same applies to python3
+      /mnt/data/qa/build.py and to any helper you write. Never leave a script in /tmp: /tmp
+      is wiped between calls, so a script there cannot be patched afterwards. /tmp is only
+      for an unpacked document tree, which is unzipped, edited and re-zipped in one call.
       A file written at the top of /mnt/data is delivered to the user; a file in any
       subdirectory is not. So the deliverable goes at the top, and everything else —
       verification renders, contact sheets, intermediate PDFs, unpacked document trees,
-      scratch copies — goes in a subdirectory, by convention /mnt/data/qa. Those survive
-      between calls, so you can write on one call and read back on the next, and the user
-      never sees them. Do not copy them to the top level to show your work; describe what
-      you checked in your final response instead.
+      scratch copies — goes in a subdirectory, by convention the directory /mnt/data/qa/
+      (create it first: mkdir -p /mnt/data/qa). qa is a directory, not a name prefix: a
+      path like /mnt/data/qa_notes.txt is a top-level file and is delivered to the user.
+      Files under /mnt/data/qa/ survive between calls, so you can write on one call and read
+      back on the next, and the user never sees them. Do not copy them to the top level to
+      show your work; describe what you checked in your final response instead.
+      To read a document's text, print it rather than writing a file beside the deliverable:
+      pdftotext -layout file.pdf - | sed -n '1,200p'. A text dump the user did not ask for
+      must not be written at the top of /mnt/data.
       One request means one file at the top level. When a check fails, replace the
       deliverable rather than writing a corrected copy beside it: rebuild under the
       subdirectory and move it over the original path. Never leave _fixed, _v2 or _final
