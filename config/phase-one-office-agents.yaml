@@ -135,10 +135,15 @@ specialists:
       A file written at the top of /mnt/data is delivered to the user; a file in any
       subdirectory is not. So the deliverable goes at the top, and everything else —
       verification renders, contact sheets, intermediate PDFs, unpacked document trees,
-      scratch copies — goes in a subdirectory, by convention /mnt/data/qa. Those survive
-      between calls, so you can write on one call and read back on the next, and the user
-      never sees them. Do not copy them to the top level to show your work; describe what
-      you checked in your final response instead.
+      scratch copies — goes in a subdirectory, by convention the directory /mnt/data/qa/
+      (create it first: mkdir -p /mnt/data/qa). qa is a directory, not a name prefix: a
+      path like /mnt/data/qa_notes.txt is a top-level file and is delivered to the user.
+      Files under /mnt/data/qa/ survive between calls, so you can write on one call and read
+      back on the next, and the user never sees them. Do not copy them to the top level to
+      show your work; describe what you checked in your final response instead.
+      To read a document's text, print it rather than writing a file beside the deliverable:
+      pdftotext -layout file.pdf - | sed -n '1,200p'. A text dump the user did not ask for
+      must not be written at the top of /mnt/data.
       One request means one file at the top level. When a check fails, replace the
       deliverable rather than writing a corrected copy beside it: rebuild under the
       subdirectory and move it over the original path. Never leave _fixed, _v2 or _final
@@ -199,10 +204,15 @@ specialists:
       A file written at the top of /mnt/data is delivered to the user; a file in any
       subdirectory is not. So the deliverable goes at the top, and everything else —
       verification renders, contact sheets, intermediate PDFs, unpacked document trees,
-      scratch copies — goes in a subdirectory, by convention /mnt/data/qa. Those survive
-      between calls, so you can write on one call and read back on the next, and the user
-      never sees them. Do not copy them to the top level to show your work; describe what
-      you checked in your final response instead.
+      scratch copies — goes in a subdirectory, by convention the directory /mnt/data/qa/
+      (create it first: mkdir -p /mnt/data/qa). qa is a directory, not a name prefix: a
+      path like /mnt/data/qa_notes.txt is a top-level file and is delivered to the user.
+      Files under /mnt/data/qa/ survive between calls, so you can write on one call and read
+      back on the next, and the user never sees them. Do not copy them to the top level to
+      show your work; describe what you checked in your final response instead.
+      To read a document's text, print it rather than writing a file beside the deliverable:
+      pdftotext -layout file.pdf - | sed -n '1,200p'. A text dump the user did not ask for
+      must not be written at the top of /mnt/data.
       One request means one file at the top level. When a check fails, replace the
       deliverable rather than writing a corrected copy beside it: rebuild under the
       subdirectory and move it over the original path. Never leave _fixed, _v2 or _final
@@ -260,10 +270,15 @@ specialists:
       A file written at the top of /mnt/data is delivered to the user; a file in any
       subdirectory is not. So the deliverable goes at the top, and everything else —
       verification renders, contact sheets, intermediate PDFs, unpacked document trees,
-      scratch copies — goes in a subdirectory, by convention /mnt/data/qa. Those survive
-      between calls, so you can write on one call and read back on the next, and the user
-      never sees them. Do not copy them to the top level to show your work; describe what
-      you checked in your final response instead.
+      scratch copies — goes in a subdirectory, by convention the directory /mnt/data/qa/
+      (create it first: mkdir -p /mnt/data/qa). qa is a directory, not a name prefix: a
+      path like /mnt/data/qa_notes.txt is a top-level file and is delivered to the user.
+      Files under /mnt/data/qa/ survive between calls, so you can write on one call and read
+      back on the next, and the user never sees them. Do not copy them to the top level to
+      show your work; describe what you checked in your final response instead.
+      To read a document's text, print it rather than writing a file beside the deliverable:
+      pdftotext -layout file.pdf - | sed -n '1,200p'. A text dump the user did not ask for
+      must not be written at the top of /mnt/data.
       One request means one file at the top level. When a check fails, replace the
       deliverable rather than writing a corrected copy beside it: rebuild under the
       subdirectory and move it over the original path. Never leave _fixed, _v2 or _final

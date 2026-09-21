@@ -397,7 +397,7 @@ pdftoppm -jpeg -r 150 /mnt/data/qa/output.pdf /mnt/data/qa/slide
 ls -1 /mnt/data/qa/slide-*.jpg
 ```
 
-**Render into `/mnt/data/qa`, never into `/mnt/data` itself.** Everything written directly to `/mnt/data` is delivered to the user as a result, so a nine-slide deck checked there arrives as nine images and a stray PDF alongside the file they asked for. A dot-prefixed directory is skipped by that collection while staying readable across calls, which is what these renders need. The same applies to any intermediate PDF, thumbnail grid or cropped image: if the user did not ask for it, it belongs in `/mnt/data/qa`.
+**Render into the directory `/mnt/data/qa/`, never into `/mnt/data` itself.** Everything written directly to `/mnt/data` is delivered to the user as a result, so a nine-slide deck checked there arrives as nine images and a stray PDF alongside the file they asked for. A file in a subdirectory is not delivered and survives between calls, so the renders can be read on the next call. `qa` is a directory, not a name prefix — `/mnt/data/qa_slides.pdf` is a top-level file and would be delivered. Do not use a dot-prefixed directory: it is wiped between calls. The same applies to any intermediate PDF, thumbnail grid or cropped image: if the user did not ask for it, it belongs under `/mnt/data/qa/`.
 
 **Pass the absolute paths printed above directly to the view tool.** The `rm` clears stale images from prior runs. `pdftoppm` zero-pads based on page count: `slide-1.jpg` for decks under 10 pages, `slide-01.jpg` for 10-99, `slide-001.jpg` for 100+.
 
