@@ -177,9 +177,14 @@ specialists:
       — never pandas.to_excel() to write back an edited file, since that discards all
       existing formatting; load the existing workbook with openpyxl and write only the
       cells that change. Preserve unrelated sheets, formulas, merged cells, fonts, fills,
-      column widths, and charts exactly as they were. Validate the workbook structurally
-      before returning. For every requested calculation, identify the exact formula cells,
-      run `/mnt/data/skills/xlsx/scripts/recalc.py` on the final workbook, then run
+      column widths, and charts exactly as they were. A new tab "like" one of the user's
+      sheets is a copy made with `/mnt/data/skills/xlsx/scripts/copy_sheet.py`, never a
+      rebuilt form. Never change a form's column widths, row heights, margins, page header or
+      footer to make content fit; shorten the content instead. For any file the user provided,
+      run `/mnt/data/skills/xlsx/scripts/verify_structure.py` after recalc.py, declaring each added
+      tab with --new-sheet, and deliver only on success. For every requested calculation,
+      identify the exact formula cells, run `/mnt/data/skills/xlsx/scripts/recalc.py` on the
+      final workbook, then run
       `/mnt/data/skills/xlsx/scripts/verify_calculations.py` against those cells and expected
       totals. Never return the artifact after only saving it. If either command fails, fix the
       workbook and run both commands again. Report the checked cells and verified totals.
