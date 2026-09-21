@@ -11,6 +11,28 @@ license: Proprietary. LICENSE.txt has complete terms
 
 This guide covers essential PDF processing operations using Python libraries and command-line tools. For advanced features, JavaScript libraries, and detailed examples, see REFERENCE.md. If you need to fill out a PDF form, read FORMS.md and follow its instructions.
 
+## Converting an existing document to PDF
+
+To turn a Markdown, Word, HTML or plain-text file into a PDF, **convert it — do not rebuild it
+with reportlab.** A hand-written Markdown parser is where failed attempts come from: headings,
+tables, code blocks, links and markup escaping each have to be re-implemented, and each breaks
+in its own way. Two installed tools do the whole job in one call:
+
+```bash
+mkdir -p /mnt/data/qa && \
+pandoc /mnt/data/input.md -o /mnt/data/qa/input.docx && \
+soffice --headless --convert-to pdf --outdir /mnt/data /mnt/data/qa/input.docx
+```
+
+A `.docx`, `.odt`, `.html` or `.txt` source skips pandoc and goes straight to `soffice`. The PDF
+lands at the top of `/mnt/data`, which is what delivers it; the intermediate `.docx` stays in
+`qa/`, which is not delivered. LibreOffice finds an installed Bangla font through fontconfig and
+embeds it, so Bangla text, conjuncts included, renders without registering any font. A
+`failed to launch javaldx` warning on stderr is harmless.
+
+Use reportlab only for a document designed from scratch — a certificate, a form, a generated
+report — not to re-render one that already exists.
+
 ## Quick Start
 
 ```python
@@ -166,6 +188,19 @@ story.append(Paragraph("Content for page 2", styles['Normal']))
 # Build PDF
 doc.build(story)
 ```
+
+#### Escape text before it becomes a Paragraph
+
+`Paragraph` parses its text as XML markup, so a bare `&`, `<` or `>` from user content raises a
+`paraparser` error. Escape the text first and add your own tags around it:
+
+```python
+from xml.sax.saxutils import escape
+story.append(Paragraph(escape(user_text), styles['Normal']))
+```
+
+Write the build script to `/mnt/data/qa/build.py` rather than `/tmp`: `qa/` is not delivered to
+the user and survives between calls, so a failed run can be fixed and re-run on the next call.
 
 #### Subscripts and Superscripts
 
