@@ -759,6 +759,25 @@ const documentMimeExtensions: ReadonlyArray<readonly [string, readonly string[]]
   ['text/markdown', ['.md']],
   ['text/html', ['.html', '.htm']],
   ['text/calendar', ['.ics']],
+  ['text/css', ['.css']],
+  ['text/vtt', ['.vtt']],
+  ['text/xml', ['.xml']],
+  ['text/javascript', ['.js', '.mjs', '.cjs']],
+  ['text/x-c', ['.c']],
+  ['text/x-c++', ['.cpp', '.cc', '.cxx', '.hpp']],
+  ['text/x-h', ['.h']],
+  ['text/x-csharp', ['.cs']],
+  ['text/x-java', ['.java']],
+  ['text/x-php', ['.php']],
+  ['text/x-python', ['.py']],
+  ['text/x-script.python', ['.py']],
+  ['text/x-ruby', ['.rb']],
+  ['text/x-tex', ['.tex']],
+  ['application/typescript', ['.ts', '.tsx']],
+  ['application/x-sh', ['.sh']],
+  ['application/sql', ['.sql']],
+  ['application/vnd.coffeescript', ['.coffee']],
+  ['application/x-tar', ['.tar']],
   ['message/rfc822', ['.eml']],
 ];
 
@@ -786,6 +805,17 @@ const categoryOf = (mimeType: string): MimeUploadCategory => {
   return 'document';
 };
 
+/** Types outside the known universe; a pattern matching one reaches documents the picker can't list. */
+const unlistedDocumentProbes: readonly string[] = [
+  'application/x-librechat-probe',
+  'text/x-librechat-probe',
+  'message/x-librechat-probe',
+];
+
+const allUploadCategories: MimeUploadCapability = {
+  categories: ['image', 'document', 'audio', 'video'],
+};
+
 /** Media types are covered by their `<cat>/*` wildcard token; document types need an explicit entry. */
 const isRepresentable = (mimeType: string): boolean =>
   categoryOf(mimeType) !== 'document' || documentMimeSet.has(mimeType);
@@ -810,6 +840,14 @@ const buildMimeAccept = (
     knownMimeUniverse.some((mimeType) => regex.test(mimeType)),
   );
   if (!everyPatternKnown) {
+    return undefined;
+  }
+
+  const reachesUnlistedDocument =
+    permittedSet.has('document') &&
+    !documentAllowSet &&
+    types.some((regex) => unlistedDocumentProbes.some((probe) => regex.test(probe)));
+  if (reachesUnlistedDocument) {
     return undefined;
   }
 
@@ -886,6 +924,18 @@ export const getConfiguredMimeAccept = (
     return '';
   }
   return buildMimeAccept(types, capability);
+};
+
+/**
+ * Resolves the file-input `accept` value for uploads that no provider path narrows (auto-prepared
+ * files, file search, code environment), where the endpoint allowlist is the only filter.
+ * Returns `''` (unrestricted) for permissive or unrepresentable allowlists so no valid file is hidden.
+ */
+export const getUploadMimeAccept = (types: RegexLike[] | undefined): string => {
+  if (!types || types.length === 0 || isPermissiveMimeConfig(types)) {
+    return '';
+  }
+  return buildMimeAccept(types, allUploadCategories) ?? '';
 };
 
 /**
