@@ -151,6 +151,80 @@ describe('applyAttachmentOnlyText', () => {
     expect(message.content).toEqual([{ type: ContentTypes.TEXT, text: 'Attached file text' }]);
   });
 
+  it('removes an empty text part before image parts without depending on files', () => {
+    const images = [
+      { type: ContentTypes.IMAGE_URL, image_url: { url: 'data:image/png;base64,abc' } },
+      { type: ContentTypes.IMAGE_URL, image_url: { url: 'data:image/png;base64,def' } },
+    ];
+    const message: FormattedMessageWithContent = {
+      role: 'user',
+      content: [{ type: ContentTypes.TEXT, text: '' }, ...images],
+    };
+
+    applyAttachmentOnlyText(message);
+
+    expect(message.content).toEqual(images);
+  });
+
+  it('removes an empty text part after image parts', () => {
+    const image = { type: ContentTypes.IMAGE_URL, image_url: { url: 'data:image/png;base64,abc' } };
+    const message: FormattedMessageWithContent = {
+      role: 'user',
+      content: [image, { type: ContentTypes.TEXT, text: '' }],
+    };
+
+    applyAttachmentOnlyText(message, withFiles);
+
+    expect(message.content).toEqual([image]);
+  });
+
+  it('removes whitespace-only text parts from user content arrays', () => {
+    const image = { type: ContentTypes.IMAGE_URL, image_url: { url: 'data:image/png;base64,abc' } };
+    const message: FormattedMessageWithContent = {
+      role: 'user',
+      content: [{ type: ContentTypes.TEXT, text: '   ' }, image],
+    };
+
+    applyAttachmentOnlyText(message, withFiles);
+
+    expect(message.content).toEqual([image]);
+  });
+
+  it('removes malformed text parts without text', () => {
+    const image = { type: ContentTypes.IMAGE_URL, image_url: { url: 'data:image/png;base64,abc' } };
+    const message: FormattedMessageWithContent = {
+      role: 'user',
+      content: [{ type: ContentTypes.TEXT }, image],
+    };
+
+    applyAttachmentOnlyText(message);
+
+    expect(message.content).toEqual([image]);
+  });
+
+  it('substitutes attachment text when an array becomes empty', () => {
+    const message: FormattedMessageWithContent = {
+      role: 'user',
+      content: [{ type: ContentTypes.TEXT, text: '' }],
+    };
+
+    applyAttachmentOnlyText(message, withFiles);
+
+    expect(message.content).toBe(ATTACHMENT_ONLY_TEXT);
+  });
+
+  it('leaves non-empty text and image content arrays alone', () => {
+    const content = [
+      { type: ContentTypes.TEXT, text: 'hi' },
+      { type: ContentTypes.IMAGE_URL, image_url: { url: 'data:image/png;base64,abc' } },
+    ];
+    const message: FormattedMessageWithContent = { role: 'user', content };
+
+    applyAttachmentOnlyText(message, withFiles);
+
+    expect(message.content).toEqual(content);
+  });
+
   it('ignores turns without files', () => {
     const message: FormattedMessageWithContent = { role: 'user', content: '' };
 
@@ -167,5 +241,14 @@ describe('applyAttachmentOnlyText', () => {
     applyAttachmentOnlyText(message, withFiles);
 
     expect(message.content).toBe('');
+  });
+
+  it('leaves empty assistant text parts unchanged', () => {
+    const content = [{ type: ContentTypes.TEXT, text: '' }];
+    const message: FormattedMessageWithContent = { role: 'assistant', content };
+
+    applyAttachmentOnlyText(message, withFiles);
+
+    expect(message.content).toEqual(content);
   });
 });

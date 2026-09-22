@@ -2624,6 +2624,57 @@ describe('AgentClient - titleConvo', () => {
       );
     });
 
+    it('removes empty text blocks from historical image-only user turns', async () => {
+      const result = await client.buildMessages(
+        [
+          {
+            messageId: 'msg-image',
+            parentMessageId: null,
+            sender: 'User',
+            text: '',
+            isCreatedByUser: true,
+            fileContext: 'Attached screenshot context',
+            image_urls: [
+              {
+                url: 'data:image/png;base64,abc',
+                detail: 'auto',
+              },
+            ],
+          },
+          {
+            messageId: 'msg-current',
+            parentMessageId: 'msg-image',
+            sender: 'User',
+            text: 'What does the screenshot show?',
+            isCreatedByUser: true,
+          },
+        ],
+        'msg-current',
+        {},
+      );
+
+      const payloads = [result.prompt, client.memoryPayload];
+      const textParts = payloads.flatMap((payload) =>
+        payload.flatMap((message) =>
+          Array.isArray(message.content)
+            ? message.content.filter((part) => part.type === ContentTypes.TEXT)
+            : [],
+        ),
+      );
+
+      expect(
+        textParts.every((part) => typeof part.text === 'string' && part.text.trim().length > 0),
+      ).toBe(true);
+      expect(result.prompt[0].content).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ url: 'data:image/png;base64,abc' }),
+        ]),
+      );
+      expect(client.memoryPayload[0].content).toEqual([
+        expect.objectContaining({ url: 'data:image/png;base64,abc' }),
+      ]);
+    });
+
     it('persists canonical token counts while counting request file context for the prompt', async () => {
       const { countFormattedMessageTokens } = require('@librechat/api');
       const currentFile = makeTextFile('current-file', 'current.txt', 'Current turn file body');

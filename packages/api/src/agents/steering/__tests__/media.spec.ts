@@ -91,6 +91,20 @@ describe('buildSteerMedia', () => {
     ]);
   });
 
+  it('removes empty text parts from image-only steers', async () => {
+    const getFiles: SteerFileFetcher = jest.fn(async () => [imageDoc]);
+    const client = createClient({ image_urls: [imagePart] });
+
+    const result = await buildSteerMedia({
+      client,
+      user,
+      item: steerItem([{ file_id: 'f1' }], ''),
+      getFiles,
+    });
+
+    expect(result?.content).toEqual([imagePart]);
+  });
+
   it('restores the composer ref order over the $in result', async () => {
     // DB returns f1 before f2; the user attached f2 first.
     const getFiles: SteerFileFetcher = jest.fn(async () => [imageDoc, secondDoc]);
