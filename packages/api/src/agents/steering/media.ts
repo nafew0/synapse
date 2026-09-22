@@ -8,7 +8,7 @@ import type { SteerFileFetcher } from './request';
 import type { SteerMediaResult } from './runtime';
 import type { SteerRequestUser } from './refs';
 import { toSteerFileRef, collectFileIds, buildOwnerFilter } from './refs';
-import { prependFileContext } from '../client';
+import { applyAttachmentOnlyText, prependFileContext } from '../client';
 
 /** The BaseClient encode surface the steer media pipeline reuses. */
 export interface SteerMediaClient {
@@ -78,10 +78,11 @@ async function encodeSteerContent({
       videos: pseudo.videos,
       audios: pseudo.audios,
     } as Parameters<typeof formatMessage>[0]['message'],
-  }) as { content: string | Array<Record<string, unknown>> };
+  }) as { role?: string; content: string | Array<Record<string, unknown>> };
   if (pseudo.fileContext) {
     prependFileContext(formatted, pseudo.fileContext);
   }
+  applyAttachmentOnlyText(formatted, fileDocs);
   const content = Array.isArray(formatted.content)
     ? formatted.content
     : [{ type: ContentTypes.TEXT, text: formatted.content ?? text }];

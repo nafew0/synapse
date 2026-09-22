@@ -75,12 +75,13 @@ export type FormattedMessageWithContent = {
 };
 
 /**
- * Substitutes stand-in text for a user turn that carries attachments but has
- * nothing the provider can see: file search and code environment files reach
- * the model out-of-band, so the content stays empty and Anthropic rejects the
- * message outright. Apply after the file-context and quote merges so a turn
- * that already gained inline content is left alone. The stored `message.text`
- * keeps its empty value, so the UI still renders the attachment on its own.
+ * Removes invalid empty text parts from user content arrays and substitutes
+ * stand-in text for an otherwise empty attachment turn. File search and code
+ * environment files reach the model out-of-band, so their content stays empty
+ * and Anthropic rejects the message outright. Apply after the file-context and
+ * quote merges so a turn that already gained inline content is left alone. The
+ * stored `message.text` keeps its empty value, so the UI still renders the
+ * attachment on its own.
  *
  * Takes the turn's files rather than the message because the current turn does
  * not carry them yet: `BaseClient` assigns `userMessage.files` only after
@@ -88,17 +89,25 @@ export type FormattedMessageWithContent = {
  */
 export function applyAttachmentOnlyText(
   formattedMessage: FormattedMessageWithContent,
-  files?: TMessage['files'] | null,
+  files?: { length: number } | null,
 ): void {
-  if (formattedMessage.role !== 'user' || !files?.length) {
+  if (formattedMessage.role !== 'user') {
     return;
   }
 
-  if (formattedMessage.content !== '') {
+  if (Array.isArray(formattedMessage.content)) {
+    const content = formattedMessage.content.filter(
+      (part) =>
+        part.type !== ContentTypes.TEXT ||
+        (typeof part.text === 'string' && part.text.trim().length > 0),
+    );
+    formattedMessage.content = content.length > 0 ? content : ATTACHMENT_ONLY_TEXT;
     return;
   }
 
-  formattedMessage.content = ATTACHMENT_ONLY_TEXT;
+  if (formattedMessage.content === '' && files?.length) {
+    formattedMessage.content = ATTACHMENT_ONLY_TEXT;
+  }
 }
 
 export function prependFileContext(
