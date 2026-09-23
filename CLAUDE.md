@@ -219,4 +219,16 @@ Rules:
 - For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
 - If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost), then `python3 kb/tools/sync.py` to relink the knowledge base.
+
+## Knowledge base (`kb/`)
+
+A local, git-ignored record of every bug, incident, decision and gotcha, shared by all branches and worktrees. Its index is loaded at session start; `kb/README.md` has the template. In a worktree, use the main checkout's `kb/` (path from `git rev-parse --git-common-dir`).
+
+- **Before debugging**, search it: `grep -ril "<error text or symbol>" kb/issues kb/gotchas kb/decisions`. If the error has been seen before, start from that entry's root cause.
+- **Whenever you fix a bug, a failing test, or a production error**, record it with the `kb` skill before finishing the task. Keep all evidence: exact error text, Langfuse trace IDs, failing test names, log lines, repro steps, root cause with `file:line`, the fix, tests added, commits, and a **Lesson** line saying how to avoid it next time.
+- Record design or process decisions and non-obvious behaviour the same way (`type: decision` / `gotcha`).
+- `kb/PENDING.md` lists fix commits with no entry yet, and `kb/deploys.md` records what was pushed to production; both are written by git hooks. Clear a pending line by writing its entry (cite the sha in `commits:`), not by deleting the line.
+- Use one file per root cause: bugs, prod errors and failed deploys in `kb/issues/YYYY-MM-DD-slug.md`, decisions in `kb/decisions/`, non-obvious behaviour in `kb/gotchas/`. If an entry already covers the cause, update it instead of creating a duplicate. Add or update its one-line entry in `kb/INDEX.md`.
+- List the touched source files and key symbols in the frontmatter (`files:`, `symbols:`) so `kb/tools/sync.py` links the entry to the graphify code graph. Fix any `⚠ stale` refs you see.
+- Never `git add kb/`. Never store secrets or personal user data in it.
