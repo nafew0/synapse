@@ -103,9 +103,10 @@ function normalizeUsername(username) {
 }
 
 function normalizeRole(role) {
-  return role === INSTITUTION_ADMIN_ROLE || role === 'INSTITUTION_ADMIN'
+  const normalizedRole = String(role ?? '').trim().toUpperCase().replace(/\s+/g, '_');
+  return normalizedRole === INSTITUTION_ADMIN_ROLE || normalizedRole === 'INSTITUTION_ADMIN'
     ? INSTITUTION_ADMIN_ROLE
-    : toStoredUserRole(role);
+    : toStoredUserRole(normalizedRole || SystemRoles.USER);
 }
 
 function toObjectId(value) {
@@ -2013,7 +2014,7 @@ function parseCsv(text) {
     throw new HttpError(400, 'CSV content is empty');
   }
 
-  const header = parseCsvLine(lines[0]).map((column) => column.toLowerCase());
+  const header = parseCsvLine(lines[0].replace(/^\uFEFF/, '')).map((column) => column.trim().toLowerCase());
   const emailIndex = header.indexOf('email');
   const nameIndex = header.indexOf('name');
   const roleIndex = header.indexOf('role');
@@ -2045,6 +2046,19 @@ async function analyzeImportRows({ tenantId, csvText }) {
   for (const row of rows) {
     const normalizedEmail = normalizeEmail(row.email);
     const requestedRole = normalizeRole(row.role);
+    const normalizedRequestedRole = String(row.role ?? '').trim().toUpperCase().replace(/\s+/g, '_');
+
+    if (normalizedRequestedRole && !ALLOWED_MEMBER_ROLES.has(normalizedRequestedRole)) {
+      results.push({
+        rowNumber: row.rowNumber,
+        email: normalizedEmail,
+        name: row.name,
+        requestedRole,
+        action: 'error',
+        message: `Unknown role: ${row.role}`,
+      });
+      continue;
+    }
 
     if (!normalizedEmail) {
       results.push({
