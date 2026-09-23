@@ -1,4 +1,5 @@
 const mockExec = (value) => ({
+  select: function select() { return this; },
   lean: () => ({
     exec: jest.fn().mockResolvedValue(value),
   }),
@@ -31,6 +32,7 @@ jest.mock('mongoose', () => ({
 
 jest.mock('@librechat/api', () => ({
   checkEmailConfig: jest.fn(),
+  math: (value, fallback) => Number(value) || fallback,
 }));
 
 jest.mock('librechat-data-provider', () => ({
@@ -87,6 +89,7 @@ jest.mock('./tenancy', () => ({
   appointInstitutionAdmin: jest.fn(),
   revokeInstitutionAdmin: jest.fn(),
 }));
+jest.mock('./Config', () => ({ getAppConfig: jest.fn() }));
 jest.mock('./platformAdmin', () => ({
   isPlatformAdminEmail: jest.fn().mockResolvedValue(false),
 }));
@@ -97,6 +100,7 @@ const { isPlatformAdminEmail } = require('./platformAdmin');
 const {
   activateProvisionedMember,
   createInstitutionInvite,
+  dryRunInstitutionImport,
   resolveInstitutionInviteByToken,
 } = require('./institutionMembers');
 
@@ -145,6 +149,45 @@ describe('resolveInstitutionInviteByToken', () => {
     });
     await expect(resolveInstitutionInviteByToken('nope')).resolves.toBeNull();
     await expect(resolveInstitutionInviteByToken('')).resolves.toBeNull();
+  });
+});
+
+describe('dryRunInstitutionImport CSV parsing', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockModels.Institution.findOne.mockReturnValue(
+      mockExec({ tenantId: 'tenant-a', stats: { activeMembers: 0 }, limits: {} }),
+    );
+    mockModels.User.findOne.mockReturnValue(mockExec(null));
+    mockModels.InstitutionInvite.findOne.mockReturnValue(mockExec(null));
+    mockModels.User.countDocuments.mockResolvedValue(0);
+    mockModels.InstitutionInvite.countDocuments.mockResolvedValue(0);
+  });
+
+  it('accepts an Excel BOM, trimmed headers, normalized roles, and blank optional cells', async () => {
+    const result = await dryRunInstitutionImport({
+      tenantId: 'tenant-a',
+      csvText: '\uFEFF email , name , role \r\none@example.test,, institution admin \r\ntwo@example.test,Second Name,user',
+    });
+
+    expect(result.results.map(({ action, requestedRole, name }) => ({ action, requestedRole, name }))).toEqual([
+      { action: 'invite', requestedRole: 'INSTITUTION_ADMIN', name: '' },
+      { action: 'invite', requestedRole: 'USER', name: 'Second Name' },
+    ]);
+  });
+
+  it('reports unknown non-blank roles as row errors', async () => {
+    const result = await dryRunInstitutionImport({
+      tenantId: 'tenant-a',
+      csvText: 'email,name,role\nbad-role@example.test,Person,manager',
+    });
+
+    expect(result.results[0]).toMatchObject({
+      action: 'error',
+      rowNumber: 2,
+      message: 'Unknown role: manager',
+    });
+    expect(result.summary.errors).toBe(1);
   });
 });
 

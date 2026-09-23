@@ -194,6 +194,11 @@ Verify the base took before restarting:
 grep -rao '/adminpanel/assets/main-[a-zA-Z0-9_-]*\.js' dist/server/ | head -1   # must match
 ```
 
+In admin-panel code, avoid hard-coded root-relative asset links such as
+`href="/file.csv"`: production serves the panel under `/adminpanel`, so those
+links escape the panel base path. Use `basePathHref()` for routed assets or a
+browser-generated Blob URL for downloads.
+
 ---
 
 ## 5. Verify
