@@ -11,6 +11,7 @@ import { shouldRenderEndpointOption } from '../utils';
 import { cn, getSpecAgentAvatarURL } from '~/utils';
 import SpecDescription from './SpecDescription';
 import SpecIcon from './SpecIcon';
+import { ModelIcon } from './ModelIcon';
 
 interface SearchResultsProps {
   results: (TModelSpec | Endpoint)[] | null;
@@ -192,15 +193,16 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                       className="flex w-full cursor-pointer items-center justify-start rounded-lg px-3 py-2 pl-6 text-sm"
                     >
                       <div className="flex items-center gap-2">
-                        {endpoint.modelIcons?.[modelId] && (
-                          <div className="flex h-5 w-5 items-center justify-center overflow-hidden rounded-full">
-                            <img
-                              src={endpoint.modelIcons[modelId]}
-                              alt={modelName}
-                              className="h-full w-full object-cover"
-                            />
-                          </div>
-                        )}
+                        <ModelIcon
+                          modelId={modelId}
+                          endpoint={endpoint.value}
+                          avatarUrl={endpoint.modelIcons?.[modelId]}
+                          entityIcon={
+                            isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value)
+                              ? endpoint.icon
+                              : undefined
+                          }
+                        />
                         <span>{modelName}</span>
                       </div>
                       {isGlobal && (
