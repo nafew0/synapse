@@ -9,6 +9,10 @@ const mockUpdateInstitution = jest.fn();
 const mockSuspendInstitution = jest.fn();
 const mockReactivateInstitution = jest.fn();
 const mockRecordAuditEntry = jest.fn();
+const mockGetTenantAgentAccess = jest.fn();
+const mockSetTenantAgentAccess = jest.fn();
+const mockReconcileTenantAudience = jest.fn();
+const mockRequirePlatformSuperadmin = jest.fn((_req, _res, next) => next());
 
 class MockHttpError extends Error {
   constructor(statusCode, message) {
@@ -39,7 +43,26 @@ jest.mock('~/server/middleware', () => ({
   requireJwtAuth: (_req, _res, next) => next(),
 }));
 
-jest.mock('~/server/middleware/platformAdmin', () => (_req, _res, next) => next());
+jest.mock(
+  '~/server/middleware/platformAdmin',
+  () =>
+    (...args) =>
+      mockRequirePlatformSuperadmin(...args),
+);
+
+class MockTenantAgentAccessError extends Error {
+  constructor(statusCode, message) {
+    super(message);
+    this.statusCode = statusCode;
+  }
+}
+
+jest.mock('~/server/services/tenantAgentAccess', () => ({
+  TenantAgentAccessError: MockTenantAgentAccessError,
+  getTenantAgentAccess: (...args) => mockGetTenantAgentAccess(...args),
+  setTenantAgentAccess: (...args) => mockSetTenantAgentAccess(...args),
+  reconcileTenantAudience: (...args) => mockReconcileTenantAudience(...args),
+}));
 
 jest.mock('~/server/services/tenancy', () => ({
   appointInstitutionAdmin: (...args) => mockAppointInstitutionAdmin(...args),
@@ -335,5 +358,159 @@ describe('platform institutions route', () => {
     expect(auditActions()).toEqual(
       expect.arrayContaining(['institution.suspended', 'institution.reactivated']),
     );
+  });
+
+  describe('tenant-wide agent access', () => {
+    const enabledResult = {
+      tenantId: 'tenant-a',
+      agentId: 'agent_office_assistant',
+      enabled: true,
+      audienceGroupId: 'audience-1',
+      activeMemberCount: 12,
+      delegatedAgentCount: 3,
+    };
+
+    beforeEach(() => {
+      mockGetTenantAgentAccess.mockReset();
+      mockSetTenantAgentAccess.mockReset();
+      mockReconcileTenantAudience.mockReset();
+      mockRecordAuditEntry.mockReset();
+    });
+
+    it('enables an agent without a group and delegates with the authenticated actor', async () => {
+      mockSetTenantAgentAccess.mockResolvedValue(enabledResult);
+
+      const response = await invokeRoute({
+        path: '/:tenantId/agent-access',
+        method: 'patch',
+        params: { tenantId: 'tenant-a' },
+        body: { agentId: ' agent_office_assistant ', enabled: true },
+      });
+
+      expect(response).toEqual({ statusCode: 200, body: enabledResult });
+      expect(mockSetTenantAgentAccess).toHaveBeenCalledWith({
+        tenantId: 'tenant-a',
+        agentId: 'agent_office_assistant',
+        enabled: true,
+        actorId: 'platform-admin-1',
+      });
+      const [audit] = mockRecordAuditEntry.mock.calls[0];
+      expect(audit.target).toEqual({ type: 'institution', id: 'tenant-a' });
+      expect(audit.metadata).toEqual({
+        operation: 'agent_access_granted',
+        agentId: 'agent_office_assistant',
+        audienceGroupId: 'audience-1',
+        activeMemberCount: 12,
+        delegatedAgentCount: 3,
+      });
+    });
+
+    it('validates the request body before touching access', async () => {
+      const missingAgent = await invokeRoute({
+        path: '/:tenantId/agent-access',
+        method: 'patch',
+        params: { tenantId: 'tenant-a' },
+        body: { enabled: true },
+      });
+      const invalidEnabled = await invokeRoute({
+        path: '/:tenantId/agent-access',
+        method: 'patch',
+        params: { tenantId: 'tenant-a' },
+        body: { agentId: 'agent_office_assistant', enabled: 'yes' },
+      });
+
+      expect(missingAgent.statusCode).toBe(400);
+      expect(invalidEnabled.statusCode).toBe(400);
+      expect(mockSetTenantAgentAccess).not.toHaveBeenCalled();
+    });
+
+    it('maps scope and not-found errors to stable status codes without auditing', async () => {
+      mockSetTenantAgentAccess.mockRejectedValue(
+        new MockTenantAgentAccessError(404, 'Agent not found or not available to this institution'),
+      );
+
+      const response = await invokeRoute({
+        path: '/:tenantId/agent-access',
+        method: 'patch',
+        params: { tenantId: 'tenant-a' },
+        body: { agentId: 'foreign-agent', enabled: true },
+      });
+
+      expect(response).toEqual({
+        statusCode: 404,
+        body: { error: 'Agent not found or not available to this institution' },
+      });
+      expect(mockRecordAuditEntry).not.toHaveBeenCalled();
+    });
+
+    it('reads the tenant state scoped to the requested tenant', async () => {
+      const state = { agents: [], audience: null };
+      mockGetTenantAgentAccess.mockResolvedValue(state);
+
+      const response = await invokeRoute({
+        path: '/:tenantId/agent-access',
+        method: 'get',
+        params: { tenantId: 'tenant-a' },
+      });
+
+      expect(response).toEqual({ statusCode: 200, body: state });
+      expect(mockGetTenantAgentAccess).toHaveBeenCalledWith({ tenantId: 'tenant-a' });
+    });
+
+    it('reconciles the audience and audits the repair', async () => {
+      mockReconcileTenantAudience.mockResolvedValue({
+        tenantId: 'tenant-a',
+        audienceGroupId: 'audience-1',
+        added: 2,
+        removed: 1,
+        activeMemberCount: 13,
+      });
+
+      const response = await invokeRoute({
+        path: '/:tenantId/agent-access/reconcile',
+        method: 'post',
+        params: { tenantId: 'tenant-a' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockReconcileTenantAudience).toHaveBeenCalledWith({
+        tenantId: 'tenant-a',
+        actorId: 'platform-admin-1',
+      });
+      expect(mockRecordAuditEntry.mock.calls[0][0].metadata).toMatchObject({
+        operation: 'agent_access_reconciled',
+        added: 2,
+        removed: 1,
+      });
+    });
+
+    it('returns 404 when reconciling a tenant without tenant-wide access', async () => {
+      mockReconcileTenantAudience.mockResolvedValue(null);
+
+      const response = await invokeRoute({
+        path: '/:tenantId/agent-access/reconcile',
+        method: 'post',
+        params: { tenantId: 'tenant-a' },
+      });
+
+      expect(response.statusCode).toBe(404);
+      expect(mockRecordAuditEntry).not.toHaveBeenCalled();
+    });
+
+    it('rejects callers who are not platform superadmins', async () => {
+      mockRequirePlatformSuperadmin.mockImplementationOnce((_req, res) =>
+        res.status(403).json({ error: 'Forbidden' }),
+      );
+
+      const response = await invokeRoute({
+        path: '/:tenantId/agent-access',
+        method: 'patch',
+        params: { tenantId: 'tenant-a' },
+        body: { agentId: 'agent_office_assistant', enabled: true },
+      });
+
+      expect(response.statusCode).toBe(403);
+      expect(mockSetTenantAgentAccess).not.toHaveBeenCalled();
+    });
   });
 });

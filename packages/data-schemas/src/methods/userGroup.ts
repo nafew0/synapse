@@ -3,9 +3,9 @@ import { AsyncLocalStorage } from 'async_hooks';
 import { CacheKeys, PrincipalType } from 'librechat-data-provider';
 import type { TPrincipalSearchResult } from 'librechat-data-provider';
 import type { Model, ClientSession, FilterQuery } from 'mongoose';
-import type { CacheStore, IGroup, IRole, IUser } from '~/types';
+import type { CacheStore, IGroup, IRole, IUser, ManagedGroupKind } from '~/types';
 import { isValidObjectIdString } from '~/utils/objectId';
-import { scopedCacheKey } from '~/config/tenantContext';
+import { scopedCacheKey, tenantStorage } from '~/config/tenantContext';
 import { escapeRegExp } from '~/utils/string';
 
 export interface UserGroupDeps {
@@ -14,6 +14,13 @@ export interface UserGroupDeps {
 }
 
 type PendingGroupLookup = { promise: Promise<Types.ObjectId[]>; markStale: () => void };
+
+export class ManagedGroupMutationError extends Error {
+  constructor() {
+    super('System-managed groups cannot be changed through generic group management');
+    this.name = 'ManagedGroupMutationError';
+  }
+}
 
 /** Same-process dedup of concurrent cache builds, keyed by scoped member cache key. */
 const pendingGroupLookups = new Map<string, PendingGroupLookup>();
@@ -30,6 +37,7 @@ type DeferredInvalidation = {
   /** ALS snapshot (tenant scoping) captured where the mutation ran. */
   run: (invalidate: () => Promise<void>) => Promise<void>;
   invalidate: () => Promise<void>;
+  transaction: ClientSession['transaction'] & { state?: string };
 };
 
 /** One queue (and one `ended` listener) per session, so many mutations in one transaction
@@ -49,7 +57,11 @@ function runAfterTransaction(
   if (!session?.inTransaction()) {
     return invalidate();
   }
-  const deferred: DeferredInvalidation = { run: AsyncLocalStorage.snapshot(), invalidate };
+  const deferred: DeferredInvalidation = {
+    run: AsyncLocalStorage.snapshot(),
+    invalidate,
+    transaction: session.transaction as ClientSession['transaction'] & { state?: string },
+  };
   const queue = sessionInvalidations.get(session);
   if (queue) {
     queue.push(deferred);
@@ -60,6 +72,12 @@ function runAfterTransaction(
   session.once('ended', () => {
     sessionInvalidations.delete(session);
     for (const entry of newQueue) {
+      if (
+        entry.transaction.state !== 'TRANSACTION_COMMITTED' &&
+        entry.transaction.state !== 'TRANSACTION_COMMITTED_EMPTY'
+      ) {
+        continue;
+      }
       entry.run(entry.invalidate).catch(() => undefined);
     }
   });
@@ -177,6 +195,17 @@ export function createUserGroupMethods(
     filter: Record<string, unknown>,
     session?: ClientSession,
   ) => Promise<IGroup | null>;
+  findGroupByManagedKind: (
+    tenantId: string,
+    managedKind: ManagedGroupKind,
+    projection?: Record<string, 0 | 1>,
+    session?: ClientSession,
+  ) => Promise<IGroup | null>;
+  updateManagedGroupMembers: (
+    groupId: string | Types.ObjectId,
+    changes: { add?: string[]; remove?: string[] },
+    session?: ClientSession,
+  ) => Promise<IGroup | null>;
   updateGroupById: (
     groupId: string | Types.ObjectId,
     data: Record<string, unknown>,
@@ -263,6 +292,18 @@ export function createUserGroupMethods(
     }
     const groups = await groupsQuery.lean<Array<Pick<IGroup, '_id'>>>();
     return groups.map((group) => group._id);
+  }
+
+  async function isManagedGroup(
+    groupId: string | Types.ObjectId,
+    session?: ClientSession,
+  ): Promise<boolean> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const query = Group.exists({ _id: groupId, managedKind: { $exists: true } });
+    if (session) {
+      query.session(session);
+    }
+    return (await query) !== null;
   }
 
   async function readCachedGroupIds(
@@ -696,11 +737,14 @@ export function createUserGroupMethods(
     }
 
     const userIdOnTheSource = user.idOnTheSource || userId.toString();
-    const updatedGroup = await Group.findByIdAndUpdate(
-      groupId,
+    const updatedGroup = await Group.findOneAndUpdate(
+      { _id: groupId, managedKind: { $exists: false } },
       { $addToSet: { memberIds: userIdOnTheSource } },
       options,
     ).lean<IGroup>();
+    if (!updatedGroup && (await isManagedGroup(groupId, session))) {
+      throw new ManagedGroupMutationError();
+    }
     await runAfterTransaction(session, () => invalidateMemberGroupsCache([userIdOnTheSource]));
 
     return { user: user as IUser, group: updatedGroup };
@@ -735,11 +779,14 @@ export function createUserGroupMethods(
     }
 
     const userIdOnTheSource = user.idOnTheSource || userId.toString();
-    const updatedGroup = await Group.findByIdAndUpdate(
-      groupId,
+    const updatedGroup = await Group.findOneAndUpdate(
+      { _id: groupId, managedKind: { $exists: false } },
       { $pullAll: { memberIds: [userIdOnTheSource] } },
       options,
     ).lean<IGroup>();
+    if (!updatedGroup && (await isManagedGroup(groupId, session))) {
+      throw new ManagedGroupMutationError();
+    }
     await runAfterTransaction(session, () => invalidateMemberGroupsCache([userIdOnTheSource]));
 
     return { user: user as IUser, group: updatedGroup };
@@ -1177,6 +1224,59 @@ export function createUserGroupMethods(
     return query.lean<IGroup>();
   }
 
+  /** Finds the stable system-managed group for a tenant and classification. */
+  async function findGroupByManagedKind(
+    tenantId: string,
+    managedKind: ManagedGroupKind,
+    projection: Record<string, 0 | 1> = {},
+    session?: ClientSession,
+  ): Promise<IGroup | null> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const query = Group.findOne({ tenantId, managedKind }, projection);
+    if (session) {
+      query.session(session);
+    }
+    return query.lean<IGroup>();
+  }
+
+  /** Atomically reconciles explicit keys on a system-managed group's membership set. */
+  async function updateManagedGroupMembers(
+    groupId: string | Types.ObjectId,
+    changes: { add?: string[]; remove?: string[] },
+    session?: ClientSession,
+  ): Promise<IGroup | null> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const add = [...new Set(changes.add ?? [])];
+    const remove = [...new Set(changes.remove ?? [])];
+    if (add.length === 0 && remove.length === 0) {
+      return findGroupById(groupId, {}, session);
+    }
+    const options = { new: true, ...(session ? { session } : {}) };
+    const group = await Group.findOneAndUpdate(
+      { _id: groupId, managedKind: { $exists: true } },
+      [
+        {
+          $set: {
+            memberIds: {
+              $setUnion: [{ $setDifference: [{ $ifNull: ['$memberIds', []] }, remove] }, add],
+            },
+          },
+        },
+      ],
+      options,
+    ).lean<IGroup>();
+    if (!group) {
+      return group;
+    }
+    /** Managed groups are mutated from system context; invalidate the member keys the group's tenant reads. */
+    const invalidate = () => invalidateMemberGroupsCache([...add, ...remove]);
+    const tenantId = group.tenantId;
+    await runAfterTransaction(session, () =>
+      tenantId ? tenantStorage.run({ tenantId }, invalidate) : invalidate(),
+    );
+    return group;
+  }
+
   /**
    * Updates a group by its ID.
    * @param groupId - The group's ObjectId
@@ -1190,17 +1290,28 @@ export function createUserGroupMethods(
     const Group = mongoose.models.Group as Model<IGroup>;
     const options = { new: true, ...(session ? { session } : {}) };
     if (data.memberIds === undefined) {
-      return Group.findByIdAndUpdate(groupId, { $set: data }, options).lean<IGroup>();
+      const group = await Group.findOneAndUpdate(
+        { _id: groupId, managedKind: { $exists: false } },
+        { $set: data },
+        options,
+      ).lean<IGroup>();
+      if (!group && (await isManagedGroup(groupId, session))) {
+        throw new ManagedGroupMutationError();
+      }
+      return group;
     }
     /** Atomic pre-image (`new: false`) so members added concurrently before the $set are invalidated too. */
-    const previous = await Group.findByIdAndUpdate(
-      groupId,
+    const previous = await Group.findOneAndUpdate(
+      { _id: groupId, managedKind: { $exists: false } },
       { $set: data },
       {
         ...options,
         new: false,
       },
     ).lean<IGroup>();
+    if (!previous && (await isManagedGroup(groupId, session))) {
+      throw new ManagedGroupMutationError();
+    }
     const nextMemberIds = Array.isArray(data.memberIds)
       ? data.memberIds.filter(
           (memberId): memberId is string | Types.ObjectId =>
@@ -1305,7 +1416,13 @@ export function createUserGroupMethods(
   ): Promise<IGroup | null> {
     const Group = mongoose.models.Group as Model<IGroup>;
     const options = session ? { session } : {};
-    const group = await Group.findByIdAndDelete(groupId, options).lean<IGroup>();
+    const group = await Group.findOneAndDelete(
+      { _id: groupId, managedKind: { $exists: false } },
+      options,
+    ).lean<IGroup>();
+    if (!group && (await isManagedGroup(groupId, session))) {
+      throw new ManagedGroupMutationError();
+    }
     await runAfterTransaction(session, () => invalidateMemberGroupsCache(group?.memberIds ?? []));
     return group;
   }
@@ -1324,11 +1441,14 @@ export function createUserGroupMethods(
   ): Promise<IGroup | null> {
     const Group = mongoose.models.Group as Model<IGroup>;
     const options = { new: true, ...(session ? { session } : {}) };
-    const group = await Group.findByIdAndUpdate(
-      groupId,
+    const group = await Group.findOneAndUpdate(
+      { _id: groupId, managedKind: { $exists: false } },
       { $pull: { memberIds: memberId } },
       options,
     ).lean<IGroup>();
+    if (!group && (await isManagedGroup(groupId, session))) {
+      throw new ManagedGroupMutationError();
+    }
     await runAfterTransaction(session, () => invalidateMemberGroupsCache([memberId]));
     return group;
   }
@@ -1345,6 +1465,8 @@ export function createUserGroupMethods(
     removeUserFromGroup,
     removeUserFromAllGroups,
     findGroupByQuery,
+    findGroupByManagedKind,
+    updateManagedGroupMembers,
     updateGroupById,
     bulkUpdateGroups,
     getUserGroups,

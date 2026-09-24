@@ -1,11 +1,5 @@
 const express = require('express');
 const { logger, runAsSystem, INSTITUTION_ADMIN_ROLE } = require('@librechat/data-schemas');
-const {
-  AccessRoleIds,
-  PermissionBits,
-  PrincipalType,
-  ResourceType,
-} = require('librechat-data-provider');
 const { requireJwtAuth } = require('~/server/middleware');
 const requirePlatformSuperadmin = require('~/server/middleware/platformAdmin');
 const {
@@ -34,6 +28,12 @@ const {
   listUsageByModel,
 } = require('~/server/services/institutionUsage');
 const { getShadowReadiness } = require('~/server/services/usageQuota');
+const {
+  TenantAgentAccessError,
+  getTenantAgentAccess,
+  reconcileTenantAudience,
+  setTenantAgentAccess,
+} = require('~/server/services/tenantAgentAccess');
 
 const router = express.Router();
 
@@ -410,192 +410,85 @@ router.get('/:tenantId', async (req, res) => {
   }
 });
 
+function sendAgentAccessError(res, error, fallback) {
+  if (error instanceof HttpError || error instanceof TenantAgentAccessError) {
+    return res.status(error.statusCode).json({ error: error.message });
+  }
+  logger.error(`[platform/institutions] ${fallback}`, error);
+  return res.status(500).json({ error: fallback });
+}
+
 /**
- * Lists the user-facing agents and the institution groups that can receive
- * access. The sync script uses group ACLs; keeping the same shape here lets
- * platform administrators manage that ACL without changing the YAML agent
- * registration.
+ * Tenant-wide agent access: every active member of the institution, current
+ * and future, receives the enabled agents through a system-managed audience.
  */
 router.get('/:tenantId/agent-access', async (req, res) => {
-  const { tenantId } = req.params;
-  const groupId = typeof req.query.groupId === 'string' ? req.query.groupId.trim() : '';
-
   try {
-    const result = await runAsSystem(async () => {
-      const institutionUsers = await models.User.find({ tenantId })
-        .select('_id idOnTheSource')
-        .lean()
-        .exec();
-      const memberKeys = institutionUsers.flatMap((user) =>
-        [user._id?.toString(), user.idOnTheSource].filter(Boolean),
-      );
-      const groupFilter = memberKeys.length
-        ? { $or: [{ tenantId }, { memberIds: { $in: memberKeys } }] }
-        : { tenantId };
-
-      const [agents, groups] = await Promise.all([
-        models.Agent.find({
-          orchestrationOnly: { $ne: true },
-          $or: [{ tenantId }, { tenantId: { $exists: false } }, { tenantId: null }],
-        })
-          .select('_id id name description tenantId edges')
-          .sort({ name: 1 })
-          .lean()
-          .exec(),
-        models.Group.find(groupFilter)
-          .select('_id name description source memberIds tenantId')
-          .sort({ name: 1 })
-          .lean()
-          .exec(),
-      ]);
-
-      const selectedGroup = groupId ? groups.find((group) => group._id.toString() === groupId) : null;
-      if (groupId && !selectedGroup) {
-        throw new HttpError(404, 'Institution group not found');
-      }
-
-      const accessByAgent = selectedGroup
-        ? await models.AclEntry.find({
-            principalType: PrincipalType.GROUP,
-            principalId: selectedGroup._id,
-            resourceType: ResourceType.AGENT,
-            resourceId: { $in: agents.map((agent) => agent._id) },
-            tenantId,
-          })
-            .select('resourceId permBits')
-            .lean()
-            .exec()
-        : [];
-      const access = new Map(
-        accessByAgent.map((entry) => [entry.resourceId.toString(), (entry.permBits & PermissionBits.VIEW) !== 0]),
-      );
-
-      return {
-        agents: agents.map((agent) => ({
-          id: agent.id,
-          name: agent.name,
-          description: agent.description,
-          tenantId: agent.tenantId ?? null,
-          enabled: selectedGroup ? access.get(agent._id.toString()) === true : false,
-        })),
-        groups: groups.map((group) => ({
-          id: group._id.toString(),
-          name: group.name,
-          description: group.description ?? '',
-          source: group.source,
-          memberCount: group.memberIds?.length ?? 0,
-        })),
-        selectedGroupId: selectedGroup?._id.toString() ?? null,
-      };
-    });
-
-    return res.status(200).json(result);
+    return res.status(200).json(await getTenantAgentAccess({ tenantId: req.params.tenantId }));
   } catch (error) {
-    if (error instanceof HttpError) return res.status(error.statusCode).json({ error: error.message });
-    logger.error('[platform/institutions] agent access read failed', error);
-    return res.status(500).json({ error: 'Failed to load agent access' });
+    return sendAgentAccessError(res, error, 'Failed to load agent access');
   }
 });
 
 router.patch('/:tenantId/agent-access', async (req, res) => {
   const { tenantId } = req.params;
-  const { agentId, groupId, enabled } = req.body ?? {};
-  if (typeof agentId !== 'string' || !agentId.trim() || typeof groupId !== 'string' || !groupId.trim()) {
-    return res.status(400).json({ error: 'agentId and groupId are required' });
+  const { agentId, enabled } = req.body ?? {};
+  if (typeof agentId !== 'string' || !agentId.trim()) {
+    return res.status(400).json({ error: 'agentId is required' });
   }
   if (typeof enabled !== 'boolean') {
     return res.status(400).json({ error: 'enabled must be a boolean' });
   }
 
   try {
-    const result = await runAsSystem(async () => {
-      const institutionUsers = await models.User.find({ tenantId })
-        .select('_id idOnTheSource')
-        .lean()
-        .exec();
-      const memberKeys = institutionUsers.flatMap((user) =>
-        [user._id?.toString(), user.idOnTheSource].filter(Boolean),
-      );
-      const groupFilter = memberKeys.length
-        ? { $or: [{ tenantId }, { memberIds: { $in: memberKeys } }] }
-        : { tenantId };
-      const [agent, group] = await Promise.all([
-        models.Agent.findOne({
-          id: agentId.trim(),
-          orchestrationOnly: { $ne: true },
-          $or: [{ tenantId }, { tenantId: { $exists: false } }, { tenantId: null }],
-        })
-          .select('_id id name edges')
-          .lean()
-          .exec(),
-        models.Group.findOne({ _id: groupId.trim(), ...groupFilter })
-          .select('_id name tenantId')
-          .lean()
-          .exec(),
-      ]);
-      if (!agent) throw new HttpError(404, 'Agent not found or not available to this institution');
-      if (!group) throw new HttpError(404, 'Institution group not found');
-
-      const targetAgents = [agent];
-      const specialistIds = (agent.edges ?? [])
-        .map((edge) => edge.to)
-        .filter((id) => typeof id === 'string' && id.length > 0);
-      if (specialistIds.length) {
-        const specialists = await models.Agent.find({ id: { $in: specialistIds } })
-          .select('_id id')
-          .lean()
-          .exec();
-        targetAgents.push(...specialists);
-      }
-
-      if (enabled) {
-        const { grantPermission } = require('~/server/services/PermissionService');
-        await grantPermission({
-          principalType: PrincipalType.GROUP,
-          principalId: group._id,
-          resourceType: ResourceType.AGENT,
-          resourceId: agent._id,
-          accessRoleId: AccessRoleIds.AGENT_VIEWER,
-          grantedBy: req.user.id ?? req.user._id,
-          tenantId,
-        });
-        for (const specialist of targetAgents.slice(1)) {
-          await grantPermission({
-            principalType: PrincipalType.GROUP,
-            principalId: group._id,
-            resourceType: ResourceType.REMOTE_AGENT,
-            resourceId: specialist._id,
-            accessRoleId: AccessRoleIds.REMOTE_AGENT_VIEWER,
-            grantedBy: req.user.id ?? req.user._id,
-            tenantId,
-          });
-        }
-      } else {
-        await models.AclEntry.deleteMany({
-          principalType: PrincipalType.GROUP,
-          principalId: group._id,
-          tenantId,
-          $or: [
-            { resourceType: ResourceType.AGENT, resourceId: { $in: targetAgents.map((item) => item._id) } },
-            { resourceType: ResourceType.REMOTE_AGENT, resourceId: { $in: targetAgents.slice(1).map((item) => item._id) } },
-          ],
-        }).exec();
-      }
-
-      return { enabled, agentId: agent.id, groupId: group._id.toString() };
+    const result = await setTenantAgentAccess({
+      tenantId,
+      agentId: agentId.trim(),
+      enabled,
+      actorId: req.user.id ?? req.user._id,
     });
-
     await recordPlatformAudit(req, {
       action: 'institution.updated',
       severity: 'warning',
       target: { type: 'institution', id: tenantId },
-      metadata: { operation: enabled ? 'agent_access_granted' : 'agent_access_revoked', agentId, groupId },
+      metadata: {
+        operation: enabled ? 'agent_access_granted' : 'agent_access_revoked',
+        agentId: result.agentId,
+        audienceGroupId: result.audienceGroupId,
+        activeMemberCount: result.activeMemberCount,
+        delegatedAgentCount: result.delegatedAgentCount,
+      },
     });
     return res.status(200).json(result);
   } catch (error) {
-    if (error instanceof HttpError) return res.status(error.statusCode).json({ error: error.message });
-    logger.error('[platform/institutions] agent access mutation failed', error);
-    return res.status(500).json({ error: 'Failed to update agent access' });
+    return sendAgentAccessError(res, error, 'Failed to update agent access');
+  }
+});
+
+router.post('/:tenantId/agent-access/reconcile', async (req, res) => {
+  const { tenantId } = req.params;
+  try {
+    const result = await reconcileTenantAudience({
+      tenantId,
+      actorId: req.user.id ?? req.user._id,
+    });
+    if (!result) {
+      return res.status(404).json({ error: 'No tenant-wide agent access is configured' });
+    }
+    await recordPlatformAudit(req, {
+      action: 'institution.updated',
+      target: { type: 'institution', id: tenantId },
+      metadata: {
+        operation: 'agent_access_reconciled',
+        audienceGroupId: result.audienceGroupId,
+        added: result.added,
+        removed: result.removed,
+        activeMemberCount: result.activeMemberCount,
+      },
+    });
+    return res.status(200).json(result);
+  } catch (error) {
+    return sendAgentAccessError(res, error, 'Failed to reconcile agent access');
   }
 });
 

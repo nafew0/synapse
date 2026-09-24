@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
 import { PrincipalType } from 'librechat-data-provider';
-import { logger, isValidObjectIdString } from '@librechat/data-schemas';
+import { logger, isValidObjectIdString, ManagedGroupMutationError } from '@librechat/data-schemas';
 import type {
   IGroup,
   IUser,
@@ -16,6 +16,8 @@ import type { ServerRequest } from '~/types/http';
 import { parsePagination } from './pagination';
 
 type GroupListFilter = Pick<GroupFilterOptions, 'source' | 'search'>;
+
+const MANAGED_GROUP_ERROR = { error: 'System-managed groups cannot be changed' };
 
 const VALID_GROUP_SOURCES: ReadonlySet<string> = new Set(['local', 'entra']);
 const MAX_CREATE_MEMBER_IDS = 500;
@@ -291,6 +293,9 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       }
       return res.status(200).json({ group });
     } catch (error) {
+      if (error instanceof ManagedGroupMutationError) {
+        return res.status(409).json(MANAGED_GROUP_ERROR);
+      }
       if ((error as ValidationError).name === 'ValidationError') {
         return res.status(400).json({ error: (error as ValidationError).message });
       }
@@ -328,6 +333,9 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       }
       return res.status(200).json({ success: true, id });
     } catch (error) {
+      if (error instanceof ManagedGroupMutationError) {
+        return res.status(409).json(MANAGED_GROUP_ERROR);
+      }
       logger.error('[adminGroups] deleteGroup error:', error);
       return res.status(500).json({ error: 'Failed to delete group' });
     }
@@ -422,6 +430,9 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       }
       return res.status(200).json({ group });
     } catch (error) {
+      if (error instanceof ManagedGroupMutationError) {
+        return res.status(409).json(MANAGED_GROUP_ERROR);
+      }
       const message = error instanceof Error ? error.message : '';
       const isNotFound = message === 'User not found' || message.startsWith('User not found:');
       if (isNotFound) {
@@ -466,6 +477,9 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       }
       return res.status(200).json({ success: true });
     } catch (error) {
+      if (error instanceof ManagedGroupMutationError) {
+        return res.status(409).json(MANAGED_GROUP_ERROR);
+      }
       logger.error('[adminGroups] removeGroupMember error:', error);
       return res.status(500).json({ error: 'Failed to remove member' });
     }
