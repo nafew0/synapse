@@ -3,13 +3,21 @@ jest.mock('axios');
 jest.mock('form-data');
 jest.mock('https-proxy-agent');
 jest.mock('@librechat/data-schemas', () => ({ logger: { warn: jest.fn(), error: jest.fn() } }));
-jest.mock('@librechat/api', () => ({ genAzureEndpoint: jest.fn(), logAxiosError: jest.fn() }));
+jest.mock('@librechat/api', () => ({
+  genAzureEndpoint: jest.fn(),
+  logAxiosError: jest.fn(),
+  applyAxiosProxyConfig: jest.fn(),
+  applySSRFSafeAgentIfDirect: jest.fn(),
+  resolveConfigSecret: (value) => value,
+}));
 jest.mock('librechat-data-provider', () => ({
   extractEnvVariable: jest.fn(),
-  STTProviders: {},
+  STTProviders: { OPENAI: 'openai', AZURE_OPENAI: 'azureOpenAI' },
 }));
 jest.mock('~/server/services/Config', () => ({ getAppConfig: jest.fn() }));
 
+const axios = require('axios');
+const { logger } = require('@librechat/data-schemas');
 const { STTService, getFileExtensionFromMime, MIME_TO_EXTENSION_MAP } = require('./STTService');
 
 describe('getFileExtensionFromMime', () => {
@@ -144,5 +152,71 @@ describe('STT audio format validation with MIME normalization', () => {
     expect(isFormatAccepted('text/webm')).toBe(false);
     expect(isFormatAccepted('text/plain')).toBe(false);
     expect(isFormatAccepted('application/json')).toBe(false);
+  });
+});
+
+describe('STTService.sttRequest language fallback', () => {
+  const service = new STTService();
+  const schema = { url: 'https://stt.example/v1/audio/transcriptions', apiKey: 'sk', model: 'm' };
+  const requestData = (language) => ({
+    audioBuffer: Buffer.from('audio'),
+    audioFile: { originalname: 'audio.webm', mimetype: 'audio/webm', size: 5 },
+    language,
+  });
+  const rejected = Object.assign(new Error('Request failed with status code 400'), {
+    response: { status: 400, data: { error: { message: 'Provider returned 400' } } },
+  });
+  const sentLanguages = () => axios.post.mock.calls.map(([, data]) => data.language);
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it('retries without the language when the provider rejects it', async () => {
+    axios.post
+      .mockRejectedValueOnce(rejected)
+      .mockResolvedValueOnce({ status: 200, data: { text: ' আমাকে ' } });
+
+    await expect(service.sttRequest('openai', schema, requestData('bn-BD'))).resolves.toBe('আমাকে');
+    expect(sentLanguages()).toEqual(['bn', undefined]);
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry a 400 when no language was sent', async () => {
+    axios.post.mockRejectedValueOnce(rejected);
+
+    await expect(service.sttRequest('openai', schema, requestData(''))).rejects.toBe(rejected);
+    expect(axios.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends the configured default language when the user chose none', async () => {
+    axios.post.mockResolvedValueOnce({ status: 200, data: { text: 'হ্যাঁ' } });
+
+    await service.sttRequest('openai', { ...schema, language: 'bn' }, requestData(''));
+    expect(sentLanguages()).toEqual(['bn']);
+  });
+
+  it("prefers the user's language over the configured default", async () => {
+    axios.post.mockResolvedValueOnce({ status: 200, data: { text: 'hello' } });
+
+    await service.sttRequest('openai', { ...schema, language: 'bn' }, requestData('en-US'));
+    expect(sentLanguages()).toEqual(['en']);
+  });
+
+  it('drops a rejected default language on retry', async () => {
+    axios.post
+      .mockRejectedValueOnce(rejected)
+      .mockResolvedValueOnce({ status: 200, data: { text: 'hello' } });
+
+    await service.sttRequest('openai', { ...schema, language: 'bn' }, requestData(''));
+    expect(sentLanguages()).toEqual(['bn', undefined]);
+  });
+
+  it('does not retry errors other than 400', async () => {
+    const serverError = Object.assign(new Error('boom'), { response: { status: 500 } });
+    axios.post.mockRejectedValueOnce(serverError);
+
+    await expect(service.sttRequest('openai', schema, requestData('en-US'))).rejects.toBe(
+      serverError,
+    );
+    expect(axios.post).toHaveBeenCalledTimes(1);
   });
 });

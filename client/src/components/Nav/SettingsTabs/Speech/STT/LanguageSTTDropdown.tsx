@@ -3,12 +3,16 @@ import { useRecoilState, useRecoilValue } from 'recoil';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
+/** Stored as '' so no language hint is sent and the STT model detects the language. */
+const AUTO_DETECT = 'auto';
+
 export default function LanguageSTTDropdown() {
   const localize = useLocalize();
   const [languageSTT, setLanguageSTT] = useRecoilState<string>(store.languageSTT);
   const speechToText = useRecoilValue(store.speechToText);
 
   const languageOptions = [
+    { value: AUTO_DETECT, label: localize('com_nav_lang_auto') },
     { value: 'af', label: 'Afrikaans' },
     { value: 'eu', label: 'Basque' },
     { value: 'bg', label: 'Bulgarian' },
@@ -92,7 +96,7 @@ export default function LanguageSTTDropdown() {
   ];
 
   const handleSelect = (value: string) => {
-    setLanguageSTT(value);
+    setLanguageSTT(value === AUTO_DETECT ? '' : value);
   };
 
   const labelId = 'language-stt-dropdown-label';
@@ -101,7 +105,7 @@ export default function LanguageSTTDropdown() {
     <div className="flex items-center justify-between">
       <div id={labelId}>{localize('com_nav_language')}</div>
       <Dropdown
-        value={languageSTT}
+        value={languageSTT || AUTO_DETECT}
         onChange={handleSelect}
         options={languageOptions}
         testId="LanguageSTTDropdown"

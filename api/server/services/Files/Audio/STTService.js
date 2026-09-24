@@ -295,31 +295,47 @@ class STTService {
     }
 
     const fileExtension = getFileExtensionFromMime(audioFile.mimetype);
+    const requestedLanguage = language || sttSchema?.language || '';
 
-    const audioReadStream = Readable.from(audioBuffer);
-    audioReadStream.path = `audio.${fileExtension}`;
+    const post = (lang) => {
+      const audioReadStream = Readable.from(audioBuffer);
+      audioReadStream.path = `audio.${fileExtension}`;
 
-    const [url, data, headers] = strategy.call(
-      this,
-      sttSchema,
-      audioReadStream,
-      audioFile,
-      language,
-    );
+      const [url, data, headers] = strategy.call(this, sttSchema, audioReadStream, audioFile, lang);
+      const options = { headers };
 
-    const options = { headers };
+      applyAxiosProxyConfig(options, url);
+      applySSRFSafeAgentIfDirect(options, url, allowedAddresses);
+      return axios.post(url, data, options);
+    };
 
-    applyAxiosProxyConfig(options, url);
-    applySSRFSafeAgentIfDirect(options, url, allowedAddresses);
+    /** Models reject language hints they do not support; the model can still detect the language itself. */
+    const postWithLanguageFallback = async () => {
+      try {
+        return await post(requestedLanguage);
+      } catch (error) {
+        if (error?.response?.status !== 400 || !getValidatedLanguageCode(requestedLanguage)) {
+          throw error;
+        }
+        logger.warn(`[STT] Provider rejected language "${requestedLanguage}"; retrying without it`);
+        return post('');
+      }
+    };
 
     try {
-      const response = await axios.post(url, data, options);
+      const response = await postWithLanguageFallback();
 
       if (response.status !== 200) {
         throw new Error('Invalid response from the STT API');
       }
 
       if (!response.data || !response.data.text) {
+        logger.warn('[STT] Provider returned no transcript', {
+          mimetype: audioFile.mimetype,
+          bytes: audioBuffer.byteLength,
+          language: requestedLanguage || null,
+          providerResponse: response.data,
+        });
         throw new Error('Missing data in response from the STT API');
       }
 
