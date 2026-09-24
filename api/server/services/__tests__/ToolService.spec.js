@@ -310,6 +310,67 @@ describe('ToolService - Action Capability Gating', () => {
       });
     });
 
+    describe('file_search availability', () => {
+      const capabilities = [AgentCapabilities.tools, AgentCapabilities.file_search];
+      const agent = { id: 'agent_123', tools: [Tools.file_search, 'calculator'] };
+      const searchContext = '- Note: Use the file_search tool to find relevant information within:';
+
+      const loadDefinitions = async (tool_resources) => {
+        mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+        const result = await loadAgentTools({
+          req: createMockReq(capabilities),
+          res: {},
+          agent,
+          tool_resources,
+          definitionsOnly: true,
+        });
+        const [callArgs] = mockLoadToolDefinitions.mock.calls[0];
+        return { ...result, offeredTools: callArgs.tools };
+      };
+
+      it('offers file_search when attached files are searchable', async () => {
+        const { primeFiles: primeSearchFiles } = require('~/app/clients/tools/util/fileSearch');
+        primeSearchFiles.mockResolvedValueOnce({
+          files: [{ file_id: 'embedded', filename: 'report.pdf', fromAgent: false }],
+          toolContext: searchContext,
+        });
+
+        const result = await loadDefinitions({ file_search: { file_ids: ['embedded'] } });
+
+        expect(result.offeredTools).toContain(Tools.file_search);
+        expect(result.dynamicToolContextMap[Tools.file_search]).toBe(searchContext);
+      });
+
+      it('withholds file_search when nothing attached is searchable', async () => {
+        const { primeFiles: primeSearchFiles } = require('~/app/clients/tools/util/fileSearch');
+        primeSearchFiles.mockResolvedValueOnce({ files: [], toolContext: searchContext });
+
+        const result = await loadDefinitions({ file_search: { file_ids: [] } });
+
+        expect(result.offeredTools).not.toContain(Tools.file_search);
+        expect(result.dynamicToolContextMap[Tools.file_search]).toBeUndefined();
+      });
+
+      it('withholds file_search when no files are attached', async () => {
+        const { primeFiles: primeSearchFiles } = require('~/app/clients/tools/util/fileSearch');
+        primeSearchFiles.mockClear();
+
+        const result = await loadDefinitions(undefined);
+
+        expect(primeSearchFiles).not.toHaveBeenCalled();
+        expect(result.offeredTools).not.toContain(Tools.file_search);
+      });
+
+      it('withholds file_search when priming the files fails', async () => {
+        const { primeFiles: primeSearchFiles } = require('~/app/clients/tools/util/fileSearch');
+        primeSearchFiles.mockRejectedValueOnce(new Error('rag unavailable'));
+
+        const result = await loadDefinitions({ file_search: { file_ids: ['embedded'] } });
+
+        expect(result.offeredTools).not.toContain(Tools.file_search);
+      });
+    });
+
     it('primes code files through the initializer-selected stateful route', async () => {
       const capabilities = [AgentCapabilities.tools, AgentCapabilities.execute_code];
       const req = createMockReq(capabilities);

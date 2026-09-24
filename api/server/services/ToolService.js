@@ -580,6 +580,23 @@ const isBuiltInTool = (toolName) =>
  *   hasDeferredTools?: boolean;
  * }>}
  */
+/**
+ * Resolves the files `file_search` could search. The tool is offered only when
+ * this finds some: documents read in full are never indexed, and an empty
+ * search makes the model claim the attached file is missing.
+ */
+async function primeSearchResources({ req, agent, agentResourceType, tool_resources }) {
+  if (!tool_resources) {
+    return null;
+  }
+  try {
+    return await primeSearchFiles({ req, tool_resources, agentId: agent.id, agentResourceType });
+  } catch (error) {
+    logger.error('[loadToolDefinitionsWrapper] Error priming search files:', error);
+    return null;
+  }
+}
+
 async function loadToolDefinitionsWrapper({
   req,
   res,
@@ -629,10 +646,14 @@ async function loadToolDefinitionsWrapper({
   const hasMCPTools = agent.tools?.some((tool) => tool?.includes(Constants.mcp_delimiter));
   const mcpPermissionContext = createMCPPermissionContext(req);
   const canUseMCP = hasMCPTools ? await mcpPermissionContext.canUseServers(req.user) : true;
+  const primedSearch =
+    agent.tools.includes(Tools.file_search) && checkCapability(AgentCapabilities.file_search)
+      ? await primeSearchResources({ req, agent, agentResourceType, tool_resources })
+      : null;
 
   const filteredTools = agent.tools?.filter((tool) => {
     if (tool === Tools.file_search) {
-      return checkCapability(AgentCapabilities.file_search);
+      return (primedSearch?.files?.length ?? 0) > 0;
     }
     if (tool === Tools.execute_code) {
       return checkCapability(AgentCapabilities.execute_code);
@@ -1193,20 +1214,8 @@ async function loadToolDefinitionsWrapper({
     }
   }
 
-  if (hasFileSearch && tool_resources) {
-    try {
-      const { toolContext } = await primeSearchFiles({
-        req,
-        tool_resources,
-        agentId: agent.id,
-        agentResourceType,
-      });
-      if (toolContext) {
-        dynamicToolContextMap[Tools.file_search] = toolContext;
-      }
-    } catch (error) {
-      logger.error('[loadToolDefinitionsWrapper] Error priming search files:', error);
-    }
+  if (hasFileSearch && primedSearch.toolContext) {
+    dynamicToolContextMap[Tools.file_search] = primedSearch.toolContext;
   }
 
   const imageFiles = tool_resources?.[EToolResources.image_edit]?.files ?? [];
