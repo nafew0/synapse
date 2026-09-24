@@ -181,6 +181,17 @@ def _covers_bengali(path):
     return all(ord(letter) in cmap for letter in 'অকখগবমরলশসহািীুেো্')
 
 
+def is_bangla_font(name):
+    """Whether `name` is a Unicode Bangla font: one Windows ships, or an installed font whose cmap
+    covers Bengali. Unlike `can_draw`, a font that is not installed is not trusted."""
+    if not name or is_bijoy_font(name):
+        return False
+    if name.strip().lower() in KNOWN_WINDOWS:
+        return True
+    path = font_path(name)
+    return path is not None and _covers_bengali(path)
+
+
 def can_draw(name):
     """Whether a font named `name` draws Bangla on the user's PC.
 

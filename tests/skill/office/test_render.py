@@ -68,8 +68,13 @@ class TestCompare:
 @needs_render
 class TestRender:
     def test_a_fixed_new_document_reads_back(self, tmp_path):
+        source = letter_docx(tmp_path / 'in.docx')
+        document = docx.Document(source)
+        for _ in range(3):
+            document.add_paragraph().add_run(SENTENCE).font.size = Pt(13)
+        document.save(source)
         out = tmp_path / 'out.docx'
-        fix(letter_docx(tmp_path / 'in.docx'), out, new=True)
+        fix(source, out, new=True)
         result = render.check(out)
         assert result['status'] == 'clean', result
         assert result['pages'][0]['miss_rate'] < 0.03
@@ -77,7 +82,7 @@ class TestRender:
     def test_drawn_order_text_fails(self, tmp_path):
         path = tmp_path / 'broken.docx'
         document = docx.Document()
-        for _ in range(4):
+        for _ in range(8):
             run = document.add_paragraph().add_run('বাংলােদশ িবশ্বিবদ্যালয় মঞ্জুির কিমশন েসেপ্টম্বর')
             run.font.name = 'Nikosh'
             run.font.size = Pt(14)
@@ -88,9 +93,10 @@ class TestRender:
     def test_the_same_garble_in_the_original_is_not_blamed(self, tmp_path):
         path = tmp_path / 'broken.docx'
         document = docx.Document()
-        for _ in range(4):
+        for _ in range(8):
             document.add_paragraph().add_run('বাংলােদশ িবশ্বিবদ্যালয় কিমশন').font.name = 'Nikosh'
-        document.add_paragraph().add_run(SENTENCE).font.name = 'Nikosh'
+        for _ in range(2):
+            document.add_paragraph().add_run(SENTENCE).font.name = 'Nikosh'
         document.save(path)
         assert render.check(path, original=path)['status'] == 'clean'
 
@@ -98,7 +104,7 @@ class TestRender:
         path = tmp_path / 'narrow.xlsx'
         workbook = openpyxl.Workbook()
         sheet = workbook.active
-        for row in range(1, 8):
+        for row in range(1, 15):
             sheet.cell(row, 1, SENTENCE).font = openpyxl.styles.Font(name='Nikosh', size=12)
             sheet.cell(row, 2, 'x')
         sheet.column_dimensions['A'].width = 12
@@ -109,13 +115,18 @@ class TestRender:
         assert render.check(path)['status'] == 'clean'
 
     def test_a_deck_reads_back(self, tmp_path):
-        deck = TestFixPptx().deck(tmp_path / 'in.pptx', text=f'{SENTENCE} {SENTENCE}', font='Nikosh')
+        deck = TestFixPptx().deck(tmp_path / 'in.pptx', text=' '.join([SENTENCE] * 3), font='Nikosh')
         assert render.check(deck)['status'] == 'clean'
 
     def test_a_converted_bijoy_letter_reads_back(self, tmp_path):
+        source = bijoy_docx(tmp_path / 'in.docx')
+        document = docx.Document(source)
+        for typed, _ in PAIRS[:6]:
+            document.add_paragraph().add_run(typed).font.name = 'SutonnyMJ'
+        document.save(source)
         out = tmp_path / 'out.docx'
-        fix(bijoy_docx(tmp_path / 'in.docx'), out)
-        result = verify(out, tmp_path / 'in.docx', render=True)
+        fix(source, out)
+        result = verify(out, source, render=True)
         assert result['status'] == 'clean', result
         assert result['render']['pages']
 
@@ -182,3 +193,28 @@ def test_real_files_after_the_fix(name, tmp_path):
     fix(path, out)
     result = verify(out, path, render=True, max_pages=20)
     assert result['status'] == EXPECTED[name]['fixed'], result
+
+
+@needs_render
+@pytest.mark.skipif(CORPUS is None, reason='set BANGLA_CORPUS to a directory of the real files in corpus.json')
+def test_the_rokeya_circular_rebuilt_in_word(tmp_path):
+    """The PDF a user sent, converted the way the Office Assistant converts it: every Bangla run in
+    Nikosh at the size that looks like the PDF's SolaimanLipi 10.2 pt, and every gate clean."""
+    pdf = CORPUS / 'letter-rokeya-chair-2026-nomination-call.pdf'
+    if not pdf.is_file():
+        pytest.skip('the circular is not in BANGLA_CORPUS')
+    converter = SCRIPTS.parents[1] / 'pdf-to-docx' / 'scripts' / 'convert.py'
+    out = tmp_path / 'rokeya.docx'
+    converted = subprocess.run(
+        [sys.executable, str(converter), str(pdf), str(out), '--mode', 'semantic-editable'],
+        capture_output=True, text=True, cwd=tmp_path,
+    )
+    assert converted.returncode == 0, converted.stdout + converted.stderr
+    fix(out, out)
+    from office.runs import open_document
+
+    runs = [run for run in open_document(out)[1].runs() if run.bangla]
+    assert {run.font for run in runs} == {'Nikosh'}
+    assert sum(run.size_cs == 11.5 for run in runs) > 0.9 * len(runs)
+    result = verify(out, render=True)
+    assert result['status'] == 'clean', result

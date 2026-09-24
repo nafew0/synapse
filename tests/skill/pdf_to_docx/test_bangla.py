@@ -169,3 +169,25 @@ class TestBijoyPdf:
         kept = [char['text'] for char in chars if not bangla.merged_away(char)]
         assert kept == ['আমি', 'বাংলা', 'D', 'h', 'a', 'k', 'a']
         assert chars[0]['x1'] == chars[3]['x1']
+
+
+class TestWordFont:
+    """A run the PDF set in a Bangla font becomes Nikosh at the size that looks the same."""
+
+    @pytest.fixture(autouse=True)
+    def semantic(self):
+        from office import bangla as fonts
+
+        if fonts.font_path('Nikosh') is None or fonts.font_path('SolaimanLipi') is None:
+            pytest.skip('needs Nikosh and SolaimanLipi installed')
+        return load('semantic')
+
+    def test_a_bangla_font_becomes_nikosh_at_the_converted_size(self, semantic):
+        assert semantic._word_font('SolaimanLipi', 10.2) == ('Nikosh', 11.5)
+
+    def test_nikosh_and_latin_fonts_keep_their_size(self, semantic):
+        assert semantic._word_font('Nikosh', 12.04) == ('Nikosh', 12.0)
+        assert semantic._word_font('NimbusSans', 10.24) == ('NimbusSans', 10.2)
+
+    def test_no_size_stays_unset(self, semantic):
+        assert semantic._word_font('SolaimanLipi', None) == ('Nikosh', None)

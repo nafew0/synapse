@@ -17,6 +17,7 @@ from itertools import groupby
 from pathlib import Path
 
 import bangla
+from office.bangla import DEFAULT_FONT, is_bangla_font, size_for
 
 LINE_TOLERANCE = 2.5
 """Points of baseline drift still counted as one line. Kerning and superscripts move a
@@ -63,8 +64,6 @@ NUMBERED = re.compile(r'^(\(?[0-9]{1,2}[.)]|[a-z][.)]|[ivxl]+[.)])\s+', re.IGNOR
 a numbered list would replace the document's own Bangla numerals and brackets with Latin ones."""
 SUBSET_PREFIX = re.compile(r'^[A-Z]{6}\+')
 BENGALI = re.compile(r'[ঀ-৿]')
-BIJOY_REPLACEMENT = 'Nikosh'
-"""The font Bijoy text is set in once converted: the Bangla font offices use, installed here."""
 
 
 RUN_PROPERTY_TAIL = (
@@ -174,6 +173,7 @@ def _prepared(page, decoders, families, summary):
     rewritten into real Unicode, Bijoy words included; every font is called by its family, with
     `-Bold` where the glyph was bold, since that is what the line and run builders read. A Bijoy
     font is called Nikosh: its text is Unicode now, and the Bijoy font is not installed here.
+    Other Bangla fonts become Nikosh later, in `_apply_font`, once each run's size is known.
     """
     kept, doubled = bangla.dedupe(page.chars)
     if decoders:
@@ -189,7 +189,7 @@ def _prepared(page, decoders, families, summary):
     for char in kept:
         name = bangla.family_of(char['fontname'])
         bold = id(char) in doubled or 'bold' in name.lower()
-        family = BIJOY_REPLACEMENT if bangla.is_bijoy(name, families) else families.get(name, name)
+        family = DEFAULT_FONT if bangla.is_bijoy(name, families) else families.get(name, name)
         char['fontname'] = family + ('-Bold' if bold else '')
     keep = {id(char) for char in kept if not bangla.merged_away(char)}
     return page.filter(lambda obj: obj.get('object_type') != 'char' or id(obj) in keep)
@@ -797,8 +797,7 @@ def _add_text_block(document, block, body_size, frame, summary, space_before=0.0
         _add_runs(paragraph, [word for line in block['lines'] for word in line['words']], block['size'])
     else:
         run = paragraph.add_run(text)
-        run.font.size = Pt(round(block['size'], 1)) if block['size'] else None
-        _apply_font(run, block['font'], text)
+        _apply_font(run, block['font'], text, block['size'])
 
     column_centre = frame['centre']
     centre = (block['x0'] + block['x1']) / 2
@@ -937,8 +936,6 @@ def _add_runs(paragraph, words, size):
     in the middle of a paragraph. Styling the line or the paragraph as a whole either bolds the
     sentence around the label or loses the label's bold.
     """
-    from docx.shared import Pt
-
     previous = None
     for face, group in groupby(words, key=_face):
         group = list(group)
@@ -948,21 +945,38 @@ def _add_runs(paragraph, words, size):
         separator = ' ' if previous is not None and _spaced(previous, group[0]) else ''
         previous = group[-1]
         run = paragraph.add_run(separator + text)
-        run.font.size = Pt(round(size, 1)) if size else None
         if face[1]:
             run.bold = True
-        _apply_font(run, face[0], text)
+        _apply_font(run, face[0], text, size)
 
 
-def _apply_font(run, family, text):
+def _word_font(family, size):
+    """(family, size) Word gets for text the PDF set in `family` at `size` points.
+
+    A Bangla font (SolaimanLipi, Kalpurush…) becomes Nikosh, the one Bangla font the output uses
+    and embeds, so the document looks the same on a PC without the PDF's font. Nikosh draws Bangla
+    about 11 % smaller at the same size, so the size is converted with `size_for` from the PDF's
+    own size (SolaimanLipi 10.2 pt becomes Nikosh 11.5 pt), before Word rounds it to half points.
+    Latin fonts and Nikosh keep their size, rounded to a tenth."""
+    if family and family != DEFAULT_FONT and is_bangla_font(family):
+        return DEFAULT_FONT, size_for(family, size) if size else None
+    return family, round(size, 1) if size else None
+
+
+def _apply_font(run, family, text, size=None):
     """Name the font on the run, including the complex-script slot.
 
     Word picks the font for Bengali from `w:cs`/`w:eastAsia`, not from `w:ascii`. Setting only the
     Latin slot leaves a Bangla paragraph to whatever the reader defaults to, which is how mixed
     Bangla/English documents end up with boxes in one language and text in the other.
+    `size` is the PDF's size in points; see `_word_font`.
     """
     from docx.oxml.ns import qn
+    from docx.shared import Pt
 
+    family, points = _word_font(family, size)
+    if points:
+        run.font.size = Pt(points)
     bengali = bool(BENGALI.search(text or ''))
     if family:
         run.font.name = family

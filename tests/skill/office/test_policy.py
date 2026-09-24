@@ -41,9 +41,10 @@ def test_every_skill_ships_the_same_copy():
         assert all(filecmp.cmp(copies[0], copy, shallow=False) for copy in copies[1:]), name
 
 
-def test_pdf_to_docx_ships_the_same_bijoy_converter():
-    shared = SKILLS / 'docx' / 'scripts' / 'office' / 'bijoy.py'
-    assert filecmp.cmp(shared, SKILLS / 'pdf-to-docx' / 'scripts' / 'office' / 'bijoy.py', shallow=False)
+@pytest.mark.parametrize('name', ['bijoy.py', 'bangla.py'])
+def test_pdf_to_docx_ships_the_same_font_modules(name):
+    shared = SKILLS / 'docx' / 'scripts' / 'office' / name
+    assert filecmp.cmp(shared, SKILLS / 'pdf-to-docx' / 'scripts' / 'office' / name, shallow=False)
 
 
 class TestClassify:

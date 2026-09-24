@@ -337,7 +337,7 @@ python3 /mnt/data/skills/pptx/scripts/office/verify_bangla.py output.pptx --orig
 alone. `verify_bangla.py` fails when Bangla from the original is missing, when new Bangla is
 garbled or has no font that draws Bangla, or when a text box became a picture; exits 2 on
 defects. It also prints the deck and reads each slide back with OCR, failing a slide where more
-than 8 % of the Bangla does not read back (boxes, broken shaping, clipped text). `check_layout.py`
+than 12 % of the Bangla does not read back (boxes, broken shaping, clipped text). `check_layout.py`
 then measures Bangla in the `a:cs` font. The deck does not embed
 Nikosh, so tell the user it uses Nikosh and looks best with Nikosh installed.
 

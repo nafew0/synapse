@@ -180,7 +180,7 @@ python /mnt/data/skills/xlsx/scripts/verify_structure.py /mnt/data/original.xlsx
   It fails when a Bangla cell of the original is gone, when new Bangla is garbled, or when a
   Bangla cell you added or changed names a font that cannot draw Bangla. Faults the original
   already had are listed under `notes` and do not fail it. It also prints the workbook and reads
-  each page back with OCR; a page fails when more than 8 % of its Bangla does not read back,
+  each page back with OCR; a page fails when more than 12 % of its Bangla does not read back,
   most often text clipped by a column that is too narrow for it. Shorten the text.
 - Tell the user the workbook uses Nikosh and looks best with Nikosh installed.
 - **Bijoy (SutonnyMJ) workbooks.** Cells in a Bijoy font (SutonnyMJ, other `…MJ` fonts) hold

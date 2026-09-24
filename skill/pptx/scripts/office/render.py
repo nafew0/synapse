@@ -11,11 +11,13 @@ The comparison is per page and ignores word order, because OCR reads a letterhea
 columns in a different order than the text layer lists them. For each page it counts the pairs of
 adjacent letters inside the page's Bangla words (with the word's edges, so a one-letter word
 counts) and reports the share that OCR did not read: the miss rate. Measured 2026-09-25 with the
-sandbox's tessdata_best `ben` model at 200 dpi: the pages of a clean four-page UGC notice in
-SolaimanLipi/Nikosh miss 0.3-1.5 %; a DOCX made from a broken PDF text layer misses 15-35 % per
-page, the PDF itself 30-47 %. The gate fails a page above 8 %.
+sandbox's tessdata_best `ben` model at 300 dpi on the four-page Rokeya Chair circular: clean pages
+in SolaimanLipi miss 0.4-1.2 %, the same letter rebuilt in Nikosh 11.5 pt 1.6-5.2 % (Tesseract
+reads Nikosh less well); a DOCX made from its broken PDF text layer misses 22-34 % per page, the
+PDF itself 30-47 %. At 200 dpi the Nikosh pages reached 8.5 %. The gate fails a page above 12 %.
 
-A page with fewer than 20 Bangla letters is not judged: there is too little to measure. Words the
+A page with fewer than 100 Bangla letters is not judged: on so little text one misread word moves
+the rate by several points (a 66-letter garbled page measured 12 %, its neighbours 22-34 %). Words the
 original file already had garbled (`--original`) are left out of the count, so an edit is not
 blamed for text it did not write. Garbled text also makes OCR misread the words around it, so when
 the original was garbled and every word OCR missed on a page is one the original already had, the
@@ -43,10 +45,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from office.bangla import BENGALI_RUN, classify, normalize
 
-DPI = 200
+DPI = 300
 MAX_PAGES = 10
-MISS_THRESHOLD = 0.08
-MIN_LETTERS = 20
+MISS_THRESHOLD = 0.12
+MIN_LETTERS = 100
 LANGUAGES = 'ben+eng'
 WORKERS = 4
 EXAMPLES = 8

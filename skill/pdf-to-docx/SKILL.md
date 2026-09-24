@@ -95,9 +95,17 @@ out in front of their consonant, and bold is faked by printing every glyph twice
 `semantic-editable` repairs this by itself. It matches each glyph the PDF drew to the same font
 installed here, reads back which characters the glyph stands for, puts them in typed order, and
 checks every word by shaping it again with HarfBuzz. It also drops the fake-bold copies and keeps
-those words bold, names each run's font by its real family (`SolaimanLipi`, not
-`SolaimanLipiNormal`), and sets the size, weight and language Word reads for Bangla (`w:szCs`,
-`w:bCs`, `bn-BD`).
+those words bold, and sets every run in a Bangla font (SolaimanLipi, Kalpurush…) in **Nikosh**, the
+one Bangla font the output uses, converting its size so it looks as large as in the PDF
+(SolaimanLipi 10.2 pt becomes Nikosh 11.5 pt). Latin fonts keep their family. It also sets the
+size, weight and language Word reads for Bangla (`w:szCs`, `w:bCs`, `bn-BD`).
+
+After the conversion gate, embed Nikosh and check the Bangla, then deliver only on success:
+
+```bash
+python3 /mnt/data/skills/docx/scripts/office/fix_bangla.py /mnt/data/output.docx
+python3 /mnt/data/skills/docx/scripts/office/verify_bangla.py /mnt/data/output.docx
+```
 
 Read the `bangla` block in the JSON:
 
@@ -109,8 +117,7 @@ Read the `bangla` block in the JSON:
 A PDF typed in a **Bijoy** font (SutonnyMJ, other `…MJ` fonts) has a text layer of Latin codes
 (`evsjv‡`k` for বাংলাদেশ). `semantic-editable` converts each word in a Bijoy font to Unicode and
 names the run Nikosh; the `bijoy` block of the JSON counts the `words` and lists the `fonts`.
-Then run the docx skill's `fix_bangla.py` on the result to embed Nikosh, and tell the user the
-Bangla was converted from Bijoy to Unicode.
+Tell the user the Bangla was converted from Bijoy to Unicode.
 
 `layout-editable` goes through LibreOffice's own PDF import, which reads the broken layer as-is.
 For a Bangla PDF, use `semantic-editable`.
@@ -164,7 +171,7 @@ not adjectives:
 > unchanged.
 
 For a Bangla PDF, add the Bangla line: "978 Bangla words recovered from the PDF's broken text layer
-and each verified against the glyphs it drew; fonts kept as SolaimanLipi and Nikosh." Page numbers
+and each verified against the glyphs it drew; set in Nikosh, embedded in the file." Page numbers
 in a repeated footer become Word fields, which count in Latin digits (১ / ৪ becomes 1 / 4); say so
 when the source numbered its pages in Bangla.
 
