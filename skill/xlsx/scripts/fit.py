@@ -6,6 +6,11 @@ relative to a digit, scaled by the cell's font size. The estimate needs no font 
 the same answer in a sandbox that lacks the workbook's fonts as on the user's machine, and it is
 only accurate to about a tenth; the tolerances below absorb that.
 
+Bangla is the exception: its width depends on how letters join into conjuncts, so it is shaped
+with HarfBuzz over the cell's font (or, when that font cannot draw Bangla, the Windows Bangla
+font's stand-in), and given 30 % spare room. A workbook cannot embed Nikosh, and the same text is
+up to 30 % wider in the font a PC without Nikosh falls back to.
+
 A fit problem is what the reader sees on the printed form:
 - a number wider than its column prints as ####;
 - text wider than its cell is cut off when the cell is merged or its neighbour is not empty;
@@ -15,6 +20,8 @@ A fit problem is what the reader sees on the printed form:
 from datetime import date, datetime, time
 
 from openpyxl.utils import get_column_letter
+
+from office.bangla import BENGALI_RUN, can_draw, measure
 
 NARROW = set("iljtfrI.,:;'|!()[]{} -")
 WIDE = set('mwMW@%&')
@@ -32,6 +39,13 @@ NUMBER_TOLERANCE = 1.02
 HEIGHT_TOLERANCE = 1.1
 SPILL_RIGHT = {None, 'general', 'left', 'fill', 'justify', 'distributed'}
 SPILL_LEFT = {'right'}
+BANGLA_MARGIN = 1.3
+FALLBACK_BANGLA_FONT = 'Nirmala UI'
+DIGIT_EM = 0.5
+"""Width of a digit in em when the default font cannot be measured; Calibri's is 0.507."""
+BANGLA_CHAR_EM = 0.45
+"""Width of a Bangla code point in em when nothing can be shaped: the widest measured font,
+Noto Sans Bengali, averages 0.445 over a sentence of office Bangla; Nikosh 0.341."""
 
 
 def char_width(char):
@@ -46,10 +60,32 @@ def char_width(char):
     return LOWER_RATIO
 
 
-def text_width(text, font_size, bold, base_size):
+def digit_points(base_font, base_size):
+    """Width of one digit of the workbook's default font, the unit of a column width."""
+    measured = measure('0', base_font, base_size) if base_font else None
+    return measured or base_size * DIGIT_EM
+
+
+def bangla_width(text, font_name, size, bold, base_font, base_size):
+    """Width of a run of Bangla in column-width units, spare room included."""
+    font = font_name if can_draw(font_name) else FALLBACK_BANGLA_FONT
+    points = measure(text, font, size, bold)
+    if points is None:
+        points = len(text) * size * BANGLA_CHAR_EM * (BOLD_RATIO if bold else 1.0)
+    return points / digit_points(base_font, base_size) * BANGLA_MARGIN
+
+
+def text_width(text, font_size, bold, base_size, font_name=None, base_font=None):
     """Width of `text` in column-width units (digits of the default font)."""
-    scale = (font_size or base_size) / base_size * (BOLD_RATIO if bold else 1.0)
-    return sum(char_width(char) for char in text) * scale
+    size = font_size or base_size
+    scale = size / base_size * (BOLD_RATIO if bold else 1.0)
+    latin = BENGALI_RUN.sub('', text)
+    width = sum(char_width(char) for char in latin) * scale
+    if len(latin) == len(text):
+        return width
+    return width + sum(
+        bangla_width(run, font_name, size, bold, base_font, base_size) for run in BENGALI_RUN.findall(text)
+    )
 
 
 def section(number_format, value):
@@ -175,13 +211,13 @@ class Geometry:
         return values.get((row, col)) in (None, '')
 
 
-def wrapped_lines(text, width, size, bold, base_size):
+def wrapped_lines(text, width, size, bold, base_size, font_name=None, base_font=None):
     lines = 0
     for paragraph in text.split('\n'):
         lines += 1
         current = 0.0
         for word in paragraph.split(' '):
-            word_width = text_width(word + ' ', size, bold, base_size)
+            word_width = text_width(word + ' ', size, bold, base_size, font_name, base_font)
             if current and current + word_width > width:
                 lines += 1
                 current = word_width
@@ -200,7 +236,7 @@ def spills(cell, geometry, values):
     return geometry.is_empty(row, col - 1, values) and geometry.is_empty(row, col + 1, values)
 
 
-def cell_problem(cell, value, geometry, values, base_size):
+def cell_problem(cell, value, geometry, values, base_size, base_font=None):
     """A description of how `value` fails to fit `cell`, or None when it fits."""
     shown = display(value, cell.number_format)
     if shown is None:
@@ -213,13 +249,13 @@ def cell_problem(cell, value, geometry, values, base_size):
     if alignment.wrap_text and not is_number:
         if not merged and geometry.grows(cell.row):
             return None
-        lines = wrapped_lines(text, width, size, font.b, base_size)
+        lines = wrapped_lines(text, width, size, font.b, base_size, font.name, base_font)
         needed = lines * size * LINE_HEIGHT
         if needed > height * HEIGHT_TOLERANCE:
             return f'wrapped text needs {lines} line(s), about {needed:.0f}pt, but the row is {height:.0f}pt tall'
         return None
 
-    needed = text_width(text.replace('\n', ' '), size, font.b, base_size)
+    needed = text_width(text.replace('\n', ' '), size, font.b, base_size, font.name, base_font)
     if is_number:
         if needed > width * NUMBER_TOLERANCE:
             return f'{text!r} needs a width of about {needed:.1f} but the column is {width:.1f}, so it prints as ####'
@@ -237,7 +273,12 @@ def base_font_size(wb):
     return float(size or DEFAULT_FONT_SIZE)
 
 
-def fit_problems(ws, values_ws, base_size):
+def base_font_name(wb):
+    fonts = getattr(wb, '_fonts', None)
+    return fonts[0].name if fonts else None
+
+
+def fit_problems(ws, values_ws, base_size, base_font=None):
     """{coordinate: description} for every cell whose content does not fit. `values_ws` is the
     same sheet loaded with data_only=True, so formula results are measured too."""
     values = {(c.row, c.column): c.value for c in values_ws._cells.values()}
@@ -249,7 +290,7 @@ def fit_problems(ws, values_ws, base_size):
         value = values.get((cell.row, cell.column))
         if value is None and isinstance(cell.value, str) and cell.value.startswith('='):
             continue
-        problem = cell_problem(cell, value if value is not None else cell.value, geometry, values, base_size)
+        problem = cell_problem(cell, value if value is not None else cell.value, geometry, values, base_size, base_font)
         if problem:
             problems[cell.coordinate] = problem
     return problems

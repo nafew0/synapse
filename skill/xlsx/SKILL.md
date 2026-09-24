@@ -144,6 +144,44 @@ python /mnt/data/skills/xlsx/scripts/verify_structure.py /mnt/data/original.xlsx
 - In the final response, say which ranges you changed and how many merged ranges and untouched
   cells were verified.
 
+## Bangla
+
+- **Font:** a new Bangla cell is set in **Nikosh** (`Font(name='Nikosh', size=12)` in a new
+  workbook). In a user's workbook, a Bangla cell you add or change takes its font from
+  `font_for` given the font the cell or its template cell already has: the office's own
+  Bangla font is kept, a Latin-only or Bijoy font becomes Nikosh. Leave cells you do not change
+  exactly as they are.
+
+  ```python
+  import sys; sys.path.insert(0, '/mnt/data/skills/xlsx/scripts')
+  from copy import copy
+  from office.bangla import font_for
+
+  font = copy(template.font)          # size, bold and colour stay the template's
+  font.name = font_for(font.name)
+  cell.font = font
+  ```
+- **Sizes in a new workbook:** body and table text 12 pt, title 15 pt bold, subtitle 13 pt
+  bold, table header 12 pt bold, notes 11 pt. In a user's workbook keep the template's sizes.
+- **Numbers stay numbers.** Bangla digits (০-৯) only in label cells. Every formula input and
+  total is a real number in Latin digits with the template's number format; never type a
+  number as Bangla-digit text, and never try a number format that substitutes digits.
+- **Bangla-calendar dates stay text** exactly as the template writes them. Never convert them to
+  Gregorian dates unless asked.
+- **Width:** the structure gate's `fit` check shapes Bangla with the cell's font and requires
+  30 % spare room, because a workbook cannot embed Nikosh and a PC without it draws the same
+  text up to 30 % wider. Shorten the text; never widen the column.
+- After the structure gate, check the Bangla and deliver only on success:
+
+  ```bash
+  python /mnt/data/skills/xlsx/scripts/office/verify_bangla.py /mnt/data/original_updated.xlsx --original /mnt/data/original.xlsx
+  ```
+
+  It fails when a Bangla cell of the original is gone, when new Bangla is garbled, or when a
+  Bangla cell you added or changed names a font that cannot draw Bangla. Faults the original
+  already had are listed under `notes` and do not fail it.
+- Tell the user the workbook uses Nikosh and looks best with Nikosh installed.
+
 ## Mandatory calculation completion gate
 
 For any request involving totals, costs, quantities, subtotals, balances, percentages, or other derived values, saving the workbook is not completion:

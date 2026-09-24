@@ -94,6 +94,60 @@ Accepting a deleted paragraph mark should join that paragraph to the one below i
 
 An empty bullet in either view is an artifact of that view, not a defect in the document. Check paragraph deletions in the XML.
 
+## Bangla
+
+Word draws Bangla with a run's **complex-script** font and size (`w:rFonts/@w:cs`, `w:szCs`,
+`w:bCs`), not the ones docx-js and most XML edits set. Left alone, the user's PC substitutes some
+other face and Bangla comes out smaller than the English beside it.
+
+- **Font:** new Bangla text is set in **Nikosh**. Existing Bangla keeps the document's font,
+  unless it cannot draw Bangla (Calibri, Arial, Times New Roman…) or is a Bijoy font
+  (SutonnyMJ…). Nikosh goes in the complex-script slot only; the Latin font stays as it is.
+- **Sizes:** when editing, keep every run's size. A new document with nothing to copy uses this
+  scale in its styles (Normal, Heading 1–3, Footer), not as formatting on each run:
+
+  | Role | Size |
+  |---|---|
+  | Body, table text | 13 pt |
+  | Letterhead office name | 15 pt bold |
+  | বিষয় line | 13 pt bold |
+  | Heading 1 / 2 / 3 (reports) | 17 / 15 / 13 pt bold |
+  | Footer, page numbers | 11 pt |
+
+  Official letters (স্মারক, প্রজ্ঞাপন, অফিস আদেশ, নোটিশ) use only body, letterhead, বিষয় and
+  footer sizes: they are laid out by spacing and position, not headings. When recreating a
+  document from a PDF, take each run's size from the PDF and convert it to Nikosh with
+  `size_for` (SolaimanLipi 10.2 pt becomes Nikosh 11.5 pt); a source that uses one size
+  throughout stays one size.
+- **Editing:** edit inside the existing runs (`merge_runs.py` first). Never rebuild a Bangla
+  paragraph from plain text; that drops its complex-script properties.
+
+After building or editing, fix the runs and embed Nikosh, then check the Bangla, in this order:
+
+```bash
+python3 /mnt/data/skills/docx/scripts/office/fix_bangla.py /mnt/data/out.docx --new   # a document you created
+python3 /mnt/data/skills/docx/scripts/office/fix_bangla.py /mnt/data/out.docx          # an edited document
+python3 /mnt/data/skills/docx/scripts/office/verify_bangla.py /mnt/data/out.docx --original /mnt/data/in.docx \
+  --allow 'text of a paragraph you were asked to change'
+```
+
+`fix_bangla.py` sets the complex-script font, size, bold and language on every Bangla run,
+mirrors sizes into the styles, and embeds the whole Nikosh font (about 0.8 MB) so the document
+looks the same on a PC without Nikosh. `verify_bangla.py` fails when Bangla from the original is
+missing, when new Bangla is garbled, when a Bangla run has no font that draws Bangla or a
+different complex-script size, when Nikosh is used but not embedded, or when a text box became a
+picture. Exits 2 on defects: fix the document and run both again. Deliver only on success.
+Omit `--original` for a new document.
+
+To convert a size when changing a run's font:
+
+```python
+import sys; sys.path.insert(0, '/mnt/data/skills/docx/scripts')
+from office.bangla import size_for, font_for
+size_for('SolaimanLipi', 10.2)   # 11.5, the Nikosh size that looks the same
+font_for('Calibri')              # 'Nikosh'
+```
+
 ## Comments
 
 Comments require six cross-linked files. Use the helper — directory mode when you'll also be editing `document.xml` (saves an unzip/rezip cycle), `.docx`-direct mode otherwise:

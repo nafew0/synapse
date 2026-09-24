@@ -238,3 +238,43 @@ def test_cli_reports_a_missing_file():
 
     assert code == 1
     assert 'not found' in output.lower()
+
+
+BANGLA = 'সরকারি কার্যালয়ের প্রজ্ঞাপন অনুযায়ী সংশ্লিষ্ট কর্মকর্তাকে জানানো হলো'
+HAS_NIKOSH = check_layout.measure('ক', 'Nikosh', 12) is not None and check_layout.can_draw('Nikosh')
+
+
+def set_cs(box, typeface):
+    from lxml import etree
+    from pptx.oxml.ns import qn
+
+    rpr = box.text_frame.paragraphs[0].runs[0]._r.get_or_add_rPr()
+    etree.SubElement(rpr, qn('a:cs')).set('typeface', typeface)
+
+
+@pytest.mark.skipif(not HAS_NIKOSH, reason='needs HarfBuzz and the Nikosh font')
+def test_bangla_is_measured_in_its_complex_script_font():
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    box = textbox(slide, 1, 1, 6, 1, BANGLA, size=20)
+    set_cs(box, 'Nikosh')
+    run = box.text_frame.paragraphs[0].runs[0]
+    font = check_layout.resolve_font('Calibri', False, False)
+    width = check_layout.word_width_emu('কর্মকর্তাকে', run, font, 20)
+    assert width == int(check_layout.measure('কর্মকর্তাকে', 'Nikosh', 20) * check_layout.EMU_PER_POINT)
+
+
+@pytest.mark.skipif(not HAS_NIKOSH, reason='needs HarfBuzz and the Nikosh font')
+def test_bangla_that_fits_in_nikosh_but_not_the_fallback_is_measured_in_nikosh(tmp_path):
+    """The same line is about 30 % wider in the Windows fallback than in Nikosh. A box sized
+    for Nikosh must not be reported when the run names Nikosh."""
+    nikosh = check_layout.measure(BANGLA, 'Nikosh', 18)
+    width_in = nikosh * 1.12 / 72
+
+    def build(slide, typeface):
+        box = textbox(slide, 1, 1, width_in, 0.31, BANGLA, size=18)
+        set_cs(box, typeface)
+
+    assert check_layout.check(deck(tmp_path, lambda s: build(s, 'Nikosh'), 'n.pptx'))['status'] == 'clean'
+    unset = check_layout.check(deck(tmp_path, lambda s: build(s, 'Calibri'), 'c.pptx'))
+    assert kinds(unset) == ['overflow']

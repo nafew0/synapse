@@ -37,7 +37,7 @@ from openpyxl import load_workbook
 from openpyxl.utils.cell import column_index_from_string, coordinate_from_string
 from openpyxl.utils.exceptions import CellCoordinatesException
 
-from fit import base_font_size, fit_problems
+from fit import base_font_name, base_font_size, fit_problems
 from layout import layout_key
 
 DEFAULT_COLUMN_WIDTH = 8.43
@@ -231,11 +231,12 @@ def compare_sheet(name, before, after, allowed, report):
 def check_fit(pairs, before_wb, after_wb, before_values, after_values, report):
     """Report content that outgrew its cell, unless the same cell overflowed in the original."""
     before_size, after_size = base_font_size(before_wb), base_font_size(after_wb)
+    before_font, after_font = base_font_name(before_wb), base_font_name(after_wb)
     for name, source in pairs:
         if name not in after_wb.sheetnames:
             continue
-        known = fit_problems(before_wb[source], before_values[source], before_size) if source else {}
-        found = fit_problems(after_wb[name], after_values[name], after_size)
+        known = fit_problems(before_wb[source], before_values[source], before_size, before_font) if source else {}
+        found = fit_problems(after_wb[name], after_values[name], after_size, after_font)
         for coordinate, problem in found.items():
             if coordinate not in known:
                 report('fit', name, f'{coordinate}: {problem}')

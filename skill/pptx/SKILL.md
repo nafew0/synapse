@@ -317,6 +317,28 @@ pptxgenjs emits chart XML PowerPoint refuses to open, and every other tool
 accepts: python-pptx opens those decks, LibreOffice renders them, the XSD
 passes them. Every failure names its fix. Fix it in the generator and rebuild.
 
+### Bangla
+
+PowerPoint draws Bangla with a run's complex-script font (`a:cs`), not the `fontFace` a
+pptxgenjs script sets or the `a:latin` an XML edit changes. New Bangla text is set in **Nikosh**;
+Bangla in a deck you edit keeps its font unless that font cannot draw Bangla or is a Bijoy font.
+Sizes in a new deck: body 20 pt, title 36 pt, subtitle 24 pt, footer 14 pt. Titles from a
+template default to Calibri, so Bangla titles need the fix below too.
+
+On any deck containing Bangla, right after `fix_content_types.py` and before the layout gate:
+
+```bash
+python3 /mnt/data/skills/pptx/scripts/office/fix_bangla.py output.pptx --new   # a deck you created
+python3 /mnt/data/skills/pptx/scripts/office/fix_bangla.py output.pptx         # an edited deck
+python3 /mnt/data/skills/pptx/scripts/office/verify_bangla.py output.pptx --original src.pptx
+```
+
+`fix_bangla.py` sets `a:cs` and `lang="bn-BD"` on every Bangla run and leaves the Latin font
+alone. `verify_bangla.py` fails when Bangla from the original is missing, when new Bangla is
+garbled or has no font that draws Bangla, or when a text box became a picture; exits 2 on
+defects. `check_layout.py` then measures Bangla in the `a:cs` font. The deck does not embed
+Nikosh, so tell the user it uses Nikosh and looks best with Nikosh installed.
+
 ### Mandatory layout gate
 
 `validate.py` proves the file opens; it says nothing about whether the slides read correctly.

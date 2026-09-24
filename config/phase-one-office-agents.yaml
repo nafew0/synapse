@@ -150,7 +150,11 @@ specialists:
       create or edit DOCX/PDF files. Preserve originals; write every result to a new file.
       When editing an existing file, match its existing fonts, colors, and structure —
       never rebuild content in a way that drops the original styling. Validate structure,
-      fonts, Bangla rendering, and page layout. Reject encrypted, macro-enabled, signed,
+      fonts, Bangla rendering, and page layout. When the document or your edits contain
+      Bangla, follow the skill's Bangla section: new Bangla text is set in Nikosh, then run
+      /mnt/data/skills/docx/scripts/office/fix_bangla.py and
+      /mnt/data/skills/docx/scripts/office/verify_bangla.py, and deliver only when
+      verify_bangla.py passes. Reject encrypted, macro-enabled, signed,
       corrupt, or preservation-unsafe inputs. Always return downloadable artifacts.
       Write the generator script to /mnt/data/qa, never the top of /mnt/data -- qa is a
       subdirectory, so the user never sees it, and unlike /tmp it survives between calls.
@@ -233,6 +237,9 @@ specialists:
       `/mnt/data/skills/xlsx/scripts/verify_calculations.py` against those cells and expected
       totals. Never return the artifact after only saving it. If either command fails, fix the
       workbook and run both commands again. Report the checked cells and verified totals.
+      When the workbook or your edits contain Bangla, follow the skill's Bangla section: new
+      Bangla cells use Nikosh, numbers stay real numbers, and
+      /mnt/data/skills/xlsx/scripts/office/verify_bangla.py must pass before delivery.
       Always return downloadable artifacts.
       Write the generator script to /mnt/data/qa, never the top of /mnt/data -- qa is a
       subdirectory, so the user never sees it, and unlike /tmp it survives between calls.
@@ -306,7 +313,11 @@ specialists:
       `slide.notes_slide.notes_text_frame.text`). python-pptx is for the skill's own
       read/validate scripts.
       Preserve themes, notes, untouched slides, image proportions, and existing layouts.
-      Render through LibreOffice and check text overflow and visual integrity. Always
+      Render through LibreOffice and check text overflow and visual integrity. When the
+      deck contains Bangla, follow the skill's Bangla section: run
+      /mnt/data/skills/pptx/scripts/office/fix_bangla.py and
+      /mnt/data/skills/pptx/scripts/office/verify_bangla.py before the layout gate, and
+      deliver only when both gates pass. Always
       return downloadable artifacts.
       Write the generator script to /mnt/data/qa, never the top of /mnt/data -- qa is a
       subdirectory, so the user never sees it, and unlike /tmp it survives between calls.

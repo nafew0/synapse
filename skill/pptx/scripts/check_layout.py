@@ -5,7 +5,9 @@ sit on top of each other, and anything hanging off the slide.
 Rendering and looking at slides catches these too, but only when the renderer works and the
 model looks carefully; this is the same check made deterministic, and it runs in a second.
 It measures with the real font metrics when fontconfig can resolve the typeface, so a title
-that fits in Calibri is not reported because the previewer substituted something wider.
+that fits in Calibri is not reported because the previewer substituted something wider. Bangla
+is measured in the run's complex-script font (`a:cs`), the one PowerPoint draws it with, and
+shaped with HarfBuzz so a conjunct counts as the one glyph it is.
 
 Usage:
     python check_layout.py deck.pptx [--slides 2,5] [--json]
@@ -19,7 +21,12 @@ import sys
 from pathlib import Path
 
 from pptx import Presentation
+from pptx.oxml.ns import qn
 from pptx.util import Emu
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from office.bangla import can_draw, has_bangla, measure  # noqa: E402
 
 EMU_PER_INCH = 914400
 EMU_PER_POINT = 12700
@@ -44,6 +51,9 @@ one property a viewer notices before reading a word. The tolerance absorbs the r
 13.333" — nothing wider."""
 TARGET_ASPECT = 16 / 9
 ASPECT_TOLERANCE = 0.02
+FALLBACK_BANGLA_FONT = 'Nirmala UI'
+"""What a run with no usable complex-script font is measured in: the Windows Bangla font, whose
+stand-in here is Noto Sans Bengali."""
 
 _font_cache: dict[tuple[str, bool, bool], object] = {}
 _unmeasured: set[str] = set()
@@ -106,6 +116,26 @@ def text_width_emu(text, font, size_pt):
     return int(width / 100 * size_pt * EMU_PER_POINT)
 
 
+def bangla_font(run):
+    """The typeface PowerPoint draws the run's Bangla with, or the fallback."""
+    rpr = run._r.find(qn('a:rPr'))
+    cs = rpr.find(qn('a:cs')) if rpr is not None else None
+    typeface = cs.get('typeface', '') if cs is not None else ''
+    if typeface and not typeface.startswith('+') and can_draw(typeface):
+        return typeface
+    return FALLBACK_BANGLA_FONT
+
+
+def word_width_emu(word, run, font, size):
+    """Width of one word: shaped in the Bangla font when it has Bangla, else as before."""
+    if has_bangla(word):
+        points = measure(word, bangla_font(run), size, run.font.bold, run.font.italic)
+        if points is not None:
+            return int(points * EMU_PER_POINT)
+        font = resolve_font(bangla_font(run), run.font.bold, run.font.italic)
+    return text_width_emu(word, font, size)
+
+
 def run_size(run, paragraph, shape):
     """Point size for a run, following python-pptx's inheritance chain to a sane default."""
     for source in (run.font.size, paragraph.font.size):
@@ -133,7 +163,7 @@ def paragraph_lines(paragraph, shape, width_emu):
         max_size = max(max_size, size)
         font = resolve_font(run.font.name, run.font.bold, run.font.italic)
         for word in run.text.split(' '):
-            word_width = text_width_emu(word + ' ', font, size)
+            word_width = word_width_emu(word + ' ', run, font, size)
             if current and current + word_width > width_emu:
                 lines += 1
                 height += size * LINE_SPACING
