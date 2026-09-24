@@ -181,6 +181,21 @@ python /mnt/data/skills/xlsx/scripts/verify_structure.py /mnt/data/original.xlsx
   Bangla cell you added or changed names a font that cannot draw Bangla. Faults the original
   already had are listed under `notes` and do not fail it.
 - Tell the user the workbook uses Nikosh and looks best with Nikosh installed.
+- **Bijoy (SutonnyMJ) workbooks.** Cells in a Bijoy font (SutonnyMJ, other `…MJ` fonts) hold
+  Bangla as Latin codes (`evsjv‡`k` for বাংলাদেশ); openpyxl and the model see the codes. Read
+  them with `office.bijoy.to_unicode`. Before editing, convert the workbook:
+
+  ```bash
+  python /mnt/data/skills/xlsx/scripts/office/fix_bangla.py /mnt/data/original.xlsx -o /mnt/data/original_updated.xlsx
+  ```
+
+  It converts every Bijoy text cell and rich-text run to Unicode and renames the Bijoy fonts
+  to Nikosh; every other part of the file stays byte for byte. A number in a Bijoy-font cell
+  showed Bangla digits and now shows Latin digits: it stays a number (`bijoy.numbers` counts
+  them); say so. Then make your edits on the converted copy, run `fit.py` (Nikosh widths differ
+  from SutonnyMJ's), and `verify_bangla.py` with `--original` the user's file; it fails on any
+  cell still in a Bijoy font. Tell the user the Bangla was converted from Bijoy (SutonnyMJ) to
+  Unicode in Nikosh and looks best with Nikosh installed.
 
 ## Mandatory calculation completion gate
 

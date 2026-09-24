@@ -148,6 +148,32 @@ size_for('SolaimanLipi', 10.2)   # 11.5, the Nikosh size that looks the same
 font_for('Calibri')              # 'Nikosh'
 ```
 
+### Bijoy (SutonnyMJ) documents
+
+Older office files are typed in a **Bijoy** font (SutonnyMJ, and other `…MJ` fonts): the
+Bangla is stored as Latin codes (`evsjv‡`k` for বাংলাদেশ) and reads as Bangla only in that
+font. `extract-text`, python-docx and the model all see the Latin codes. Recognise it by the
+font name on the runs (`w:rFonts/@w:ascii`), or by text that is mostly `‡ ¨ © ¯ v w` mixed into
+Latin letters.
+
+Read it with the converter before you summarise or edit it:
+
+```python
+import sys; sys.path.insert(0, '/mnt/data/skills/docx/scripts')
+from office.bijoy import to_unicode
+to_unicode('evsjv‡`k')   # 'বাংলাদেশ'
+```
+
+`fix_bangla.py` converts every run in a Bijoy font to Unicode, sets it in Nikosh (all font
+slots) and embeds Nikosh; `result['bijoy']` counts the runs. Run it on any Bijoy document you
+deliver, before your edits touch the Bijoy text, so you edit Unicode. `verify_bangla.py` fails
+on any run still in a Bijoy font, even an untouched one. Sizes are kept: the Bijoy fonts are not
+installed, so they cannot be measured.
+
+Tell the user: "The file used Bijoy (SutonnyMJ) encoding; the Bangla was converted to Unicode
+and set in Nikosh, embedded in the file, so it opens correctly anywhere." If they need the file
+back in Bijoy, decline and explain that Bijoy fonts cannot be used here.
+
 ## Comments
 
 Comments require six cross-linked files. Use the helper — directory mode when you'll also be editing `document.xml` (saves an unzip/rezip cycle), `.docx`-direct mode otherwise:

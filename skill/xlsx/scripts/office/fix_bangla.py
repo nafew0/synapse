@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
-"""Give every Bangla run of a DOCX or PPTX a font that draws Bangla, and embed Nikosh in a DOCX.
+"""Convert Bijoy text to Unicode, give every Bangla run a font that draws Bangla, embed Nikosh.
 
 Word and PowerPoint draw Bangla with a run's complex-script font, not the font most generators
 set. docx-js, pptxgenjs and hand-written XML usually leave that slot empty or set it to Calibri,
-so the user's PC substitutes some other face. This fixes, for each run containing Bangla:
+so the user's PC substitutes some other face.
+
+First, text typed in a Bijoy (ANSI) font such as SutonnyMJ, which stores Bangla as Latin codes
+(`evsjv` for বাংলা), is converted to Unicode and its fonts set to Nikosh: `w:ascii`, `w:hAnsi` and
+`w:cs` in a DOCX, `a:latin` and `a:cs` in a PPTX, the cell and rich-text fonts in an XLSX. A word
+split across runs is converted whole into the first of them. The Bijoy fonts are commercial and
+are not installed here, so the text cannot be measured in them: sizes are kept.
+
+Then, for each run containing Bangla:
 
 - the complex-script font (`w:rFonts/@w:cs`, `a:cs`): kept when it draws Bangla, otherwise
   Nikosh (`bangla.font_for`). The Latin font is never touched, so English keeps its face;
@@ -17,15 +25,19 @@ draws Bangla, so an office's own template font survives.
 
 In a DOCX that names Nikosh, the whole font file is embedded (Nikosh does not allow
 subsetting), so the document looks the same on a PC without Nikosh. XLSX files cannot embed
-fonts; set their Bangla cells with `bangla.font_for` instead.
+fonts; for them only the Bijoy conversion runs, and new Bangla cells use `bangla.font_for`. A
+number in a Bijoy-font cell showed Bangla digits; in Nikosh it shows Latin digits and stays a
+number (`bijoy.numbers` in the result counts them).
 
 Usage:
     python fix_bangla.py document.docx [-o fixed.docx] [--new] [--no-embed]
     python fix_bangla.py deck.pptx [-o fixed.pptx] [--new]
+    python fix_bangla.py workbook.xlsx [-o fixed.xlsx]
 
 Prints JSON and exits 0; 1 on bad input.
 """
 import argparse
+import copy
 import json
 import re
 import sys
@@ -36,8 +48,9 @@ from lxml import etree
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from office.bangla import DEFAULT_FONT, LANGUAGE, can_draw, font_for, font_path
-from office.runs import CT, NS, PKG_REL, R, W, Docx, Package, Pptx, a, w
+from office import bijoy
+from office.bangla import BENGALI, DEFAULT_FONT, LANGUAGE, can_draw, font_for, font_path
+from office.runs import CT, DOCX_TEXT_PARTS, NS, PKG_REL, PPTX_TEXT_PARTS, R, W, Docx, Package, Pptx, a, w
 
 RPR_ORDER = [
     'rStyle', 'rFonts', 'b', 'bCs', 'i', 'iCs', 'caps', 'smallCaps', 'strike', 'dstrike', 'outline',
@@ -64,6 +77,11 @@ OBFUSCATED_FONT = 'application/vnd.openxmlformats-officedocument.obfuscatedFont'
 FONT_TABLE_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml'
 SETTINGS_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml'
 OFF = ('0', 'false', 'off')
+X = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+XNS = {'x': X}
+WORKSHEETS = re.compile(r'^xl/worksheets/sheet\d+\.xml$')
+XML_SPACE = '{http://www.w3.org/XML/1998/namespace}space'
+DOCX_LATIN_SLOTS = ('ascii', 'hAnsi', 'eastAsia', 'cs')
 
 
 class InputError(Exception):
@@ -160,8 +178,89 @@ def fix_docx_styles(package):
     return count
 
 
+def convert_stretches(stretches):
+    """Convert each stretch of Bijoy text elements in place. Returns how many elements changed."""
+    changed = 0
+    for elements in stretches:
+        converted = bijoy.convert_pieces([element.text or '' for element in elements])
+        for element, text in zip(elements, converted, strict=True):
+            if element.text == text:
+                continue
+            element.text = text
+            changed += 1
+    return changed
+
+
+def preserve_space(element):
+    if element.text and element.text != element.text.strip():
+        element.set(XML_SPACE, 'preserve')
+
+
+def docx_bijoy_font(document, run):
+    """The Bijoy font of a run holding Bijoy text, or None."""
+    text = ''.join(t.text or '' for t in run.findall('w:t', NS))
+    if not text.strip() or BENGALI.search(text):
+        return None
+    return document.bijoy_font(run)
+
+
+def docx_bijoy_stretches(paragraph, document):
+    """(stretches of contiguous w:t elements, [(run, Bijoy font)]) for the Bijoy runs of one
+    paragraph. A tab, a break or a run in another font ends a stretch."""
+    stretches, runs, current = [], [], []
+    for run in paragraph.iter(w('r')):
+        if next(run.iterancestors(w('p')), None) is not paragraph:
+            continue
+        font = docx_bijoy_font(document, run)
+        if not font:
+            current = []
+            continue
+        runs.append((run, font))
+        for child in run:
+            if child.tag == w('t'):
+                if not current:
+                    stretches.append(current)
+                current.append(child)
+            elif child.tag in (w('tab'), w('br'), w('cr')):
+                current = []
+    return stretches, runs
+
+
+def set_docx_fonts(run, font):
+    """Name `font` in every slot of a run whose text was Bijoy, dropping theme fonts."""
+    fonts = ensure(run_properties(run), 'rFonts', RPR_ORDER, W)
+    for slot in DOCX_LATIN_SLOTS:
+        if slot == 'eastAsia' and not bijoy.is_font(fonts.get(w(slot))):
+            continue
+        fonts.set(w(slot), font)
+    for theme in ('asciiTheme', 'hAnsiTheme', 'eastAsiaTheme', 'cstheme'):
+        fonts.attrib.pop(w(theme), None)
+
+
+def convert_docx_bijoy(package, document):
+    """Convert every Bijoy run of the document to Unicode in Nikosh. Returns (runs, fonts)."""
+    count, fonts = 0, set()
+    for part in package.names(DOCX_TEXT_PARTS):
+        root = package.xml(part)
+        for paragraph in list(root.iter(w('p'))):
+            stretches, runs = docx_bijoy_stretches(paragraph, document)
+            if not runs:
+                continue
+            convert_stretches(stretches)
+            for stretch in stretches:
+                for element in stretch:
+                    preserve_space(element)
+            for run, font in runs:
+                fonts.add(font)
+                set_docx_fonts(run, DEFAULT_FONT)
+            count += len(runs)
+            package.mark(part)
+    return count, fonts
+
+
 def fix_docx(package, new):
     document = Docx(package)
+    converted, bijoy_fonts = convert_docx_bijoy(package, document)
     fixed, fonts = {}, set()
     for run in list(document.runs()):
         if not run.bangla:
@@ -174,11 +273,55 @@ def fix_docx(package, new):
         if changes:
             package.mark(run.part)
     styles = fix_docx_styles(package) if fonts else 0
-    return {'runs_changed': fixed, 'styles_changed': styles, 'fonts': sorted(f for f in fonts if f)}
+    return {
+        'runs_changed': fixed,
+        'styles_changed': styles,
+        'fonts': sorted(f for f in fonts if f),
+        'bijoy': {'runs': converted, 'fonts': sorted(bijoy_fonts)},
+    }
+
+
+def pptx_bijoy_stretches(paragraph, deck):
+    """(stretches of contiguous a:t elements, runs) for the Bijoy runs of one slide paragraph."""
+    stretches, runs, current = [], [], []
+    for child in paragraph:
+        t = child.find('a:t', NS) if child.tag == a('r') else None
+        text = t.text or '' if t is not None else ''
+        if t is None or not text.strip() or BENGALI.search(text) or not deck.bijoy_font(child):
+            current = []
+            continue
+        runs.append(child)
+        if not current:
+            stretches.append(current)
+        current.append(t)
+    return stretches, runs
+
+
+def convert_pptx_bijoy(package, deck):
+    count, fonts = 0, set()
+    for part in package.names(PPTX_TEXT_PARTS):
+        for paragraph in list(package.xml(part).iter(a('p'))):
+            stretches, runs = pptx_bijoy_stretches(paragraph, deck)
+            if not runs:
+                continue
+            for run in runs:
+                fonts.add(deck.bijoy_font(run))
+            convert_stretches(stretches)
+            for run in runs:
+                rpr = run.find('a:rPr', NS)
+                if rpr is None:
+                    rpr = etree.Element(a('rPr'))
+                    run.insert(0, rpr)
+                for tag in ('latin', 'cs'):
+                    ensure(rpr, tag, A_RPR_ORDER, NS['a']).set('typeface', DEFAULT_FONT)
+            count += len(runs)
+            package.mark(part)
+    return count, fonts
 
 
 def fix_pptx(package, new):
     deck = Pptx(package)
+    converted, bijoy_fonts = convert_pptx_bijoy(package, deck)
     fixed, fonts = {}, set()
     for run in list(deck.runs()):
         if not run.bangla:
@@ -198,7 +341,148 @@ def fix_pptx(package, new):
             fixed['lang'] = fixed.get('lang', 0) + 1
         fonts.add(deck.cs_font(run.element)[0])
         package.mark(run.part)
-    return {'runs_changed': fixed, 'fonts': sorted(f for f in fonts if f)}
+    return {
+        'runs_changed': fixed,
+        'fonts': sorted(f for f in fonts if f),
+        'bijoy': {'runs': converted, 'fonts': sorted(bijoy_fonts)},
+    }
+
+
+def x(name):
+    return f'{{{X}}}{name}'
+
+
+def xlsx_font_name(font):
+    name = font.find('x:name', XNS)
+    return name.get('val') if name is not None else None
+
+
+def convert_string_item(item, cell_is_bijoy):
+    """A converted copy of a shared-string item (or an inline string) as a Bijoy- or
+    non-Bijoy-font cell shows it, or None when nothing in it is Bijoy.
+
+    Plain text is Bijoy when the cell's font is. A rich-text run is Bijoy when its own font is, or
+    when it names none and the cell's font is."""
+    result = copy.deepcopy(item)
+    plain = result.find('x:t', XNS)
+    if plain is not None:
+        if not cell_is_bijoy or not (plain.text or '').strip() or BENGALI.search(plain.text):
+            return None
+        plain.text = bijoy.to_unicode(plain.text)
+        preserve_space(plain)
+        return result
+    stretches, current, fonts = [], [], []
+    for run in result.findall('x:r', XNS):
+        font = run.find('x:rPr/x:rFont', XNS)
+        run_is_bijoy = bijoy.is_font(font.get('val')) if font is not None else cell_is_bijoy
+        t = run.find('x:t', XNS)
+        if not run_is_bijoy or t is None or not (t.text or '').strip() or BENGALI.search(t.text):
+            current = []
+            continue
+        if font is not None:
+            fonts.append(font)
+        if not current:
+            stretches.append(current)
+        current.append(t)
+    if not stretches:
+        return None
+    convert_stretches(stretches)
+    for stretch in stretches:
+        for t in stretch:
+            preserve_space(t)
+    for font in fonts:
+        font.set('val', DEFAULT_FONT)
+    return result
+
+
+def xlsx_cells(package):
+    """(part, cell, style index) for every cell of every worksheet."""
+    for part in package.names(WORKSHEETS):
+        for cell in package.xml(part).iter(x('c')):
+            yield part, cell, int(cell.get('s', '0'))
+
+
+def convert_shared_strings(package, uses):
+    """Convert the shared strings Bijoy cells show. `uses` maps a string index to the
+    (part, cell, bijoy) cells showing it. A string also shown by cells in another font keeps its
+    text for them and gets a converted copy for the Bijoy ones. Returns (strings changed, cells
+    whose text changed)."""
+    table = package.xml('xl/sharedStrings.xml')
+    if table is None:
+        return 0, 0
+    items = table.findall('x:si', XNS)
+    changed, cells_changed, next_index = 0, 0, len(items)
+    for index, cells in uses.items():
+        if index >= len(items):
+            continue
+        flags = {flag for _, _, flag in cells}
+        shared = convert_string_item(items[index], False) if False in flags else None
+        own = convert_string_item(items[index], True) if True in flags else None
+        cells_changed += sum(1 for _, _, flag in cells if (own if flag else shared) is not None)
+        if shared is not None or (own is not None and len(flags) == 1):
+            table.replace(items[index], shared if shared is not None else own)
+            changed += 1
+        if own is None or len(flags) == 1:
+            continue
+        table.append(own)
+        for part, cell, flag in cells:
+            if flag:
+                cell.find('x:v', XNS).text = str(next_index)
+                package.mark(part)
+        next_index += 1
+        changed += 1
+    if changed:
+        table.set('uniqueCount', str(len(table.findall('x:si', XNS))))
+        package.mark('xl/sharedStrings.xml')
+    return changed, cells_changed
+
+
+def rename_bijoy_fonts(styles):
+    """Set every Bijoy font of the stylesheet (cell fonts and conditional formats) to Nikosh."""
+    renamed = set()
+    for font in styles.iter(x('font')):
+        name = font.find('x:name', XNS)
+        if name is None or not bijoy.is_font(name.get('val')):
+            continue
+        renamed.add(name.get('val'))
+        name.set('val', DEFAULT_FONT)
+        charset = font.find('x:charset', XNS)
+        if charset is not None:
+            font.remove(charset)
+    return renamed
+
+
+def fix_xlsx(package):
+    """Convert the workbook's Bijoy cells to Unicode and their fonts to Nikosh."""
+    styles = package.xml('xl/styles.xml')
+    result = {'bijoy': {'cells': 0, 'strings': 0, 'numbers': 0, 'fonts': []}}
+    if styles is None:
+        return result
+    fonts = styles.findall('x:fonts/x:font', XNS)
+    bijoy_fonts = {index for index, font in enumerate(fonts) if bijoy.is_font(xlsx_font_name(font))}
+    formats = styles.findall('x:cellXfs/x:xf', XNS)
+    is_bijoy = [int(xf.get('fontId', '0')) in bijoy_fonts for xf in formats]
+    uses, counts = {}, result['bijoy']
+    for part, cell, style in xlsx_cells(package):
+        flag = style < len(is_bijoy) and is_bijoy[style]
+        kind, value = cell.get('t'), cell.find('x:v', XNS)
+        if kind == 's' and value is not None and value.text:
+            uses.setdefault(int(value.text), []).append((part, cell, flag))
+        elif kind == 'inlineStr' and cell.find('x:is', XNS) is not None:
+            converted = convert_string_item(cell.find('x:is', XNS), flag)
+            if converted is not None:
+                cell.replace(cell.find('x:is', XNS), converted)
+                counts['cells'] += 1
+                package.mark(part)
+        elif flag and kind in (None, 'n') and value is not None:
+            counts['numbers'] += 1
+    counts['strings'], cells = convert_shared_strings(package, uses)
+    counts['cells'] += cells
+    renamed = rename_bijoy_fonts(styles)
+    if renamed:
+        package.mark('xl/styles.xml')
+    counts['fonts'] = sorted(renamed)
+    return result
 
 
 def relationships(package, part):
@@ -313,8 +597,11 @@ def fix(path, out, new=False, embed=True):
     elif suffix in ('.pptx', '.potx', '.pptm'):
         result = fix_pptx(package, new)
         result['embedded'] = False
+    elif suffix in ('.xlsx', '.xltx', '.xlsm'):
+        result = fix_xlsx(package)
+        result['embedded'] = False
     else:
-        raise InputError(f'fix_bangla.py takes a .docx or .pptx file, not {path}')
+        raise InputError(f'fix_bangla.py takes a .docx, .pptx or .xlsx file, not {path}')
     package.save(out)
     result['output'] = str(out)
     return result

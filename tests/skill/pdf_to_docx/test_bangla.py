@@ -141,3 +141,31 @@ class TestRecovery:
         decoder, unicode_map = decoder
         _, gids = self.drawn('কমিশন', unicode_map)
         assert bangla.verify('কিমশন', decoder.glyph_names, gids, NOTO) is False
+
+
+def _chars(text, fontname='ABCDEF+SutonnyMJ', x=10.0, top=100.0, size=12.0, advance=6.0):
+    chars = []
+    for letter in text:
+        chars.append({'text': letter, 'fontname': fontname, 'x0': x, 'x1': x + advance, 'top': top, 'size': size})
+        x += advance
+    return chars
+
+
+class TestBijoyPdf:
+    """A PDF typed in SutonnyMJ extracts as the Latin codes that were typed."""
+
+    @pytest.mark.parametrize('name', ['ABCDEF+SutonnyMJ', 'SutonnyMJ-Bold', 'SutonnyMJ,Bold', '/SutonnyMJ'])
+    def test_bijoy_font_names(self, name):
+        assert bangla.is_bijoy(name)
+
+    def test_a_family_from_the_name_table_counts(self):
+        assert bangla.is_bijoy('ABCDEF+Font1', {'Font1': 'SutonnyMJ'})
+        assert not bangla.is_bijoy('ABCDEF+SolaimanLipiNormal', {'SolaimanLipiNormal': 'SolaimanLipi'})
+
+    def test_words_are_converted_and_merged(self):
+        chars = _chars('Avwg') + _chars('evsjv', x=50.0) + _chars('Dhaka', fontname='ABCDEF+Arial', x=90.0)
+        counts = bangla.convert_bijoy_chars(chars)
+        assert counts == {'SutonnyMJ': 2}
+        kept = [char['text'] for char in chars if not bangla.merged_away(char)]
+        assert kept == ['আমি', 'বাংলা', 'D', 'h', 'a', 'k', 'a']
+        assert chars[0]['x1'] == chars[3]['x1']

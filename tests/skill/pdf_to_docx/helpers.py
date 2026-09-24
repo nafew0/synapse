@@ -14,6 +14,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
 SCRIPTS = Path(__file__).resolve().parents[3] / 'skill' / 'pdf-to-docx' / 'scripts'
+sys.path.insert(0, str(SCRIPTS))
+"""The scripts import their `office/` helpers the way they do when run from their own directory."""
 WIDTH, HEIGHT = A4
 BENGALI_FONT = 'NotoSansBengali'
 BENGALI_CANDIDATES = (

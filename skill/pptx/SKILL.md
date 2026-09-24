@@ -339,6 +339,12 @@ garbled or has no font that draws Bangla, or when a text box became a picture; e
 defects. `check_layout.py` then measures Bangla in the `a:cs` font. The deck does not embed
 Nikosh, so tell the user it uses Nikosh and looks best with Nikosh installed.
 
+A deck typed in a **Bijoy** font (SutonnyMJ, other `…MJ` fonts in `a:latin`) stores Bangla as
+Latin codes (`evsjv‡`k` for বাংলাদেশ). Read it with `office.bijoy.to_unicode`. `fix_bangla.py`
+converts those runs to Unicode and sets `a:latin` and `a:cs` to Nikosh; run it before you edit
+them. `verify_bangla.py` fails on any run still in a Bijoy font. Tell the user the Bangla was
+converted from Bijoy (SutonnyMJ) to Unicode in Nikosh; a Bijoy copy cannot be made here.
+
 ### Mandatory layout gate
 
 `validate.py` proves the file opens; it says nothing about whether the slides read correctly.

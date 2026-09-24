@@ -8,10 +8,15 @@ and deliver only on success:
    output, unless it is one you were asked to change (`--allow`, a piece of its text).
 2. garbled: no Bangla the output adds or changes is broken: no word starting with a vowel sign,
    no two vowel signs in a row, no dotted circles, private-use glyphs, `(cid:N)` or mojibake.
+   No run is still in a Bijoy font (SutonnyMJ…), even one the original had: Bijoy text is Latin
+   codes that read as Bangla only in that font, so it is always converted before delivery.
 3. font: every Bangla run the output adds or changes names a font that draws Bangla, in the
    complex-script slot Word and PowerPoint actually use for it. In a DOCX it has a complex-script
    size whenever it has a Latin one, and a DOCX that sets Bangla in Nikosh embeds Nikosh.
 4. text: no text box of the original became a picture.
+
+Paragraphs of the original typed in a Bijoy font are compared as the Unicode they stand for.
+Text in another font that only looks like Bijoy is a note: without the font it is a guess.
 
 A fault the user's file already had does not block the edit; it is listed under `notes`. Garbled
 text counts as already there when the original had the same text in the same part, even if its
@@ -30,7 +35,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from office.bangla import DEFAULT_FONT, can_draw, classify, has_bangla, normalize
+from office.bangla import DEFAULT_FONT, can_draw, classify, has_bangla, normalize, to_unicode
 from office.runs import open_document
 
 SPACE = re.compile(r'\s+')
@@ -58,10 +63,28 @@ def lost(original, output, allowed):
     return findings
 
 
+def where_of(kind, run):
+    return run.part if kind != 'xlsx' else f'{run.part}!{run.element.coordinate}'
+
+
+def bijoy_findings(kind, run):
+    """A finding for a run still in a Bijoy font, a note for text that only looks like Bijoy."""
+    if run.bijoy_font:
+        detail = (
+            f'{short(run.text)!r} is Bijoy text in {run.bijoy_font} ({short(to_unicode(run.text))!r}); '
+            'run fix_bangla.py to convert it to Unicode'
+        )
+        return [{'check': 'garbled', 'where': where_of(kind, run), 'detail': detail}], []
+    if not run.bangla and classify(run.text) == 'bijoy':
+        detail = f'{short(run.text)!r} in {run.font or "no font"} looks like Bijoy text; check it with the user'
+        return [], [{'check': 'garbled', 'where': where_of(kind, run), 'detail': detail}]
+    return [], []
+
+
 def run_findings(kind, run):
     """What is wrong with one Bangla run of the output, as findings."""
     found = []
-    where = run.part if kind != 'xlsx' else f'{run.part}!{run.element.coordinate}'
+    where = where_of(kind, run)
     shape = classify(run.text)
     if shape in ('broken', 'mixed'):
         found.append({'check': 'garbled', 'where': where, 'detail': f'Bangla is {shape}: {short(run.text)!r}'})
@@ -99,6 +122,9 @@ def verify(output_path, original_path=None, allowed=()):
     notes = []
     uses_default = False
     for run in output.runs():
+        bijoy, looks_bijoy = bijoy_findings(kind, run)
+        findings.extend(bijoy)
+        notes.extend(looks_bijoy)
         if not run.bangla:
             continue
         uses_default = uses_default or run.font == DEFAULT_FONT

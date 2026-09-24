@@ -18,7 +18,7 @@ import pytest
 
 SKILLS = Path(__file__).resolve().parents[3] / 'skill'
 SCRIPTS = SKILLS / 'docx' / 'scripts'
-SHARED = ('bangla.py', 'runs.py', 'fix_bangla.py', 'verify_bangla.py')
+SHARED = ('bangla.py', 'bijoy.py', 'runs.py', 'fix_bangla.py', 'verify_bangla.py')
 
 sys.path.insert(0, str(SCRIPTS))
 from office import bangla  # noqa: E402
@@ -39,6 +39,11 @@ def test_every_skill_ships_the_same_copy():
         copies = [SKILLS / skill / 'scripts' / 'office' / name for skill in ('docx', 'xlsx', 'pptx')]
         assert all(copy.is_file() for copy in copies), name
         assert all(filecmp.cmp(copies[0], copy, shallow=False) for copy in copies[1:]), name
+
+
+def test_pdf_to_docx_ships_the_same_bijoy_converter():
+    shared = SKILLS / 'docx' / 'scripts' / 'office' / 'bijoy.py'
+    assert filecmp.cmp(shared, SKILLS / 'pdf-to-docx' / 'scripts' / 'office' / 'bijoy.py', shallow=False)
 
 
 class TestClassify:

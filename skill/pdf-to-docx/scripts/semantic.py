@@ -63,6 +63,8 @@ NUMBERED = re.compile(r'^(\(?[0-9]{1,2}[.)]|[a-z][.)]|[ivxl]+[.)])\s+', re.IGNOR
 a numbered list would replace the document's own Bangla numerals and brackets with Latin ones."""
 SUBSET_PREFIX = re.compile(r'^[A-Z]{6}\+')
 BENGALI = re.compile(r'[ঀ-৿]')
+BIJOY_REPLACEMENT = 'Nikosh'
+"""The font Bijoy text is set in once converted: the Bangla font offices use, installed here."""
 
 
 RUN_PROPERTY_TAIL = (
@@ -169,18 +171,26 @@ def _prepared(page, decoders, families, summary):
     """The page as the rest of this module should read it.
 
     Glyphs overprinted to fake bold are dropped and their survivors marked bold; Bangla words are
-    rewritten into real Unicode; every font is called by its family, with `-Bold` where the glyph
-    was bold, since that is what the line and run builders read.
+    rewritten into real Unicode, Bijoy words included; every font is called by its family, with
+    `-Bold` where the glyph was bold, since that is what the line and run builders read. A Bijoy
+    font is called Nikosh: its text is Unicode now, and the Bijoy font is not installed here.
     """
     kept, doubled = bangla.dedupe(page.chars)
     if decoders:
         counts = bangla.repair_chars(kept, decoders)
         for key, value in counts.items():
             summary['bangla'][key] += value
+    for font, words in bangla.convert_bijoy_chars(kept, families).items():
+        converted = summary.setdefault('bijoy', {'words': 0, 'fonts': []})
+        converted['words'] += words
+        family = families.get(font, font)
+        if family not in converted['fonts']:
+            converted['fonts'].append(family)
     for char in kept:
         name = bangla.family_of(char['fontname'])
         bold = id(char) in doubled or 'bold' in name.lower()
-        char['fontname'] = families.get(name, name) + ('-Bold' if bold else '')
+        family = BIJOY_REPLACEMENT if bangla.is_bijoy(name, families) else families.get(name, name)
+        char['fontname'] = family + ('-Bold' if bold else '')
     keep = {id(char) for char in kept if not bangla.merged_away(char)}
     return page.filter(lambda obj: obj.get('object_type') != 'char' or id(obj) in keep)
 

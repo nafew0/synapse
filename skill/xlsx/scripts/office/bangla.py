@@ -22,6 +22,8 @@ import subprocess
 import unicodedata
 from functools import lru_cache
 
+from office import bijoy
+
 DEFAULT_FONT = 'Nikosh'
 LANGUAGE = 'bn-BD'
 BENGALI = re.compile('[\u0980-\u09ff]')
@@ -48,9 +50,6 @@ substitute on the user's PC, so the text appears in a face nobody chose."""
 KNOWN_WINDOWS = {'nirmala ui', 'vrinda', 'shonar bangla'}
 """Bangla fonts that ship with Windows. The sandbox has only stand-ins for them, so they are
 accepted by name rather than by reading a font file."""
-BIJOY_FONT = re.compile(r'(?i)^(bijoy.*|.*[^o]mj|kalpurush ansi)$')
-"""Bijoy (ANSI) fonts draw Bangla shapes at Latin code points. SutonnyOMJ is the Unicode cut of
-Sutonny and is not one of them."""
 
 HEADLINE_LETTERS = 'কব'
 ROUND_TO = 0.5
@@ -79,19 +78,22 @@ def _broken_word(word):
 
 
 def classify(text):
-    """'none', 'unicode', 'broken' or 'mixed' for a piece of text.
+    """'none', 'unicode', 'bijoy', 'broken' or 'mixed' for a piece of text.
 
     Broken text has Bengali code points a keyboard never types: a word starting with a vowel sign
     or virama (the drawn-order text a broken PDF layer gives, িবদালয় for বিদ্যালয়), two vowel
     signs in a row, dotted circles, private-use glyphs, `(cid:N)` placeholders or UTF-8 read as
-    Latin-1. Bijoy (ANSI) text has no Bengali code points and is recognised in a later step.
+    Latin-1. Bijoy (ANSI) text has no Bengali code points; without its font name it is recognised
+    by its codes and shapes (`bijoy.looks_bijoy`), which is a guess.
     """
     if not text:
         return 'none'
     garbage = bool(PRIVATE_USE.search(text) or MOJIBAKE.search(text) or CID.search(text) or DOTTED_CIRCLE in text)
     words = BENGALI_RUN.findall(unicodedata.normalize('NFC', text))
     if not words:
-        return 'broken' if garbage else 'none'
+        if garbage:
+            return 'broken'
+        return 'bijoy' if bijoy.looks_bijoy(text) else 'none'
     broken = sum(1 for word in words if _broken_word(word))
     if broken == 0 and not garbage:
         return 'unicode'
@@ -114,7 +116,18 @@ def normalize(text):
 
 
 def is_bijoy_font(name):
-    return bool(name) and BIJOY_FONT.match(name.strip()) is not None
+    return bijoy.is_font(name)
+
+
+def to_unicode(text, kind='bijoy'):
+    """Unicode Bangla for `text` of the given `classify` kind, normalised.
+
+    Bijoy text is converted with `bijoy.to_unicode`. Broken text from a PDF's text layer can only
+    be recovered with the PDF's own glyphs (pdf-to-docx `bangla.py`), so here it is only
+    normalised."""
+    if kind == 'bijoy':
+        text = bijoy.to_unicode(text)
+    return normalize(text)
 
 
 def font_for(existing=None):

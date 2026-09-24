@@ -154,7 +154,10 @@ specialists:
       Bangla, follow the skill's Bangla section: new Bangla text is set in Nikosh, then run
       /mnt/data/skills/docx/scripts/office/fix_bangla.py and
       /mnt/data/skills/docx/scripts/office/verify_bangla.py, and deliver only when
-      verify_bangla.py passes. Reject encrypted, macro-enabled, signed,
+      verify_bangla.py passes. A document typed in a Bijoy font (SutonnyMJ) stores Bangla
+      as Latin codes: read it through the skill's Bijoy converter, convert it with
+      fix_bangla.py before editing, and tell the user it was converted from Bijoy to
+      Unicode. Reject encrypted, macro-enabled, signed,
       corrupt, or preservation-unsafe inputs. Always return downloadable artifacts.
       Write the generator script to /mnt/data/qa, never the top of /mnt/data -- qa is a
       subdirectory, so the user never sees it, and unlike /tmp it survives between calls.
@@ -240,6 +243,9 @@ specialists:
       When the workbook or your edits contain Bangla, follow the skill's Bangla section: new
       Bangla cells use Nikosh, numbers stay real numbers, and
       /mnt/data/skills/xlsx/scripts/office/verify_bangla.py must pass before delivery.
+      Cells in a Bijoy font (SutonnyMJ) store Bangla as Latin codes: convert the workbook
+      with /mnt/data/skills/xlsx/scripts/office/fix_bangla.py before editing and tell the
+      user it was converted from Bijoy to Unicode.
       Always return downloadable artifacts.
       Write the generator script to /mnt/data/qa, never the top of /mnt/data -- qa is a
       subdirectory, so the user never sees it, and unlike /tmp it survives between calls.
@@ -317,7 +323,8 @@ specialists:
       deck contains Bangla, follow the skill's Bangla section: run
       /mnt/data/skills/pptx/scripts/office/fix_bangla.py and
       /mnt/data/skills/pptx/scripts/office/verify_bangla.py before the layout gate, and
-      deliver only when both gates pass. Always
+      deliver only when both gates pass. fix_bangla.py also converts runs typed in a
+      Bijoy font (SutonnyMJ) to Unicode; say so when it does. Always
       return downloadable artifacts.
       Write the generator script to /mnt/data/qa, never the top of /mnt/data -- qa is a
       subdirectory, so the user never sees it, and unlike /tmp it survives between calls.

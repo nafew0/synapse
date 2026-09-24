@@ -295,3 +295,233 @@ def test_garbled_text_the_original_had_is_a_note_after_a_fix(tmp_path):
     result = verify(out, source)
     assert 'garbled' not in {f['check'] for f in result['findings']}
     assert 'garbled' in {f['check'] for f in result['notes']}
+
+
+BIJOY = 'evsjv‡`k wek¦we`¨vjq gÄyix Kwgkb'
+BIJOY_TEXT = 'বাংলাদেশ বিশ্ববিদ্যালয় মঞ্জুরী কমিশন'
+
+
+def bijoy_docx(path):
+    """A letter typed in SutonnyMJ, as offices wrote them before Unicode: one paragraph whose word
+    কি is split across two runs (`w` | `K`), a Bijoy paragraph style, and an English line."""
+    document = docx.Document()
+    style = document.styles.add_style('Bijoy Body', docx.enum.style.WD_STYLE_TYPE.PARAGRAPH)
+    style.font.name = 'SutonnyMJ'
+    first = document.add_paragraph()
+    for text in ('Avwg evsjvq Mvb MvB, ', 'w', 'K?'):
+        run = first.add_run(text)
+        run.font.name = 'SutonnyMJ'
+        run.font.size = Pt(14)
+    document.add_paragraph(BIJOY, style='Bijoy Body')
+    document.add_paragraph('Memo No. 37.01.0000').runs[0].font.name = 'Calibri'
+    document.save(path)
+    return path
+
+
+def docx_texts(path):
+    return [p.text for p in docx.Document(path).paragraphs]
+
+
+XLSX_MAIN = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+XLSX_PARTS = {
+    '[Content_Types].xml': (
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        '<Default Extension="xml" ContentType="application/xml"/>'
+        '<Override PartName="/xl/workbook.xml" '
+        'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+        '<Override PartName="/xl/worksheets/sheet1.xml" '
+        'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        '<Override PartName="/xl/styles.xml" '
+        'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+        '<Override PartName="/xl/sharedStrings.xml" '
+        'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>'
+        '</Types>'
+    ),
+    '_rels/.rels': (
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" Target="xl/workbook.xml" '
+        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"/>'
+        '</Relationships>'
+    ),
+    'xl/workbook.xml': (
+        f'<workbook xmlns="{XLSX_MAIN}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        '<sheets><sheet name="Sheet" sheetId="1" r:id="rId1"/></sheets></workbook>'
+    ),
+    'xl/_rels/workbook.xml.rels': (
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        '<Relationship Id="rId1" Target="worksheets/sheet1.xml" '
+        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"/>'
+        '<Relationship Id="rId2" Target="styles.xml" '
+        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles"/>'
+        '<Relationship Id="rId3" Target="sharedStrings.xml" '
+        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings"/>'
+        '</Relationships>'
+    ),
+    'xl/styles.xml': (
+        f'<styleSheet xmlns="{XLSX_MAIN}">'
+        '<fonts count="2"><font><sz val="11"/><name val="Arial"/></font>'
+        '<font><sz val="12"/><name val="SutonnyMJ"/><charset val="0"/></font></fonts>'
+        '<fills count="1"><fill><patternFill patternType="none"/></fill></fills>'
+        '<borders count="1"><border/></borders>'
+        '<cellStyleXfs count="1"><xf/></cellStyleXfs>'
+        '<cellXfs count="2"><xf fontId="0"/><xf fontId="1" applyFont="1"/></cellXfs>'
+        '</styleSheet>'
+    ),
+    'xl/sharedStrings.xml': (
+        f'<sst xmlns="{XLSX_MAIN}" count="3" uniqueCount="2"><si><t>{BIJOY}</t></si>'
+        '<si><r><rPr><rFont val="SutonnyMJ"/></rPr><t>evsjv</t></r></si></sst>'
+    ),
+    'xl/worksheets/sheet1.xml': (
+        f'<worksheet xmlns="{XLSX_MAIN}"><sheetData>'
+        '<row r="1"><c r="A1" s="1" t="s"><v>0</v></c><c r="B1" s="0" t="s"><v>0</v></c></row>'
+        '<row r="2"><c r="A2" s="0" t="s"><v>1</v></c></row>'
+        '</sheetData></worksheet>'
+    ),
+}
+
+
+def shared_strings_xlsx(path):
+    """A workbook the way Excel writes it: text in sharedStrings.xml, the SutonnyMJ string shown
+    by A1 (SutonnyMJ) and B1 (Arial), and a rich-text SutonnyMJ run in an Arial cell (A2)."""
+    with zipfile.ZipFile(path, 'w') as archive:
+        for name, content in XLSX_PARTS.items():
+            archive.writestr(name, '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' + content)
+    return path
+
+
+class TestBijoy:
+    def test_docx_text_becomes_unicode_in_nikosh(self, tmp_path):
+        out = tmp_path / 'out.docx'
+        result = fix(bijoy_docx(tmp_path / 'in.docx'), out, embed=False)
+        assert result['bijoy'] == {'runs': 4, 'fonts': ['SutonnyMJ']}
+        assert docx_texts(out) == ['আমি বাংলায় গান গাই, কি?', BIJOY_TEXT, 'Memo No. 37.01.0000']
+        for run in bangla_runs(out):
+            fonts = run.find('w:rPr/w:rFonts', NS)
+            assert {fonts.get(f'{{{W}}}{slot}') for slot in ('ascii', 'hAnsi', 'cs')} == {'Nikosh'}
+            assert run.find('w:rPr/w:lang', NS).get(f'{{{W}}}bidi') == 'bn-BD'
+            assert run.find('w:rPr/w:szCs', NS) is not None or run.find('w:rPr/w:sz', NS) is None
+
+    def test_the_schema_validator_accepts_a_converted_docx(self, tmp_path):
+        source = bijoy_docx(tmp_path / 'in.docx')
+        out = tmp_path / 'out.docx'
+        fix(source, out, embed=HAS_NIKOSH)
+        checked = subprocess.run(
+            [sys.executable, str(OFFICE / 'validate.py'), str(out), '--original', str(source)],
+            capture_output=True, text=True,
+        )
+        assert checked.returncode == 0, checked.stdout + checked.stderr
+
+    def test_english_keeps_its_font(self, tmp_path):
+        out = tmp_path / 'out.docx'
+        fix(bijoy_docx(tmp_path / 'in.docx'), out, embed=False)
+        memo = docx.Document(out).paragraphs[2].runs[0]
+        assert memo.font.name == 'Calibri'
+
+    def test_a_converted_docx_passes_the_gate(self, tmp_path):
+        source = bijoy_docx(tmp_path / 'in.docx')
+        out = tmp_path / 'out.docx'
+        fix(source, out, embed=HAS_NIKOSH)
+        result = verify(out, source)
+        if HAS_NIKOSH:
+            assert result['status'] == 'clean', result
+        assert not [f for f in result['findings'] if f['check'] in ('lost', 'garbled')]
+
+    def test_bijoy_left_in_the_output_fails_even_when_the_original_had_it(self, tmp_path):
+        source = bijoy_docx(tmp_path / 'in.docx')
+        result = verify(source, source)
+        bijoy_findings = [f for f in result['findings'] if 'Bijoy text in SutonnyMJ' in f['detail']]
+        assert len(bijoy_findings) == 4
+        assert BIJOY_TEXT in ' '.join(f['detail'] for f in bijoy_findings)
+
+    def test_a_lost_bijoy_paragraph_is_reported_in_unicode(self, tmp_path):
+        source = bijoy_docx(tmp_path / 'in.docx')
+        out = tmp_path / 'out.docx'
+        fix(source, out, embed=False)
+        document = docx.Document(out)
+        document.paragraphs[1]._p.getparent().remove(document.paragraphs[1]._p)
+        document.save(out)
+        lost = [f['detail'] for f in verify(out, source)['findings'] if f['check'] == 'lost']
+        assert lost == [f'missing from the output: {BIJOY_TEXT!r}']
+
+    def test_pptx(self, tmp_path):
+        source = TestFixPptx().deck(tmp_path / 'in.pptx', text=BIJOY, font='SutonnyMJ')
+        out = tmp_path / 'out.pptx'
+        result = fix(source, out)
+        assert result['bijoy'] == {'runs': 1, 'fonts': ['SutonnyMJ']}
+        rpr = xml(out, 'ppt/slides/slide1.xml').find('.//a:r/a:rPr', NS)
+        assert rpr.find('a:latin', NS).get('typeface') == 'Nikosh'
+        assert rpr.find('a:cs', NS).get('typeface') == 'Nikosh'
+        assert rpr.get('lang') == 'bn-BD'
+        assert pptx.Presentation(out).slides[0].shapes[0].text_frame.text == BIJOY_TEXT
+        assert verify(out, source)['status'] == 'clean'
+
+    def workbook(self, path):
+        workbook = openpyxl.Workbook()
+        sheet = workbook.active
+        bijoy_font, arial = openpyxl.styles.Font(name='SutonnyMJ', size=12), openpyxl.styles.Font(name='Arial')
+        for cell, value, font in (
+            ('A1', BIJOY, bijoy_font),
+            ('A2', 2026, bijoy_font),
+            ('B1', BIJOY, arial),
+            ('C1', 'Total', arial),
+        ):
+            sheet[cell] = value
+            sheet[cell].font = font
+        sheet['A3'] = '=A2*2'
+        workbook.save(path)
+        return path
+
+    def test_xlsx_cells_convert_and_numbers_stay_numbers(self, tmp_path):
+        source = self.workbook(tmp_path / 'in.xlsx')
+        out = tmp_path / 'out.xlsx'
+        result = fix(source, out)
+        assert result['bijoy'] == {'cells': 1, 'strings': 0, 'numbers': 1, 'fonts': ['SutonnyMJ']}
+        sheet = openpyxl.load_workbook(out).active
+        assert sheet['A1'].value == BIJOY_TEXT
+        assert sheet['A1'].font.name == 'Nikosh'
+        assert sheet['A2'].value == 2026
+        assert sheet['A3'].value == '=A2*2'
+        assert sheet['B1'].value == BIJOY
+        assert sheet['C1'].value == 'Total'
+        gate = verify(out, source)
+        assert gate['status'] == 'clean', gate
+        assert [note['where'] for note in gate['notes']] == ['Sheet!B1']
+
+    def test_xlsx_parts_without_bijoy_are_untouched(self, tmp_path):
+        source = self.workbook(tmp_path / 'in.xlsx')
+        out = tmp_path / 'out.xlsx'
+        fix(source, out)
+        with zipfile.ZipFile(source) as before, zipfile.ZipFile(out) as after:
+            changed = {name for name in before.namelist() if before.read(name) != after.read(name)}
+        assert changed == {'xl/styles.xml', 'xl/worksheets/sheet1.xml'}
+
+    def test_xlsx_shared_strings(self, tmp_path):
+        """Excel stores text once in sharedStrings.xml. A string shown both in SutonnyMJ and in
+        Arial keeps its text for the Arial cell and gets a converted copy for the Bijoy one."""
+        source = shared_strings_xlsx(tmp_path / 'in.xlsx')
+        out = tmp_path / 'out.xlsx'
+        result = fix(source, out)
+        assert result['bijoy'] == {'cells': 2, 'strings': 2, 'numbers': 0, 'fonts': ['SutonnyMJ']}
+        sheet = openpyxl.load_workbook(out).active
+        assert (sheet['A1'].value, sheet['B1'].value, sheet['A2'].value) == (BIJOY_TEXT, BIJOY, 'বাংলা')
+        assert sheet['A1'].font.name == 'Nikosh'
+        table = xml(out, 'xl/sharedStrings.xml')
+        assert table.get('uniqueCount') == '3'
+        assert verify(out, source)['status'] == 'clean'
+
+    def test_xlsx_rich_text_runs(self, tmp_path):
+        rich = pytest.importorskip('openpyxl.cell.rich_text')
+        from openpyxl.cell.text import InlineFont
+
+        source = tmp_path / 'in.xlsx'
+        workbook = openpyxl.Workbook()
+        workbook.active['A1'] = rich.CellRichText(
+            rich.TextBlock(InlineFont(rFont='SutonnyMJ'), 'evsjv'),
+            rich.TextBlock(InlineFont(rFont='Arial'), ' (Bangla)'),
+        )
+        workbook.save(source)
+        out = tmp_path / 'out.xlsx'
+        fix(source, out)
+        cell = openpyxl.load_workbook(out, rich_text=True).active['A1'].value
+        assert [(block.font.rFont, block.text) for block in cell] == [('Nikosh', 'বাংলা'), ('Arial', ' (Bangla)')]

@@ -14,6 +14,7 @@ from pathlib import Path
 
 from lxml import etree
 
+from office import bijoy
 from office.bangla import has_bangla
 
 W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
@@ -95,7 +96,7 @@ class Package:
 class Run:
     """One run of text: where it is, what it says, and the font and sizes it resolves to."""
 
-    def __init__(self, part, element, text, font, source, size=None, size_cs=None):
+    def __init__(self, part, element, text, font, source, size=None, size_cs=None, bijoy_font=None):
         self.part = part
         self.element = element
         self.text = text
@@ -107,10 +108,29 @@ class Run:
         self.size_cs_behind = False
         """DOCX: the Latin size is set closer to the run than the complex-script one, so the
         Bangla is drawn at an inherited size nobody chose for it."""
+        self.bijoy_font = bijoy_font if bijoy_font and not has_bangla(text) and text.strip() else None
+        """The Bijoy font the run's Latin letters are drawn in: its text is Bijoy-encoded Bangla."""
 
     @property
     def bangla(self):
         return has_bangla(self.text)
+
+
+def readable(pieces):
+    """The text a reader sees in (text, bijoy font or None) pieces: Bijoy stretches converted to
+    Unicode as a whole, since their reordering crosses run boundaries."""
+    out, group = [], []
+    for text, bijoy_font in pieces:
+        if bijoy_font:
+            group.append(text)
+            continue
+        if group:
+            out.append(bijoy.to_unicode(''.join(group)))
+            group = []
+        out.append(text)
+    if group:
+        out.append(bijoy.to_unicode(''.join(group)))
+    return ''.join(out)
 
 
 def theme_fonts(root):
@@ -182,6 +202,29 @@ class Docx:
                 return fonts.get(w('cs')), label
         return self.theme.get('minor'), 'theme' if self.theme.get('minor') else None
 
+    def latin_font(self, run, slot):
+        """The font Word names in `slot` ('ascii' or 'hAnsi') for `run`; None for a theme font."""
+        for _, rpr in self._sources(run):
+            fonts = rpr.find('w:rFonts', NS) if rpr is not None else None
+            if fonts is None:
+                continue
+            if fonts.get(w(f'{slot}Theme')):
+                return None
+            if fonts.get(w(slot)):
+                return fonts.get(w(slot))
+        return None
+
+    def bijoy_font(self, run):
+        """The Bijoy font Word draws `run`'s Latin letters with, or None.
+
+        Word draws ASCII with the w:ascii font and the Windows-1252 codes Bijoy also uses (†, ¨, ©)
+        with w:hAnsi, so either slot naming SutonnyMJ makes the run Bijoy."""
+        for slot in ('ascii', 'hAnsi'):
+            font = self.latin_font(run, slot)
+            if bijoy.is_font(font):
+                return font
+        return None
+
     def half_points(self, run, name):
         """(size in half points, how far up the chain it was found), or (None, None)."""
         for depth, (_, rpr) in enumerate(self._sources(run)):
@@ -202,20 +245,21 @@ class Docx:
                 size_cs, size_cs_depth = self.half_points(run, 'szCs')
                 points = (size or DEFAULT_HALF_POINTS) / 2
                 points_cs = (size_cs or DEFAULT_HALF_POINTS) / 2
-                found = Run(part, run, text, font, source, points, points_cs)
+                found = Run(part, run, text, font, source, points, points_cs, self.bijoy_font(run))
                 found.size_cs_behind = size_depth is not None and (size_cs_depth is None or size_cs_depth > size_depth)
                 yield found
 
     def paragraphs(self):
-        """(part, text) of every paragraph, text boxes counted as their own paragraphs."""
+        """(part, text) of every paragraph, text boxes counted as their own paragraphs, with Bijoy
+        text converted to Unicode."""
         for part in self.package.names(DOCX_TEXT_PARTS):
             for paragraph in self.package.xml(part).iter(w('p')):
-                texts = [
-                    run_text(run)
+                pieces = [
+                    (run_text(run), self.bijoy_font(run))
                     for run in paragraph.iter(w('r'))
                     if next(run.iterancestors(w('p')), None) is paragraph
                 ]
-                text = ''.join(texts)
+                text = readable(pieces)
                 if text.strip():
                     yield part, text
 
@@ -261,8 +305,9 @@ class Pptx:
             return self.theme.get('minor'), 'theme'
         return typeface, None
 
-    def cs_font(self, run):
-        shape = next(run.iterancestors(f'{{{P}}}sp'), None)
+    def _typeface(self, run, tag):
+        """(typeface, source) of the `a:<tag>` font set on the run, its paragraph or its text box's
+        list style, or (None, None)."""
         paragraph = next(run.iterancestors(a('p')), None)
         level = 1
         ppr = paragraph.find('a:pPr', NS) if paragraph is not None else None
@@ -272,14 +317,21 @@ class Pptx:
         if body is None:
             body = next(run.iterancestors(a('txBody')), None)
         candidates = [
-            ('run', run.find('a:rPr/a:cs', NS)),
-            ('style', paragraph.find('a:pPr/a:defRPr/a:cs', NS) if paragraph is not None else None),
-            ('style', body.find(f'a:lstStyle/a:lvl{level}pPr/a:defRPr/a:cs', NS) if body is not None else None),
+            ('run', run.find(f'a:rPr/a:{tag}', NS)),
+            ('style', paragraph.find(f'a:pPr/a:defRPr/a:{tag}', NS) if paragraph is not None else None),
+            ('style', body.find(f'a:lstStyle/a:lvl{level}pPr/a:defRPr/a:{tag}', NS) if body is not None else None),
         ]
-        for label, cs in candidates:
-            if cs is not None and cs.get('typeface'):
-                font, theme = self._theme_font(cs.get('typeface'))
-                return font, theme or label
+        for label, font in candidates:
+            if font is not None and font.get('typeface'):
+                name, theme = self._theme_font(font.get('typeface'))
+                return name, theme or label
+        return None, None
+
+    def cs_font(self, run):
+        font, source = self._typeface(run, 'cs')
+        if source:
+            return font, source
+        shape = next(run.iterancestors(f'{{{P}}}sp'), None)
         title = shape is not None and shape.find(".//p:nvPr/p:ph[@type='title']", NS) is not None
         title = title or (shape is not None and shape.find(".//p:nvPr/p:ph[@type='ctrTitle']", NS) is not None)
         kind = 'major' if title else 'minor'
@@ -295,12 +347,21 @@ class Pptx:
                 font, source = self.cs_font(run)
                 rpr = run.find('a:rPr', NS)
                 size = int(rpr.get('sz')) / 100 if rpr is not None and rpr.get('sz') else None
-                yield Run(part, run, text, font, source, size, size)
+                yield Run(part, run, text, font, source, size, size, self.bijoy_font(run))
+
+    def bijoy_font(self, run):
+        """The Bijoy font PowerPoint draws `run`'s Latin letters with (`a:latin`), or None."""
+        font, source = self._typeface(run, 'latin')
+        return font if source != 'theme' and bijoy.is_font(font) else None
 
     def paragraphs(self):
         for part in self.package.names(PPTX_TEXT_PARTS):
             for paragraph in self.package.xml(part).iter(a('p')):
-                text = ''.join(t.text or '' for t in paragraph.iter(a('t')))
+                pieces = []
+                for run in paragraph.iter(a('r')):
+                    t = run.find('a:t', NS)
+                    pieces.append((t.text or '' if t is not None else '', self.bijoy_font(run)))
+                text = readable(pieces)
                 if text.strip():
                     yield part, text
 
@@ -323,25 +384,43 @@ class Pptx:
 
 
 class Xlsx:
-    """The text cells of a workbook, each with the font its cell names."""
+    """The text cells of a workbook: one run per cell, or per rich-text run, with its font."""
 
     def __init__(self, path):
         from openpyxl import load_workbook
 
-        self.workbook = load_workbook(path)
+        self.workbook = load_workbook(path, rich_text=True)
 
-    def runs(self):
+    def _cells(self):
+        """(sheet title, cell) for every cell holding text rather than a number or a formula."""
+        from openpyxl.cell.rich_text import CellRichText
+
         for sheet in self.workbook.worksheets:
             for row in sheet.iter_rows():
                 for cell in row:
-                    if not isinstance(cell.value, str) or cell.value.startswith('='):
-                        continue
-                    font = cell.font
-                    yield Run(sheet.title, cell, cell.value, font.name, 'run' if font.name else None, font.sz, font.sz)
+                    text = cell.value
+                    if isinstance(text, CellRichText) or (isinstance(text, str) and not text.startswith('=')):
+                        yield sheet.title, cell
+
+    def _cell_runs(self, part, cell):
+        """Runs of one cell: rich-text runs name their own font, or inherit the cell's."""
+        pieces = [cell.value] if isinstance(cell.value, str) else list(cell.value)
+        for piece in pieces:
+            text = piece if isinstance(piece, str) else piece.text
+            inline = getattr(getattr(piece, 'font', None), 'rFont', None)
+            name = inline or cell.font.name
+            size = cell.font.sz
+            source = 'run' if name else None
+            yield Run(part, cell, text or '', name, source, size, size, name if bijoy.is_font(name) else None)
+
+    def runs(self):
+        for part, cell in self._cells():
+            yield from self._cell_runs(part, cell)
 
     def paragraphs(self):
-        for run in self.runs():
-            yield f'{run.part}!{run.element.coordinate}', run.text
+        for part, cell in self._cells():
+            pieces = [(run.text, run.bijoy_font) for run in self._cell_runs(part, cell)]
+            yield f'{part}!{cell.coordinate}', readable(pieces)
 
     def text_boxes(self):
         return 0

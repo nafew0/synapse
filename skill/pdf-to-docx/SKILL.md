@@ -106,6 +106,12 @@ Read the `bangla` block in the JSON:
   it cannot be recovered. The gate fails on it. Tell the user which font, and do not deliver.
 - `unchecked` above 0 — HarfBuzz is not installed; the text was recovered but not verified. Say so.
 
+A PDF typed in a **Bijoy** font (SutonnyMJ, other `…MJ` fonts) has a text layer of Latin codes
+(`evsjv‡`k` for বাংলাদেশ). `semantic-editable` converts each word in a Bijoy font to Unicode and
+names the run Nikosh; the `bijoy` block of the JSON counts the `words` and lists the `fonts`.
+Then run the docx skill's `fix_bangla.py` on the result to embed Nikosh, and tell the user the
+Bangla was converted from Bijoy to Unicode.
+
 `layout-editable` goes through LibreOffice's own PDF import, which reads the broken layer as-is.
 For a Bangla PDF, use `semantic-editable`.
 

@@ -18,12 +18,18 @@ drew, word by word.
 
 Nothing here runs unless a page uses a Bengali font whose original is installed, and a word is
 only replaced when it could be decoded completely.
+
+PDFs typed in a Bijoy font (SutonnyMJ…) are the other case: their text layer is exactly what was
+typed, Latin codes such as `evsjv` for বাংলা. Each word set in a Bijoy font is converted to Unicode
+with `office.bijoy`, and its font becomes Nikosh, since the Bijoy fonts are not installed here.
 """
 import io
 import re
 import subprocess
 import unicodedata
 from functools import lru_cache
+
+from office import bijoy
 
 RASTER = 80
 """Pixels per side of the box glyph shapes are compared in, which spans two em: marks such as ৃ
@@ -453,7 +459,7 @@ def repair_chars(chars, decoders_by_font):
     `mismatched` (it does not) and `unchecked` (HarfBuzz is not installed).
     """
     counts = {'recovered': 0, 'undecoded': 0, 'verified': 0, 'mismatched': 0, 'unchecked': 0}
-    for word in _words(chars, decoders_by_font):
+    for word in _words(chars, lambda family: family in decoders_by_font):
         decoder = decoders_by_font[family_of(word[0]['fontname'])]
         tokens = [decoder.token(char['text']) for char in word]
         if any(text is None for text, _ in tokens):
@@ -462,19 +468,43 @@ def repair_chars(chars, decoders_by_font):
         text = logical_order([text for text, _ in tokens])
         check = verify(text, decoder.glyph_names, [cid for _, cid in tokens], decoder.original_path)
         counts[{True: 'verified', False: 'mismatched', None: 'unchecked'}[check]] += 1
-        word[0]['text'] = text
-        word[0]['x1'] = word[-1]['x1']
-        word[0]['width'] = float(word[0]['x1']) - float(word[0]['x0'])
-        for char in word[1:]:
-            char['text'] = MERGED
+        _merge(word, text)
         counts['recovered'] += 1
     return counts
 
 
-def _words(chars, decoders_by_font):
+def _merge(word, text):
+    """Give the word's first glyph its whole text and box; empty the rest for `merged_away`."""
+    word[0]['text'] = text
+    word[0]['x1'] = word[-1]['x1']
+    word[0]['width'] = float(word[0]['x1']) - float(word[0]['x0'])
+    for char in word[1:]:
+        char['text'] = MERGED
+
+
+def is_bijoy(fontname, families=None):
+    """Whether a PDF font is a Bijoy font: `ABCDEF+SutonnyMJ`, `SutonnyMJ-Bold`, `SutonnyMJ,Bold`."""
+    name = family_of(fontname)
+    names = {name, (families or {}).get(name, name)}
+    return any(bijoy.is_font(candidate) or bijoy.is_font(re.split(r'[-,]', candidate)[0]) for candidate in names)
+
+
+def convert_bijoy_chars(chars, families=None):
+    """Rewrite the text of each word set in a Bijoy font into Unicode, in place, merged into its
+    first glyph as `repair_chars` does. Returns {Bijoy font family: words converted}."""
+    counts = {}
+    for word in _words(chars, lambda family: is_bijoy(family, families)):
+        _merge(word, bijoy.to_unicode(''.join(char['text'] for char in word)))
+        family = family_of(word[0]['fontname'])
+        counts[family] = counts.get(family, 0) + 1
+    return counts
+
+
+def _words(chars, wanted):
+    """Runs of glyphs in one font `wanted(family)` accepts, on one line, with no gap between them."""
     word, previous = [], None
     for char in sorted(chars, key=lambda c: (round(float(c['top'])), float(c['x0']))):
-        decodable = family_of(char['fontname']) in decoders_by_font and char['text'].strip() != ''
+        decodable = wanted(family_of(char['fontname'])) and char['text'].strip() != ''
         same_word = (
             previous is not None
             and decodable
@@ -508,6 +538,7 @@ def readable_text(pdf_path):
             kept, _ = dedupe(page.chars)
             if found:
                 repair_chars(kept, found)
+            convert_bijoy_chars(kept)
             keep = {id(char) for char in kept if not merged_away(char)}
             readable = page.filter(lambda obj: obj.get('object_type') != 'char' or id(obj) in keep)
             texts.append(readable.extract_text() or '')
