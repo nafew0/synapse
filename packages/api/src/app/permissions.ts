@@ -1,4 +1,9 @@
-import { logger, tenantStorage, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
+import {
+  logger,
+  tenantStorage,
+  SYSTEM_TENANT_ID,
+  INSTITUTION_ADMIN_ROLE,
+} from '@librechat/data-schemas';
 import {
   SystemRoles,
   Permissions,
@@ -54,30 +59,44 @@ function hasExplicitConfig(
   }
 }
 
+type RoleAccessUpdater = (
+  roleName: string,
+  permissionsUpdate: Partial<Record<PermissionTypes, Record<string, boolean | undefined>>>,
+  roleData?: IRole | null,
+) => Promise<void>;
+
+type RoleLookup = (roleName: string, fieldsToSelect?: string | string[]) => Promise<IRole | null>;
+
+/** Roles an institution holds its own copy of; both follow the interface config. */
+export const TENANT_INTERFACE_ROLES: readonly string[] = [SystemRoles.USER, INSTITUTION_ADMIN_ROLE];
+
+/** Tenant roles without their own defaults (institution admins) are seeded from USER. */
+function defaultsRoleFor(roleName: string): SystemRoles {
+  return roleName === SystemRoles.ADMIN ? SystemRoles.ADMIN : SystemRoles.USER;
+}
+
 export async function updateInterfacePermissions({
   appConfig,
   getRoleByName,
   updateAccessPermissions,
   tenantId,
+  roleNames = [SystemRoles.USER, SystemRoles.ADMIN],
 }: {
   appConfig: AppConfig;
-  getRoleByName: (roleName: string, fieldsToSelect?: string | string[]) => Promise<IRole | null>;
-  updateAccessPermissions: (
-    roleName: string,
-    permissionsUpdate: Partial<Record<PermissionTypes, Record<string, boolean | undefined>>>,
-
-    roleData?: IRole | null,
-  ) => Promise<void>;
+  getRoleByName: RoleLookup;
+  updateAccessPermissions: RoleAccessUpdater;
   /**
    * Optional tenant ID for scoping role updates to a specific tenant.
    * When provided (and not SYSTEM_TENANT_ID), runs inside `tenantStorage.run({ tenantId })`.
    * When omitted or SYSTEM_TENANT_ID, uses the caller's existing ALS context.
    */
   tenantId?: string;
+  /** Roles to update; non-system roles that do not exist yet are skipped, never created. */
+  roleNames?: readonly string[];
 }): Promise<void> {
   if (tenantId && tenantId !== SYSTEM_TENANT_ID) {
     return tenantStorage.run({ tenantId }, async () =>
-      updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions }),
+      updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions, roleNames }),
     );
   }
 
@@ -116,10 +135,14 @@ export async function updateInterfacePermissions({
   // 1. Explicit user configuration (from librechat.yaml)
   // 2. Role-specific defaults (from roleDefaults)
   // 3. Interface schema defaults (from interfaceSchema.default())
-  for (const roleName of [SystemRoles.USER, SystemRoles.ADMIN]) {
-    const defaultPerms = roleDefaults[roleName]?.permissions;
+  for (const roleName of roleNames) {
+    const baseRole = defaultsRoleFor(roleName);
+    const defaultPerms = roleDefaults[baseRole]?.permissions;
 
     const existingRole = await getRoleByName(roleName);
+    if (!existingRole && roleName !== SystemRoles.USER && roleName !== SystemRoles.ADMIN) {
+      continue;
+    }
     const existingPermissions = existingRole?.permissions as
       | Partial<Record<PermissionTypes, Record<string, boolean | undefined>>>
       | undefined;
@@ -673,7 +696,7 @@ export async function updateInterfacePermissions({
      * for all roles. ADMIN should keep CREATE: true, but USER should have CREATE: false
      * unless explicitly configured otherwise in librechat.yaml.
      */
-    if (roleName === SystemRoles.USER) {
+    if (baseRole === SystemRoles.USER) {
       const existingMcpPerms = existingPermissions?.[PermissionTypes.MCP_SERVERS];
       const mcpCreateExplicit =
         typeof interfaceConfig?.mcpServers === 'object' && 'create' in interfaceConfig.mcpServers;
@@ -730,4 +753,44 @@ export async function updateInterfacePermissions({
       await updateAccessPermissions(roleName, permissionsToUpdate, existingRole);
     }
   }
+}
+
+/**
+ * Applies the interface config to every institution's own role copies. Those
+ * copies are seeded from hardcoded defaults, so without this they ignore
+ * `librechat.yaml` (e.g. agent builder, bookmarks and memories stay on).
+ * A failing tenant is logged and does not stop the others.
+ */
+export async function updateTenantInterfacePermissions({
+  tenantIds,
+  getAppConfig,
+  getRoleByName,
+  updateAccessPermissions,
+}: {
+  tenantIds: readonly string[];
+  getAppConfig: (options: { tenantId: string }) => Promise<AppConfig>;
+  getRoleByName: RoleLookup;
+  updateAccessPermissions: RoleAccessUpdater;
+}): Promise<string[]> {
+  const results = await Promise.allSettled(
+    tenantIds.map(async (tenantId) =>
+      updateInterfacePermissions({
+        appConfig: await getAppConfig({ tenantId }),
+        tenantId,
+        roleNames: TENANT_INTERFACE_ROLES,
+        getRoleByName,
+        updateAccessPermissions,
+      }),
+    ),
+  );
+  const failed = tenantIds.filter((_, index) => results[index].status === 'rejected');
+  for (const [index, result] of results.entries()) {
+    if (result.status === 'rejected') {
+      logger.error(
+        `[updateTenantInterfacePermissions] tenant "${tenantIds[index]}" failed:`,
+        result.reason,
+      );
+    }
+  }
+  return failed;
 }

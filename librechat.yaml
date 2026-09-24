@@ -156,7 +156,7 @@ interface:
     use: true
     create: false
     share: false
-    public: true
+    public: false
   marketplace:
     use: false
   fileCitations: true

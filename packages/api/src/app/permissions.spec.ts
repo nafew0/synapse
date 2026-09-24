@@ -2,7 +2,11 @@ import { loadDefaultInterface } from '@librechat/data-schemas';
 import { SystemRoles, Permissions, PermissionTypes, roleDefaults } from 'librechat-data-provider';
 import type { TConfigDefaults, TCustomConfig } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
-import { updateInterfacePermissions } from './permissions';
+import {
+  TENANT_INTERFACE_ROLES,
+  updateInterfacePermissions,
+  updateTenantInterfacePermissions,
+} from './permissions';
 
 const mockUpdateAccessPermissions = jest.fn();
 const mockGetRoleByName = jest.fn();
@@ -2841,5 +2845,96 @@ describe('updateInterfacePermissions - permissions', () => {
       [Permissions.SHARE]: true,
       [Permissions.SHARE_PUBLIC]: true,
     });
+  });
+});
+
+describe('updateInterfacePermissions - institution roles', () => {
+  const config = {
+    interface: {
+      bookmarks: false,
+      memories: false,
+      agents: { use: true, create: false, share: false, public: true },
+    },
+  };
+
+  async function buildAppConfig(): Promise<AppConfig> {
+    const configDefaults = { interface: {} } as TConfigDefaults;
+    const interfaceConfig = await loadDefaultInterface({
+      config: config as TCustomConfig,
+      configDefaults,
+    });
+    return { config, interfaceConfig } as unknown as AppConfig;
+  }
+
+  /** An institution role seeded from the hardcoded defaults: builder, bookmarks, memories on. */
+  const seededInstitutionRole = {
+    name: 'INSTITUTION_ADMIN',
+    permissions: roleDefaults[SystemRoles.USER].permissions,
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('applies explicit interface config to the requested non-system roles', async () => {
+    mockGetRoleByName.mockImplementation(async (roleName: string) =>
+      roleName === 'INSTITUTION_ADMIN' ? seededInstitutionRole : null,
+    );
+
+    await updateInterfacePermissions({
+      appConfig: await buildAppConfig(),
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+      roleNames: TENANT_INTERFACE_ROLES,
+    });
+
+    const institutionCall = mockUpdateAccessPermissions.mock.calls.find(
+      ([roleName]) => roleName === 'INSTITUTION_ADMIN',
+    );
+    expect(institutionCall).toBeDefined();
+    const [, update] = institutionCall;
+    expect(update[PermissionTypes.AGENTS][Permissions.CREATE]).toBe(false);
+    expect(update[PermissionTypes.BOOKMARKS][Permissions.USE]).toBe(false);
+    expect(update[PermissionTypes.MEMORIES][Permissions.USE]).toBe(false);
+    expect(mockUpdateAccessPermissions.mock.calls.map(([roleName]) => roleName)).not.toContain(
+      SystemRoles.ADMIN,
+    );
+  });
+
+  it('skips a non-system role that does not exist instead of creating it', async () => {
+    mockGetRoleByName.mockResolvedValue(null);
+
+    await updateInterfacePermissions({
+      appConfig: await buildAppConfig(),
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+      roleNames: TENANT_INTERFACE_ROLES,
+    });
+
+    expect(mockUpdateAccessPermissions.mock.calls.map(([roleName]) => roleName)).toEqual([
+      SystemRoles.USER,
+    ]);
+  });
+
+  it('keeps updating other tenants when one tenant fails and reports the failure', async () => {
+    mockGetRoleByName.mockResolvedValue(seededInstitutionRole);
+    const appConfig = await buildAppConfig();
+    const getAppConfig = jest.fn(async ({ tenantId }: { tenantId: string }) => {
+      if (tenantId === 'broken') {
+        throw new Error('config unavailable');
+      }
+      return appConfig;
+    });
+
+    const failed = await updateTenantInterfacePermissions({
+      tenantIds: ['uni-a', 'broken', 'uni-b'],
+      getAppConfig,
+      getRoleByName: mockGetRoleByName,
+      updateAccessPermissions: mockUpdateAccessPermissions,
+    });
+
+    expect(failed).toEqual(['broken']);
+    expect(getAppConfig).toHaveBeenCalledTimes(3);
+    expect(mockUpdateAccessPermissions).toHaveBeenCalledTimes(4);
   });
 });

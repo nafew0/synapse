@@ -53,6 +53,7 @@ const {
   seedDatabase,
 } = require('~/models');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
+const { syncAllTenantInterfacePermissions } = require('./services/tenancy');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
@@ -210,6 +211,7 @@ const startServer = async () => {
   await runAsSystem(async () => {
     await performStartupChecks(appConfig);
     await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });
+    await syncAllTenantInterfacePermissions();
   });
 
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
