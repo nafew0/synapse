@@ -14,6 +14,9 @@ and deliver only on success:
    complex-script slot Word and PowerPoint actually use for it. In a DOCX it has a complex-script
    size whenever it has a Latin one, and a DOCX that sets Bangla in Nikosh embeds Nikosh.
 4. text: no text box of the original became a picture.
+5. render: the file is printed with LibreOffice and its pages read back with OCR; every page's
+   Bangla must read back as the text LibreOffice laid out (see render.py). Needs LibreOffice,
+   Poppler and Tesseract with its Bengali model; without them the step is skipped and noted.
 
 Paragraphs of the original typed in a Bijoy font are compared as the Unicode they stand for.
 Text in another font that only looks like Bijoy is a note: without the font it is a guess.
@@ -24,18 +27,22 @@ formatting changed; a font fault when the original had the same text in the same
 
 Usage:
     python verify_bangla.py OUTPUT [--original INPUT] [--allow 'text of an edited paragraph']
+                                   [--no-render] [--pages 10]
 
 Prints JSON and exits 0 when clean, 2 when defects are found, 1 on bad input.
 """
 import argparse
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from office.bangla import DEFAULT_FONT, can_draw, classify, has_bangla, normalize, to_unicode
+from office.render import MAX_PAGES, InputError
+from office.render import check as render_check
 from office.runs import open_document
 
 SPACE = re.compile(r'\s+')
@@ -109,7 +116,7 @@ def run_findings(kind, run):
     return found
 
 
-def verify(output_path, original_path=None, allowed=()):
+def verify(output_path, original_path=None, allowed=(), render=False, max_pages=MAX_PAGES):
     kind, output = open_document(output_path)
     original = open_document(original_path)[1] if original_path else None
     texts, formatted = set(), set()
@@ -150,7 +157,23 @@ def verify(output_path, original_path=None, allowed=()):
                 f'{output.pictures() - original.pictures()} picture(s) appeared: keep text as text'
             ),
         })
-    return {'status': 'defects_found' if findings else 'clean', 'findings': findings, 'notes': notes}
+    result = {'status': 'defects_found' if findings else 'clean', 'findings': findings, 'notes': notes}
+    if render:
+        try:
+            rendered = render_check(output_path, original_path, max_pages)
+        except (InputError, subprocess.SubprocessError) as error:
+            failure = {'check': 'render', 'where': 'document', 'detail': str(error)}
+            rendered = {'status': 'defects_found', 'findings': [failure]}
+        result['render'] = {key: value for key, value in rendered.items() if key not in ('findings', 'notes')}
+        findings.extend(rendered['findings'])
+        notes.extend(rendered.get('notes', []))
+        if rendered['status'] == 'skipped':
+            detail = f'render check skipped: {rendered["reason"]}'
+            notes.append({'check': 'render', 'where': 'document', 'detail': detail})
+        if rendered.get('note'):
+            notes.append({'check': 'render', 'where': 'document', 'detail': rendered['note']})
+        result['status'] = 'defects_found' if findings else 'clean'
+    return result
 
 
 def main():
@@ -158,12 +181,14 @@ def main():
     parser.add_argument('output', type=Path)
     parser.add_argument('--original', type=Path, help='the file the output was made from')
     parser.add_argument('--allow', action='append', default=[], help='text of a paragraph you were asked to change')
+    parser.add_argument('--no-render', action='store_true', help='skip the LibreOffice + OCR render check')
+    parser.add_argument('--pages', type=int, default=MAX_PAGES, help='render and read at most this many pages')
     args = parser.parse_args()
     try:
         for path in (args.output, args.original):
             if path is not None and not path.is_file():
                 raise ValueError(f'File not found: {path}')
-        result = verify(args.output, args.original, args.allow)
+        result = verify(args.output, args.original, args.allow, not args.no_render, args.pages)
     except (ValueError, KeyError) as error:
         print(json.dumps({'error': str(error)}))
         return 1

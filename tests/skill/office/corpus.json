@@ -1,0 +1,24 @@
+{
+  "Rokeya_Chair_2026_Nomination_Notice.docx": {
+    "about": "UGC circular rebuilt in Word from the Rokeya Chair PDF, clean Unicode; before fix_bangla.py Nikosh is not embedded",
+    "render": "clean",
+    "verify": "defects_found",
+    "fixed": "clean"
+  },
+  "rokeya_chair_2026_editable.docx": {
+    "about": "the agent's earlier conversion of the same PDF, with 127 garbled runs from the broken text layer",
+    "render": "defects_found",
+    "verify": "defects_found",
+    "fixed": "clean"
+  },
+  "তদন্ত_কমিটি_সম্মানী_AIT_বিবরণী.xlsx": {
+    "about": "Bangla file name, English Arial cells only",
+    "render": "clean",
+    "verify": "clean",
+    "fixed": "clean"
+  },
+  "letter-rokeya-chair-2026-nomination-call.pdf": {
+    "about": "the Rokeya Chair circular itself: wkhtmltopdf, SolaimanLipi, broken text layer",
+    "render": "defects_found"
+  }
+}

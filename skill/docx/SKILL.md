@@ -139,6 +139,18 @@ different complex-script size, when Nikosh is used but not embedded, or when a t
 picture. Exits 2 on defects: fix the document and run both again. Deliver only on success.
 Omit `--original` for a new document.
 
+`verify_bangla.py` also prints the file with LibreOffice and reads every page back with OCR
+(Tesseract `ben+eng`, the first 10 pages; `--pages N` for more). A page fails when OCR misses more
+than 8 % of the Bangla laid out on it: boxes, dotted circles, vowel signs in the wrong place, a font
+that cannot shape Bangla, or text clipped by a cell or a box. The failure lists the words that did
+not read back; render that page and look at it. It takes about 1 s per page plus the conversion.
+
+A PDF you deliver gets the same page check on its own:
+
+```bash
+python3 /mnt/data/skills/docx/scripts/office/render.py /mnt/data/out.pdf
+```
+
 To convert a size when changing a run's font:
 
 ```python

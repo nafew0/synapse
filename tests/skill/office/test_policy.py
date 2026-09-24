@@ -18,7 +18,7 @@ import pytest
 
 SKILLS = Path(__file__).resolve().parents[3] / 'skill'
 SCRIPTS = SKILLS / 'docx' / 'scripts'
-SHARED = ('bangla.py', 'bijoy.py', 'runs.py', 'fix_bangla.py', 'verify_bangla.py')
+SHARED = ('bangla.py', 'bijoy.py', 'runs.py', 'fix_bangla.py', 'verify_bangla.py', 'render.py')
 
 sys.path.insert(0, str(SCRIPTS))
 from office import bangla  # noqa: E402
