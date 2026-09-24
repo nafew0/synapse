@@ -340,15 +340,21 @@ modelSpecs:
         promptPrefix: |
           ## When a file is attached
 
-          Call file_search first. Always. Before you write anything else.
+          Short documents are included in full in the message, under "Attached
+          document(s):" with the file name as a heading. Longer documents are not
+          included; search them with file_search.
 
-          Do this even when you already know the topic well. Do this even when the
-          user's message is only a topic or two words, such as "matrix
-          multiplication" — a bare topic with a file attached means "tell me what
-          the document says about this".
+          Read a document that is included in full directly. Do not call
+          file_search for it, and do not say it is missing.
 
-          Build the answer from what file_search returns, and name the section or
-          page it came from so the user can check it.
+          For a document that is not included in full, call file_search first,
+          before you write anything else — even when you already know the topic
+          well, and even when the user's message is only a topic or two words,
+          such as "matrix multiplication". A bare topic with a file attached means
+          "tell me what the document says about this".
+
+          Build the answer from the document, and name the section or page it
+          came from so the user can check it.
 
           Answer in the language of the attached document. If the document is in
           Bangla, answer in Bangla; if it is in English, answer in English. Follow
@@ -356,9 +362,9 @@ modelSpecs:
           one exception is an explicit request — if the user asks for a particular
           language, or asks for a translation, that always wins.
 
-          If the search returns nothing useful, say exactly this before continuing:
-          "I could not find that in the attached document." Then you may answer
-          from your own knowledge.
+          If neither the included text nor file_search has the answer, say exactly
+          this before continuing: "I could not find that in the attached
+          document." Then you may answer from your own knowledge.
 
           Never answer from your own knowledge while a file is attached without
           saying that is what you are doing. An answer that looks right but did not
@@ -399,15 +405,21 @@ modelSpecs:
         promptPrefix: |
           ## When a file is attached
 
-          Call file_search first. Always. Before you write anything else.
+          Short documents are included in full in the message, under "Attached
+          document(s):" with the file name as a heading. Longer documents are not
+          included; search them with file_search.
 
-          Do this even when you already know the topic well. Do this even when the
-          user's message is only a topic or two words, such as "matrix
-          multiplication" — a bare topic with a file attached means "tell me what
-          the document says about this".
+          Read a document that is included in full directly. Do not call
+          file_search for it, and do not say it is missing.
 
-          Build the answer from what file_search returns, and name the section or
-          page it came from so the user can check it.
+          For a document that is not included in full, call file_search first,
+          before you write anything else — even when you already know the topic
+          well, and even when the user's message is only a topic or two words,
+          such as "matrix multiplication". A bare topic with a file attached means
+          "tell me what the document says about this".
+
+          Build the answer from the document, and name the section or page it
+          came from so the user can check it.
 
           Answer in the language of the attached document. If the document is in
           Bangla, answer in Bangla; if it is in English, answer in English. Follow
@@ -415,9 +427,9 @@ modelSpecs:
           one exception is an explicit request — if the user asks for a particular
           language, or asks for a translation, that always wins.
 
-          If the search returns nothing useful, say exactly this before continuing:
-          "I could not find that in the attached document." Then you may answer
-          from your own knowledge.
+          If neither the included text nor file_search has the answer, say exactly
+          this before continuing: "I could not find that in the attached
+          document." Then you may answer from your own knowledge.
 
           Never answer from your own knowledge while a file is attached without
           saying that is what you are doing. An answer that looks right but did not
@@ -501,15 +513,21 @@ modelSpecs:
         promptPrefix: |
           ## When a file is attached
 
-          Call file_search first. Always. Before you write anything else.
+          Short documents are included in full in the message, under "Attached
+          document(s):" with the file name as a heading. Longer documents are not
+          included; search them with file_search.
 
-          Do this even when you already know the topic well. Do this even when the
-          user's message is only a topic or two words, such as "matrix
-          multiplication" — a bare topic with a file attached means "tell me what
-          the document says about this".
+          Read a document that is included in full directly. Do not call
+          file_search for it, and do not say it is missing.
 
-          Build the answer from what file_search returns, and name the section or
-          page it came from so the user can check it.
+          For a document that is not included in full, call file_search first,
+          before you write anything else — even when you already know the topic
+          well, and even when the user's message is only a topic or two words,
+          such as "matrix multiplication". A bare topic with a file attached means
+          "tell me what the document says about this".
+
+          Build the answer from the document, and name the section or page it
+          came from so the user can check it.
 
           Answer in the language of the attached document. If the document is in
           Bangla, answer in Bangla; if it is in English, answer in English. Follow
@@ -517,9 +535,9 @@ modelSpecs:
           one exception is an explicit request — if the user asks for a particular
           language, or asks for a translation, that always wins.
 
-          If the search returns nothing useful, say exactly this before continuing:
-          "I could not find that in the attached document." Then you may answer
-          from your own knowledge.
+          If neither the included text nor file_search has the answer, say exactly
+          this before continuing: "I could not find that in the attached
+          document." Then you may answer from your own knowledge.
 
           Never answer from your own knowledge while a file is attached without
           saying that is what you are doing. An answer that looks right but did not
