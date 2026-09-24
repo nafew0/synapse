@@ -113,7 +113,7 @@ class TestFixDocx:
     def test_the_result_opens(self, tmp_path):
         out = tmp_path / 'out.docx'
         fix(letter_docx(tmp_path / 'in.docx'), out, new=True, embed=HAS_NIKOSH)
-        assert SENTENCE in [p.text for p in docx.Document(out).paragraphs]
+        assert bangla.compose(SENTENCE) in [p.text for p in docx.Document(out).paragraphs]
 
 
 @needs_fonts
@@ -181,7 +181,7 @@ class TestFixPptx:
     def test_the_result_opens(self, tmp_path):
         out = tmp_path / 'out.pptx'
         fix(self.deck(tmp_path / 'in.pptx'), out, new=True)
-        assert pptx.Presentation(out).slides[0].shapes[0].text_frame.text == SENTENCE
+        assert pptx.Presentation(out).slides[0].shapes[0].text_frame.text == bangla.compose(SENTENCE)
 
 
 class TestVerify:
@@ -298,7 +298,8 @@ def test_garbled_text_the_original_had_is_a_note_after_a_fix(tmp_path):
 
 
 BIJOY = 'evsjv‡`k wek¦we`¨vjq gÄyix Kwgkb'
-BIJOY_TEXT = 'বাংলাদেশ বিশ্ববিদ্যালয় মঞ্জুরী কমিশন'
+BIJOY_TEXT = bangla.compose('বাংলাদেশ বিশ্ববিদ্যালয় মঞ্জুরী কমিশন')
+"""As written into a file: য় as one character (`bangla.compose`)."""
 
 
 def bijoy_docx(path):
@@ -395,7 +396,7 @@ class TestBijoy:
         out = tmp_path / 'out.docx'
         result = fix(bijoy_docx(tmp_path / 'in.docx'), out, embed=False)
         assert result['bijoy'] == {'runs': 4, 'fonts': ['SutonnyMJ']}
-        assert docx_texts(out) == ['আমি বাংলায় গান গাই, কি?', BIJOY_TEXT, 'Memo No. 37.01.0000']
+        assert docx_texts(out) == [bangla.compose('আমি বাংলায় গান গাই, কি?'), BIJOY_TEXT, 'Memo No. 37.01.0000']
         for run in bangla_runs(out):
             fonts = run.find('w:rPr/w:rFonts', NS)
             assert {fonts.get(f'{{{W}}}{slot}') for slot in ('ascii', 'hAnsi', 'cs')} == {'Nikosh'}
@@ -525,3 +526,44 @@ class TestBijoy:
         fix(source, out)
         cell = openpyxl.load_workbook(out, rich_text=True).active['A1'].value
         assert [(block.font.rFont, block.text) for block in cell] == [('Nikosh', 'বাংলা'), ('Arial', ' (Bangla)')]
+
+
+SPLIT = 'বিশ্ববিদ্যাল\u09af\u09bc ও বড\u09bc'
+"""য় and ড় as letter + nukta, the form NFC gives and Word draws with the dot beside the letter."""
+
+
+class TestNukta:
+    def test_compose_writes_single_characters(self):
+        assert bangla.compose(SPLIT) == 'বিশ্ববিদ্যাল\u09df ও ব\u09dc'
+        assert bangla.normalize(bangla.compose(SPLIT)) == bangla.normalize(SPLIT)
+
+    def test_bijoy_output_is_composed_once_written(self, tmp_path):
+        source = tmp_path / 'in.docx'
+        document = docx.Document()
+        document.add_paragraph().add_run('evsjvq').font.name = 'SutonnyMJ'
+        document.save(source)
+        out = tmp_path / 'out.docx'
+        fix(source, out, embed=False)
+        assert docx.Document(out).paragraphs[0].text == 'বাংলা\u09df'
+
+    def test_fix_and_gate_on_a_split_docx(self, tmp_path):
+        source = tmp_path / 'in.docx'
+        document = docx.Document()
+        document.add_paragraph().add_run(SPLIT).font.name = 'Nikosh'
+        document.save(source)
+        assert any('letter + nukta' in f['detail'] for f in verify(source)['findings'])
+        out = tmp_path / 'out.docx'
+        result = fix(source, out, embed=False)
+        assert result['runs_changed']['nukta'] == 1
+        assert '\u09bc' not in docx.Document(out).paragraphs[0].text
+        assert not [f for f in verify(out, source)['findings'] if 'nukta' in f['detail']]
+
+    def test_pptx_and_xlsx(self, tmp_path):
+        deck = TestFixPptx().deck(tmp_path / 'in.pptx', text=SPLIT, font='Nikosh')
+        fix(deck, tmp_path / 'out.pptx')
+        assert '\u09bc' not in pptx.Presentation(tmp_path / 'out.pptx').slides[0].shapes[0].text_frame.text
+        workbook = openpyxl.Workbook()
+        workbook.active['A1'] = SPLIT
+        workbook.save(tmp_path / 'in.xlsx')
+        assert fix(tmp_path / 'in.xlsx', tmp_path / 'out.xlsx')['nukta'] == 1
+        assert '\u09bc' not in openpyxl.load_workbook(tmp_path / 'out.xlsx').active['A1'].value

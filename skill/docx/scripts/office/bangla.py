@@ -51,6 +51,12 @@ KNOWN_WINDOWS = {'nirmala ui', 'vrinda', 'shonar bangla'}
 """Bangla fonts that ship with Windows. The sandbox has only stand-ins for them, so they are
 accepted by name rather than by reading a font file."""
 
+SPLIT_NUKTA = re.compile('([ডঢয])\u09bc')
+PRECOMPOSED = {'ড': '\u09dc', 'ঢ': '\u09dd', 'য': '\u09df'}
+"""NFC splits ড় ঢ় য় into letter + nukta (U+09BC): Unicode excludes them from composition. Word
+draws the pair with the font's own rules, and Nikosh has none for it, so the dot lands beside the
+letter (বিশ্ববিদ্যালয্‌). LibreOffice and macOS compose it themselves, which hides the fault."""
+
 HEADLINE_LETTERS = 'কব'
 ROUND_TO = 0.5
 
@@ -113,6 +119,17 @@ def normalize(text):
     text = CANDRABINDU_BEFORE_SIGN.sub(lambda m: m.group(1) + '\u0981', text)
     text = REPEATED_JOINER.sub(r'\1', JOINERS_AT_EDGE.sub('', text))
     return unicodedata.normalize('NFC', text)
+
+
+def compose(text):
+    """Text with ড় ঢ় য় as the single characters every Bangla font draws, for writing into a file.
+
+    Comparisons use `normalize`, where both forms are equal; text written for Word uses this."""
+    return SPLIT_NUKTA.sub(lambda match: PRECOMPOSED[match.group(1)], text) if text else text
+
+
+def has_split_nukta(text):
+    return bool(text) and SPLIT_NUKTA.search(text) is not None
 
 
 def is_bijoy_font(name):

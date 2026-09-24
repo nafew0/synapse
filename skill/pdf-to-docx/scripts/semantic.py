@@ -17,7 +17,7 @@ from itertools import groupby
 from pathlib import Path
 
 import bangla
-from office.bangla import DEFAULT_FONT, is_bangla_font, size_for
+from office.bangla import DEFAULT_FONT, compose, is_bangla_font, size_for
 
 LINE_TOLERANCE = 2.5
 """Points of baseline drift still counted as one line. Kerning and superscripts move a
@@ -80,9 +80,9 @@ def _sane(text):
 
     PDF text layers carry control bytes — soft hyphens from justification, stray form feeds from
     the producer — and python-docx refuses the whole document for one of them, losing a
-    conversion that was otherwise complete.
+    conversion that was otherwise complete. ড় ঢ় য় are written as single characters (`compose`).
     """
-    return CONTROL_CHARACTERS.sub('', text or '').strip()
+    return compose(CONTROL_CHARACTERS.sub('', text or '').strip())
 
 
 class SemanticError(Exception):

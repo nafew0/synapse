@@ -7,7 +7,8 @@ and deliver only on success:
 1. lost: every paragraph, cell or text box of the original that contains Bangla is still in the
    output, unless it is one you were asked to change (`--allow`, a piece of its text).
 2. garbled: no Bangla the output adds or changes is broken: no word starting with a vowel sign,
-   no two vowel signs in a row, no dotted circles, private-use glyphs, `(cid:N)` or mojibake.
+   no two vowel signs in a row, no dotted circles, private-use glyphs, `(cid:N)` or mojibake,
+   and no ড় ঢ় য় stored as letter + nukta, which Word draws with the dot beside the letter.
    No run is still in a Bijoy font (SutonnyMJ…), even one the original had: Bijoy text is Latin
    codes that read as Bangla only in that font, so it is always converted before delivery.
 3. font: every Bangla run the output adds or changes names a font that draws Bangla, in the
@@ -40,7 +41,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from office.bangla import DEFAULT_FONT, can_draw, classify, has_bangla, normalize, to_unicode
+from office.bangla import DEFAULT_FONT, can_draw, classify, compose, has_bangla, has_split_nukta, normalize, to_unicode
 from office.render import MAX_PAGES, InputError
 from office.render import check as render_check
 from office.runs import open_document
@@ -54,7 +55,8 @@ def flat(text):
 
 
 def short(text):
-    text = SPACE.sub(' ', text).strip()
+    """Text quoted in a finding: one line, at most QUOTE letters, ড় ঢ় য় as single characters."""
+    text = compose(SPACE.sub(' ', text).strip())
     return text if len(text) <= QUOTE else text[:QUOTE] + '…'
 
 
@@ -95,6 +97,12 @@ def run_findings(kind, run):
     shape = classify(run.text)
     if shape in ('broken', 'mixed'):
         found.append({'check': 'garbled', 'where': where, 'detail': f'Bangla is {shape}: {short(run.text)!r}'})
+    if has_split_nukta(run.text):
+        detail = (
+            f'ড় ঢ় য় are stored as letter + nukta in {short(run.text)!r}; Word draws the dot beside the '
+            'letter. Run fix_bangla.py'
+        )
+        found.append({'check': 'garbled', 'where': where, 'detail': detail})
     if not run.font:
         detail = f'no Bangla font is set for {short(run.text)!r}; run fix_bangla.py'
         found.append({'check': 'font', 'where': where, 'detail': detail})
@@ -122,8 +130,8 @@ def verify(output_path, original_path=None, allowed=(), render=False, max_pages=
     texts, formatted = set(), set()
     for run in original.runs() if original is not None else ():
         if run.bangla:
-            texts.add((run.part, run.text))
-            formatted.add((run.part, run.text, run.font, run.size_cs))
+            texts.add((run.part, normalize(run.text)))
+            formatted.add((run.part, normalize(run.text), run.font, run.size_cs))
 
     findings = lost(original, output, allowed) if original is not None else []
     notes = []
@@ -135,9 +143,10 @@ def verify(output_path, original_path=None, allowed=(), render=False, max_pages=
         if not run.bangla:
             continue
         uses_default = uses_default or run.font == DEFAULT_FONT
+        text = normalize(run.text)
         inherited = {
-            'garbled': (run.part, run.text) in texts,
-            'font': (run.part, run.text, run.font, run.size_cs) in formatted,
+            'garbled': (run.part, text) in texts,
+            'font': (run.part, text, run.font, run.size_cs) in formatted,
         }
         for finding in run_findings(kind, run):
             (notes if inherited[finding['check']] else findings).append(finding)

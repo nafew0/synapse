@@ -13,6 +13,8 @@ are not installed here, so the text cannot be measured in them: sizes are kept.
 
 Then, for each run containing Bangla:
 
+- the text: ড় ঢ় য় stored as letter + nukta become the single characters. Word draws the split
+  form with Nikosh's own rules, which have none for it, so the dot lands beside the letter;
 - the complex-script font (`w:rFonts/@w:cs`, `a:cs`): kept when it draws Bangla, otherwise
   Nikosh (`bangla.font_for`). The Latin font is never touched, so English keeps its face;
 - DOCX only: a missing complex-script size or bold/italic (`w:szCs`, `w:bCs`, `w:iCs`) given the
@@ -49,7 +51,7 @@ from lxml import etree
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from office import bijoy
-from office.bangla import BENGALI, DEFAULT_FONT, LANGUAGE, can_draw, font_for, font_path
+from office.bangla import BENGALI, DEFAULT_FONT, LANGUAGE, can_draw, compose, font_for, font_path
 from office.runs import CT, DOCX_TEXT_PARTS, NS, PKG_REL, PPTX_TEXT_PARTS, R, W, Docx, Package, Pptx, a, w
 
 RPR_ORDER = [
@@ -142,9 +144,20 @@ def mirror(rpr, latin, complex_script):
     return True
 
 
+def compose_texts(elements):
+    """Store ড় ঢ় য় as single characters in these text elements. Returns whether any changed."""
+    changed = False
+    for element in elements:
+        text = compose(element.text)
+        if text != element.text:
+            element.text = text
+            changed = True
+    return changed
+
+
 def fix_docx_run(run, font, source, new):
     """Changes made to one Word run, as a list of property names."""
-    changes = []
+    changes = ['nukta'] if compose_texts(run.findall('w:t', NS)) else []
     rpr = run_properties(run)
     target = chosen_font(font, source, new)
     if target:
@@ -330,6 +343,8 @@ def fix_pptx(package, new):
         if rpr is None:
             rpr = etree.Element(a('rPr'))
             run.element.insert(0, rpr)
+        if compose_texts(run.element.findall('a:t', NS)):
+            fixed['nukta'] = fixed.get('nukta', 0) + 1
         target = chosen_font(run.font, run.source, new)
         if target:
             cs = ensure(rpr, 'cs', A_RPR_ORDER, NS['a'])
@@ -437,6 +452,22 @@ def convert_shared_strings(package, uses):
     return changed, cells_changed
 
 
+def compose_workbook(package):
+    """Store ড় ঢ় য় as single characters in every shared and inline string. Returns strings changed."""
+    changed = 0
+    parts = ['xl/sharedStrings.xml', *package.names(WORKSHEETS)]
+    for part in parts:
+        root = package.xml(part)
+        if root is None:
+            continue
+        texts = [t for t in root.iter(x('t')) if t.text and BENGALI.search(t.text)]
+        count = sum(compose_texts([t]) for t in texts)
+        if count:
+            package.mark(part)
+            changed += count
+    return changed
+
+
 def rename_bijoy_fonts(styles):
     """Set every Bijoy font of the stylesheet (cell fonts and conditional formats) to Nikosh."""
     renamed = set()
@@ -478,6 +509,7 @@ def fix_xlsx(package):
             counts['numbers'] += 1
     counts['strings'], cells = convert_shared_strings(package, uses)
     counts['cells'] += cells
+    result['nukta'] = compose_workbook(package)
     renamed = rename_bijoy_fonts(styles)
     if renamed:
         package.mark('xl/styles.xml')

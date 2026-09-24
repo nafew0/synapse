@@ -215,6 +215,7 @@ def test_the_rokeya_circular_rebuilt_in_word(tmp_path):
 
     runs = [run for run in open_document(out)[1].runs() if run.bangla]
     assert {run.font for run in runs} == {'Nikosh'}
+    assert not any('\u09bc' in run.text for run in runs)
     assert sum(run.size_cs == 11.5 for run in runs) > 0.9 * len(runs)
     result = verify(out, render=True)
     assert result['status'] == 'clean', result
