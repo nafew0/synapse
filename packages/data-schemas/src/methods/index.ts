@@ -23,7 +23,12 @@ import { createMCPServerMethods, type MCPServerMethods } from './mcpServer';
 import { createPluginAuthMethods, type PluginAuthMethods } from './pluginAuth';
 /* Permissions */
 import { createAccessRoleMethods, type AccessRoleMethods } from './accessRole';
-import { createUserGroupMethods, type UserGroupMethods, type UserGroupDeps } from './userGroup';
+import {
+  createUserGroupMethods,
+  ManagedGroupMutationError,
+  type UserGroupMethods,
+  type UserGroupDeps,
+} from './userGroup';
 import { createAclEntryMethods, permissionBitSupersets, type AclEntryMethods } from './aclEntry';
 import { createSystemGrantMethods, type SystemGrantMethods } from './systemGrant';
 import {
@@ -139,6 +144,8 @@ export {
   createMCPAuthorityDatabaseSourceRevision,
   digestMCPAuthorityValue,
 };
+
+export { ManagedGroupMutationError };
 export { tokenValues, cacheTokenValues, premiumTokenValues, defaultRate, createTxMethods };
 export { permissionBitSupersets };
 export { CLIENT_MESSAGE_SELECT };

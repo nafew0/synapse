@@ -1,9 +1,13 @@
 const { PrincipalType, SystemRoles, roleDefaults } = require('librechat-data-provider');
+const { updateTenantInterfacePermissions } = require('@librechat/api');
 const {
   INSTITUTION_ADMIN_ROLE,
   SystemCapabilities,
+  runAsSystem,
   tenantStorage,
 } = require('@librechat/data-schemas');
+const { getAppConfig } = require('./Config');
+const models = require('~/db/models');
 const db = require('~/models');
 
 /** Resolved on use rather than at module load: this module sits on the require
@@ -46,6 +50,31 @@ async function ensureInstitutionAdminRole(tenantId) {
       }),
     ),
   );
+  await syncTenantInterfacePermissions([tenantId]);
+}
+
+/**
+ * Applies the interface settings from `librechat.yaml` to institutions' own
+ * USER and INSTITUTION_ADMIN role copies, which are otherwise seeded from
+ * hardcoded defaults. Returns the tenants that failed.
+ */
+async function syncTenantInterfacePermissions(tenantIds) {
+  return await updateTenantInterfacePermissions({
+    tenantIds,
+    getAppConfig,
+    getRoleByName: db.getRoleByName,
+    updateAccessPermissions: db.updateAccessPermissions,
+  });
+}
+
+/** Startup repair: every existing institution picks up the current interface config. */
+async function syncAllTenantInterfacePermissions() {
+  const institutions = await runAsSystem(() =>
+    models.Institution.find({}).select('tenantId').lean().exec(),
+  );
+  return await syncTenantInterfacePermissions(
+    institutions.map((institution) => institution.tenantId).filter(Boolean),
+  );
 }
 
 async function appointInstitutionAdmin({ tenantId, userId }) {
@@ -76,6 +105,8 @@ async function revokeInstitutionAdmin({ tenantId, userId }) {
 module.exports = {
   getInstitutionAdminCapabilities,
   ensureInstitutionAdminRole,
+  syncAllTenantInterfacePermissions,
+  syncTenantInterfacePermissions,
   appointInstitutionAdmin,
   revokeInstitutionAdmin,
 };

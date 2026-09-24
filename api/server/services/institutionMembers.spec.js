@@ -93,10 +93,14 @@ jest.mock('./Config', () => ({ getAppConfig: jest.fn() }));
 jest.mock('./platformAdmin', () => ({
   isPlatformAdminEmail: jest.fn().mockResolvedValue(false),
 }));
+jest.mock('./tenantAgentAccess', () => ({
+  syncTenantMemberSafely: jest.fn().mockResolvedValue({ action: 'added' }),
+}));
 
 const mongoose = require('mongoose');
 const { hashToken } = require('@librechat/data-schemas');
 const { isPlatformAdminEmail } = require('./platformAdmin');
+const { syncTenantMemberSafely } = require('./tenantAgentAccess');
 const {
   activateProvisionedMember,
   createInstitutionInvite,
@@ -356,6 +360,18 @@ describe('institutionMembers standalone MongoDB activation', () => {
       }),
       { new: true },
     );
+    expect(syncTenantMemberSafely).toHaveBeenCalledWith({ tenantId: 'tenant-a', userId: 'user-a' });
+  });
+
+  it('repairs tenant-audience enrollment for an already active member', async () => {
+    mockModels.User.findOne.mockReturnValue(
+      mockExec({ _id: 'user-a', tenantId: 'tenant-a', membershipStatus: 'active' }),
+    );
+
+    await activateProvisionedMember({ tenantId: 'tenant-a', userId: 'user-a' });
+
+    expect(mockModels.Institution.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(syncTenantMemberSafely).toHaveBeenCalledWith({ tenantId: 'tenant-a', userId: 'user-a' });
   });
 
   it('rejects activation without changing the user when the seat limit is reached', async () => {
@@ -372,5 +388,6 @@ describe('institutionMembers standalone MongoDB activation', () => {
     });
 
     expect(mockModels.User.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(syncTenantMemberSafely).not.toHaveBeenCalled();
   });
 });

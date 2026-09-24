@@ -3,7 +3,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import type * as t from '~/types';
 import { tenantStorage } from '~/config/tenantContext';
-import { createUserGroupMethods } from './userGroup';
+import { createUserGroupMethods, ManagedGroupMutationError } from './userGroup';
 import groupSchema from '~/schema/group';
 import userSchema from '~/schema/user';
 import roleSchema from '~/schema/role';
@@ -53,6 +53,192 @@ async function createTestUser(overrides: Partial<t.IUser> = {}) {
 }
 
 describe('userGroup methods', () => {
+  describe('managed groups', () => {
+    const managedKind = 'tenant_all_active_members' as const;
+
+    it('allows only one managed audience per tenant and permits one for another tenant', async () => {
+      await Group.syncIndexes();
+      await Group.create({
+        name: 'Tenant A members',
+        source: 'local',
+        tenantId: 'tenant-a',
+        managedKind,
+      });
+
+      await expect(
+        Group.create({
+          name: 'Tenant A duplicate',
+          source: 'local',
+          tenantId: 'tenant-a',
+          managedKind,
+        }),
+      ).rejects.toMatchObject({ code: 11000 });
+      await expect(
+        Group.create({
+          name: 'Tenant B members',
+          source: 'local',
+          tenantId: 'tenant-b',
+          managedKind,
+        }),
+      ).resolves.toBeDefined();
+    });
+
+    it('looks up a managed audience by stable tenant classification', async () => {
+      const group = await Group.create({
+        name: 'Tenant audience',
+        source: 'local',
+        tenantId: 'tenant-lookup',
+        managedKind,
+      });
+
+      const found = await methods.findGroupByManagedKind('tenant-lookup', managedKind);
+
+      expect(found?._id.toString()).toBe(group._id.toString());
+    });
+
+    it('atomically adds and removes explicit member keys and invalidates every affected key', async () => {
+      const group = await Group.create({
+        name: 'Managed members',
+        source: 'local',
+        tenantId: 'tenant-members',
+        managedKind,
+        memberIds: ['remove-external', 'keep'],
+      });
+      const cache = {
+        get: jest.fn(async () => undefined),
+        set: jest.fn(async () => undefined),
+        delete: jest.fn(async () => true),
+      };
+      const cachedMethods = createUserGroupMethods(mongoose, { getCache: jest.fn(() => cache) });
+      const objectIdKey = new Types.ObjectId().toString();
+
+      const updated = await cachedMethods.updateManagedGroupMembers(group._id, {
+        add: [objectIdKey, 'add-external'],
+        remove: ['remove-external'],
+      });
+
+      expect(new Set(updated?.memberIds)).toEqual(new Set(['keep', objectIdKey, 'add-external']));
+      expect(cache.delete).toHaveBeenCalledWith(objectIdKey);
+      expect(cache.delete).toHaveBeenCalledWith('add-external');
+      expect(cache.delete).toHaveBeenCalledWith('remove-external');
+      expect(cache.delete).toHaveBeenCalledWith(`${objectIdKey}:tenant-members`);
+      expect(cache.delete).toHaveBeenCalledWith('remove-external:tenant-members');
+    });
+
+    it('invalidates committed changes but publishes nothing after rollback', async () => {
+      const group = await Group.create({
+        name: 'Transactional managed members',
+        source: 'local',
+        tenantId: 'tenant-transaction',
+        managedKind,
+        memberIds: [],
+      });
+      const cache = {
+        get: jest.fn(async () => undefined),
+        set: jest.fn(async () => undefined),
+        delete: jest.fn(async () => true),
+      };
+      const cachedMethods = createUserGroupMethods(mongoose, { getCache: jest.fn(() => cache) });
+
+      const abortedSession = await mongoose.startSession();
+      abortedSession.startTransaction();
+      await cachedMethods.updateManagedGroupMembers(
+        group._id,
+        { add: ['rolled-back-member'] },
+        abortedSession,
+      );
+      await abortedSession.abortTransaction();
+      await abortedSession.endSession();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(cache.delete).not.toHaveBeenCalled();
+      expect((await Group.findById(group._id).lean())?.memberIds).toEqual([]);
+
+      const committedSession = await mongoose.startSession();
+      committedSession.startTransaction();
+      await cachedMethods.updateManagedGroupMembers(
+        group._id,
+        { add: ['committed-member'] },
+        committedSession,
+      );
+      await committedSession.commitTransaction();
+      await committedSession.endSession();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(cache.delete).toHaveBeenCalledWith('committed-member');
+      expect((await Group.findById(group._id).lean())?.memberIds).toEqual(['committed-member']);
+    });
+
+    it('does not publish rolled-back invalidations when the session is reused and later commits', async () => {
+      const group = await Group.create({
+        name: 'Reused transactional managed members',
+        source: 'local',
+        tenantId: 'tenant-reused-transaction',
+        managedKind,
+        memberIds: [],
+      });
+      const cache = {
+        get: jest.fn(async () => undefined),
+        set: jest.fn(async () => undefined),
+        delete: jest.fn(async () => true),
+      };
+      const cachedMethods = createUserGroupMethods(mongoose, { getCache: jest.fn(() => cache) });
+      const session = await mongoose.startSession();
+
+      session.startTransaction();
+      await cachedMethods.updateManagedGroupMembers(
+        group._id,
+        { add: ['rolled-back-reused-member'] },
+        session,
+      );
+      await session.abortTransaction();
+
+      session.startTransaction();
+      await cachedMethods.updateManagedGroupMembers(
+        group._id,
+        { add: ['committed-reused-member'] },
+        session,
+      );
+      await session.commitTransaction();
+      await session.endSession();
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(cache.delete).not.toHaveBeenCalledWith('rolled-back-reused-member');
+      expect(cache.delete).toHaveBeenCalledWith('committed-reused-member');
+    });
+
+    it('rejects generic update, delete, add, and remove mutations', async () => {
+      const user = await createTestUser({ idOnTheSource: 'managed-external-user' });
+      const group = await Group.create({
+        name: 'Protected managed members',
+        source: 'local',
+        tenantId: 'tenant-protected',
+        managedKind,
+        memberIds: ['managed-external-user'],
+      });
+
+      await expect(methods.updateGroupById(group._id, { name: 'Changed' })).rejects.toBeInstanceOf(
+        ManagedGroupMutationError,
+      );
+      await expect(methods.addUserToGroup(user._id, group._id)).rejects.toBeInstanceOf(
+        ManagedGroupMutationError,
+      );
+      await expect(methods.removeUserFromGroup(user._id, group._id)).rejects.toBeInstanceOf(
+        ManagedGroupMutationError,
+      );
+      await expect(
+        methods.removeMemberById(group._id, 'managed-external-user'),
+      ).rejects.toBeInstanceOf(ManagedGroupMutationError);
+      await expect(methods.deleteGroup(group._id)).rejects.toBeInstanceOf(
+        ManagedGroupMutationError,
+      );
+
+      const unchanged = await Group.findById(group._id).lean();
+      expect(unchanged?.name).toBe('Protected managed members');
+      expect(unchanged?.memberIds).toEqual(['managed-external-user']);
+    });
+  });
+
   describe('findGroupById', () => {
     it('returns the group when it exists', async () => {
       const group = await Group.create({ name: 'Engineering', source: 'local' });

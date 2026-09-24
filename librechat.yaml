@@ -156,7 +156,7 @@ interface:
     use: true
     create: false
     share: false
-    public: true
+    public: false
   marketplace:
     use: false
   fileCitations: true
@@ -183,7 +183,7 @@ fileConfig:
   # Types left out on purpose:
   #   video/*            nothing reads it — no ffmpeg in the sandbox, no vision model takes it
   #   audio/* on agents  the sandbox has no speech-to-text; audio belongs to the Transcriber
-  #   m4a, mp4, aac, webm audio — MAI-Transcribe returns 400 for these (tested 2026-09-10)
+  #   aac audio          untested; m4a, mp4 and webm were verified 2026-09-23
   #   archives on single models — nothing can open them without the code sandbox
   endpoints:
     # Office Assistant: the code sandbox, LibreOffice and the document skills.
@@ -223,7 +223,7 @@ fileConfig:
         - '^text/(plain|markdown|csv|tab-separated-values|html|xml)$'
         - '^application/(json|xml|csv)$'
 
-    # Same as above, plus the four audio formats MAI-Transcribe accepts, for the Transcriber.
+    # Same as above, plus the audio formats verified with the STT model, for the Transcriber.
     OpenRouter:
       supportedMimeTypes:
         - '^image/(jpeg|png|gif|webp|heic|heif)$'
@@ -234,7 +234,7 @@ fileConfig:
         - '^application/epub\+zip$'
         - '^text/(plain|markdown|csv|tab-separated-values|html|xml)$'
         - '^application/(json|xml|csv)$'
-        - '^audio/(mpeg|mp3|wav|wave|x-wav|ogg|vorbis|flac|x-flac)$'
+        - '^audio/(mpeg|mp3|wav|wave|x-wav|ogg|vorbis|flac|x-flac|mp4|x-m4a|m4a|webm)$'
 
     # Image generation takes pictures and nothing else.
     OpenRouter Image:
@@ -273,13 +273,14 @@ speech:
     openai:
       url: "https://openrouter.ai/api/v1/audio/transcriptions"
       apiKey: "${OPENROUTER_KEY}"
-      model: "microsoft/mai-transcribe-2"
+      model: "x-ai/grok-stt-1.0"
   speechTab:
     conversationMode: true
     advancedMode: false
+    # The mic records in the browser's format (webm, mp4 or ogg) and the server transcribes it.
+    # No languageSTT on purpose: without a language hint the model detects it per recording.
     speechToText:
-      engineSTT: "browser"
-      languageSTT: "English (US)"
+      engineSTT: "external"
       autoTranscribeAudio: true
       decibelValue: -45
       autoSendText: 0

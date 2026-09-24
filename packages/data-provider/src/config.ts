@@ -1310,6 +1310,8 @@ const sttOpenaiSchema = z.object({
   apiKey: z.string(),
   apiKeyPreview: apiKeyPreviewSchema,
   model: z.string(),
+  /** ISO-639-1 hint sent when the user has not chosen a language, e.g. "bn" */
+  language: z.string().optional(),
 });
 
 const sttAzureOpenAISchema = z.object({

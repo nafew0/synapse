@@ -1,6 +1,10 @@
 import type { Document, Types } from 'mongoose';
 import { CursorPaginationParams } from '~/common';
 
+export const MANAGED_GROUP_KINDS = ['tenant_all_active_members'] as const;
+
+export type ManagedGroupKind = (typeof MANAGED_GROUP_KINDS)[number];
+
 export interface IGroup extends Document {
   _id: Types.ObjectId;
   name: string;
@@ -15,6 +19,7 @@ export interface IGroup extends Document {
   createdAt?: Date;
   updatedAt?: Date;
   tenantId?: string;
+  managedKind?: ManagedGroupKind;
 }
 
 export interface CreateGroupRequest {

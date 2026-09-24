@@ -1,5 +1,6 @@
 import { Types } from 'mongoose';
 import { PrincipalType } from 'librechat-data-provider';
+import { ManagedGroupMutationError } from '@librechat/data-schemas';
 import type { IGroup, IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
@@ -485,6 +486,33 @@ describe('createAdminGroupsHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(500);
       expect(json).toHaveBeenCalledWith({ error: 'Failed to create group' });
+    });
+  });
+
+  describe('system-managed groups', () => {
+    it('returns 409 for every generic mutation of a managed group', async () => {
+      const managed = () => Promise.reject(new ManagedGroupMutationError());
+      const deps = createDeps({
+        updateGroupById: jest.fn(managed),
+        deleteGroup: jest.fn(managed),
+        addUserToGroup: jest.fn(managed),
+        removeUserFromGroup: jest.fn(managed),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const calls = [
+        [handlers.updateGroup, { params: { id: validId }, body: { name: 'Renamed' } }],
+        [handlers.deleteGroup, { params: { id: validId } }],
+        [handlers.addGroupMember, { params: { id: validId }, body: { userId: validUserId } }],
+        [handlers.removeGroupMember, { params: { id: validId, userId: validUserId } }],
+      ] as const;
+
+      for (const [handler, input] of calls) {
+        const { req, res, status, json } = createReqRes(input);
+        await handler(req, res);
+        expect(status).toHaveBeenCalledWith(409);
+        expect(json).toHaveBeenCalledWith({ error: 'System-managed groups cannot be changed' });
+      }
+      expect(deps.deleteAclEntries).not.toHaveBeenCalled();
     });
   });
 

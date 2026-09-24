@@ -33,6 +33,7 @@ export {
   MAX_AUDIT_VERIFY_ROWS,
   MAX_TOOL_FAVORITES,
   AgentTriggerDeliveryConflictError,
+  ManagedGroupMutationError,
   MCPAuthorityProofError,
   MAX_MCP_AUTHORITY_TARGETS,
   createMCPAuthorityBootRevision,

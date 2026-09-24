@@ -1,9 +1,19 @@
 import { useMemo } from 'react';
-import { normalizeServerName } from 'librechat-data-provider';
+import { Permissions, PermissionTypes, normalizeServerName } from 'librechat-data-provider';
 import { useMCPServersQuery } from '~/data-provider';
+import useHasAccess from '~/hooks/Roles/useHasAccess';
+
+/** Users without MCP access would only get a 403, so the list is not requested for them. */
+function useAccessibleMCPServers() {
+  const canUseMcp = useHasAccess({
+    permissionType: PermissionTypes.MCP_SERVERS,
+    permission: Permissions.USE,
+  });
+  return useMCPServersQuery({ enabled: canUseMcp }).data;
+}
 
 export function useMCPIconMap(): Map<string, string> {
-  const { data: servers } = useMCPServersQuery();
+  const servers = useAccessibleMCPServers();
 
   return useMemo(() => {
     const map = new Map<string, string>();
@@ -26,6 +36,6 @@ export function useMCPIconMap(): Map<string, string> {
  * so they can be matched against a key. The config is keyed by the raw name.
  */
 export function useMCPServerNames(): string[] {
-  const { data: servers } = useMCPServersQuery();
+  const servers = useAccessibleMCPServers();
   return useMemo(() => (servers ? Object.keys(servers).map(normalizeServerName) : []), [servers]);
 }
