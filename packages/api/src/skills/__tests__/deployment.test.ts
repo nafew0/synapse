@@ -5,9 +5,13 @@ import { Types } from 'mongoose';
 import { logger } from '@librechat/data-schemas';
 import type { CodeEnvRef } from 'librechat-data-provider';
 import type { DeploymentSkillBaseMethods } from '../deployment';
+import type { ServerRequest } from '~/types';
+import { primeSkillFiles } from '../../agents/skillFiles';
 import {
   DEPLOYMENT_SKILLS_DIR_ENV,
   createDeploymentSkillMethods,
+  getDeploymentSkillById,
+  getDeploymentSkillDownloadStream,
   getDeploymentSkillIds,
   initializeDeploymentSkills,
   loadDeploymentSkillsFromDirectory,
@@ -438,6 +442,11 @@ describe('createDeploymentSkillMethods', () => {
     expect(
       (await methods.getSkillFileByPath?.(deploymentId, 'references/guide.txt'))?.codeEnvRef,
     ).toEqual(codeEnvRef);
+    const guideWithRef = (await methods.listSkillFiles?.(deploymentId))?.find(
+      (file) => file.relativePath === 'references/guide.txt',
+    );
+    expect(guideWithRef?.codeEnvRef).toEqual(codeEnvRef);
+    expect(guideWithRef).not.toHaveProperty('content');
   });
 
   it('lets deployment skills shadow persisted skills with the same name', async () => {
@@ -716,5 +725,55 @@ describe('createDeploymentSkillMethods', () => {
     expect(second?.skills.map((skill) => skill.name)).toEqual(['db-next', 'analysis-kit']);
     expect(second?.has_more).toBe(false);
     warnSpy.mockRestore();
+  });
+});
+
+describe('priming a deployment skill', () => {
+  it('uploads its files once and reuses the upload on the next prime', async () => {
+    const root = await makeTempRoot();
+    await writeDeploymentSkill(root, { name: 'analysis-kit' });
+    await initializeDeploymentSkills({ projectRoot: root, env: {} });
+    const skillId = getDeploymentSkillIds()[0];
+    const skill = getDeploymentSkillById(skillId);
+    if (!skill) {
+      throw new Error('deployment skill did not load');
+    }
+    const base: DeploymentSkillBaseMethods = {
+      listSkillFiles: jest.fn(async () => []),
+      updateSkillFileCodeEnvIds: jest.fn(async () => ({ matchedCount: 0, modifiedCount: 0 })),
+    };
+    const methods = createDeploymentSkillMethods(base);
+
+    const batchUploadCodeEnvFiles = jest.fn(
+      async ({ files }: { files: Array<{ filename: string }> }) => ({
+        storage_session_id: 'storage-session',
+        files: files.map((file, index) => ({ fileId: `file-${index}`, filename: file.filename })),
+      }),
+    );
+    const getSessionInfo = jest.fn(async () => new Date().toISOString());
+    const prime = async () =>
+      primeSkillFiles({
+        skill: { _id: skill._id, name: skill.name, body: skill.body, version: skill.version },
+        skillFiles: (await methods.listSkillFiles?.(skillId)) ?? [],
+        req: {} as ServerRequest,
+        getStrategyFunctions: () => ({
+          getDownloadStream: async (_req: ServerRequest, filepath: string) =>
+            getDeploymentSkillDownloadStream(filepath),
+        }),
+        batchUploadCodeEnvFiles,
+        getSessionInfo,
+        checkIfActive: () => true,
+        updateSkillFileCodeEnvIds: methods.updateSkillFileCodeEnvIds,
+      });
+
+    const first = await prime();
+    const second = await prime();
+
+    expect(batchUploadCodeEnvFiles).toHaveBeenCalledTimes(1);
+    expect(getSessionInfo).toHaveBeenCalledTimes(1);
+    expect(second?.storage_session_id).toBe('storage-session');
+    expect(second?.files.map((file) => file.name).sort()).toEqual(
+      first?.files.map((file) => file.name).sort(),
+    );
   });
 });

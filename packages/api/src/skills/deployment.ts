@@ -157,18 +157,18 @@ type ListAlwaysApplyResult = {
   after?: string | null;
 };
 
-type SkillFileRow = Omit<
-  DeploymentSkillFile,
-  'codeEnvRef' | 'codeEnvRefs' | 'content' | 'isBinary'
-> & {
+/**
+ * A skill file as `listSkillFiles` returns it: everything but the content, like the DB method.
+ * The code-env refs stay: `primeSkillFiles` reuses a skill's upload only when every listed file
+ * carries one, so stripping them here made every prime re-upload the whole skill.
+ */
+type SkillFileRow = Omit<DeploymentSkillFile, 'content' | 'isBinary'> & {
   storageKey?: string;
   storageRegion?: string;
   tenantId?: string;
 };
 
 type SkillFileContentRow = SkillFileRow & {
-  codeEnvRef?: CodeEnvRef;
-  codeEnvRefs?: CodeEnvRefMap;
   content?: string;
   isBinary?: boolean;
 };
@@ -1005,21 +1005,13 @@ function toAlwaysApplyRow(skill: DeploymentSkill): AlwaysApplySkillRow {
 }
 
 function toSkillFileRow(file: DeploymentSkillFile): SkillFileRow {
-  const {
-    codeEnvRef: _codeEnvRef,
-    codeEnvRefs: _codeEnvRefs,
-    content: _content,
-    isBinary: _isBinary,
-    ...row
-  } = file;
+  const { content: _content, isBinary: _isBinary, ...row } = file;
   return row;
 }
 
 function toSkillFileContentRow(file: DeploymentSkillFile): SkillFileContentRow {
   return {
     ...toSkillFileRow(file),
-    codeEnvRef: file.codeEnvRef,
-    codeEnvRefs: file.codeEnvRefs,
     content: file.content,
     isBinary: file.isBinary,
   };
