@@ -501,6 +501,47 @@ describe('ToolService - Action Capability Gating', () => {
       expect(callArgs.tools).toContain('ask_user_question');
     });
 
+    it('should offer the Firecrawl tools only when FIRECRAWL_API_KEY is set', async () => {
+      const capabilities = [AgentCapabilities.tools];
+      const agent = {
+        id: 'agent_123',
+        tools: [regularTool, 'firecrawl_search', 'firecrawl_scrape'],
+      };
+      mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
+      const original = process.env.FIRECRAWL_API_KEY;
+
+      try {
+        delete process.env.FIRECRAWL_API_KEY;
+        await loadAgentTools({
+          req: createMockReq(capabilities),
+          res: {},
+          agent,
+          definitionsOnly: true,
+        });
+        process.env.FIRECRAWL_API_KEY = 'fc-test';
+        await loadAgentTools({
+          req: createMockReq(capabilities),
+          res: {},
+          agent,
+          definitionsOnly: true,
+        });
+      } finally {
+        if (original === undefined) {
+          delete process.env.FIRECRAWL_API_KEY;
+        } else {
+          process.env.FIRECRAWL_API_KEY = original;
+        }
+      }
+
+      expect(mockLoadToolDefinitions).toHaveBeenCalledTimes(2);
+      expect(mockLoadToolDefinitions.mock.calls[0][0].tools).toEqual([regularTool]);
+      expect(mockLoadToolDefinitions.mock.calls[1][0].tools).toEqual([
+        regularTool,
+        'firecrawl_search',
+        'firecrawl_scrape',
+      ]);
+    });
+
     it('should not filter MCP tools whose name contains _action (cross-delimiter collision)', async () => {
       const mcpToolWithAction = `get_action${Constants.mcp_delimiter}myserver`;
       const capabilities = [AgentCapabilities.tools];

@@ -1,6 +1,7 @@
 import { WebSearchToolDefinition, CalculatorToolDefinition } from '@librechat/agents';
 import type { ExtendedJsonSchema } from './schema';
 import { AskUserQuestionToolDefinition } from '~/agents/hitl/askUserQuestionTool';
+import { firecrawlToolkit } from '~/tools/firecrawl/definitions';
 import { geminiToolkit } from '~/tools/toolkits/gemini';
 import { oaiToolkit } from '~/tools/toolkits/oai';
 
@@ -391,6 +392,14 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     description:
       'A search engine optimized for comprehensive, accurate, and trusted results. Useful for when you need to answer questions about current events.',
     schema: tavilySearchSchema,
+    toolType: 'builtin',
+  },
+  firecrawl_search: {
+    ...firecrawlToolkit.firecrawl_search,
+    toolType: 'builtin',
+  },
+  firecrawl_scrape: {
+    ...firecrawlToolkit.firecrawl_scrape,
     toolType: 'builtin',
   },
   file_search: {

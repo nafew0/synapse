@@ -5,6 +5,9 @@ const {
   toolkitParent,
   createSafeUser,
   mcpToolPattern,
+  isFirecrawlTool,
+  createFirecrawlTool,
+  resolveFirecrawlBudgetScope,
   loadWebSearchAuth,
   splitMCPToolKey,
   buildServerNameAliases,
@@ -426,6 +429,17 @@ const loadTools = async ({
       continue;
     } else if (tool === ASK_USER_QUESTION_TOOL_NAME) {
       requestedTools[tool] = async () => createAskUserQuestionTool();
+      continue;
+    } else if (isFirecrawlTool(tool)) {
+      requestedTools[tool] = async () =>
+        createFirecrawlTool(tool, {
+          budgetScope: resolveFirecrawlBudgetScope({
+            req: options.req,
+            userId: user,
+            streamId: options.req?._resumableStreamId,
+            jobCreatedAt: options.jobCreatedAt,
+          }),
+        });
       continue;
     } else if (tool === SET_MEMORY_TOOL_NAME || tool === DELETE_MEMORY_TOOL_NAME) {
       requestedTools[tool] = () =>

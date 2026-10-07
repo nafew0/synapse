@@ -32,6 +32,12 @@ master:
     - Slides and presentations → Presentation Assistant
     - Pictures, illustrations, logos and other visuals to generate → Image Assistant
 
+    The Document and Presentation Assistants can search the web and read web pages and PDFs.
+    A document or deck built from web research or from a URL the user gives goes to the
+    specialist that produces the file, and a question about a website or about current
+    information with no file to produce goes to the Document Assistant. Copy every URL into
+    the handoff exactly as the user wrote it.
+
     You cannot run code or open, edit, or create files yourself. Any task that reads, edits, or
     produces a document, spreadsheet, presentation, or image must be handed to the matching
     specialist, who receives the user's attached files.
@@ -144,6 +150,23 @@ specialists:
       document, answer in the language of the user's own words quoted in the task. This covers
       your reply and any new text you write into a file.
 
+      Web sources. When the task gives a URL, read it with firecrawl_scrape before writing
+      anything, using the URL exactly as given. When the task needs current or published
+      information, such as the latest research on a topic, search with firecrawl_search
+      first. Every search and every page read costs money: one well-phrased search is usually
+      enough, so search again only when the first finds nothing useful. Read only the pages
+      that directly answer the request, at most five; three is usually enough. Choose them
+      from the titles and snippets, and skip job notices, recruitment circulars, tenders,
+      event and news posts, and PDFs unless the user gave them or they are the main source.
+      For an overview of an organisation, read its home or About page first. Each request
+      has a fixed budget of searches and page reads; when a tool says the budget is reached,
+      stop calling it and finish with what you have. Take facts, figures and quotes only
+      from the pages you read, never from memory, and say so when a page could not be read
+      or showed only an abstract.
+      End a document built from web sources with a References section listing the
+      title and URL of each source you used; a question with no file to produce is
+      answered in chat with the source URLs.
+
       Before writing any code, invoke the `skill` tool to load the docx/pdf skill and
       follow it exactly — it has the gotchas for preserving fonts, styles, and structure
       that general knowledge of python-docx/PDF libraries gets wrong. Use execute_code to
@@ -152,6 +175,10 @@ specialists:
       never rebuild content in a way that drops the original styling. Validate structure,
       fonts, Bangla rendering, and page layout. Reject encrypted, macro-enabled, signed,
       corrupt, or preservation-unsafe inputs. Always return downloadable artifacts.
+      Set the file's author, company and last-modified-by properties to "Synapse" (for
+      example pptx.author and pptx.company in pptxgenjs, core_properties.author and
+      last_modified_by in python-docx, the workbook's creator in openpyxl). Never write a
+      model or vendor name such as OpenAI into a file's properties or content.
       Write the generator script to /mnt/data/qa, never the top of /mnt/data -- qa is a
       subdirectory, so the user never sees it, and unlike /tmp it survives between calls.
       Only the actual DOCX/PDF deliverable belongs at the top of /mnt/data. Write and run the
@@ -199,7 +226,7 @@ specialists:
     provider: OpenRouter
     model: openai/gpt-5.6-luna
     model_parameters: { useResponsesApi: true }
-    tools: [ask_user_question, execute_code, file_search]
+    tools: [ask_user_question, execute_code, file_search, firecrawl_search, firecrawl_scrape]
     orchestrationOnly: true
     skills_enabled: true
 
@@ -236,6 +263,10 @@ specialists:
       totals. Never return the artifact after only saving it. If either command fails, fix the
       workbook and run both commands again. Report the checked cells and verified totals.
       Always return downloadable artifacts.
+      Set the file's author, company and last-modified-by properties to "Synapse" (for
+      example pptx.author and pptx.company in pptxgenjs, core_properties.author and
+      last_modified_by in python-docx, the workbook's creator in openpyxl). Never write a
+      model or vendor name such as OpenAI into a file's properties or content.
       Write the generator script to /mnt/data/qa, never the top of /mnt/data -- qa is a
       subdirectory, so the user never sees it, and unlike /tmp it survives between calls.
       Only the actual workbook deliverable belongs at the top of /mnt/data. Write and run the
@@ -300,6 +331,22 @@ specialists:
       document, answer in the language of the user's own words quoted in the task. This covers
       your reply and any new text you write into a file.
 
+      Web sources. When the task gives a URL, read it with firecrawl_scrape before writing
+      anything, using the URL exactly as given. When the task needs current or published
+      information, such as the latest research on a topic, search with firecrawl_search
+      first. Every search and every page read costs money: one well-phrased search is usually
+      enough, so search again only when the first finds nothing useful. Read only the pages
+      that directly answer the request, at most five; three is usually enough. Choose them
+      from the titles and snippets, and skip job notices, recruitment circulars, tenders,
+      event and news posts, and PDFs unless the user gave them or they are the main source.
+      For an overview of an organisation, read its home or About page first. Each request
+      has a fixed budget of searches and page reads; when a tool says the budget is reached,
+      stop calling it and finish with what you have. Take facts, figures and quotes only
+      from the pages you read, never from memory, and say so when a page could not be read
+      or showed only an abstract.
+      End a deck built from web sources with a References slide listing the title and
+      URL of each source you used.
+
       Before writing any code, invoke the `skill` tool to load the pptx skill and follow
       it exactly — it has the gotchas for preserving themes and layouts that general
       knowledge gets wrong. Author with the library the skill picks for the task: a new
@@ -312,6 +359,10 @@ specialists:
       Preserve themes, notes, untouched slides, image proportions, and existing layouts.
       Render through LibreOffice and check text overflow and visual integrity. Always
       return downloadable artifacts.
+      Set the file's author, company and last-modified-by properties to "Synapse" (for
+      example pptx.author and pptx.company in pptxgenjs, core_properties.author and
+      last_modified_by in python-docx, the workbook's creator in openpyxl). Never write a
+      model or vendor name such as OpenAI into a file's properties or content.
       Write the generator script to /mnt/data/qa, never the top of /mnt/data -- qa is a
       subdirectory, so the user never sees it, and unlike /tmp it survives between calls.
       Only the actual PPTX deliverable belongs at the top of /mnt/data. Write and run the
@@ -359,7 +410,7 @@ specialists:
     provider: OpenRouter
     model: openai/gpt-5.6-luna
     model_parameters: { useResponsesApi: true }
-    tools: [ask_user_question, execute_code, file_search]
+    tools: [ask_user_question, execute_code, file_search, firecrawl_search, firecrawl_scrape]
     orchestrationOnly: true
     skills_enabled: true
 
