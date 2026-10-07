@@ -1,6 +1,7 @@
 import { tool } from '@librechat/agents/langchain/tools';
 import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
 import type { FirecrawlConfig, FirecrawlScrapeInput, FirecrawlSearchInput } from './client';
+import type { FirecrawlBudgetScope } from './budget';
 import { FIRECRAWL_SEARCH_TOOL_NAME, firecrawlToolkit, isFirecrawlTool } from './definitions';
 import { getFirecrawlConfig, scrapeFirecrawl, searchFirecrawl } from './client';
 import { reserveFirecrawlCall } from './budget';
@@ -11,8 +12,8 @@ interface ToolRunConfig {
 
 export interface FirecrawlToolOptions {
   config?: FirecrawlConfig;
-  /** Object that lives for one user turn (the request); calls made under it share one budget. */
-  budgetScope?: object;
+  /** Calls made under the same scope share one budget; see `resolveFirecrawlBudgetScope`. */
+  budgetScope?: FirecrawlBudgetScope;
 }
 
 /** Creates the named Firecrawl tool; the API key, limits and budget come from the environment. */
