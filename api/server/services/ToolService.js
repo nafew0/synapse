@@ -12,6 +12,8 @@ const {
   getToolkitKey,
   getUserMCPAuthMap,
   firecrawlToolNames,
+  isFirecrawlTool,
+  isFirecrawlConfigured,
   loadToolDefinitions,
   GenerationJobManager,
   isActionDomainAllowed,
@@ -662,6 +664,9 @@ async function loadToolDefinitionsWrapper({
     }
     if (tool === Tools.web_search) {
       return checkCapability(AgentCapabilities.web_search);
+    }
+    if (isFirecrawlTool(tool)) {
+      return isFirecrawlConfigured();
     }
     if (tool === Tools.memory) {
       return checkCapability(AgentCapabilities.memory);
@@ -1356,6 +1361,8 @@ async function loadAgentTools({
     } else if (tool === Tools.web_search) {
       includesWebSearch = checkCapability(AgentCapabilities.web_search);
       return includesWebSearch;
+    } else if (isFirecrawlTool(tool)) {
+      return isFirecrawlConfigured();
     } else if (tool === Tools.memory) {
       return checkCapability(AgentCapabilities.memory);
     } else if (tool === ASK_USER_QUESTION_TOOL_NAME) {

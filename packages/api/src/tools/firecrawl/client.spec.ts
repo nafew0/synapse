@@ -2,7 +2,12 @@ import { createServer } from 'http';
 import type { AddressInfo } from 'net';
 import type { Server, IncomingMessage, ServerResponse } from 'http';
 import type { FirecrawlConfig } from './client';
-import { getFirecrawlConfig, scrapeFirecrawl, searchFirecrawl } from './client';
+import {
+  scrapeFirecrawl,
+  searchFirecrawl,
+  getFirecrawlConfig,
+  isFirecrawlConfigured,
+} from './client';
 import { createFirecrawlTool } from './tool';
 
 interface RecordedRequest {
@@ -49,6 +54,14 @@ describe('Firecrawl client', () => {
 
   beforeEach(() => {
     requests = [];
+  });
+
+  describe('isFirecrawlConfigured', () => {
+    it('is false for a missing or placeholder key and true for a real one', () => {
+      expect(isFirecrawlConfigured({})).toBe(false);
+      expect(isFirecrawlConfigured({ FIRECRAWL_API_KEY: '${FIRECRAWL_API_KEY}' })).toBe(false);
+      expect(isFirecrawlConfigured({ FIRECRAWL_API_KEY: 'fc-1' })).toBe(true);
+    });
   });
 
   describe('getFirecrawlConfig', () => {

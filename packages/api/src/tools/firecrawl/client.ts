@@ -78,6 +78,10 @@ const parsePositiveInt = (value: string | undefined, fallback: number): number =
 const isUnsetEnv = (value: string | undefined): value is undefined =>
   !value || value.startsWith('${');
 
+/** Whether a Firecrawl API key is configured, so the tools can be offered to the model. */
+export const isFirecrawlConfigured = (env: NodeJS.ProcessEnv = process.env): boolean =>
+  !isUnsetEnv(env.FIRECRAWL_API_KEY);
+
 /** Reads Firecrawl settings from the environment; throws when no API key is configured. */
 export function getFirecrawlConfig(env: NodeJS.ProcessEnv = process.env): FirecrawlConfig {
   const apiKey = env.FIRECRAWL_API_KEY;
