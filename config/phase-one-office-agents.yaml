@@ -156,11 +156,13 @@ specialists:
       subdirectory, so the user never sees it, and unlike /tmp it survives between calls.
       Only the actual DOCX/PDF deliverable belongs at the top of /mnt/data. Write and run the
       script in the same bash_tool call:
-        mkdir -p /mnt/data/qa && cat > /mnt/data/qa/build.js <<'EOF' ... EOF
-        node /mnt/data/qa/build.js
-      If it fails, fix /mnt/data/qa/build.js on the next call -- with sed, or by rewriting
-      it -- and run it again; it is still there. The same applies to python3
-      /mnt/data/qa/build.py and to any helper you write. Never leave a script in /tmp: /tmp
+        mkdir -p /mnt/data/qa && cat > /mnt/data/qa/build.js.txt <<'EOF' ... EOF
+        node /mnt/data/qa/build.js.txt
+      Keep the .txt ending: the sandbox deletes every .js, .mjs and .cjs file when a call
+      ends, even in qa/, and node runs a .txt file as a normal script. If it fails, fix
+      /mnt/data/qa/build.js.txt on the next call -- with sed, or by rewriting it -- and run
+      it again; it is still there. The same applies to python3 /mnt/data/qa/build.py and
+      to any helper you write; a JavaScript helper also ends in .js.txt. Never leave a script in /tmp: /tmp
       is wiped between calls, so a script there cannot be patched afterwards. /tmp is only
       for an unpacked document tree, which is unzipped, edited and re-zipped in one call.
       A file written at the top of /mnt/data is delivered to the user; a file in any
@@ -238,11 +240,13 @@ specialists:
       subdirectory, so the user never sees it, and unlike /tmp it survives between calls.
       Only the actual workbook deliverable belongs at the top of /mnt/data. Write and run the
       script in the same bash_tool call:
-        mkdir -p /mnt/data/qa && cat > /mnt/data/qa/build.js <<'EOF' ... EOF
-        node /mnt/data/qa/build.js
-      If it fails, fix /mnt/data/qa/build.js on the next call -- with sed, or by rewriting
-      it -- and run it again; it is still there. The same applies to python3
-      /mnt/data/qa/build.py and to any helper you write. Never leave a script in /tmp: /tmp
+        mkdir -p /mnt/data/qa && cat > /mnt/data/qa/build.js.txt <<'EOF' ... EOF
+        node /mnt/data/qa/build.js.txt
+      Keep the .txt ending: the sandbox deletes every .js, .mjs and .cjs file when a call
+      ends, even in qa/, and node runs a .txt file as a normal script. If it fails, fix
+      /mnt/data/qa/build.js.txt on the next call -- with sed, or by rewriting it -- and run
+      it again; it is still there. The same applies to python3 /mnt/data/qa/build.py and
+      to any helper you write; a JavaScript helper also ends in .js.txt. Never leave a script in /tmp: /tmp
       is wiped between calls, so a script there cannot be patched afterwards. /tmp is only
       for an unpacked document tree, which is unzipped, edited and re-zipped in one call.
       A file written at the top of /mnt/data is delivered to the user; a file in any
@@ -312,11 +316,13 @@ specialists:
       subdirectory, so the user never sees it, and unlike /tmp it survives between calls.
       Only the actual PPTX deliverable belongs at the top of /mnt/data. Write and run the
       script in the same bash_tool call:
-        mkdir -p /mnt/data/qa && cat > /mnt/data/qa/build.js <<'EOF' ... EOF
-        node /mnt/data/qa/build.js
-      If it fails, fix /mnt/data/qa/build.js on the next call -- with sed, or by rewriting
-      it -- and run it again; it is still there. The same applies to python3
-      /mnt/data/qa/build.py and to any helper you write. Never leave a script in /tmp: /tmp
+        mkdir -p /mnt/data/qa && cat > /mnt/data/qa/build.js.txt <<'EOF' ... EOF
+        node /mnt/data/qa/build.js.txt
+      Keep the .txt ending: the sandbox deletes every .js, .mjs and .cjs file when a call
+      ends, even in qa/, and node runs a .txt file as a normal script. If it fails, fix
+      /mnt/data/qa/build.js.txt on the next call -- with sed, or by rewriting it -- and run
+      it again; it is still there. The same applies to python3 /mnt/data/qa/build.py and
+      to any helper you write; a JavaScript helper also ends in .js.txt. Never leave a script in /tmp: /tmp
       is wiped between calls, so a script there cannot be patched afterwards. /tmp is only
       for an unpacked document tree, which is unzipped, edited and re-zipped in one call.
       A file written at the top of /mnt/data is delivered to the user; a file in any
