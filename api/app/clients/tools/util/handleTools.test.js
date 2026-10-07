@@ -349,6 +349,30 @@ describe('Tool Handlers', () => {
       expect(loadedTools[0].name).toBe(ASK_USER_QUESTION_TOOL_NAME);
     });
 
+    it('loads the Firecrawl tools from the environment API key', async () => {
+      process.env.FIRECRAWL_API_KEY = 'fc-test';
+      try {
+        const { loadedTools } = await loadTools({
+          user: fakeUser._id,
+          tools: ['firecrawl_search', 'firecrawl_scrape'],
+          useSpecs: true,
+        });
+        expect(loadedTools.map((t) => t.name)).toEqual(['firecrawl_search', 'firecrawl_scrape']);
+      } finally {
+        delete process.env.FIRECRAWL_API_KEY;
+      }
+    });
+
+    it('skips the Firecrawl tools when no API key is configured', async () => {
+      delete process.env.FIRECRAWL_API_KEY;
+      const { loadedTools } = await loadTools({
+        user: fakeUser._id,
+        tools: ['firecrawl_search'],
+        useSpecs: true,
+      });
+      expect(loadedTools).toHaveLength(0);
+    });
+
     it('passes request body to chat MCP tool creation and skips stale cache for BODY-scoped servers', async () => {
       const serverName = 'body-scoped';
       const toolKey = `search${Constants.mcp_delimiter}${serverName}`;

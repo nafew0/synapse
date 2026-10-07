@@ -5,6 +5,8 @@ const {
   toolkitParent,
   createSafeUser,
   mcpToolPattern,
+  isFirecrawlTool,
+  createFirecrawlTool,
   loadWebSearchAuth,
   splitMCPToolKey,
   buildServerNameAliases,
@@ -426,6 +428,9 @@ const loadTools = async ({
       continue;
     } else if (tool === ASK_USER_QUESTION_TOOL_NAME) {
       requestedTools[tool] = async () => createAskUserQuestionTool();
+      continue;
+    } else if (isFirecrawlTool(tool)) {
+      requestedTools[tool] = async () => createFirecrawlTool(tool);
       continue;
     } else if (tool === SET_MEMORY_TOOL_NAME || tool === DELETE_MEMORY_TOOL_NAME) {
       requestedTools[tool] = () =>

@@ -11,6 +11,7 @@ const {
   sendEvent,
   getToolkitKey,
   getUserMCPAuthMap,
+  firecrawlToolNames,
   loadToolDefinitions,
   GenerationJobManager,
   isActionDomainAllowed,
@@ -529,6 +530,7 @@ const nativeTools = new Set([
   Tools.file_search,
   Tools.web_search,
   Tools.memory,
+  ...firecrawlToolNames,
 ]);
 
 const mcpServerPinPrefix = `${Constants.mcp_server}${Constants.mcp_delimiter}`;

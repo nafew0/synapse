@@ -32,6 +32,12 @@ master:
     - Slides and presentations → Presentation Assistant
     - Pictures, illustrations, logos and other visuals to generate → Image Assistant
 
+    The Document and Presentation Assistants can search the web and read web pages and PDFs.
+    A document or deck built from web research or from a URL the user gives goes to the
+    specialist that produces the file, and a question about a website or about current
+    information with no file to produce goes to the Document Assistant. Copy every URL into
+    the handoff exactly as the user wrote it.
+
     You cannot run code or open, edit, or create files yourself. Any task that reads, edits, or
     produces a document, spreadsheet, presentation, or image must be handed to the matching
     specialist, who receives the user's attached files.
@@ -144,6 +150,16 @@ specialists:
       document, answer in the language of the user's own words quoted in the task. This covers
       your reply and any new text you write into a file.
 
+      Web sources. When the task gives a URL, read it with firecrawl_scrape before writing
+      anything, using the URL exactly as given. When the task needs current or published
+      information, such as the latest research on a topic, search with firecrawl_search
+      first, then read the three to five most relevant results with firecrawl_scrape; never
+      read every result. Take facts, figures and quotes only from the pages you read, never
+      from memory, and say so when a page could not be read or showed only an abstract.
+      End a document built from web sources with a References section listing the
+      title and URL of each source you used; a question with no file to produce is
+      answered in chat with the source URLs.
+
       Before writing any code, invoke the `skill` tool to load the docx/pdf skill and
       follow it exactly — it has the gotchas for preserving fonts, styles, and structure
       that general knowledge of python-docx/PDF libraries gets wrong. Use execute_code to
@@ -197,7 +213,7 @@ specialists:
     provider: OpenRouter
     model: openai/gpt-5.6-luna
     model_parameters: { useResponsesApi: true }
-    tools: [ask_user_question, execute_code, file_search]
+    tools: [ask_user_question, execute_code, file_search, firecrawl_search, firecrawl_scrape]
     orchestrationOnly: true
     skills_enabled: true
 
@@ -296,6 +312,15 @@ specialists:
       document, answer in the language of the user's own words quoted in the task. This covers
       your reply and any new text you write into a file.
 
+      Web sources. When the task gives a URL, read it with firecrawl_scrape before writing
+      anything, using the URL exactly as given. When the task needs current or published
+      information, such as the latest research on a topic, search with firecrawl_search
+      first, then read the three to five most relevant results with firecrawl_scrape; never
+      read every result. Take facts, figures and quotes only from the pages you read, never
+      from memory, and say so when a page could not be read or showed only an abstract.
+      End a deck built from web sources with a References slide listing the title and
+      URL of each source you used.
+
       Before writing any code, invoke the `skill` tool to load the pptx skill and follow
       it exactly — it has the gotchas for preserving themes and layouts that general
       knowledge gets wrong. Author with the library the skill picks for the task: a new
@@ -353,7 +378,7 @@ specialists:
     provider: OpenRouter
     model: openai/gpt-5.6-luna
     model_parameters: { useResponsesApi: true }
-    tools: [ask_user_question, execute_code, file_search]
+    tools: [ask_user_question, execute_code, file_search, firecrawl_search, firecrawl_scrape]
     orchestrationOnly: true
     skills_enabled: true
 
