@@ -2,7 +2,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { Types } from 'mongoose';
-import { logger } from '@librechat/data-schemas';
+import { logger, getTenantId, tenantStorage } from '@librechat/data-schemas';
 import type { CodeEnvRef } from 'librechat-data-provider';
 import type { DeploymentSkillBaseMethods } from '../deployment';
 import type { ServerRequest } from '~/types';
@@ -775,5 +775,89 @@ describe('priming a deployment skill', () => {
     expect(second?.files.map((file) => file.name).sort()).toEqual(
       first?.files.map((file) => file.name).sort(),
     );
+  });
+});
+
+describe('priming a deployment skill from two tenants', () => {
+  async function tenantHarness() {
+    const root = await makeTempRoot();
+    await writeDeploymentSkill(root, { name: 'analysis-kit' });
+    await initializeDeploymentSkills({ projectRoot: root, env: {} });
+    const skillId = getDeploymentSkillIds()[0];
+    const skill = getDeploymentSkillById(skillId);
+    if (!skill) {
+      throw new Error('deployment skill did not load');
+    }
+    const base: DeploymentSkillBaseMethods = {
+      listSkillFiles: jest.fn(async () => []),
+      updateSkillFileCodeEnvIds: jest.fn(async () => ({ matchedCount: 0, modifiedCount: 0 })),
+    };
+    const methods = createDeploymentSkillMethods(base);
+    const uploadedBy: string[] = [];
+    const batchUploadCodeEnvFiles = jest.fn(
+      async ({ files }: { files: Array<{ filename: string }> }) => {
+        const tenant = getTenantId() ?? 'none';
+        uploadedBy.push(tenant);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return {
+          storage_session_id: `session-${tenant}`,
+          files: files.map((file, index) => ({
+            fileId: `${tenant}-${index}`,
+            filename: file.filename,
+          })),
+        };
+      },
+    );
+    /** codeapi: a session is readable only by the tenant that uploaded it. */
+    const checkedSessions: string[] = [];
+    const getSessionInfo = jest.fn(async (ref: CodeEnvRef) => {
+      checkedSessions.push(`${getTenantId()}->${ref.storage_session_id}`);
+      return ref.storage_session_id === `session-${getTenantId()}`
+        ? new Date().toISOString()
+        : null;
+    });
+    const prime = (tenantId: string) =>
+      tenantStorage.run({ tenantId }, async () =>
+        primeSkillFiles({
+          skill: { _id: skill._id, name: skill.name, body: skill.body, version: skill.version },
+          skillFiles: (await methods.listSkillFiles?.(skillId)) ?? [],
+          req: {} as ServerRequest,
+          getStrategyFunctions: () => ({
+            getDownloadStream: async (_req: ServerRequest, filepath: string) =>
+              getDeploymentSkillDownloadStream(filepath),
+          }),
+          batchUploadCodeEnvFiles,
+          getSessionInfo,
+          checkIfActive: () => true,
+          updateSkillFileCodeEnvIds: methods.updateSkillFileCodeEnvIds,
+        }),
+      );
+    return { prime, uploadedBy, checkedSessions };
+  }
+
+  it("reuses each tenant its own upload and never offers it another tenant's", async () => {
+    const { prime, uploadedBy, checkedSessions } = await tenantHarness();
+
+    const bdren = await prime('bdren');
+    const learn = await prime('learn');
+    const bdrenAgain = await prime('bdren');
+    const learnAgain = await prime('learn');
+
+    expect(uploadedBy).toEqual(['bdren', 'learn']);
+    expect(checkedSessions).toEqual(['bdren->session-bdren', 'learn->session-learn']);
+    expect(bdren?.storage_session_id).toBe('session-bdren');
+    expect(learn?.storage_session_id).toBe('session-learn');
+    expect(bdrenAgain?.storage_session_id).toBe('session-bdren');
+    expect(learnAgain?.storage_session_id).toBe('session-learn');
+  });
+
+  it("does not share one tenant's in-flight upload with another", async () => {
+    const { prime, uploadedBy } = await tenantHarness();
+
+    const [bdren, learn] = await Promise.all([prime('bdren'), prime('learn')]);
+
+    expect(uploadedBy.sort()).toEqual(['bdren', 'learn']);
+    expect(bdren?.storage_session_id).toBe('session-bdren');
+    expect(learn?.storage_session_id).toBe('session-learn');
   });
 });

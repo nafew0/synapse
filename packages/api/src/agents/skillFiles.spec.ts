@@ -5,6 +5,7 @@ jest.mock('@librechat/data-schemas', () => ({
     warn: jest.fn(),
     error: jest.fn(),
   },
+  getTenantId: () => undefined,
 }));
 
 const mockExtract = jest.fn();

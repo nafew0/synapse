@@ -1,7 +1,7 @@
 import { Readable } from 'stream';
 import { isAxiosError } from 'axios';
 import { Constants } from '@librechat/agents';
-import { logger } from '@librechat/data-schemas';
+import { logger, getTenantId } from '@librechat/data-schemas';
 import {
   getCodeEnvRefForProfile,
   type CodeEnvRef,
@@ -202,13 +202,15 @@ async function collectSkillUploadFiles(params: PrimeSkillFilesParams): Promise<S
 export async function primeSkillFiles(
   params: PrimeSkillFilesParams,
 ): Promise<PrimeSkillFilesResult | null> {
-  /* Single-flight per (skill, version): concurrent primes of the same cold
-   * skill join the in-flight upload instead of double-spending the upload
-   * rate budget. Skill _ids are tenant-scoped and the resulting session is
-   * resource-scoped (`<tenant>:skill:<id>:v:<version>`), so sharing the
-   * result across requests is sound. Per-process best-effort; the awaited
+  /* Single-flight per (tenant, skill, version): concurrent primes of the same
+   * cold skill join the in-flight upload instead of double-spending the upload
+   * rate budget. The upload's session is tenant-scoped
+   * (`<tenant>:skill:<id>:v:<version>`), and a deployment skill's _id is shared
+   * by every tenant, so the tenant is part of the key: another tenant's upload
+   * would be refused to this one. Per-process best-effort; the awaited
    * codeEnvRef persist covers cross-turn and cross-node dedupe. */
-  const flightKey = `${params.codeExecutionContext?.executionProfile ?? 'default'}:${params.skill._id}:v:${params.skill.version}`;
+  const profile = params.codeExecutionContext?.executionProfile ?? 'default';
+  const flightKey = `${getTenantId() ?? ''}:${profile}:${params.skill._id}:v:${params.skill.version}`;
   const inflight = inflightPrimes.get(flightKey);
   if (inflight) {
     return inflight;

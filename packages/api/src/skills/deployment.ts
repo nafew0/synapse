@@ -6,6 +6,7 @@ import { Types } from 'mongoose';
 import { mergeCodeEnvRef, type CodeEnvRef, type CodeEnvRefMap } from 'librechat-data-provider';
 import {
   logger,
+  getTenantId,
   partitionIssues,
   validateSkillName,
   validateSkillBody,
@@ -226,10 +227,20 @@ export type SkillIdentity = {
   plugin?: string;
 };
 
+type CodeEnvRefSet = Pick<DeploymentSkillFile, 'codeEnvRef' | 'codeEnvRefs'>;
+
 export class DeploymentSkillRegistry {
   private readonly skillsById = new Map<string, DeploymentSkill>();
   private readonly skillsByName = new Map<string, DeploymentSkill>();
   private readonly filesByPath = new Map<string, DeploymentSkillFile>();
+  /**
+   * Code-env refs of each file's last upload, per tenant. A deployment skill is one record shared
+   * by every tenant, but codeapi stores each upload under the uploading tenant's session key
+   * (`<tenant>:skill:<id>:v:<version>`) and refuses it to any other tenant. Refs kept on the
+   * shared file record were handed to the next tenant, refused ("Unauthorized download"), and
+   * overwritten by that tenant's re-upload, so uploads ping-ponged between tenants.
+   */
+  private readonly codeEnvRefsByTenant = new Map<string, CodeEnvRefSet>();
 
   constructor(
     private readonly directory: string | null,
@@ -338,20 +349,33 @@ export class DeploymentSkillRegistry {
     return this.filesByPath.has(filepath);
   }
 
+  /** The current tenant's refs for a file; empty when that tenant has not uploaded it. */
+  codeEnvRefsFor(skillId: SkillId, relativePath: string): CodeEnvRefSet {
+    return this.codeEnvRefsByTenant.get(codeEnvRefKey(skillId, relativePath)) ?? {};
+  }
+
   updateFileCodeEnvRefs(
     updates: Array<{ skillId: SkillId; relativePath: string; codeEnvRef: CodeEnvRef }>,
   ): Array<{ skillId: SkillId; relativePath: string; codeEnvRef: CodeEnvRef }> {
     const dbUpdates: Array<{ skillId: SkillId; relativePath: string; codeEnvRef: CodeEnvRef }> = [];
     for (const update of updates) {
-      const file = this.getFileByPath(update.skillId, update.relativePath);
-      if (!file) {
+      if (!this.getFileByPath(update.skillId, update.relativePath)) {
         dbUpdates.push(update);
         continue;
       }
-      Object.assign(file, mergeCodeEnvRef(file, update.codeEnvRef));
+      const key = codeEnvRefKey(update.skillId, update.relativePath);
+      this.codeEnvRefsByTenant.set(
+        key,
+        mergeCodeEnvRef(this.codeEnvRefsByTenant.get(key), update.codeEnvRef),
+      );
     }
     return dbUpdates;
   }
+}
+
+/** Key of a file's refs for the tenant of the current request; no tenant is its own bucket. */
+function codeEnvRefKey(skillId: SkillId, relativePath: string): string {
+  return `${getTenantId() ?? ''}\u0000${skillId.toString()}\u0000${relativePath}`;
 }
 
 let registry = new DeploymentSkillRegistry(null, []);
@@ -589,7 +613,10 @@ export function createDeploymentSkillMethods<T extends DeploymentSkillBaseMethod
     listSkillFiles: async (skillId: SkillId): Promise<SkillFileRow[]> => {
       const deploymentFiles = registry.listFiles(skillId);
       if (deploymentFiles) {
-        return deploymentFiles.map(toSkillFileRow);
+        return deploymentFiles.map((file) => ({
+          ...toSkillFileRow(file),
+          ...registry.codeEnvRefsFor(skillId, file.relativePath),
+        }));
       }
       return base.listSkillFiles ? base.listSkillFiles(skillId) : [];
     },
@@ -599,7 +626,10 @@ export function createDeploymentSkillMethods<T extends DeploymentSkillBaseMethod
     ): Promise<SkillFileContentRow | null> => {
       const deploymentFile = registry.getFileByPath(skillId, relativePath);
       if (deploymentFile) {
-        return toSkillFileContentRow(deploymentFile);
+        return {
+          ...toSkillFileContentRow(deploymentFile),
+          ...registry.codeEnvRefsFor(skillId, relativePath),
+        };
       }
       return base.getSkillFileByPath ? base.getSkillFileByPath(skillId, relativePath) : null;
     },
