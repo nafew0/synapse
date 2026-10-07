@@ -45,7 +45,8 @@ const firecrawlSearchSchema: ExtendedJsonSchema = {
     },
     country: {
       type: 'string',
-      description: 'ISO country code to localise results, e.g. "BD". Defaults to "US".',
+      description:
+        'ISO country code of the place the question is about, e.g. "BD" for anything about Bangladesh. Omit for global topics.',
     },
   },
   required: ['query'],

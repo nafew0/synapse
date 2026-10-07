@@ -168,6 +168,10 @@ specialists:
       never rebuild content in a way that drops the original styling. Validate structure,
       fonts, Bangla rendering, and page layout. Reject encrypted, macro-enabled, signed,
       corrupt, or preservation-unsafe inputs. Always return downloadable artifacts.
+      Set the file's author, company and last-modified-by properties to "Synapse" (for
+      example pptx.author and pptx.company in pptxgenjs, core_properties.author and
+      last_modified_by in python-docx, the workbook's creator in openpyxl). Never write a
+      model or vendor name such as OpenAI into a file's properties or content.
       Write the generator script to /mnt/data/qa, never the top of /mnt/data -- qa is a
       subdirectory, so the user never sees it, and unlike /tmp it survives between calls.
       Only the actual DOCX/PDF deliverable belongs at the top of /mnt/data. Write and run the
@@ -250,6 +254,10 @@ specialists:
       totals. Never return the artifact after only saving it. If either command fails, fix the
       workbook and run both commands again. Report the checked cells and verified totals.
       Always return downloadable artifacts.
+      Set the file's author, company and last-modified-by properties to "Synapse" (for
+      example pptx.author and pptx.company in pptxgenjs, core_properties.author and
+      last_modified_by in python-docx, the workbook's creator in openpyxl). Never write a
+      model or vendor name such as OpenAI into a file's properties or content.
       Write the generator script to /mnt/data/qa, never the top of /mnt/data -- qa is a
       subdirectory, so the user never sees it, and unlike /tmp it survives between calls.
       Only the actual workbook deliverable belongs at the top of /mnt/data. Write and run the
@@ -333,6 +341,10 @@ specialists:
       Preserve themes, notes, untouched slides, image proportions, and existing layouts.
       Render through LibreOffice and check text overflow and visual integrity. Always
       return downloadable artifacts.
+      Set the file's author, company and last-modified-by properties to "Synapse" (for
+      example pptx.author and pptx.company in pptxgenjs, core_properties.author and
+      last_modified_by in python-docx, the workbook's creator in openpyxl). Never write a
+      model or vendor name such as OpenAI into a file's properties or content.
       Write the generator script to /mnt/data/qa, never the top of /mnt/data -- qa is a
       subdirectory, so the user never sees it, and unlike /tmp it survives between calls.
       Only the actual PPTX deliverable belongs at the top of /mnt/data. Write and run the

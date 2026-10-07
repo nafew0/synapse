@@ -2,6 +2,7 @@ import { fetch } from 'undici';
 import type { RequestInit } from 'undici';
 import type { firecrawlSources, firecrawlTimeRanges } from './definitions';
 import { getEnvProxyDispatcher } from '~/utils/proxy';
+import { cleanMarkdown } from './markdown';
 
 const DEFAULT_API_URL = 'https://api.firecrawl.dev';
 const DEFAULT_MAX_CHARS = 20000;
@@ -184,7 +185,7 @@ const assertHttpUrl = (value: string): string => {
   return parsed.toString();
 };
 
-/** Scrapes one URL with Firecrawl and returns its main content as markdown, truncated. */
+/** Scrapes one URL with Firecrawl and returns its main content as cleaned markdown, truncated. */
 export async function scrapeFirecrawl(
   config: FirecrawlConfig,
   input: FirecrawlScrapeInput,
@@ -205,7 +206,7 @@ export async function scrapeFirecrawl(
   );
 
   const metadata = json.data?.metadata;
-  const markdown = json.data?.markdown?.trim() ?? '';
+  const markdown = cleanMarkdown(json.data?.markdown ?? '').trim();
   const finalUrl = metadata?.url || metadata?.sourceURL || url;
   if (!markdown) {
     const reason = metadata?.error || `status ${metadata?.statusCode ?? 'unknown'}`;
