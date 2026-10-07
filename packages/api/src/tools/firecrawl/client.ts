@@ -1,12 +1,17 @@
 import { fetch } from 'undici';
+import { logger } from '@librechat/data-schemas';
 import type { RequestInit } from 'undici';
 import type { firecrawlSources, firecrawlTimeRanges } from './definitions';
+import type { FirecrawlLimits } from './budget';
 import { getEnvProxyDispatcher } from '~/utils/proxy';
 import { cleanMarkdown } from './markdown';
 
 const DEFAULT_API_URL = 'https://api.firecrawl.dev';
 const DEFAULT_MAX_CHARS = 20000;
 const DEFAULT_TIMEOUT_MS = 60000;
+const DEFAULT_MAX_SEARCHES = 2;
+const DEFAULT_MAX_SCRAPES = 5;
+const DEFAULT_PDF_MAX_PAGES = 5;
 const SNIPPET_MAX_CHARS = 300;
 
 const TIME_RANGE_TBS: Record<FirecrawlTimeRange, string> = {
@@ -19,11 +24,12 @@ const TIME_RANGE_TBS: Record<FirecrawlTimeRange, string> = {
 export type FirecrawlTimeRange = (typeof firecrawlTimeRanges)[number];
 export type FirecrawlSource = (typeof firecrawlSources)[number];
 
-export interface FirecrawlConfig {
+export interface FirecrawlConfig extends FirecrawlLimits {
   apiKey: string;
   apiUrl: string;
   maxChars: number;
   timeoutMs: number;
+  pdfMaxPages: number;
 }
 
 export interface FirecrawlSearchInput {
@@ -47,18 +53,20 @@ interface FirecrawlSearchResult {
   date?: string;
 }
 
-interface FirecrawlSearchResponse {
+interface FirecrawlResponse {
   success?: boolean;
   error?: string;
+  creditsUsed?: number;
+}
+
+interface FirecrawlSearchResponse extends FirecrawlResponse {
   data?: {
     web?: FirecrawlSearchResult[];
     news?: FirecrawlSearchResult[];
   };
 }
 
-interface FirecrawlScrapeResponse {
-  success?: boolean;
-  error?: string;
+interface FirecrawlScrapeResponse extends FirecrawlResponse {
   data?: {
     markdown?: string;
     metadata?: {
@@ -67,6 +75,7 @@ interface FirecrawlScrapeResponse {
       sourceURL?: string;
       statusCode?: number;
       error?: string | null;
+      creditsUsed?: number;
     };
   };
 }
@@ -95,13 +104,16 @@ export function getFirecrawlConfig(env: NodeJS.ProcessEnv = process.env): Firecr
     apiUrl: apiUrl.replace(/\/+$/, ''),
     maxChars: parsePositiveInt(env.FIRECRAWL_MAX_CHARS, DEFAULT_MAX_CHARS),
     timeoutMs: parsePositiveInt(env.FIRECRAWL_TIMEOUT_MS, DEFAULT_TIMEOUT_MS),
+    maxSearches: parsePositiveInt(env.FIRECRAWL_MAX_SEARCHES, DEFAULT_MAX_SEARCHES),
+    maxScrapes: parsePositiveInt(env.FIRECRAWL_MAX_SCRAPES, DEFAULT_MAX_SCRAPES),
+    pdfMaxPages: parsePositiveInt(env.FIRECRAWL_PDF_MAX_PAGES, DEFAULT_PDF_MAX_PAGES),
   };
 }
 
 const truncate = (text: string, maxChars: number): string =>
   text.length > maxChars ? `${text.slice(0, maxChars).trimEnd()}…` : text;
 
-async function post<T extends { success?: boolean; error?: string }>(
+async function post<T extends FirecrawlResponse>(
   config: FirecrawlConfig,
   path: string,
   body: object,
@@ -131,6 +143,10 @@ async function post<T extends { success?: boolean; error?: string }>(
   }
   return json;
 }
+
+const logCredits = (call: 'search' | 'scrape', target: string, credits?: number): void => {
+  logger.info(`[Firecrawl] ${call} credits=${credits ?? 'unknown'} ${target.slice(0, 200)}`);
+};
 
 const formatSearchResult = (result: FirecrawlSearchResult, index: number): string => {
   const lines = [`${index + 1}. ${result.title || result.url || 'Untitled'}`, `URL: ${result.url}`];
@@ -165,6 +181,7 @@ export async function searchFirecrawl(
     signal,
   );
 
+  logCredits('search', input.query, json.creditsUsed);
   const results = [...(json.data?.web ?? []), ...(json.data?.news ?? [])].filter((r) => r.url);
   if (results.length === 0) {
     return `No results found for "${input.query}".`;
@@ -201,11 +218,13 @@ export async function scrapeFirecrawl(
       onlyMainContent: true,
       blockAds: true,
       timeout: config.timeoutMs,
+      parsers: [{ type: 'pdf', maxPages: config.pdfMaxPages }],
     },
     signal,
   );
 
   const metadata = json.data?.metadata;
+  logCredits('scrape', url, json.creditsUsed ?? metadata?.creditsUsed);
   const markdown = cleanMarkdown(json.data?.markdown ?? '').trim();
   const finalUrl = metadata?.url || metadata?.sourceURL || url;
   if (!markdown) {

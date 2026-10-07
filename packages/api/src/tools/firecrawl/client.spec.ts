@@ -45,6 +45,9 @@ describe('Firecrawl client', () => {
       apiUrl: `http://127.0.0.1:${port}`,
       maxChars: 50,
       timeoutMs: 5000,
+      maxSearches: 2,
+      maxScrapes: 2,
+      pdfMaxPages: 3,
     };
   });
 
@@ -78,6 +81,9 @@ describe('Firecrawl client', () => {
         apiUrl: 'https://api.firecrawl.dev',
         maxChars: 20000,
         timeoutMs: 60000,
+        maxSearches: 2,
+        maxScrapes: 5,
+        pdfMaxPages: 5,
       });
       expect(
         getFirecrawlConfig({
@@ -85,8 +91,19 @@ describe('Firecrawl client', () => {
           FIRECRAWL_API_URL: 'http://firecrawl:3002/',
           FIRECRAWL_MAX_CHARS: '800',
           FIRECRAWL_TIMEOUT_MS: 'not-a-number',
+          FIRECRAWL_MAX_SEARCHES: '1',
+          FIRECRAWL_MAX_SCRAPES: '3',
+          FIRECRAWL_PDF_MAX_PAGES: '0',
         }),
-      ).toEqual({ apiKey: 'k', apiUrl: 'http://firecrawl:3002', maxChars: 800, timeoutMs: 60000 });
+      ).toEqual({
+        apiKey: 'k',
+        apiUrl: 'http://firecrawl:3002',
+        maxChars: 800,
+        timeoutMs: 60000,
+        maxSearches: 1,
+        maxScrapes: 3,
+        pdfMaxPages: 5,
+      });
     });
   });
 
@@ -165,6 +182,7 @@ describe('Firecrawl client', () => {
         onlyMainContent: true,
         blockAds: true,
         timeout: 5000,
+        parsers: [{ type: 'pdf', maxPages: 3 }],
       });
       expect(text).toBe('# Page\nURL: https://b.gov.bd/final\n\nShort body');
     });
@@ -202,13 +220,40 @@ describe('Firecrawl client', () => {
         status: 200,
         body: { success: true, data: { web: [{ url: 'https://e.org', title: 'E' }] } },
       };
-      const searchTool = createFirecrawlTool('firecrawl_search', config);
+      const searchTool = createFirecrawlTool('firecrawl_search', { config });
       expect(searchTool.name).toBe('firecrawl_search');
       await expect(searchTool.invoke({ query: 'e' })).resolves.toBe('1. E\nURL: https://e.org');
     });
 
+    it('shares one budget across tools created for the same request', async () => {
+      reply = { status: 200, body: { success: true, data: { markdown: 'Body' } } };
+      const budgetScope = {};
+      const first = createFirecrawlTool('firecrawl_scrape', { config, budgetScope });
+      const second = createFirecrawlTool('firecrawl_scrape', { config, budgetScope });
+
+      await first.invoke({ url: 'https://f.org/1' });
+      await second.invoke({ url: 'https://f.org/2' });
+      const refused = await second.invoke({ url: 'https://f.org/3' });
+
+      expect(requests).toHaveLength(2);
+      expect(refused).toContain('Budget reached: firecrawl_scrape has been used 2 of 2 times');
+    });
+
+    it('counts searches and scrapes separately, and a new request gets a fresh budget', async () => {
+      reply = { status: 200, body: { success: true, data: { web: [] } } };
+      const scope = {};
+      const search = createFirecrawlTool('firecrawl_search', { config, budgetScope: scope });
+      await search.invoke({ query: 'a' });
+      await search.invoke({ query: 'b' });
+      await expect(search.invoke({ query: 'c' })).resolves.toContain('Budget reached');
+
+      const nextTurn = createFirecrawlTool('firecrawl_search', { config, budgetScope: {} });
+      await expect(nextTurn.invoke({ query: 'd' })).resolves.toBe('No results found for "d".');
+      expect(requests).toHaveLength(3);
+    });
+
     it('rejects names that are not Firecrawl tools', () => {
-      expect(() => createFirecrawlTool('web_search', config)).toThrow('Unknown Firecrawl tool');
+      expect(() => createFirecrawlTool('web_search', { config })).toThrow('Unknown Firecrawl tool');
     });
   });
 });

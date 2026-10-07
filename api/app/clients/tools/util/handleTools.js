@@ -430,7 +430,7 @@ const loadTools = async ({
       requestedTools[tool] = async () => createAskUserQuestionTool();
       continue;
     } else if (isFirecrawlTool(tool)) {
-      requestedTools[tool] = async () => createFirecrawlTool(tool);
+      requestedTools[tool] = async () => createFirecrawlTool(tool, { budgetScope: options.req });
       continue;
     } else if (tool === SET_MEMORY_TOOL_NAME || tool === DELETE_MEMORY_TOOL_NAME) {
       requestedTools[tool] = () =>

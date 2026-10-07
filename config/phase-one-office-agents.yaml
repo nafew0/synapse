@@ -153,9 +153,16 @@ specialists:
       Web sources. When the task gives a URL, read it with firecrawl_scrape before writing
       anything, using the URL exactly as given. When the task needs current or published
       information, such as the latest research on a topic, search with firecrawl_search
-      first, then read the three to five most relevant results with firecrawl_scrape; never
-      read every result. Take facts, figures and quotes only from the pages you read, never
-      from memory, and say so when a page could not be read or showed only an abstract.
+      first. Every search and every page read costs money: one well-phrased search is usually
+      enough, so search again only when the first finds nothing useful. Read only the pages
+      that directly answer the request, at most five; three is usually enough. Choose them
+      from the titles and snippets, and skip job notices, recruitment circulars, tenders,
+      event and news posts, and PDFs unless the user gave them or they are the main source.
+      For an overview of an organisation, read its home or About page first. Each request
+      has a fixed budget of searches and page reads; when a tool says the budget is reached,
+      stop calling it and finish with what you have. Take facts, figures and quotes only
+      from the pages you read, never from memory, and say so when a page could not be read
+      or showed only an abstract.
       End a document built from web sources with a References section listing the
       title and URL of each source you used; a question with no file to produce is
       answered in chat with the source URLs.
@@ -323,9 +330,16 @@ specialists:
       Web sources. When the task gives a URL, read it with firecrawl_scrape before writing
       anything, using the URL exactly as given. When the task needs current or published
       information, such as the latest research on a topic, search with firecrawl_search
-      first, then read the three to five most relevant results with firecrawl_scrape; never
-      read every result. Take facts, figures and quotes only from the pages you read, never
-      from memory, and say so when a page could not be read or showed only an abstract.
+      first. Every search and every page read costs money: one well-phrased search is usually
+      enough, so search again only when the first finds nothing useful. Read only the pages
+      that directly answer the request, at most five; three is usually enough. Choose them
+      from the titles and snippets, and skip job notices, recruitment circulars, tenders,
+      event and news posts, and PDFs unless the user gave them or they are the main source.
+      For an overview of an organisation, read its home or About page first. Each request
+      has a fixed budget of searches and page reads; when a tool says the budget is reached,
+      stop calling it and finish with what you have. Take facts, figures and quotes only
+      from the pages you read, never from memory, and say so when a page could not be read
+      or showed only an abstract.
       End a deck built from web sources with a References slide listing the title and
       URL of each source you used.
 
