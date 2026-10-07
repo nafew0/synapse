@@ -11,7 +11,7 @@ A `.pptx` is a ZIP archive of XML files. Choose your approach by task:
 
 | Task | Approach |
 |---|---|
-| **Create** a new deck | Write a `pptxgenjs` script — see gotchas below |
+| **Create** a new deck | Write a `pptxgenjs` script — see gotchas below. Never author in `python-pptx`: the idioms here are pptxgenjs, and transliterating them invents methods that do not exist (python-pptx has no `Slide.add_notes`; notes live at `slide.notes_slide.notes_text_frame.text`). python-pptx is for the read and validate scripts |
 | **Edit** an existing deck, or build from a template | unzip → edit `ppt/slides/slideN.xml` → zip |
 | **Read** content | `markitdown deck.pptx` (one block per slide under `<!-- Slide number: N -->` markers); visual grid: `python scripts/thumbnail.py deck.pptx` |
 

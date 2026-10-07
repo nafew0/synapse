@@ -54,6 +54,8 @@ ls /mnt/data/qa/page-*.jpg   # then Read the images
 
 ## Editing existing documents
 
+Match the document's existing fonts, colours, styles and structure. Edit the XML in place; never rebuild the content in a new document, which drops the original styling.
+
 Legacy `.doc` files must be converted first: `python scripts/office/soffice.py --headless --convert-to docx file.doc`.
 
 **Unpack, edit and repack must be ONE `bash_tool` call**, chained with `&&` and ending in

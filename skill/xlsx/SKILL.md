@@ -10,7 +10,7 @@ license: Proprietary. LICENSE.txt has complete terms
 | Task | Approach |
 |---|---|
 | **Create** or **edit** with formulas/formatting | `openpyxl` — see gotchas below |
-| **Bulk data** in or out | `pandas` (`read_excel`, `to_excel`) |
+| **Bulk data** in or out | `pandas` (`read_excel`, `to_excel`) — never `to_excel` to write back a workbook the user gave you: it discards every font, fill, width, merge and chart. Load it with openpyxl and write only the cells that change |
 | **Quick look** at a sheet | `markitdown file.xlsx` — `## SheetName` per sheet; reads `.xlsm` too. No cell coordinates, so don't plan edits from it |
 | **Read** a model (formulas *and* values) | two `load_workbook` passes — see gotchas |
 
