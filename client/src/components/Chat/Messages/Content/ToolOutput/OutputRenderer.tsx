@@ -11,16 +11,6 @@ interface ContentBlock {
 }
 
 const ERROR_PREFIX = /^Error:\s*(\[.*?\]\s*)*tool call failed:\s*/i;
-const ERROR_INNER = /^Error\s+\w+ing to endpoint\s*\(HTTP \d+\):\s*/i;
-
-function cleanError(text: string): string {
-  let cleaned = text.replace(ERROR_PREFIX, '').trim();
-  cleaned = cleaned.replace(ERROR_INNER, '').trim();
-  if (cleaned.endsWith('Please fix your mistakes.')) {
-    cleaned = cleaned.slice(0, -'Please fix your mistakes.'.length).trim();
-  }
-  return cleaned;
-}
 
 export function isError(text: string): boolean {
   return ERROR_PREFIX.test(text) || text.startsWith('Error processing tool');
@@ -32,7 +22,6 @@ function isStructuredText(text: string): boolean {
 
 interface ExtractedText {
   text: string;
-  rawError: string;
   error: boolean;
   /** When true, `text` contains raw JSON that should be rendered as a highlighted code block. */
   isJson: boolean;
@@ -41,11 +30,11 @@ interface ExtractedText {
 function extractText(raw: string): ExtractedText {
   const trimmed = raw.trim();
   if (!trimmed) {
-    return { text: '', rawError: '', error: false, isJson: false };
+    return { text: '', error: false, isJson: false };
   }
 
   if (isError(trimmed)) {
-    return { text: cleanError(trimmed), rawError: trimmed, error: true, isJson: false };
+    return { text: '', error: true, isJson: false };
   }
 
   if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
@@ -62,16 +51,15 @@ function extractText(raw: string): ExtractedText {
             .join('\n')
             .trim();
           if (isError(joined)) {
-            return { text: cleanError(joined), rawError: joined, error: true, isJson: false };
+            return { text: '', error: true, isJson: false };
           }
-          return { text: joined, rawError: '', error: false, isJson: false };
+          return { text: joined, error: false, isJson: false };
         }
       }
 
       // Render structured JSON as a highlighted code block
       return {
         text: JSON.stringify(parsed, null, 2),
-        rawError: '',
         error: false,
         isJson: true,
       };
@@ -80,7 +68,7 @@ function extractText(raw: string): ExtractedText {
     }
   }
 
-  return { text: trimmed, rawError: '', error: false, isJson: false };
+  return { text: trimmed, error: false, isJson: false };
 }
 
 const TRUNCATE_LINES = 20;
@@ -92,9 +80,8 @@ interface OutputRendererProps {
 
 export default function OutputRenderer({ text }: OutputRendererProps) {
   const localize = useLocalize();
-  const { text: displayText, rawError, error, isJson } = useMemo(() => extractText(text), [text]);
+  const { text: displayText, error, isJson } = useMemo(() => extractText(text), [text]);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
@@ -102,6 +89,14 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
     copy(displayText, { format: 'text/plain' });
     setTimeout(() => setIsCopied(false), 3000);
   }, [displayText]);
+
+  if (error) {
+    return (
+      <p role="status" className="text-sm text-text-secondary">
+        {localize('com_error_tool_failed')}
+      </p>
+    );
+  }
 
   if (!displayText) {
     return null;
@@ -125,9 +120,8 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
         <pre
           className={cn(
             'max-h-[300px] overflow-auto whitespace-pre-wrap break-words text-xs',
-            error && 'font-mono text-status-error',
-            !error && structured && 'font-mono text-text-secondary',
-            !error && !structured && 'font-sans text-sm text-text-primary',
+            structured && 'font-mono text-text-secondary',
+            !structured && 'font-sans text-sm text-text-primary',
           )}
         >
           {visibleText}
@@ -150,21 +144,6 @@ export default function OutputRenderer({ text }: OutputRendererProps) {
         >
           {isExpanded ? localize('com_ui_show_less') : localize('com_ui_show_more')}
         </Button>
-      )}
-      {error && rawError && rawError !== displayText && (
-        <Button
-          variant="link"
-          size="sm"
-          className="mt-1 block h-auto p-0 text-xs text-text-secondary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy"
-          onClick={() => setShowErrorDetails((prev) => !prev)}
-        >
-          {localize('com_ui_details')}
-        </Button>
-      )}
-      {showErrorDetails && rawError && (
-        <pre className="mt-2 max-h-[200px] overflow-auto whitespace-pre-wrap break-words font-mono text-xs text-status-error">
-          {rawError}
-        </pre>
       )}
     </div>
   );

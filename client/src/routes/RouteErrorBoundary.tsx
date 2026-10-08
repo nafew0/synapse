@@ -1,5 +1,9 @@
+import { useEffect } from 'react';
 import { Button } from '@librechat/client';
-import { useRouteError } from 'react-router-dom';
+import { PublicErrorCodes } from 'librechat-data-provider';
+import { useNavigate, useRouteError } from 'react-router-dom';
+import { ReportButton } from '~/components/Report';
+import { recordError } from '~/utils/errors';
 import { useLocalize } from '~/hooks';
 import logger from '~/utils/logger';
 
@@ -70,22 +74,23 @@ const getBrowserInfo = async () => {
   };
 };
 
-export default function RouteErrorBoundary() {
-  const localize = useLocalize();
-  const typedError = useRouteError() as {
-    message?: string;
-    stack?: string;
-    status?: number;
-    statusText?: string;
-    data?: unknown;
-  };
+type TRouteError = {
+  message?: string;
+  stack?: string;
+  status?: number;
+  statusText?: string;
+  data?: unknown;
+};
 
+/** Raw error data, stack trace and log download; only rendered in development builds. */
+function DevDetails({ error }: { error: TRouteError }) {
+  const localize = useLocalize();
   const errorDetails = {
-    message: typedError.message ?? 'An unexpected error occurred',
-    stack: typedError.stack,
-    status: typedError.status,
-    statusText: typedError.statusText,
-    data: typedError.data,
+    message: error.message ?? '',
+    stack: error.stack,
+    status: error.status,
+    statusText: error.statusText,
+    data: error.data,
   };
 
   const handleDownloadLogs = async () => {
@@ -125,109 +130,117 @@ export default function RouteErrorBoundary() {
   };
 
   return (
+    <div className="mt-6 text-left">
+      {/* Error Message */}
+      <div className="mb-4 rounded-xl border border-status-error-border bg-status-error-subtle p-4 text-sm text-text-secondary">
+        <h3 className="mb-2 font-medium">{localize('com_ui_error_message_prefix')}</h3>
+        <pre className="whitespace-pre-wrap text-sm font-light leading-relaxed text-text-primary">
+          {errorDetails.message}
+        </pre>
+      </div>
+
+      {/* Status Information */}
+      {(typeof errorDetails.status === 'number' || typeof errorDetails.statusText === 'string') && (
+        <div className="mb-4 rounded-xl border border-status-warning-border bg-status-warning-subtle p-4 text-sm text-text-primary">
+          <h3 className="mb-2 font-medium">{localize('com_ui_status_prefix')}:</h3>
+          <p className="text-text-primary">
+            {typeof errorDetails.status === 'number' && `${errorDetails.status} `}
+            {typeof errorDetails.statusText === 'string' && errorDetails.statusText}
+          </p>
+        </div>
+      )}
+
+      {/* Stack Trace - Collapsible */}
+      {errorDetails.stack != null && errorDetails.stack.trim() !== '' && (
+        <details className="group mb-4 rounded-xl border border-border-light p-4">
+          <summary className="mb-2 flex cursor-pointer items-center justify-between text-sm font-medium text-text-primary">
+            <span>{localize('com_ui_stack_trace')}</span>
+            <div className="flex items-center">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCopyStack}
+                className="ml-2 px-2 py-1 text-xs"
+                aria-label={localize('com_ui_copy_stack_trace')}
+              >
+                {localize('com_ui_copy')}
+              </Button>
+            </div>
+          </summary>
+          <div className="overflow-x-auto rounded-lg bg-surface-tertiary p-4">
+            {formatStackTrace(errorDetails.stack).map(({ number, content }) => (
+              <div key={number} className="flex">
+                <span className="select-none pr-4 font-mono text-xs text-text-secondary">
+                  {String(number).padStart(3, '0')}
+                </span>
+                <pre className="flex-1 font-mono text-xs leading-relaxed text-text-primary">
+                  {content}
+                </pre>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
+      {/* Additional Error Data */}
+      {errorDetails.data != null && (
+        <details className="group mb-4 rounded-xl border border-border-light p-4">
+          <summary className="mb-2 flex cursor-pointer items-center justify-between text-sm font-medium text-text-primary">
+            <span>{localize('com_ui_additional_details')}</span>
+            <span className="transition-transform group-open:rotate-90">{'>'}</span>
+          </summary>
+          <pre className="whitespace-pre-wrap text-xs font-light leading-relaxed text-text-primary">
+            {JSON.stringify(errorDetails.data, null, 2)}
+          </pre>
+        </details>
+      )}
+
+      <Button
+        variant="outline"
+        onClick={handleDownloadLogs}
+        className="w-full sm:w-auto"
+        aria-label={localize('com_ui_download_error_logs')}
+      >
+        {localize('com_ui_download_error_logs')}
+      </Button>
+    </div>
+  );
+}
+
+export default function RouteErrorBoundary() {
+  const localize = useLocalize();
+  const navigate = useNavigate();
+  const error = useRouteError() as TRouteError;
+  const isDev = import.meta.env.DEV === true;
+
+  useEffect(() => {
+    recordError({ code: PublicErrorCodes.UNKNOWN });
+  }, []);
+
+  return (
     <div
       role="alert"
-      className="flex min-h-screen flex-col items-center justify-center bg-surface-primary bg-gradient-to-br"
+      className="flex min-h-screen flex-col items-center justify-center bg-surface-primary"
     >
-      <div className="mx-4 w-11/12 max-w-4xl rounded-2xl border border-border-light bg-surface-primary/60 p-8 shadow-2xl backdrop-blur-xl">
-        <h2 className="mb-6 text-center text-3xl font-medium tracking-tight text-text-primary">
-          {localize('com_ui_error_unexpected')}
+      <div className="mx-4 w-11/12 max-w-xl rounded-2xl border border-border-light bg-surface-primary p-8 text-center shadow-lg">
+        <h2 className="mb-3 text-2xl font-medium tracking-tight text-text-primary">
+          {localize('com_error_page_title')}
         </h2>
-
-        {/* Error Message */}
-        <div className="mb-4 rounded-xl border border-status-error-border bg-status-error-subtle p-4 text-sm text-text-secondary">
-          <h3 className="mb-2 font-medium">{localize('com_ui_error_message_prefix')}</h3>
-          <pre className="whitespace-pre-wrap text-sm font-light leading-relaxed text-text-primary">
-            {errorDetails.message}
-          </pre>
+        <p className="text-sm text-text-secondary">{localize('com_error_page_body')}</p>
+        <div className="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+          <Button
+            variant="submit"
+            onClick={() => window.location.reload()}
+            className="w-full sm:w-auto"
+          >
+            {localize('com_ui_reload')}
+          </Button>
+          <Button variant="outline" onClick={() => navigate('/')} className="w-full sm:w-auto">
+            {localize('com_ui_go_home')}
+          </Button>
+          <ReportButton code={PublicErrorCodes.UNKNOWN} />
         </div>
-
-        {/* Status Information */}
-        {(typeof errorDetails.status === 'number' ||
-          typeof errorDetails.statusText === 'string') && (
-          <div className="mb-4 rounded-xl border border-status-warning-border bg-status-warning-subtle p-4 text-sm text-text-primary">
-            <h3 className="mb-2 font-medium">{localize('com_ui_status_prefix')}:</h3>
-            <p className="text-text-primary">
-              {typeof errorDetails.status === 'number' && `${errorDetails.status} `}
-              {typeof errorDetails.statusText === 'string' && errorDetails.statusText}
-            </p>
-          </div>
-        )}
-
-        {/* Stack Trace - Collapsible */}
-        {errorDetails.stack != null && errorDetails.stack.trim() !== '' && (
-          <details className="group mb-4 rounded-xl border border-border-light p-4">
-            <summary className="mb-2 flex cursor-pointer items-center justify-between text-sm font-medium text-text-primary">
-              <span>{localize('com_ui_stack_trace')}</span>
-              <div className="flex items-center">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCopyStack}
-                  className="ml-2 px-2 py-1 text-xs"
-                  aria-label={localize('com_ui_copy_stack_trace')}
-                >
-                  {localize('com_ui_copy')}
-                </Button>
-              </div>
-            </summary>
-            <div className="overflow-x-auto rounded-lg bg-surface-tertiary p-4">
-              {formatStackTrace(errorDetails.stack).map(({ number, content }) => (
-                <div key={number} className="flex">
-                  <span className="select-none pr-4 font-mono text-xs text-text-secondary">
-                    {String(number).padStart(3, '0')}
-                  </span>
-                  <pre className="flex-1 font-mono text-xs leading-relaxed text-text-primary">
-                    {content}
-                  </pre>
-                </div>
-              ))}
-            </div>
-          </details>
-        )}
-
-        {/* Additional Error Data */}
-        {errorDetails.data != null && (
-          <details className="group mb-4 rounded-xl border border-border-light p-4">
-            <summary className="mb-2 flex cursor-pointer items-center justify-between text-sm font-medium text-text-primary">
-              <span>{localize('com_ui_additional_details')}</span>
-              <span className="transition-transform group-open:rotate-90">{'>'}</span>
-            </summary>
-            <pre className="whitespace-pre-wrap text-xs font-light leading-relaxed text-text-primary">
-              {JSON.stringify(errorDetails.data, null, 2)}
-            </pre>
-          </details>
-        )}
-
-        <div className="mt-6 flex flex-col gap-4">
-          <p className="text-sm font-light text-text-secondary">
-            {localize('com_ui_error_try_following_prefix')}:
-          </p>
-          <ul className="list-inside list-disc text-sm text-text-secondary">
-            <li>{localize('com_ui_refresh_page')}</li>
-            <li>{localize('com_ui_clear_browser_cache')}</li>
-            <li>{localize('com_ui_check_internet')}</li>
-            <li>{localize('com_ui_contact_admin_if_issue_persists')}</li>
-          </ul>
-          <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
-            <Button
-              variant="submit"
-              onClick={() => window.location.reload()}
-              className="w-full sm:w-auto"
-              aria-label={localize('com_ui_refresh_page')}
-            >
-              {localize('com_ui_refresh_page')}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={handleDownloadLogs}
-              className="w-full sm:w-auto"
-              aria-label={localize('com_ui_download_error_logs')}
-            >
-              {localize('com_ui_download_error_logs')}
-            </Button>
-          </div>
-        </div>
+        {isDev && <DevDetails error={error} />}
       </div>
     </div>
   );

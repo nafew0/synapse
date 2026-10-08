@@ -56,16 +56,24 @@ function summaryKey(requestId: string): string {
   return `summary:${requestId}`;
 }
 
+type TErrorFields = { message?: string; stack?: string; status?: number; statusCode?: number };
+
 function getErrorParts(error: unknown): { message: string; stack?: string; status?: number } {
-  if (error instanceof Error) {
-    const withStatus = error as Error & { status?: number; statusCode?: number };
-    return {
-      message: error.message,
-      stack: error.stack,
-      status: withStatus.status ?? withStatus.statusCode,
-    };
+  if (typeof error === 'string') {
+    return { message: error };
   }
-  return { message: typeof error === 'string' ? error : (JSON.stringify(error) ?? String(error)) };
+  if (error == null || typeof error !== 'object') {
+    return { message: String(error) };
+  }
+  const fields = error as TErrorFields;
+  return {
+    message:
+      typeof fields.message === 'string'
+        ? fields.message
+        : (JSON.stringify(error) ?? String(error)),
+    stack: typeof fields.stack === 'string' ? fields.stack : undefined,
+    status: fields.status ?? fields.statusCode,
+  };
 }
 
 function buildSummary(

@@ -323,7 +323,9 @@ describe('Server Configuration', () => {
       });
 
       expect(response.status).toBe(500);
-      expect(response.text).toBe('An unknown error occurred.');
+      expect(response.body).toEqual({ code: 'unknown', requestId: expect.any(String) });
+      expect(response.headers['x-request-id']).toBe(response.body.requestId);
+      expect(response.text).not.toContain('MongoDB operation failed');
     } finally {
       // Restore original function
       mongoose.models.User.findOne = originalFindOne;

@@ -66,6 +66,18 @@ jest.mock('@librechat/api', () => ({
   recordCollectedUsage: (...args) => mockRecordCollectedUsage(...args),
 }));
 
+/** Asserts the error content part is only `{ type, requestId }` and carries none of `forbidden`. */
+function expectPublicErrorPart(contentParts, expectedType, forbidden) {
+  const part = contentParts.find((item) => item.type === ContentTypes.ERROR);
+  expect(part).toBeDefined();
+  const text = part[ContentTypes.ERROR];
+  expect(JSON.parse(text)).toEqual({ type: expectedType, requestId: expect.any(String) });
+  for (const value of forbidden) {
+    expect(text).not.toContain(value);
+  }
+  return part;
+}
+
 describe('AgentClient - detached subagent usage', () => {
   it('records each detached call from an immutable snapshot after parent disposal', async () => {
     mockRecordCollectedUsage.mockClear();
@@ -737,13 +749,58 @@ describe('AgentClient - startup telemetry', () => {
     );
     expect(processStream).not.toHaveBeenCalled();
     expect(client.run).not.toBe(run);
-    expect(client.contentParts).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          [ContentTypes.ERROR]: expect.stringContaining('checkpoint prune failed'),
-        }),
-      ]),
+    expectPublicErrorPart(client.contentParts, 'unknown', ['checkpoint prune failed']);
+  });
+
+  it('never puts provider error text, model or org ids in the error content part', async () => {
+    jest.clearAllMocks();
+    const providerError = Object.assign(
+      new Error('429 Rate limit reached for gpt-x in organization org-abc'),
+      { status: 429 },
     );
+    const processStream = jest.fn().mockRejectedValue(providerError);
+    mockCreateRun.mockResolvedValue({
+      Graph: { id: 'graph-provider-error' },
+      processStream,
+      getCalibrationRatio: jest.fn(() => 0),
+    });
+    mockIsHITLEnabled.mockReturnValue(false);
+
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        requestId: 'req-provider-429',
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-x' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises: [],
+    });
+    client.conversationId = 'conversation-429';
+    client.responseMessageId = 'response-429';
+    client.parentMessageId = 'parent-429';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [] });
+
+    expect(processStream).toHaveBeenCalled();
+    const part = expectPublicErrorPart(client.contentParts, 'service_busy', [
+      'gpt-x',
+      'org-abc',
+      'Rate limit',
+    ]);
+    expect(JSON.parse(part[ContentTypes.ERROR]).requestId).toBe('req-provider-429');
   });
 
   it('does not let a stale v1 fresh prune delete a paused v2 replacement generation', async () => {
@@ -806,15 +863,9 @@ describe('AgentClient - startup telemetry', () => {
     expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
     expect(processStream).not.toHaveBeenCalled();
     expect(client.run).not.toBe(run);
-    expect(client.contentParts).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          [ContentTypes.ERROR]: expect.stringContaining(
-            'Generation replaced before legacy checkpoint cleanup',
-          ),
-        }),
-      ]),
-    );
+    expectPublicErrorPart(client.contentParts, 'unknown', [
+      'Generation replaced before legacy checkpoint cleanup',
+    ]);
   });
 });
 
@@ -2666,9 +2717,7 @@ describe('AgentClient - titleConvo', () => {
         textParts.every((part) => typeof part.text === 'string' && part.text.trim().length > 0),
       ).toBe(true);
       expect(result.prompt[0].content).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ url: 'data:image/png;base64,abc' }),
-        ]),
+        expect.arrayContaining([expect.objectContaining({ url: 'data:image/png;base64,abc' })]),
       );
       expect(client.memoryPayload[0].content).toEqual([
         expect.objectContaining({ url: 'data:image/png;base64,abc' }),

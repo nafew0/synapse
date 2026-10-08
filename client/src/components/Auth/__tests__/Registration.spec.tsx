@@ -3,11 +3,11 @@ import userEvent from '@testing-library/user-event';
 import * as mockDataProvider from 'librechat-data-provider/react-query';
 import type { TStartupConfig } from 'librechat-data-provider';
 import * as endpointQueries from '~/data-provider/Endpoints/queries';
-import { render, waitFor, screen } from 'test/layout-test-utils';
+import { act, render, screen } from 'test/layout-test-utils';
 import * as miscDataProvider from '~/data-provider/Misc/queries';
 import * as authMutations from '~/data-provider/Auth/mutations';
 import * as authQueries from '~/data-provider/Auth/queries';
-import Registration from '~/components/Auth/Registration';
+import Registration, { getRegistrationError } from '~/components/Auth/Registration';
 import AuthLayout from '~/components/Auth/AuthLayout';
 
 jest.mock('librechat-data-provider/react-query');
@@ -203,30 +203,50 @@ test('shows validation error messages', async () => {
   expect(alerts[5]).toHaveTextContent(/Passwords do not match/i);
 });
 
-test('shows error message when registration fails', async () => {
-  const mutate = jest.fn();
-  const { getByTestId, getByRole } = setup({
-    useRegisterUserMutationReturnValue: {
-      isLoading: false,
-      isError: true,
-      mutate,
-      error: new Error('Registration failed'),
-      data: {},
-      isSuccess: false,
-    },
+test('shows only a localized message when registration fails', async () => {
+  const { mockUseRegisterUserMutation } = setup();
+  const options = mockUseRegisterUserMutation.mock.calls[0][0] as {
+    onError: (error: unknown) => void;
+  };
+
+  act(() => {
+    options.onError({
+      message: 'Request failed with status code 500',
+      response: {
+        status: 500,
+        data: { message: 'E11000 duplicate key error collection: users index: email_1' },
+        headers: {},
+      },
+    });
   });
 
-  await userEvent.type(getByRole('textbox', { name: /Full name/i }), 'John Doe');
-  await userEvent.type(getByRole('textbox', { name: /Username/i }), 'johndoe');
-  await userEvent.type(getByRole('textbox', { name: /Email/i }), 'test@test.com');
-  await userEvent.type(getByTestId('password'), 'password');
-  await userEvent.type(getByTestId('confirm_password'), 'password');
-  await userEvent.click(getByRole('button', { name: /Submit registration/i }));
+  expect(
+    await screen.findByText(
+      'There was an error attempting to register your account. Please try again.',
+    ),
+  ).toBeInTheDocument();
+  expect(screen.queryByText(/E11000|duplicate key|status code/i)).not.toBeInTheDocument();
+});
 
-  waitFor(() => {
-    expect(screen.getByTestId('registration-error')).toBeInTheDocument();
-    expect(screen.getByTestId('registration-error')).toHaveTextContent(
-      /There was an error attempting to register your account. Please try again. Registration failed/i,
+describe('getRegistrationError', () => {
+  const localize = (key: string) => `localized:${key}`;
+  const withStatus = (status: number) => ({
+    response: { status, data: { message: 'raw server text' }, headers: {} },
+  });
+
+  it.each([
+    [403, 'com_auth_error_email_not_allowed'],
+    [409, 'com_auth_error_username_taken'],
+    [404, 'com_auth_error_create'],
+    [400, 'com_auth_error_create'],
+    [500, 'com_auth_error_create'],
+  ])('maps status %s to %s', (status, key) => {
+    expect(getRegistrationError(withStatus(status), localize)).toBe(`localized:${key}`);
+  });
+
+  it('ignores a thrown Error message', () => {
+    expect(getRegistrationError(new Error('Registration failed'), localize)).toBe(
+      'localized:com_auth_error_create',
     );
   });
 });

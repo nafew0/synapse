@@ -3171,10 +3171,10 @@ describe('GenerationJobManager startup telemetry', () => {
     await expect(manager.createJob('stream-partial-create', 'user-1')).rejects.toThrow(
       'abort listener unavailable',
     );
-    await expect(jobStore.getJob('stream-partial-create')).resolves.toMatchObject({
-      status: 'error',
-      error: 'abort listener unavailable',
-    });
+    const failedJob = await jobStore.getJob('stream-partial-create');
+    expect(failedJob).toMatchObject({ status: 'error' });
+    expect(JSON.parse(failedJob?.error ?? '{}')).toEqual({ type: 'unknown' });
+    expect(failedJob?.error).not.toContain('abort listener unavailable');
 
     await manager.destroy();
   });

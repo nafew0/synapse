@@ -13,6 +13,7 @@ import {
 } from '@librechat/client';
 import { getMemoryKeyError, getMemoryValueError, getMemoryApiErrorMessage } from '~/utils/memory';
 import { useCreateMemoryMutation, useMemoriesQuery } from '~/data-provider';
+import { getErrorInfo, recordError } from '~/utils/errors';
 import { useLocalize, useHasAccess } from '~/hooks';
 
 interface MemoryCreateDialogProps {
@@ -53,10 +54,8 @@ export default function MemoryCreateDialog({
       }, 0);
     },
     onError: (error: Error) => {
-      showToast({
-        message: getMemoryApiErrorMessage(error, localize('com_ui_error')),
-        status: 'error',
-      });
+      recordError(getErrorInfo(error));
+      showToast({ message: getMemoryApiErrorMessage(error, localize), status: 'error' });
     },
   });
 

@@ -1,5 +1,5 @@
 const { logger } = require('@librechat/data-schemas');
-const { isAssistantsEndpoint, ErrorTypes } = require('librechat-data-provider');
+const { isAssistantsEndpoint, ErrorTypes, PublicErrorCodes } = require('librechat-data-provider');
 const {
   isEnabled,
   sendEvent,
@@ -8,6 +8,9 @@ const {
   recordCollectedUsage,
   sanitizeMessageForTransmit,
   buildAbortedResponseMetadata,
+  classifyError,
+  toPublicError,
+  toChatErrorText,
 } = require('@librechat/api');
 const { truncateText, smartTruncateText } = require('~/app/clients/prompts');
 const clearPendingReq = require('~/cache/clearPendingReq');
@@ -244,12 +247,16 @@ const handleAbort = function () {
 const handleAbortError = async (res, req, error, data) => {
   const { sender, conversationId, messageId, parentMessageId, userMessageId, partialText } = data;
 
+  const requestId = req.requestId;
+  let publicError;
   if (error?.message?.includes('base64')) {
     logger.error('[handleAbortError] Error in base64 encoding', {
       ...error,
+      requestId,
       stack: smartTruncateText(error?.stack, 1000),
       message: truncateText(error.message, 350),
     });
+    publicError = { code: classifyError(error), requestId };
   } else if (isAbortError(error)) {
     logger.debug('[handleAbortError] AI response aborted by user', {
       conversationId,
@@ -257,8 +264,15 @@ const handleAbortError = async (res, req, error, data) => {
       name: error?.name,
       message: truncateText(error?.message ?? 'AbortError', 350),
     });
+    publicError = { code: PublicErrorCodes.CONNECTION_LOST, requestId };
   } else {
-    logger.error('[handleAbortError] AI response error; aborting request:', error);
+    publicError = toPublicError(error, {
+      route: 'handleAbortError',
+      requestId,
+      userId: req.user?.id,
+      conversationId,
+      agentId: req.body?.agent_id,
+    });
   }
 
   if (error?.stack && error.stack.includes('google')) {
@@ -267,17 +281,15 @@ const handleAbortError = async (res, req, error, data) => {
     );
   }
 
-  let errorText = error?.message?.includes('"type"')
-    ? error.message
-    : 'An error occurred while processing your request. Please contact the Admin.';
-
   if (error?.type === ErrorTypes.INVALID_REQUEST) {
-    errorText = `{"type":"${ErrorTypes.INVALID_REQUEST}"}`;
+    publicError = { code: ErrorTypes.INVALID_REQUEST, requestId: publicError.requestId };
   }
 
   if (error?.message?.includes("does not support 'system'")) {
-    errorText = `{"type":"${ErrorTypes.NO_SYSTEM_MESSAGES}"}`;
+    publicError = { code: ErrorTypes.NO_SYSTEM_MESSAGES, requestId: publicError.requestId };
   }
+
+  const errorText = toChatErrorText(publicError);
 
   /**
    * @param {string} partialText

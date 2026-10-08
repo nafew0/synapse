@@ -11,16 +11,12 @@ import {
   OGDialogContent,
   OGDialogDescription,
 } from '@librechat/client';
-import type {
-  AssistantsEndpoint,
-  EModelEndpoint,
-  TPluginAction,
-  TError,
-} from 'librechat-data-provider';
+import type { AssistantsEndpoint, EModelEndpoint, TPluginAction } from 'librechat-data-provider';
 import type { ToolDialogProps } from '~/common/types';
 import { PluginPagination, PluginAuthForm } from '~/components/Plugins/Store';
 import { useLocalize, usePluginDialogHelpers } from '~/hooks';
 import { useAvailableToolsQuery } from '~/data-provider';
+import { getErrorMessage } from '~/utils';
 import ToolItem from './ToolItem';
 
 function AssistantToolsDialog({
@@ -59,12 +55,9 @@ function AssistantToolsDialog({
   } = usePluginDialogHelpers();
 
   const updateUserPlugins = useUpdateUserPluginsMutation();
-  const handleInstallError = (error: TError) => {
+  const handleInstallError = (error: unknown) => {
     setError(true);
-    const errorMessage = error.response?.data?.message ?? '';
-    if (errorMessage) {
-      setErrorMessage(errorMessage);
-    }
+    setErrorMessage(getErrorMessage(error, localize, 'com_nav_plugin_auth_error'));
     setTimeout(() => {
       setError(false);
       setErrorMessage('');
@@ -84,7 +77,7 @@ function AssistantToolsDialog({
 
     updateUserPlugins.mutate(pluginAction, {
       onError: (error: unknown) => {
-        handleInstallError(error as TError);
+        handleInstallError(error);
       },
       onSuccess: addFunction,
     });
@@ -98,7 +91,7 @@ function AssistantToolsDialog({
       { pluginKey: tool, action: 'uninstall', auth: null, isEntityTool: true },
       {
         onError: (error: unknown) => {
-          handleInstallError(error as TError);
+          handleInstallError(error);
         },
         onSuccess: () => {
           const fns = getValues('functions').filter((fn: string) => fn !== tool);
@@ -177,7 +170,7 @@ function AssistantToolsDialog({
           </div>
           {error && (
             <Alert variant="error" icon={false} className="m-4">
-              {localize('com_nav_plugin_auth_error')} {errorMessage}
+              {errorMessage || localize('com_nav_plugin_auth_error')}
             </Alert>
           )}
           {showPluginAuthForm && (

@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { useTextToSpeechMutation, useVoicesQuery } from '~/data-provider';
+import useErrorToast from '~/hooks/useErrorToast';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -29,6 +30,7 @@ function useTextToSpeechExternal({
 }: TUseTTSExternal) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const showErrorToast = useErrorToast();
   const voice = useRecoilValue(store.voice);
   const cacheTTS = useRecoilValue(store.cacheTTS);
   const playbackRate = useRecoilValue(store.playbackRate);
@@ -68,7 +70,7 @@ function useTextToSpeechExternal({
       }
       console.error(error);
       showToast({
-        message: localize('com_nav_audio_play_error', { 0: error.message }),
+        message: localize('com_nav_audio_play_failed'),
         status: 'error',
       });
     });
@@ -118,18 +120,11 @@ function useTextToSpeechExternal({
         }
         autoPlayAudio(blobUrl);
       } catch (error) {
-        showToast({
-          message: `Error processing audio: ${(error as Error).message}`,
-          status: 'error',
-        });
+        console.error('[useTextToSpeechExternal] Failed to process audio', error);
+        showToast({ message: localize('com_nav_audio_process_failed'), status: 'error' });
       }
     },
-    onError: (error: unknown) => {
-      showToast({
-        message: localize('com_nav_audio_process_error', { 0: (error as Error).message }),
-        status: 'error',
-      });
-    },
+    onError: (error: unknown) => showErrorToast(error, 'com_nav_audio_process_failed'),
   });
 
   const startMutation = (text: string, download: boolean) => {

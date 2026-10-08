@@ -10,6 +10,7 @@ import {
   useToastContext,
 } from '@librechat/client';
 import type { TPlugin } from 'librechat-data-provider';
+import useErrorToast from '~/hooks/useErrorToast';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -25,6 +26,7 @@ export default function AssistantTool({
   const [isHovering, setIsHovering] = useState(false);
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const showErrorToast = useErrorToast();
   const updateUserPlugins = useUpdateUserPluginsMutation();
   const { getValues, setValue } = useFormContext();
   const currentTool = allTools.find((t) => t.pluginKey === tool);
@@ -35,12 +37,12 @@ export default function AssistantTool({
         { pluginKey: tool, action: 'uninstall', auth: null, isEntityTool: true },
         {
           onError: (error: unknown) => {
-            showToast({ message: `Error while deleting the tool: ${error}`, status: 'error' });
+            showErrorToast(error, 'com_ui_delete_tool_failed');
           },
           onSuccess: () => {
             const fns = getValues('functions').filter((fn) => fn !== tool);
             setValue('functions', fns);
-            showToast({ message: 'Tool deleted successfully', status: 'success' });
+            showToast({ message: localize('com_ui_delete_tool_success'), status: 'success' });
           },
         },
       );

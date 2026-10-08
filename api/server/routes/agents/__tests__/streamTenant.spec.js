@@ -315,7 +315,8 @@ describe('SSE stream tenant isolation', () => {
 
       expect(res.status).toBe(200);
       expect(res.text).toContain('event: error');
-      expect(res.text).toContain('Failed to subscribe to stream');
+      expect(res.text).toContain('connection_lost');
+      expect(res.text).not.toContain('Failed to subscribe to stream');
       expect(res.text).not.toContain('terminal_payload_missing');
     });
 

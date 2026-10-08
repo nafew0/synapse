@@ -3,11 +3,12 @@ import { CheckCircle2 } from 'lucide-react';
 import { useFormContext } from 'react-hook-form';
 import { Button, useToastContext } from '@librechat/client';
 import { useUpdateUserPluginsMutation } from 'librechat-data-provider/react-query';
-import type { TError, TPluginAction } from 'librechat-data-provider';
+import type { TPluginAction } from 'librechat-data-provider';
 import type { ToolItem } from '../../items/types';
 import type { AgentForm } from '~/common';
 import PluginAuthForm from '~/components/Plugins/Store/PluginAuthForm';
 import { pluginNeedsAuth } from '../../items/auth';
+import useErrorToast from '~/hooks/useErrorToast';
 import { useLocalize } from '~/hooks';
 
 interface Props {
@@ -17,6 +18,7 @@ interface Props {
 export default function ToolSection({ item }: Props) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const showErrorToast = useErrorToast();
   const { getValues, setValue } = useFormContext<AgentForm>();
   const updateUserPlugins = useUpdateUserPluginsMutation();
 
@@ -45,10 +47,7 @@ export default function ToolSection({ item }: Props) {
     }
     updateUserPlugins.mutate(data, {
       onError: (error: unknown) => {
-        showToast({
-          message: (error as TError)?.message || localize('com_nav_plugin_auth_error'),
-          status: 'error',
-        });
+        showErrorToast(error, 'com_nav_plugin_auth_error');
       },
       onSuccess: () => {
         enableTool();

@@ -183,7 +183,9 @@ describe('ErrorController', () => {
       ErrorController(partialError, mockReq, mockRes, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(500);
-      expect(mockRes.send).toHaveBeenCalledWith('An unknown error occurred.');
+      expect(mockRes.send).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'request_failed', requestId: expect.any(String) }),
+      );
     });
 
     it('should handle error with body but no statusCode', () => {
@@ -194,7 +196,9 @@ describe('ErrorController', () => {
       ErrorController(partialError, mockReq, mockRes, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(500);
-      expect(mockRes.send).toHaveBeenCalledWith('An unknown error occurred.');
+      expect(mockRes.send).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'unknown', requestId: expect.any(String) }),
+      );
     });
   });
 
@@ -219,7 +223,9 @@ describe('ErrorController', () => {
       ErrorController(new Error('Unsupported file type'), mockReq, mockRes, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(500);
-      expect(mockRes.send).toHaveBeenCalledWith('An unknown error occurred.');
+      expect(mockRes.send).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'unknown', requestId: expect.any(String) }),
+      );
     });
   });
 
@@ -230,8 +236,15 @@ describe('ErrorController', () => {
       ErrorController(unknownError, mockReq, mockRes, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(500);
-      expect(mockRes.send).toHaveBeenCalledWith('An unknown error occurred.');
-      expect(logger.error).toHaveBeenCalledWith('ErrorController => error', unknownError);
+      expect(mockRes.send).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'unknown', requestId: expect.any(String) }),
+      );
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('[publicError] unknown'),
+        expect.objectContaining({
+          error: expect.objectContaining({ message: unknownError.message }),
+        }),
+      );
     });
 
     it('should handle errors with code other than 11000', () => {
@@ -243,8 +256,15 @@ describe('ErrorController', () => {
       ErrorController(mongoError, mockReq, mockRes, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(500);
-      expect(mockRes.send).toHaveBeenCalledWith('An unknown error occurred.');
-      expect(logger.error).toHaveBeenCalledWith('ErrorController => error', mongoError);
+      expect(mockRes.send).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'unknown', requestId: expect.any(String) }),
+      );
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('[publicError] unknown'),
+        expect.objectContaining({
+          error: expect.objectContaining({ message: mongoError.message }),
+        }),
+      );
     });
 
     it('should handle generic errors', () => {
@@ -253,8 +273,15 @@ describe('ErrorController', () => {
       ErrorController(genericError, mockReq, mockRes, mockNext);
 
       expect(mockRes.status).toHaveBeenCalledWith(500);
-      expect(mockRes.send).toHaveBeenCalledWith('An unknown error occurred.');
-      expect(logger.error).toHaveBeenCalledWith('ErrorController => error', genericError);
+      expect(mockRes.send).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'unknown', requestId: expect.any(String) }),
+      );
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('[publicError] unknown'),
+        expect.objectContaining({
+          error: expect.objectContaining({ message: genericError.message }),
+        }),
+      );
     });
 
     it('emits a structured, joinable event for tenant-isolation errors', () => {

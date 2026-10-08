@@ -47,6 +47,9 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
+  toPublicError: jest.fn(() => ({ code: 'unknown', requestId: 'req-test' })),
+  toChatErrorText: jest.fn(({ code, requestId }) => JSON.stringify({ type: code, requestId })),
+  toChatError: jest.fn(() => JSON.stringify({ type: 'unknown', requestId: 'req-test' })),
   toPendingSteer: jest.fn((item) => item),
   isSteerPreemptSupported: jest.fn(() => true),
   buildRecoveredSteerPayload: jest.fn(() => null),

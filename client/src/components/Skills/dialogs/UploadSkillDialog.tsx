@@ -8,6 +8,7 @@ import {
   fileConfig as defaultFileConfig,
 } from 'librechat-data-provider';
 import { useGetFileConfig, useImportSkillMutation } from '~/data-provider';
+import useErrorToast from '~/hooks/useErrorToast';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -25,6 +26,7 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
   const localize = useLocalize();
   const navigate = useNavigate();
   const { showToast } = useToastContext();
+  const showErrorToast = useErrorToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const {
@@ -50,11 +52,7 @@ export default function UploadSkillDialog({ isOpen, setIsOpen }: UploadSkillDial
       navigate(`/skills/${skill._id}`);
     },
     onError: (error: unknown) => {
-      const errData = (error as { response?: { data?: { error?: string; message?: string } } })
-        ?.response?.data;
-      const message =
-        errData?.message ?? errData?.error ?? localize('com_ui_create_skill_upload_error');
-      showToast({ status: 'error', message });
+      showErrorToast(error, 'com_ui_create_skill_upload_error');
     },
   });
 

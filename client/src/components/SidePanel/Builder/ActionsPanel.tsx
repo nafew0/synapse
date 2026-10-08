@@ -17,6 +17,7 @@ import {
 import type { AssistantPanelProps, ActionAuthForm } from '~/common';
 import { useAssistantsMapContext } from '~/Providers';
 import { useDeleteAction } from '~/data-provider';
+import useErrorToast from '~/hooks/useErrorToast';
 import ActionsInput from './ActionsInput';
 import ActionsAuth from './ActionsAuth';
 import { useLocalize } from '~/hooks';
@@ -33,6 +34,7 @@ export default function ActionsPanel({
 }: AssistantPanelProps) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const showErrorToast = useErrorToast();
   const assistantMap = useAssistantsMapContext();
   const deleteAction = useDeleteAction({
     onSuccess: () => {
@@ -44,11 +46,7 @@ export default function ActionsPanel({
       setAction(undefined);
     },
     onError(error) {
-      showToast({
-        message:
-          (error as Error | undefined)?.message ?? localize('com_assistants_delete_actions_error'),
-        status: 'error',
-      });
+      showErrorToast(error, 'com_assistants_delete_actions_error');
     },
   });
 
@@ -137,7 +135,7 @@ export default function ActionsPanel({
                         const currentId = assistant_id ?? '';
                         if (!currentId) {
                           return showToast({
-                            message: 'No assistant_id found, is the assistant created?',
+                            message: localize('com_assistants_no_assistant_id_error'),
                             status: 'error',
                           });
                         }

@@ -26,6 +26,9 @@ const {
   buildRecoveredSteerPayload,
   deleteAgentCheckpoint,
   getAttachmentTitleText,
+  toChatError,
+  toPublicError,
+  toChatErrorText,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -50,23 +53,38 @@ function sendGenerationJson(res, status, body, generationProtocolVersion) {
   return res.status(status).json({ ...body, generationProtocolVersion });
 }
 
-function getInitializationFailure(error) {
+/** Internal machine codes (e.g. `ACCOUNT_DELETION_IN_PROGRESS`, `RUN_REPLACED`) that callers branch on. */
+const MACHINE_ERROR_CODE = /^[A-Z][A-Z0-9_]{2,63}$/;
+
+/**
+ * Maps an initialization error to the HTTP status and user-safe body. The body
+ * carries only `{ status, code, requestId }`; typed codes the client renders
+ * (e.g. `resource_recovery_required`) are preserved through `publicError.code`.
+ */
+function getInitializationFailure(error, publicError) {
+  const { code, requestId } = publicError;
   if (error?.code === ErrorTypes.RESOURCE_RECOVERY_REQUIRED) {
-    return {
-      status: 409,
-      code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
-      error: error.message || 'Attached resources must be restored before retrying.',
-    };
+    return { status: 409, code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED, requestId };
   }
 
   const candidateStatus = error?.status ?? error?.statusCode;
   if (!Number.isInteger(candidateStatus) || candidateStatus < 400 || candidateStatus >= 600) {
-    return null;
+    return { status: 500, code, requestId };
   }
+  const machineCode =
+    typeof error?.code === 'string' && MACHINE_ERROR_CODE.test(error.code) ? error.code : code;
+  return { status: candidateStatus, code: machineCode, requestId };
+}
+
+/** Server-side context logged alongside a public generation error. */
+function getErrorContext(req, { route, streamId, conversationId }) {
   return {
-    status: candidateStatus,
-    ...(typeof error?.code === 'string' ? { code: error.code } : {}),
-    error: error?.message || 'Failed to start generation',
+    route: `agents/${route}`,
+    requestId: req.requestId,
+    userId: req.user?.id,
+    conversationId,
+    streamId,
+    agentId: req.body?.agent_id,
   };
 }
 
@@ -1834,8 +1852,10 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           startupTelemetry?.end('aborted');
           // abortJob already handled emitDone and completeJob
         } else {
-          logger.error(`[ResumableAgentController] Generation error for ${streamId}:`, error);
-          const generationError = error.message || 'Generation failed';
+          const generationError = toChatError(
+            error,
+            getErrorContext(req, { route: 'generation', streamId, conversationId }),
+          );
           try {
             // completeJob first wins running -> error and atomically parks
             // steers, then publishes. A competing abort/pause emits nothing.
@@ -1864,12 +1884,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     // Start generation and handle any unhandled errors
     void startGeneration()
       .catch(async (err) => {
-        logger.error(
-          `[ResumableAgentController] Unhandled error in background generation: ${err.message}`,
+        const backgroundError = toChatError(
+          err,
+          getErrorContext(req, { route: 'background-generation', streamId, conversationId }),
         );
         startupTelemetry?.end('error', err);
         if (!pausePersistenceFailed) {
-          await GenerationJobManager.completeJob(streamId, err.message, jobCreatedAt).catch(
+          await GenerationJobManager.completeJob(streamId, backgroundError, jobCreatedAt).catch(
             (completeErr) => {
               logger.warn(
                 '[ResumableAgentController] completeJob failed during background-error cleanup',
@@ -1901,8 +1922,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         );
       });
   } catch (error) {
-    logger.error('[ResumableAgentController] Initialization error:', error);
-    const initializationFailure = getInitializationFailure(error);
+    const publicError = toPublicError(
+      error,
+      getErrorContext(req, { route: 'initialization', streamId, conversationId }),
+    );
+    const initializationFailure = getInitializationFailure(error, publicError);
     try {
       if (!res.headersSent) {
         if (error?.code === 'GENERATION_PREDECESSOR_MISMATCH') {
@@ -1943,18 +1967,11 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             },
             generationProtocolVersion,
           );
-        } else if (initializationFailure) {
+        } else {
           sendGenerationJson(
             res,
             initializationFailure.status,
             initializationFailure,
-            generationProtocolVersion,
-          );
-        } else {
-          sendGenerationJson(
-            res,
-            500,
-            { error: error.message || 'Failed to start generation' },
             generationProtocolVersion,
           );
         }
@@ -1978,17 +1995,16 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     // and the concurrency slot leaks — so swallow its error. (A failed completeJob did not
     // finalize anything, so releasing afterward can't let it abort a later replacement.)
     if (jobCreatedAt != null) {
-      const initializationError = initializationFailure
-        ? JSON.stringify(initializationFailure)
-        : error.message || 'Failed to start generation';
-      await GenerationJobManager.completeJob(streamId, initializationError, jobCreatedAt).catch(
-        (completeErr) => {
-          logger.warn(
-            '[ResumableAgentController] completeJob failed during init-error cleanup',
-            completeErr,
-          );
-        },
-      );
+      await GenerationJobManager.completeJob(
+        streamId,
+        toChatErrorText(publicError),
+        jobCreatedAt,
+      ).catch((completeErr) => {
+        logger.warn(
+          '[ResumableAgentController] completeJob failed during init-error cleanup',
+          completeErr,
+        );
+      });
     }
     if (ownedIdempotencyClaim) {
       await GenerationJobManager.releaseGeneration(

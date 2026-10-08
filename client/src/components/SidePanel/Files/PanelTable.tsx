@@ -144,7 +144,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
 
       if (endpointFileConfig.fileLimit && files.size >= endpointFileConfig.fileLimit) {
         showToast({
-          message: `${localize('com_ui_attach_error_limit')} ${endpointFileConfig.fileLimit} files (${endpoint})`,
+          message: localize('com_error_files_limit', { 0: endpointFileConfig.fileLimit }),
           status: 'error',
         });
         return;
@@ -152,9 +152,9 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
 
       if (fileData.bytes >= (endpointFileConfig.fileSizeLimit ?? Number.MAX_SAFE_INTEGER)) {
         showToast({
-          message: `${localize('com_ui_attach_error_size')} ${
-            (endpointFileConfig.fileSizeLimit ?? 0) / megabyte
-          } MB (${endpoint})`,
+          message: localize('com_error_files_upload_too_large', {
+            0: (endpointFileConfig.fileSizeLimit ?? 0) / megabyte,
+          }),
           status: 'error',
         });
         return;
@@ -162,7 +162,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
 
       if (!defaultFileConfig.checkType(file.type, endpointFileConfig.supportedMimeTypes ?? [])) {
         showToast({
-          message: `${localize('com_ui_attach_error_type')} ${file.type} (${endpoint})`,
+          message: localize('com_error_files_unsupported'),
           status: 'error',
         });
         return;
@@ -177,7 +177,9 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
         currentTotalSize -= existing?.size ?? 0;
         if (currentTotalSize + fileData.bytes > endpointFileConfig.totalSizeLimit) {
           showToast({
-            message: `${localize('com_ui_attach_error_total_size')} ${endpointFileConfig.totalSizeLimit / megabyte} MB (${endpoint})`,
+            message: localize('com_error_files_total_too_large', {
+              0: endpointFileConfig.totalSizeLimit / megabyte,
+            }),
             status: 'error',
           });
           return;

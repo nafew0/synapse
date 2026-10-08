@@ -195,6 +195,11 @@ function makeClient(overrides = {}) {
   };
 }
 
+/** Matches the user-safe chat error text `{"type":<code>,"requestId":<id>}` stored on the job. */
+function publicErrorText(type) {
+  return expect.stringMatching(new RegExp(`^\\{"type":"${type}","requestId":"[^"]+"\\}$`));
+}
+
 describe('ResumeAgentController (POST /agents/chat/resume)', () => {
   let app;
   let mockInitializeClient;
@@ -1162,7 +1167,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockGenerationJobManager.finishTerminalJob).toHaveBeenCalledWith(claim);
       expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
         CONVO_ID,
-        'Resumed response could not be persisted before terminal publication',
+        publicErrorText('connection_lost'),
         1000,
       );
       expect(mockDeleteAgentCheckpoint).toHaveBeenCalledTimes(1);
@@ -1258,7 +1263,7 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       expect(mockGenerationJobManager.finishTerminalJob).toHaveBeenCalledWith(claim);
       expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
         CONVO_ID,
-        'transport down',
+        publicErrorText('connection_lost'),
         1000,
       );
     });
@@ -1873,7 +1878,11 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       await flush();
 
       expect(mockGenerationJobManager.emitError).not.toHaveBeenCalled();
-      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, 'boom', 1000);
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+        CONVO_ID,
+        publicErrorText('connection_lost'),
+        1000,
+      );
       expect(mockDeleteAgentCheckpoint).toHaveBeenCalledWith(
         CONVO_ID,
         { type: 'mongo' },
@@ -1899,7 +1908,11 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       await settled;
       await flush();
 
-      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, 'boom', 1000);
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+        CONVO_ID,
+        publicErrorText('connection_lost'),
+        1000,
+      );
       expect(mockLogger.error).toHaveBeenCalledWith(
         '[ResumeAgentController] Failed to prune checkpoint after failed resume finalization',
         checkpointError,
@@ -1926,7 +1939,11 @@ describe('ResumeAgentController (POST /agents/chat/resume)', () => {
       await settled;
       await flush();
 
-      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(CONVO_ID, 'boom', 1000);
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+        CONVO_ID,
+        publicErrorText('connection_lost'),
+        1000,
+      );
       expect(mockDeleteAgentCheckpoint).not.toHaveBeenCalled();
     });
 

@@ -118,7 +118,9 @@ export const ErrorController = (
     }
     return res
       .status(500)
-      .json(toPublicErrorBody(err, { requestId: req.requestId, route: req.baseUrl + req.path }));
+      .send(
+        toPublicErrorBody(err, { requestId: req.requestId, route: req.originalUrl?.split('?')[0] }),
+      );
   } catch (processingError) {
     logger.error('ErrorController => processing error', processingError);
     return res.status(500).send('Processing error in ErrorController.');

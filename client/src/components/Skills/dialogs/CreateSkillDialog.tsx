@@ -17,8 +17,9 @@ import {
 import type { TSkill } from 'librechat-data-provider';
 import type { FormEvent } from 'react';
 import { useCreateSkillMutation } from '~/data-provider';
+import useErrorToast from '~/hooks/useErrorToast';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
+import { cn, getResponseStatus } from '~/utils';
 
 interface CreateSkillDialogProps {
   isOpen: boolean;
@@ -55,6 +56,7 @@ export default function CreateSkillDialog({
   const localize = useLocalize();
   const navigate = useNavigate();
   const { showToast } = useToastContext();
+  const showErrorToast = useErrorToast();
 
   const {
     register,
@@ -78,10 +80,11 @@ export default function CreateSkillDialog({
       navigate(`/skills/${skill._id}`);
     },
     onError: (error: unknown) => {
-      const message =
-        (error as { response?: { data?: { message?: string } } })?.response?.data?.message ??
-        localize('com_ui_skill_create_error');
-      showToast({ status: 'error', message });
+      if (getResponseStatus(error) === 409) {
+        showToast({ status: 'error', message: localize('com_ui_skill_name_exists') });
+        return;
+      }
+      showErrorToast(error, 'com_ui_skill_create_error');
     },
   });
 

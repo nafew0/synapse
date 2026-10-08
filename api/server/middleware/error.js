@@ -1,8 +1,53 @@
 const crypto = require('crypto');
 const { logger } = require('@librechat/data-schemas');
-const { parseConvo } = require('librechat-data-provider');
-const { sendEvent, handleError, sanitizeMessageForTransmit } = require('@librechat/api');
+const { parseConvo, isRequestId, isPublicErrorCode } = require('librechat-data-provider');
+const {
+  sendEvent,
+  handleError,
+  toChatError,
+  extractTypedError,
+  sanitizeMessageForTransmit,
+} = require('@librechat/api');
 const { saveMessage, getMessages, getConvo } = require('~/models');
+
+function parseErrorJson(text) {
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Returns user-safe error text: `{"type": code, "requestId"?}` (plus the flat
+ * fields of known typed errors such as violations). Text that is already a
+ * public code passes through; anything else is classified and logged once.
+ * @param {ServerRequest | undefined} req
+ * @param {unknown} text
+ * @param {string} [conversationId]
+ * @returns {string}
+ */
+const toSafeErrorText = (req, text, conversationId) => {
+  const parsed = typeof text === 'string' ? parseErrorJson(text) : undefined;
+  if (parsed && isPublicErrorCode(parsed.type)) {
+    return JSON.stringify({
+      type: parsed.type,
+      ...(isRequestId(parsed.requestId) && { requestId: parsed.requestId }),
+    });
+  }
+  const typed = typeof text === 'string' ? extractTypedError(text) : undefined;
+  if (typed) {
+    const requestId = isRequestId(typed.requestId) ? typed.requestId : req?.requestId;
+    return JSON.stringify({ ...typed, ...(requestId && { requestId }) });
+  }
+  return toChatError(text, {
+    route: 'sendError',
+    requestId: req?.requestId,
+    userId: req?.user?.id,
+    conversationId,
+  });
+};
 
 /**
  * Processes an error with provided options, saves the error message and sends a corresponding SSE response
@@ -15,7 +60,7 @@ const { saveMessage, getMessages, getConvo } = require('~/models');
  * @param {string} options.conversationId - The conversation ID.
  * @param {string} options.messageId - The message ID.
  * @param {string} options.parentMessageId - The parent message ID.
- * @param {string} options.text - The error message.
+ * @param {string} options.text - The error message; sanitized to a typed JSON code when `error` is set.
  * @param {boolean} options.shouldSaveMessage - [Optional] Whether the message should be saved. Default is true.
  * @param {function} callback - [Optional] The callback function to be executed.
  */
@@ -42,6 +87,9 @@ const sendError = async (req, res, options, callback) => {
     isCreatedByUser: false,
     ...rest,
   };
+  if (errorMessage.error) {
+    errorMessage.text = toSafeErrorText(req, text, conversationId);
+  }
   if (callback && typeof callback === 'function') {
     await callback();
   }
@@ -93,7 +141,9 @@ const sendError = async (req, res, options, callback) => {
 const sendResponse = (req, res, data, errorMessage) => {
   if (!res.headersSent) {
     if (errorMessage) {
-      return res.status(500).json({ error: errorMessage });
+      return res
+        .status(500)
+        .json({ error: toSafeErrorText(req, errorMessage, data?.conversationId) });
     }
     return res.json(data);
   }
@@ -105,6 +155,7 @@ const sendResponse = (req, res, data, errorMessage) => {
 };
 
 module.exports = {
+  toSafeErrorText,
   sendError,
   sendResponse,
 };

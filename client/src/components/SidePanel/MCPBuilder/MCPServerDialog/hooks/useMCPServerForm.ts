@@ -235,20 +235,8 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
       const isOAuth = formData.auth.auth_type === AuthTypeEnum.OAuth;
       onSuccess?.(result.serverName, isOAuth && !server);
     } catch (error: unknown) {
-      let errorMessage = localize('com_ui_error');
-
-      if (error && typeof error === 'object' && 'response' in error) {
-        const axiosError = error as { response?: { data?: { error?: string } } };
-        const errorCode = axiosError.response?.data?.error;
-        if (errorCode) {
-          errorMessage = getMCPServerErrorMessage(errorCode, localize);
-        }
-      } else if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-
       showToast({
-        message: errorMessage,
+        message: getMCPServerErrorMessage(error, localize, 'com_ui_mcp_server_save_error'),
         status: 'error',
       });
     } finally {
@@ -273,19 +261,8 @@ export function useMCPServerForm({ server, onSuccess, onClose }: UseMCPServerFor
 
       onClose?.();
     } catch (error: unknown) {
-      let errorMessage = localize('com_ui_error');
-
-      if (error && typeof error === 'object' && 'response' in error) {
-        const axiosError = error as { response?: { data?: { error?: string } } };
-        if (axiosError.response?.data?.error) {
-          errorMessage = axiosError.response.data.error;
-        }
-      } else if (error instanceof Error) {
-        errorMessage = error.message;
-      }
-
       showToast({
-        message: errorMessage,
+        message: getMCPServerErrorMessage(error, localize, 'com_ui_mcp_server_delete_error'),
         status: 'error',
       });
     } finally {

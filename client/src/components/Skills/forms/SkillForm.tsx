@@ -21,6 +21,7 @@ import { useGetSkillQuery, useUpdateSkillMutation } from '~/data-provider';
 import { useLocalize, useSkillPermissions } from '~/hooks';
 import SkillContentEditor from './SkillContentEditor';
 import CategorySelector from './CategorySelector';
+import useErrorToast from '~/hooks/useErrorToast';
 import DeleteSkill from '../dialogs/DeleteSkill';
 import { ShareSkill } from '../buttons';
 import { cn } from '~/utils';
@@ -57,6 +58,7 @@ export default function SkillForm({ skillId }: SkillFormProps) {
   const localize = useLocalize();
   const navigate = useNavigate();
   const { showToast } = useToastContext();
+  const showErrorToast = useErrorToast();
   const [warnings, setWarnings] = useState<TSkillWarning[] | null>(null);
 
   const skillQuery = useGetSkillQuery(skillId);
@@ -105,10 +107,7 @@ export default function SkillForm({ skillId }: SkillFormProps) {
         skillQuery.refetch();
         return;
       }
-      const message =
-        (error as { response?: { data?: { message?: string } } })?.response?.data?.message ??
-        localize('com_ui_skill_update_error');
-      showToast({ status: 'error', message });
+      showErrorToast(error, 'com_ui_skill_update_error');
     },
   });
 

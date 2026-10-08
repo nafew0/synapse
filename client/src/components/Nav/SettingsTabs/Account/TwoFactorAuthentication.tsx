@@ -21,6 +21,7 @@ import {
 import { SetupPhase, QRPhase, VerifyPhase, BackupPhase, DisablePhase } from './TwoFactorPhases';
 import { DisableTwoFactorToggle } from './DisableTwoFactorToggle';
 import { useAuthContext, useLocalize } from '~/hooks';
+import useErrorToast from '~/hooks/useErrorToast';
 import store from '~/store';
 
 export type Phase = 'setup' | 'qr' | 'verify' | 'backup' | 'disable';
@@ -36,6 +37,11 @@ const TwoFactorAuthentication: React.FC = () => {
   const { user } = useAuthContext();
   const setUser = useSetRecoilState(store.user);
   const { showToast } = useToastContext();
+  const showErrorToast = useErrorToast();
+  const handlePhaseError = useCallback(
+    (error: Error) => showErrorToast(error, 'com_ui_2fa_error'),
+    [showErrorToast],
+  );
   const buttonRef = useRef<HTMLButtonElement>(null);
 
   const [secret, setSecret] = useState<string>('');
@@ -258,7 +264,7 @@ const TwoFactorAuthentication: React.FC = () => {
                   isGenerating={isGenerating}
                   onGenerate={handleGenerateQRCode}
                   onNext={() => setPhase('qr')}
-                  onError={(error) => showToast({ message: error.message, status: 'error' })}
+                  onError={handlePhaseError}
                 />
               )}
 
@@ -267,7 +273,7 @@ const TwoFactorAuthentication: React.FC = () => {
                   secret={secret}
                   otpauthUrl={otpauthUrl}
                   onNext={() => setPhase('verify')}
-                  onError={(error) => showToast({ message: error.message, status: 'error' })}
+                  onError={handlePhaseError}
                 />
               )}
 
@@ -277,7 +283,7 @@ const TwoFactorAuthentication: React.FC = () => {
                   onTokenChange={setVerificationToken}
                   isVerifying={isVerifying}
                   onNext={handleVerify}
-                  onError={(error) => showToast({ message: error.message, status: 'error' })}
+                  onError={handlePhaseError}
                 />
               )}
 
@@ -287,7 +293,7 @@ const TwoFactorAuthentication: React.FC = () => {
                   onDownload={handleDownload}
                   downloaded={downloaded}
                   onNext={handleConfirm}
-                  onError={(error) => showToast({ message: error.message, status: 'error' })}
+                  onError={handlePhaseError}
                 />
               )}
 
@@ -295,7 +301,7 @@ const TwoFactorAuthentication: React.FC = () => {
                 <DisablePhase
                   onDisable={handleDisableVerify}
                   isDisabling={isDisabling}
-                  onError={(error) => showToast({ message: error.message, status: 'error' })}
+                  onError={handlePhaseError}
                 />
               )}
             </AnimatePresence>

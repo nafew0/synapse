@@ -62,7 +62,7 @@ export default function useBookmarkItems({
     },
     onError: () => {
       showToast({
-        message: 'Error adding bookmark',
+        message: localize('com_ui_bookmarks_add_error'),
         severity: NotificationSeverity.ERROR,
       });
     },
@@ -85,7 +85,7 @@ export default function useBookmarkItems({
     (tag?: string) => {
       if (tag === undefined || tag === '' || !conversationId) {
         showToast({
-          message: 'Invalid tag or conversationId',
+          message: localize('com_ui_bookmarks_invalid_tag'),
           severity: NotificationSeverity.ERROR,
         });
         return;
@@ -107,7 +107,7 @@ export default function useBookmarkItems({
       logger.log('tag_mutation', 'BookmarkMenu - handleSubmit: tags after', newTags);
       mutation.mutate({ tags: newTags, tag });
     },
-    [tags, conversationId, mutation, queryClient, showToast],
+    [tags, conversationId, mutation, queryClient, showToast, localize],
   );
 
   const tagsCount = tags?.length ?? 0;

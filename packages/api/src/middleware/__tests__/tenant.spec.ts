@@ -51,6 +51,8 @@ function mockRes(): Response {
   const res = {
     status: jest.fn().mockReturnThis(),
     json: jest.fn().mockReturnThis(),
+    setHeader: jest.fn(),
+    headersSent: false,
   };
   return res as unknown as Response;
 }

@@ -16,6 +16,7 @@ import {
 import type { EModelEndpoint, TEndpointsConfig, TError } from 'librechat-data-provider';
 import type { TConversation, UploadStageName } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
+import type { TFileErrorSetter } from '~/utils/files';
 import {
   logger,
   validateFiles,
@@ -26,8 +27,9 @@ import {
   validateFileDuplicates,
   PER_FILE_UPLOAD_ROUTE,
 } from '~/utils';
+import { getErrorInfo, getErrorMessage, recordError } from '~/utils/errors';
 import { useGetFileConfig, useUploadFileMutation } from '~/data-provider';
-import useLocalize, { TranslationKeys } from '~/hooks/useLocalize';
+import useLocalize from '~/hooks/useLocalize';
 import { useDelayedUploadToast } from './useDelayedUploadToast';
 import { useChatContext } from '~/Providers/ChatContext';
 import store, { ephemeralAgentByConvoId } from '~/store';
@@ -156,7 +158,8 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     ephemeralAgentByConvoId(conversation?.conversationId ?? Constants.NEW_CONVO),
   );
   const isTemporary = useRecoilValue(store.isTemporary);
-  const setError = (error: string) => setErrors((prevErrors) => [...prevErrors, error]);
+  const addError = (message: string) => setErrors((prevErrors) => [...prevErrors, message]);
+  const setError: TFileErrorSetter = (key, values) => addError(localize(key, values));
   const { addFile, replaceFile, updateFileById, deleteFileById } = useUpdateFiles(fileSetter);
   const { isConfigPending, waitForConfig, resizeImageIfNeeded } = useClientResize();
   const { resolveRoute } = useUploadRoute(conversation);
@@ -183,9 +186,8 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
 
   const displayToast = useCallback(() => {
     if (errors.length > 1) {
-      // TODO: this should not be a dynamic localize input!!
       const errorList = Array.from(new Set(errors))
-        .map((e, i) => `${i > 0 ? '• ' : ''}${localize(e as TranslationKeys) || e}\n`)
+        .map((message, i) => `${i > 0 ? '• ' : ''}${message}\n`)
         .join('');
       showToast({
         message: errorList,
@@ -193,17 +195,15 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         duration: 5000,
       });
     } else if (errors.length === 1) {
-      // TODO: this should not be a dynamic localize input!!
-      const message = localize(errors[0] as TranslationKeys) || errors[0];
       showToast({
-        message,
+        message: errors[0],
         status: 'error',
         duration: 5000,
       });
     }
 
     setErrors([]);
-  }, [errors, showToast, localize]);
+  }, [errors, showToast]);
 
   const debouncedDisplayToast = debounce(displayToast, 250);
 
@@ -285,14 +285,12 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         clearUploadTimer(file_id);
         deleteFileById(file_id);
 
-        let errorMessage = 'com_error_files_upload';
-
         if (error?.code === 'ERR_CANCELED') {
-          errorMessage = 'com_error_files_upload_canceled';
-        } else if (error?.response?.data?.message) {
-          errorMessage = error.response.data.message;
+          setError('com_error_files_upload_canceled');
+        } else {
+          recordError(getErrorInfo(error));
+          addError(getErrorMessage(error, localize, 'com_error_files_upload'));
         }
-        setError(errorMessage);
         uploadLifecycle?.onError?.(file_id);
       },
     },

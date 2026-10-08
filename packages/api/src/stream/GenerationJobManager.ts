@@ -78,6 +78,7 @@ import {
 import { filterPersistableAbortContent } from './abortContent';
 import { toClientPendingAction } from '~/agents/hitl/policy';
 import { ApprovalLifecycle, pausePersistenceActionId } from './ApprovalLifecycle';
+import { classifyError } from '~/errors/classify';
 import { sanitizeJobMetadata } from './metadata';
 
 /** Terminal error surfaced to a client still attached when its approval window lapses. */
@@ -2368,7 +2369,7 @@ class GenerationJobManagerClass {
       // catch never needs to issue an unsafe unscoped terminal mutation.
       let message = SHUTDOWN_JOB_ERROR;
       if (!this.shuttingDown) {
-        message = error instanceof Error ? error.message : String(error);
+        message = JSON.stringify({ type: classifyError(error) });
       }
       await this.completeJob(streamId, message, jobData.createdAt).catch((finalizeError) => {
         logger.error(
