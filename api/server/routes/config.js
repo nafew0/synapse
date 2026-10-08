@@ -5,6 +5,8 @@ const {
   isLangfuseFanoutEnabled,
   getBalanceConfig,
   getCloudFrontConfig,
+  getSupportEmail,
+  isIssueReportingEnabled,
   getAppConfigOptionsFromUser,
   resolveBuildInfo,
   resolveTitleTiming,
@@ -155,6 +157,9 @@ function buildPostLoginPayload() {
     allowAccountDeletion:
       process.env.ALLOW_ACCOUNT_DELETION === undefined ||
       isEnabled(process.env.ALLOW_ACCOUNT_DELETION),
+    /** Uses `checkEmailConfig` (not `emailEnabled`) so unauthenticated SMTP relays work. */
+    issueReportsEnabled: isIssueReportingEnabled(),
+    supportEmail: getSupportEmail(),
   };
 
   return payload;

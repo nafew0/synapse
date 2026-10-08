@@ -188,3 +188,66 @@ describe('sendEmail SMTP HELO hostname', () => {
     expect((await transporterOptions()).name).toBeUndefined();
   });
 });
+
+describe('sendEmail recipients and Reply-To', () => {
+  it('sets replyTo on SMTP mail options when provided', async () => {
+    const sendEmail = loadSendEmail();
+
+    await sendEmail({ ...baseParams, replyTo: 'reporter@example.com' });
+
+    const mailOptions = mockSendMail.mock.calls[0][0];
+    expect(mailOptions.replyTo).toBe('reporter@example.com');
+  });
+
+  it('omits replyTo when not provided', async () => {
+    const sendEmail = loadSendEmail();
+
+    await sendEmail(baseParams);
+
+    expect(mockSendMail.mock.calls[0][0]).not.toHaveProperty('replyTo');
+  });
+
+  it('sends to every address in a comma-separated list', async () => {
+    const sendEmail = loadSendEmail();
+
+    await sendEmail({ ...baseParams, email: 'a@example.com, b@example.com' });
+
+    const mailOptions = mockSendMail.mock.calls[0][0];
+    expect(mailOptions.to).toBe('a@example.com, b@example.com');
+    expect(mailOptions.envelope.to).toEqual(['a@example.com', 'b@example.com']);
+  });
+
+  it('keeps the named single-recipient address', async () => {
+    const sendEmail = loadSendEmail();
+
+    await sendEmail(baseParams);
+
+    const mailOptions = mockSendMail.mock.calls[0][0];
+    expect(mailOptions.to).toBe('"User" <user@example.com>');
+    expect(mailOptions.envelope.to).toBe('user@example.com');
+  });
+
+  it('adds an h:Reply-To field to Mailgun requests', async () => {
+    process.env.MAILGUN_API_KEY = 'key';
+    process.env.MAILGUN_DOMAIN = 'mg.example.com';
+    const post = jest.fn().mockResolvedValue({ data: { id: 'mg-id' } });
+    jest.resetModules();
+    jest.doMock('axios', () => ({ post }));
+    jest.doMock('@librechat/data-schemas', () => ({
+      logger: { debug: jest.fn(), warn: jest.fn(), error: jest.fn() },
+    }));
+    jest.doMock('@librechat/api', () => ({
+      logAxiosError: jest.fn(),
+      isEnabled: jest.fn(),
+      readFileAsString: jest.fn().mockResolvedValue({ content: '<p>{{name}}</p>' }),
+    }));
+    const sendEmail = require('../sendEmail');
+
+    await sendEmail({ ...baseParams, replyTo: 'reporter@example.com' });
+
+    const formData = post.mock.calls[0][1];
+    const body = formData.getBuffer().toString();
+    expect(body).toContain('name="h:Reply-To"');
+    expect(body).toContain('reporter@example.com');
+  });
+});

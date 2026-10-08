@@ -6,6 +6,7 @@ import {
   Archive,
   ChevronRight,
   CircleHelp,
+  Flag,
   Keyboard,
   LifeBuoy,
   LogOut,
@@ -16,6 +17,7 @@ import { ArchivedChatsModal } from '~/components/Nav/SettingsTabs/General/Archiv
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { SystemRoles, INSTITUTION_ADMIN_ROLE } from 'librechat-data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { ReportDialog } from '~/components/Report';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
 import store from '~/store';
@@ -101,6 +103,7 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
   const [showSettings, setShowSettings] = useState(false);
   const setShowShortcutsDialog = useSetRecoilState(store.showShortcutsDialog);
   const [showArchived, setShowArchived] = useState(false);
+  const [showReport, setShowReport] = useState(false);
   const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
 
   /** Institution administrators manage their members from the same console as
@@ -165,6 +168,16 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
           privacyPolicyURL={startupConfig?.interface?.privacyPolicy?.externalUrl}
           onShowShortcuts={() => setShowShortcutsDialog(true)}
         />
+        {startupConfig?.issueReportsEnabled === true && (
+          <Menu.MenuItem
+            onClick={() => setShowReport(true)}
+            className="select-item text-sm"
+            data-testid="nav-report-issue"
+          >
+            <Flag className="icon-md" aria-hidden="true" />
+            {localize('com_ui_report_issue')}
+          </Menu.MenuItem>
+        )}
         {showAdminPanel && (
           <Menu.MenuItem
             onClick={() => window.open(startupConfig?.adminPanelPath, '_blank', 'noopener')}
@@ -200,6 +213,7 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
           triggerRef={accountSettingsButtonRef}
         />
       )}
+      {showReport && <ReportDialog open={showReport} onOpenChange={setShowReport} />}
       {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
     </Menu.MenuProvider>
   );

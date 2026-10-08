@@ -16,9 +16,10 @@ const { logAxiosError, isEnabled, readFileAsString } = require('@librechat/api')
  * @param {string} params.from - The sender's email address.
  * @param {string} params.subject - The subject of the email.
  * @param {string} params.html - The HTML content of the email.
+ * @param {string} [params.replyTo] - Optional Reply-To address.
  * @returns {Promise<Object>} - A promise that resolves to the response from Mailgun API.
  */
-const sendEmailViaMailgun = async ({ to, from, subject, html }) => {
+const sendEmailViaMailgun = async ({ to, from, subject, html, replyTo }) => {
   const mailgunApiKey = process.env.MAILGUN_API_KEY;
   const mailgunDomain = process.env.MAILGUN_DOMAIN;
   const mailgunHost = process.env.MAILGUN_HOST || 'https://api.mailgun.net';
@@ -33,6 +34,9 @@ const sendEmailViaMailgun = async ({ to, from, subject, html }) => {
   formData.append('subject', subject);
   formData.append('html', html);
   formData.append('o:tracking-clicks', 'no');
+  if (replyTo) {
+    formData.append('h:Reply-To', replyTo);
+  }
 
   try {
     const response = await axios.post(`${mailgunHost}/v3/${mailgunDomain}/messages`, formData, {
@@ -99,10 +103,11 @@ const getHeloName = () => {
  * @async
  * @function sendEmail
  * @param {Object} params - The parameters for sending the email.
- * @param {string} params.email - The recipient's email address.
+ * @param {string} params.email - The recipient's email address, or a comma-separated list.
  * @param {string} params.subject - The subject of the email.
  * @param {Record<string, string>} params.payload - The data to be used in the email template.
  * @param {string} params.template - The filename of the email template.
+ * @param {string} [params.replyTo] - Optional Reply-To address (e.g. the user who triggered the email).
  * @param {boolean} [throwError=true] - Whether to throw an error if the email sending process fails.
  * @returns {Promise<Object>} - A promise that resolves to the info object of the sent email or the error if sending the email fails.
  *
@@ -120,7 +125,7 @@ const getHeloName = () => {
  *
  * @throws Will throw an error if the email sending process fails and throwError is `true`.
  */
-const sendEmail = async ({ email, subject, payload, template, throwError = true }) => {
+const sendEmail = async ({ email, subject, payload, template, replyTo, throwError = true }) => {
   try {
     const { content: source } = await readFileAsString(path.join(__dirname, 'emails', template));
     const compiledTemplate = handlebars.compile(source);
@@ -130,7 +135,12 @@ const sendEmail = async ({ email, subject, payload, template, throwError = true 
     const fromName = process.env.EMAIL_FROM_NAME || process.env.APP_TITLE;
     const fromEmail = process.env.EMAIL_FROM;
     const fromAddress = `"${fromName}" <${fromEmail}>`;
-    const toAddress = `"${payload.name}" <${email}>`;
+    const recipients = email
+      .split(',')
+      .map((address) => address.trim())
+      .filter(Boolean);
+    const toAddress =
+      recipients.length > 1 ? recipients.join(', ') : `"${payload.name}" <${recipients[0]}>`;
 
     // Check if Mailgun is configured
     if (process.env.MAILGUN_API_KEY && process.env.MAILGUN_DOMAIN) {
@@ -140,6 +150,7 @@ const sendEmail = async ({ email, subject, payload, template, throwError = true 
         to: toAddress,
         subject: subject,
         html: html,
+        replyTo,
       });
     }
 
@@ -199,11 +210,15 @@ const sendEmail = async ({ email, subject, payload, template, throwError = true 
         // Envelope from should contain addr-spec
         // Mistake in the Nodemailer documentation?
         from: fromEmail,
-        to: email,
+        to: recipients.length > 1 ? recipients : recipients[0],
       },
       subject: subject,
       html: html,
     };
+
+    if (replyTo) {
+      mailOptions.replyTo = replyTo;
+    }
 
     return await sendEmailViaSMTP({ transporterOptions, mailOptions });
   } catch (error) {

@@ -31,6 +31,7 @@ const actions = require('./actions');
 const apiKeys = require('./apiKeys');
 const banner = require('./banner');
 const search = require('./search');
+const reports = require('./reports');
 const models = require('./models');
 const convos = require('./convos');
 const config = require('./config');
@@ -48,6 +49,7 @@ const rum = require('./rum');
 const insights = require('./insights');
 
 module.exports = {
+  reports,
   insights,
   rum,
   mcp,

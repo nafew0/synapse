@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+  <body style="font-family: Arial, sans-serif; color: #222; font-size: 14px">
+    <h2>Issue report</h2>
+
+    <h3>Reporter</h3>
+    <ul>
+      <li>Name: {{reporter.name}}</li>
+      <li>Email: {{reporter.email}}</li>
+      <li>Username: {{reporter.username}}</li>
+      <li>User ID: {{reporter.id}}</li>
+      <li>Role: {{reporter.role}}</li>
+      <li>Institution: {{#if reporter.institution}}{{reporter.institution}}{{else}}none{{/if}}{{#if reporter.tenantId}} ({{reporter.tenantId}}){{/if}}</li>
+    </ul>
+
+    <h3>What they wrote</h3>
+    {{#if description}}
+      <div style="white-space: pre-wrap; border-left: 3px solid #ccc; padding-left: 8px">{{description}}</div>
+    {{else}}
+      <p><em>No description provided.</em></p>
+    {{/if}}
+
+    <h3>Context</h3>
+    <ul>
+      <li>Error code: {{#if context.code}}{{context.code}}{{else}}general{{/if}}</li>
+      <li>Request ID: {{context.requestId}}{{#if context.reference}} (ref {{context.reference}}){{/if}}</li>
+      <li>Page: {{context.page}}</li>
+      <li>Conversation ID: {{context.conversationId}}</li>
+      <li>Message ID: {{context.messageId}}</li>
+      <li>Occurred at (client): {{context.occurredAt}}</li>
+      <li>Server time: {{context.serverTime}}</li>
+      <li>Environment: {{context.environment}}</li>
+      <li>App version (server): {{context.appVersion}}</li>
+      <li>App version (client): {{context.clientAppVersion}}</li>
+      <li>Browser: {{context.browser}}</li>
+      <li>Language: {{context.language}}</li>
+      <li>Timezone: {{context.timezone}}</li>
+      <li>Screen: {{context.screen}}</li>
+    </ul>
+
+    <h3>Error summaries</h3>
+    {{#each summaries}}
+      <div style="border: 1px solid #ddd; padding: 8px; margin-bottom: 8px">
+        <p><strong>{{code}}</strong> · request_id {{requestId}} (ref {{reference}})</p>
+        <ul>
+          <li>Status: {{status}}</li>
+          <li>Message: {{message}}</li>
+          <li>Route: {{route}}</li>
+          <li>Provider: {{provider}}</li>
+          <li>Model: {{model}}</li>
+          <li>Time: {{at}}</li>
+        </ul>
+        {{#if stack}}
+          <pre style="white-space: pre-wrap; font-size: 12px; background: #f6f6f6; padding: 6px">{{stack}}</pre>
+        {{/if}}
+      </div>
+    {{else}}
+      <p><em>No cached error summaries.</em></p>
+    {{/each}}
+    {{#each missing}}
+      <p>No cached summary — search server logs for request_id {{this}}</p>
+    {{/each}}
+
+    <h3>Recent errors</h3>
+    {{#if recentErrors.length}}
+      <ul>
+        {{#each recentErrors}}
+          <li>{{code}} · {{occurredAt}} · {{page}}{{#if requestId}} · request_id {{requestId}}{{/if}}</li>
+        {{/each}}
+      </ul>
+    {{else}}
+      <p><em>None.</em></p>
+    {{/if}}
+
+    {{#if lastMessage}}
+      <h3>Last message (shared by the user)</h3>
+      <div style="white-space: pre-wrap; border-left: 3px solid #ccc; padding-left: 8px">{{lastMessage}}</div>
+    {{/if}}
+  </body>
+</html>
