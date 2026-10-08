@@ -102,11 +102,15 @@ export function createIssueReportHandlers(deps: IssueReportDeps): IssueReportHan
       await deps.sendEmail({ ...email, throwError: true });
       res.status(202).json({});
     } catch (error) {
-      logger.error('[reports] Failed to send issue report email; report kept in this log entry', {
-        error: (error as Error).message,
-        subject: email.subject,
-        report: email.payload,
-      });
+      const reason = (error as Error).message;
+      logger.error(
+        `[reports] Failed to send issue report email (${reason}); report kept in this log entry`,
+        {
+          error: reason,
+          subject: email.subject,
+          report: email.payload,
+        },
+      );
       await clearDedup(dedupKey);
       res
         .status(502)
