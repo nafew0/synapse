@@ -1,8 +1,9 @@
-import { ErrorTypes } from 'librechat-data-provider';
+import { ErrorTypes, PublicErrorCodes } from 'librechat-data-provider';
 import { logger, tenantStorage } from '@librechat/data-schemas';
 import type { NextFunction, Request, Response } from 'express';
 import type { MongoServerError, ValidationError, CustomError } from '~/types';
 import { buildTenantIsolationErrorLogContext } from './auth';
+import { toPublicErrorBody } from '~/errors/public';
 
 const handleDuplicateKeyError = (err: MongoServerError, res: Response) => {
   logger.warn('Duplicate key error: ' + (err.errmsg || err.message));
@@ -55,7 +56,7 @@ export const createCustomError = (statusCode: number, message: string): CustomEr
 
 export const ErrorController = (
   err: Error | CustomError,
-  req: Request,
+  req: Request & { requestId?: string },
   res: Response,
   next: NextFunction,
 ): Response | void => {
@@ -112,10 +113,12 @@ export const ErrorController = (
         ...(requestMethod && { request_method: requestMethod }),
         ...(requestPath && { request_path: requestPath }),
       });
-    } else {
-      logger.error('ErrorController => error', err);
+      const requestIdForBody = requestId ?? req.requestId;
+      return res.status(500).json({ code: PublicErrorCodes.UNKNOWN, requestId: requestIdForBody });
     }
-    return res.status(500).send('An unknown error occurred.');
+    return res
+      .status(500)
+      .json(toPublicErrorBody(err, { requestId: req.requestId, route: req.baseUrl + req.path }));
   } catch (processingError) {
     logger.error('ErrorController => processing error', processingError);
     return res.status(500).send('Processing error in ErrorController.');

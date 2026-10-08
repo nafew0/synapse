@@ -2592,6 +2592,14 @@ export enum CacheKeys {
    */
   SANDBOX_PREWARM = 'SANDBOX_PREWARM',
   /**
+   * Key for short-lived, redacted error summaries keyed by request id (attached to issue reports).
+   */
+  ERROR_SUMMARIES = 'ERROR_SUMMARIES',
+  /**
+   * Key for issue report de-duplication markers.
+   */
+  ISSUE_REPORTS = 'ISSUE_REPORTS',
+  /**
    * Key for the title generation cache.
    */
   GEN_TITLE = 'GEN_TITLE',
