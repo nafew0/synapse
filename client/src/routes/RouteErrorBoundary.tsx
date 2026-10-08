@@ -238,7 +238,10 @@ export default function RouteErrorBoundary() {
           <Button variant="outline" onClick={() => navigate('/')} className="w-full sm:w-auto">
             {localize('com_ui_go_home')}
           </Button>
-          <ReportButton code={PublicErrorCodes.UNKNOWN} />
+          <ReportButton
+            code={PublicErrorCodes.UNKNOWN}
+            shownMessage={localize('com_error_page_body')}
+          />
         </div>
         {isDev && <DevDetails error={error} />}
       </div>

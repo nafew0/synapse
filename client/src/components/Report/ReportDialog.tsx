@@ -40,7 +40,7 @@ export default function ReportDialog({
   const { showToast } = useToastContext();
   const { data: startupConfig } = useGetStartupConfig();
   const [description, setDescription] = useState('');
-  const [includeMessage, setIncludeMessage] = useState(false);
+  const [includeMessage, setIncludeMessage] = useState(true);
   const [failed, setFailed] = useState(false);
   const mutation = useCreateIssueReportMutation();
   const fieldId = useId();
@@ -87,6 +87,11 @@ export default function ReportDialog({
           <OGDialogTitle>{localize('com_ui_report_issue')}</OGDialogTitle>
         </OGDialogHeader>
         <div className="flex flex-col gap-4">
+          {context.shownMessage && (
+            <p className="rounded-md border border-border-light bg-surface-secondary px-3 py-2 text-sm text-text-primary">
+              {context.shownMessage}
+            </p>
+          )}
           <div className="flex flex-col gap-2">
             <Label htmlFor={fieldId} className="text-sm text-text-primary">
               {localize('com_ui_report_issue_label')}

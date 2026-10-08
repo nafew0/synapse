@@ -7,7 +7,7 @@ import { NotificationSeverity } from '~/common';
 export default function useToast(showDelay = 100): {
   toast: ToastState;
   onOpenChange: (open: boolean) => void;
-  showToast: ({ message, severity, showIcon, duration, status }: TShowToast) => void;
+  showToast: ({ message, severity, showIcon, duration, status, action }: TShowToast) => void;
 } {
   const [toast, setToast] = useAtom(toastState);
   const showTimerRef = useRef<number | null>(null);
@@ -30,6 +30,7 @@ export default function useToast(showDelay = 100): {
     showIcon = true,
     duration = 3000, // default duration for the toast to be visible
     status,
+    action,
   }: TShowToast): void => {
     // Clear existing timeouts
     if (showTimerRef.current !== null) {
@@ -46,6 +47,7 @@ export default function useToast(showDelay = 100): {
         message,
         severity: (status as NotificationSeverity) ?? severity,
         showIcon,
+        action,
       });
       // Hides the toast after the specified duration
       hideTimerRef.current = window.setTimeout(() => {

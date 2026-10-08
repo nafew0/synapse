@@ -137,7 +137,7 @@ describe('createIssueReportHandlers', () => {
     expect(email.html).toContain('Firefox 140');
     expect(email.html).toContain('https://synapse.example.bd');
     expect(email.html).toContain(
-      'No cached summary — search server logs for request_id req-missing-1',
+      'No cached details for request_id req-missing-1 — search the server logs for it.',
     );
   });
 

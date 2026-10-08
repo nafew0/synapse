@@ -186,9 +186,32 @@ export function getErrorMessage(
 }
 
 const MAX_RECENT_ERRORS = 5;
-let recentErrors: TIssueReportError[] = [];
+const RECENT_ERRORS_KEY = 'synapse:recentErrors';
 
-/** Remembers the last few errors (code + request id only) so an issue report can include them. */
+function loadRecentErrors(): TIssueReportError[] {
+  try {
+    const stored = sessionStorage.getItem(RECENT_ERRORS_KEY);
+    const parsed: TIssueReportError[] = stored ? JSON.parse(stored) : [];
+    return Array.isArray(parsed) ? parsed.slice(0, MAX_RECENT_ERRORS) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentErrors(errors: TIssueReportError[]): void {
+  try {
+    sessionStorage.setItem(RECENT_ERRORS_KEY, JSON.stringify(errors));
+  } catch {
+    /* storage unavailable (private mode, quota); the in-memory list still works */
+  }
+}
+
+let recentErrors: TIssueReportError[] = loadRecentErrors();
+
+/**
+ * Remembers the last few errors (code, request id, time and path only — never message text)
+ * for this browser tab, surviving reloads, so an issue report can include them.
+ */
 export function recordError(info: TErrorInfo): void {
   const page = typeof window !== 'undefined' ? window.location.pathname : undefined;
   const entry: TIssueReportError = {
@@ -204,6 +227,7 @@ export function recordError(info: TErrorInfo): void {
     return;
   }
   recentErrors = [entry, ...recentErrors].slice(0, MAX_RECENT_ERRORS);
+  saveRecentErrors(recentErrors);
 }
 
 export function getRecentErrors(): TIssueReportError[] {
@@ -212,4 +236,5 @@ export function getRecentErrors(): TIssueReportError[] {
 
 export function clearRecentErrors(): void {
   recentErrors = [];
+  saveRecentErrors(recentErrors);
 }

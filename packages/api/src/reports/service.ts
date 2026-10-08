@@ -36,6 +36,8 @@ export type TIssueReportPayload = {
   name: string;
   reporter: TReporter;
   description?: string;
+  /** The friendly message the user saw (never the raw error). */
+  shownMessage?: string;
   lastMessage?: string;
   context: {
     code?: string;
@@ -144,6 +146,7 @@ export function buildIssueReportEmail({
       name: 'Synapse Support',
       reporter,
       description: report.description || undefined,
+      shownMessage: report.shownMessage || undefined,
       lastMessage: report.lastMessage || undefined,
       context: {
         code: report.code,

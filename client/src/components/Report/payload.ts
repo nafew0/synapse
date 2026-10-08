@@ -7,6 +7,8 @@ export type TReportContext = {
   requestId?: string;
   conversationId?: string;
   messageId?: string;
+  /** The friendly message shown to the user, sent so support sees exactly what they saw. */
+  shownMessage?: string;
 };
 
 const USER_AGENT_LIMIT = 512;
@@ -62,6 +64,8 @@ export function buildReport({
   const text = description.trim().slice(0, ISSUE_REPORT_LIMITS.description);
   return {
     description: text || undefined,
+    shownMessage:
+      context.shownMessage?.trim().slice(0, ISSUE_REPORT_LIMITS.shownMessage) || undefined,
     lastMessage,
     code: optional(context.code),
     requestId: isRequestId(context.requestId) ? context.requestId : undefined,

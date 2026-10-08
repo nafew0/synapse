@@ -109,18 +109,21 @@ const Error = ({ text, messageId, conversationId }: TErrorProps) => {
   const targetMessageId = messageId ?? messageContext.messageId;
   const targetConversationId = conversationId ?? messageContext.conversationId ?? undefined;
 
+  const message = localize(Object.hasOwn(errorKeys, code) ? errorKeys[code] : 'com_error_unknown');
+
   useEffect(() => {
     recordError({ code, requestId });
   }, [code, requestId]);
 
   return (
     <>
-      <p>{localize(Object.hasOwn(errorKeys, code) ? errorKeys[code] : 'com_error_unknown')}</p>
+      <p>{message}</p>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {chat && targetMessageId ? <RetryButton chat={chat} messageId={targetMessageId} /> : null}
         <ReportButton
           code={code}
           requestId={requestId}
+          shownMessage={message}
           messageId={targetMessageId}
           conversationId={targetConversationId}
         />

@@ -49,6 +49,7 @@ export function toErrorReference(requestId?: string): string | undefined {
 
 export const ISSUE_REPORT_LIMITS = {
   description: 2000,
+  shownMessage: 500,
   lastMessage: 4000,
   recentErrors: 5,
   field: 256,
@@ -68,6 +69,7 @@ export const issueReportErrorSchema = z
 export const issueReportSchema = z
   .object({
     description: z.string().trim().max(ISSUE_REPORT_LIMITS.description).optional(),
+    shownMessage: z.string().trim().max(ISSUE_REPORT_LIMITS.shownMessage).optional(),
     lastMessage: z.string().max(ISSUE_REPORT_LIMITS.lastMessage).optional(),
     code: shortText.optional(),
     requestId: z.string().regex(REQUEST_ID_PATTERN).optional(),

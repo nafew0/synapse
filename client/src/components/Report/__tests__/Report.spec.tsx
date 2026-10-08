@@ -1,16 +1,16 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
+import { Provider as JotaiProvider } from 'jotai';
 import userEvent from '@testing-library/user-event';
 import { ToastContext } from '@librechat/client';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { QueryKeys, dataService, issueReportSchema } from 'librechat-data-provider';
 import type { TMessage, TStartupConfig, TIssueReportRequest } from 'librechat-data-provider';
 import { startupConfigKey } from '~/data-provider/Endpoints/queries';
 import { clearRecentErrors, recordError } from '~/utils/errors';
 import en from '~/locales/en/translation.json';
-import { resetReported } from '../ReportButton';
-import { ReportButton } from '..';
+import { ReportButton, ReportHost, ReportToastProvider, useReportIssue } from '..';
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -40,7 +40,12 @@ function setup(config: Partial<TStartupConfig> = { issueReportsEnabled: true }) 
   const Wrapper = ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
       <RecoilRoot>
-        <ToastContext.Provider value={{ showToast }}>{children}</ToastContext.Provider>
+        <JotaiProvider>
+          <ToastContext.Provider value={{ showToast }}>
+            {children}
+            <ReportHost />
+          </ToastContext.Provider>
+        </JotaiProvider>
       </RecoilRoot>
     </QueryClientProvider>
   );
@@ -50,6 +55,7 @@ function setup(config: Partial<TStartupConfig> = { issueReportsEnabled: true }) 
       requestId={REQUEST_ID}
       conversationId={CONVO_ID}
       messageId="m4"
+      shownMessage="The AI service is busy right now."
     />,
     { wrapper: Wrapper },
   );
@@ -68,7 +74,6 @@ describe('Report an issue', () => {
   const createSpy = dataService.createIssueReport as jest.Mock;
 
   beforeEach(() => {
-    resetReported();
     clearRecentErrors();
     createSpy.mockReset().mockResolvedValue(undefined);
   });
@@ -78,7 +83,7 @@ describe('Report an issue', () => {
     expect(screen.queryByRole('button', { name: en.com_ui_report_issue })).toBeNull();
   });
 
-  it('sends a schema-valid payload without the last message by default', async () => {
+  it('sends a schema-valid payload with the error details and last message by default', async () => {
     const user = userEvent.setup();
     recordError({ code: 'service_busy', requestId: REQUEST_ID });
     const { showToast } = setup();
@@ -100,9 +105,10 @@ describe('Report an issue', () => {
         conversationId: CONVO_ID,
         messageId: 'm4',
         page: window.location.pathname,
+        shownMessage: 'The AI service is busy right now.',
+        lastMessage: 'my latest prompt',
       }),
     );
-    expect(payload.lastMessage).toBeUndefined();
     expect(payload.recentErrors).toHaveLength(1);
     expect(payload.client?.userAgent).toBe(navigator.userAgent.slice(0, 512));
 
@@ -116,21 +122,22 @@ describe('Report an issue', () => {
     expect(reported).toBeDisabled();
   });
 
-  it('attaches the latest user message only when the checkbox is ticked', async () => {
+  it('shows the message the user saw and leaves out the last message when unticked', async () => {
     const user = userEvent.setup();
     setup();
 
     await user.click(screen.getByRole('button', { name: en.com_ui_report_issue }));
+    expect(screen.getByText('The AI service is busy right now.')).toBeInTheDocument();
     const checkbox = screen.getByRole('checkbox', {
       name: en.com_ui_report_issue_include_message,
     });
-    expect(checkbox).not.toBeChecked();
+    expect(checkbox).toBeChecked();
     await user.click(checkbox);
     await user.click(screen.getByRole('button', { name: en.com_ui_report_issue_send }));
 
     await waitFor(() => expect(createSpy).toHaveBeenCalledTimes(1));
     const payload = sentPayload(createSpy);
-    expect(payload.lastMessage).toBe('my latest prompt');
+    expect(payload.lastMessage).toBeUndefined();
     expect(issueReportSchema.safeParse(payload).success).toBe(true);
   });
 
@@ -165,5 +172,63 @@ describe('Report an issue', () => {
     expect(alert).toHaveTextContent('info@bdren.ai');
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(field).toHaveValue('Keep this text');
+  });
+
+  describe('error toasts', () => {
+    function renderToastBridge(config: Partial<TStartupConfig>) {
+      const queryClient = new QueryClient();
+      queryClient.setQueryData(startupConfigKey(false), config as TStartupConfig);
+      const baseShowToast = jest.fn();
+      let show: ((toast: { message: string; status?: 'error' | 'success' }) => void) | undefined;
+      const Probe = () => {
+        const { showToast } = React.useContext(ToastContext);
+        show = showToast;
+        useReportIssue();
+        return null;
+      };
+      render(
+        <QueryClientProvider client={queryClient}>
+          <RecoilRoot>
+            <JotaiProvider>
+              <ToastContext.Provider value={{ showToast: baseShowToast }}>
+                <ReportToastProvider>
+                  <Probe />
+                  <ReportHost />
+                </ReportToastProvider>
+              </ToastContext.Provider>
+            </JotaiProvider>
+          </RecoilRoot>
+        </QueryClientProvider>,
+      );
+      return {
+        baseShowToast,
+        show: (toast: { message: string; status?: 'error' | 'success' }) => show?.(toast),
+      };
+    }
+
+    it('adds a Report an issue action to error toasts that opens the prefilled dialog', async () => {
+      recordError({ code: 'service_unavailable', requestId: REQUEST_ID });
+      const { baseShowToast, show } = renderToastBridge({ issueReportsEnabled: true });
+
+      act(() => show({ message: 'Upload failed. Please try again.', status: 'error' }));
+      const toast = baseShowToast.mock.calls[0][0];
+      expect(toast.action.label).toBe(en.com_ui_report_issue);
+      expect(toast.duration).toBeGreaterThanOrEqual(8000);
+
+      act(() => toast.action.onClick());
+      expect(await screen.findByRole('dialog')).toBeInTheDocument();
+      expect(screen.getByText('Upload failed. Please try again.')).toBeInTheDocument();
+      expect(screen.getByText(/Reference: 0f8fad5b/)).toBeInTheDocument();
+    });
+
+    it('leaves success toasts and disabled reporting untouched', () => {
+      const enabled = renderToastBridge({ issueReportsEnabled: true });
+      act(() => enabled.show({ message: 'Saved', status: 'success' }));
+      expect(enabled.baseShowToast.mock.calls[0][0].action).toBeUndefined();
+
+      const disabled = renderToastBridge({ issueReportsEnabled: false });
+      act(() => disabled.show({ message: 'Failed', status: 'error' }));
+      expect(disabled.baseShowToast.mock.calls[0][0].action).toBeUndefined();
+    });
   });
 });
