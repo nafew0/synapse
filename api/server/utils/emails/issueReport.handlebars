@@ -11,6 +11,21 @@
       <p>Message shown to the user: <em>{{shownMessage}}</em></p>
     {{/if}}
 
+    {{#if diagnosis}}
+      <div style="border: 2px solid #c0392b; border-radius: 6px; padding: 10px 12px; margin: 12px 0">
+        <h3 style="margin: 0 0 8px 0">Diagnosis</h3>
+        <table style="border-collapse: collapse; font-size: 14px">
+          {{#if diagnosis.failed}}<tr><td style="padding: 2px 12px 2px 0; color: #666">What failed</td><td>{{diagnosis.failed}}</td></tr>{{/if}}
+          {{#if diagnosis.service}}<tr><td style="padding: 2px 12px 2px 0; color: #666">Service</td><td><strong>{{diagnosis.service}}</strong></td></tr>{{/if}}
+          {{#if diagnosis.upstreamCall}}<tr><td style="padding: 2px 12px 2px 0; color: #666">Failed call</td><td><code>{{diagnosis.upstreamCall}}</code></td></tr>{{/if}}
+          {{#if diagnosis.upstreamReply}}<tr><td style="padding: 2px 12px 2px 0; color: #666">Service replied</td><td><code>{{diagnosis.upstreamReply}}</code></td></tr>{{/if}}
+          {{#if diagnosis.location.length}}<tr><td style="padding: 2px 12px 2px 0; color: #666; vertical-align: top">In our code</td><td>{{#each diagnosis.location}}<code>{{this}}</code><br />{{/each}}</td></tr>{{/if}}
+          {{#if diagnosis.cause}}<tr><td style="padding: 2px 12px 2px 0; color: #666; vertical-align: top">Likely cause</td><td>{{diagnosis.cause}}</td></tr>{{/if}}
+          {{#if context.requestId}}<tr><td style="padding: 2px 12px 2px 0; color: #666">Find in logs</td><td><code>grep {{context.requestId}} api/logs/error-*.log</code></td></tr>{{/if}}
+        </table>
+      </div>
+    {{/if}}
+
     <h3>Reporter</h3>
     <ul>
       {{#if reporter.name}}<li>Name: {{reporter.name}}</li>{{/if}}
@@ -34,12 +49,17 @@
           <ul>
             {{#if status}}<li>Status: {{status}}</li>{{/if}}
             {{#if message}}<li>Message: {{message}}</li>{{/if}}
+            {{#if upstream.url}}<li>Call: {{upstream.method}} {{upstream.url}}</li>{{/if}}
+            {{#if upstream.body}}<li>Reply: <code>{{upstream.body}}</code></li>{{/if}}
             {{#if route}}<li>Route: {{route}}</li>{{/if}}
             {{#if provider}}<li>Provider: {{provider}}</li>{{/if}}
             {{#if model}}<li>Model: {{model}}</li>{{/if}}
             {{#if at}}<li>Time: {{at}}</li>{{/if}}
           </ul>
-          {{#if stack}}
+          {{#if frames.length}}
+            <pre style="white-space: pre-wrap; font-size: 12px; background: #f6f6f6; padding: 6px">{{#each frames}}at {{this}}
+{{/each}}</pre>
+          {{else if stack}}
             <pre style="white-space: pre-wrap; font-size: 12px; background: #f6f6f6; padding: 6px">{{stack}}</pre>
           {{/if}}
         </div>

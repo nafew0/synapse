@@ -59,11 +59,13 @@ export const logAxiosError = ({
 
     if (axios.isAxiosError(error) && error.response && error.response?.status) {
       const { status, headers, data } = error.response;
+      const { method, url } = error.config || {};
       logMessage = `${message} The server responded with status ${status}: ${error.message}`;
       logger.error(logMessage, {
         status,
         headers,
         data: renderResponseData(data),
+        requestInfo: { method, url },
         stack,
       });
     } else if (axios.isAxiosError(error) && error.request) {

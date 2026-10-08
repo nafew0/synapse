@@ -102,7 +102,7 @@ describe('POST /api/reports', () => {
     expect(message.html).toContain('University of Dhaka');
     expect(message.html).toContain('&lt;script&gt;x&lt;/script&gt;');
     expect(message.html).not.toContain('<script>');
-    expect(message.html).toContain('search server logs for request_id req-route-1');
+    expect(message.html).toContain('No cached details for request_id req-route-1');
   });
 
   it('returns 429 service_busy on the 6th report in an hour', async () => {

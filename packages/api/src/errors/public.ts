@@ -7,7 +7,7 @@ import {
   setErrorLogHook,
   SKIP_ERROR_HOOK,
 } from '@librechat/data-schemas';
-import type { TLoggedError } from '@librechat/data-schemas';
+import type { TLoggedError, TUpstreamCall } from '@librechat/data-schemas';
 import type { TPublicError } from 'librechat-data-provider';
 import type { Keyv } from 'keyv';
 import type { TTypedError } from './classify';
@@ -18,6 +18,8 @@ const SUMMARY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const SUMMARY_MESSAGE_MAX = 1000;
 const SUMMARY_STACK_LINES = 4;
 const MAX_SUMMARIES_PER_REQUEST = 5;
+const MAX_APP_FRAMES = 6;
+const UPSTREAM_BODY_MAX = 500;
 
 export type TErrorContext = {
   requestId?: string;
@@ -45,6 +47,10 @@ export type TErrorSummary = {
   model?: string;
   conversationId?: string;
   agentId?: string;
+  /** The outgoing HTTP call that failed (service URL, status, response body), when known. */
+  upstream?: TUpstreamCall;
+  /** Stack frames in our own code (no node_modules / Node internals), repo-relative. */
+  frames?: string[];
   at: string;
 };
 
@@ -76,9 +82,9 @@ function appendSummary(summary: TErrorSummary): void {
       const existing = ((await cache.get(key)) as TErrorSummary[] | undefined) ?? [];
       await cache.set(key, [...existing, summary].slice(-MAX_SUMMARIES_PER_REQUEST));
     })
-    .catch((cacheError: Error) =>
-      logger.warn('[publicError] Failed to cache error summary', cacheError.message),
-    )
+    .catch((cacheError: Error) => {
+      logger.warn('[publicError] Failed to cache error summary', cacheError.message);
+    })
     .finally(() => {
       if (pendingAppends.get(key) === next) {
         pendingAppends.delete(key);
@@ -91,6 +97,67 @@ function trimStack(stack?: string): string | undefined {
   return stack
     ? redactMessage(stack.split('\n').slice(0, SUMMARY_STACK_LINES).join('\n'))
     : undefined;
+}
+
+/** Keeps only stack frames from our own code, so the email shows where in Synapse it failed. */
+function appFrames(stack?: string): string[] | undefined {
+  if (!stack) {
+    return undefined;
+  }
+  const root = `${process.cwd()}/`;
+  const frames = stack
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(
+      (line) =>
+        line.startsWith('at ') &&
+        !line.includes('node_modules') &&
+        !line.includes('node:') &&
+        !line.includes('<anonymous>'),
+    )
+    .slice(0, MAX_APP_FRAMES)
+    .map((line) => line.slice(3).split(root).join(''));
+  return frames.length > 0 ? frames : undefined;
+}
+
+function redactUpstream(upstream?: TUpstreamCall): TUpstreamCall | undefined {
+  if (!upstream) {
+    return undefined;
+  }
+  return {
+    ...upstream,
+    url: upstream.url ? redactMessage(upstream.url) : undefined,
+    body: upstream.body ? redactMessage(upstream.body, UPSTREAM_BODY_MAX) : undefined,
+  };
+}
+
+function renderBody(data?: string | object): string | undefined {
+  if (data == null) {
+    return undefined;
+  }
+  return typeof data === 'string' ? data : JSON.stringify(data);
+}
+
+type TAxiosLikeError = {
+  config?: { method?: string; url?: string };
+  response?: { status?: number; data?: string | object };
+};
+
+function upstreamFromError(error: unknown): TUpstreamCall | undefined {
+  if (error == null || typeof error !== 'object') {
+    return undefined;
+  }
+  const { config, response } = error as TAxiosLikeError;
+  if (!config?.url && response?.status === undefined) {
+    return undefined;
+  }
+  const data = response?.data;
+  return redactUpstream({
+    status: response?.status,
+    method: config?.method?.toUpperCase(),
+    url: config?.url?.split('?')[0],
+    body: renderBody(data),
+  });
 }
 
 type TErrorFields = { message?: string; stack?: string; status?: number; statusCode?: number };
@@ -127,6 +194,8 @@ function buildSummary(
     status,
     message: redactMessage(message, SUMMARY_MESSAGE_MAX),
     stack: trimStack(stack),
+    frames: appFrames(stack),
+    upstream: upstreamFromError(error),
     route: ctx.route,
     provider: ctx.provider,
     model: ctx.model,
@@ -210,12 +279,16 @@ export async function getErrorSummaries(
 }
 
 function summarizeLoggedError(entry: TLoggedError): TErrorSummary {
+  const status = entry.upstream?.status;
   return {
     requestId: entry.requestId,
     userId: entry.userId,
-    code: classifyError({ message: entry.message }),
+    code: classifyError({ message: entry.message, status }),
+    status,
     message: redactMessage(entry.message, SUMMARY_MESSAGE_MAX),
     stack: trimStack(entry.stack),
+    frames: appFrames(entry.stack),
+    upstream: redactUpstream(entry.upstream),
     route: entry.path,
     at: new Date().toISOString(),
   };

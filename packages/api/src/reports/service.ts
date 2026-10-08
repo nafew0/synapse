@@ -1,8 +1,10 @@
 import { Constants, toErrorReference } from 'librechat-data-provider';
 import type { TIssueReportRequest } from 'librechat-data-provider';
 import type { TErrorSummary } from '~/errors/public';
+import type { TDiagnosis } from './diagnosis';
 import { checkEmailConfig } from '~/utils/email';
 import { resolveBuildInfo } from '~/app/build';
+import { diagnose, mergeSummaries } from './diagnosis';
 
 export const ISSUE_REPORT_TEMPLATE = 'issueReport.handlebars';
 
@@ -35,6 +37,8 @@ type TEmailRecentError = {
 export type TIssueReportPayload = {
   name: string;
   reporter: TReporter;
+  /** Top-of-email answer to "what broke?" for the reported request. */
+  diagnosis?: TDiagnosis;
   description?: string;
   /** The friendly message the user saw (never the raw error). */
   shownMessage?: string;
@@ -97,6 +101,14 @@ function toSubjectPart(value: string | undefined, fallback: string): string {
   return clean || fallback;
 }
 
+function groupByRequest(summaries: TErrorSummary[]): TErrorSummary[][] {
+  const groups = new Map<string, TErrorSummary[]>();
+  for (const summary of summaries) {
+    groups.set(summary.requestId, [...(groups.get(summary.requestId) ?? []), summary]);
+  }
+  return [...groups.values()];
+}
+
 function toEmailSummary(summary: TErrorSummary): TEmailSummary {
   return {
     requestId: summary.requestId,
@@ -104,7 +116,9 @@ function toEmailSummary(summary: TErrorSummary): TEmailSummary {
     code: summary.code,
     status: summary.status,
     message: summary.message,
-    stack: summary.stack,
+    stack: summary.frames ? undefined : summary.stack,
+    frames: summary.frames,
+    upstream: summary.upstream,
     route: summary.route,
     provider: summary.provider,
     model: summary.model,
@@ -130,9 +144,16 @@ export function buildIssueReportEmail({
   now = new Date(),
 }: TBuildIssueReportParams): TIssueReportEmail {
   const reference = toErrorReference(report.requestId);
+  const merged = groupByRequest(summaries).flatMap(mergeSummaries);
+  const reported = merged.filter((summary) => summary.requestId === report.requestId);
+  const diagnosis = diagnose(reported.length > 0 ? reported : merged);
+  const failure = [diagnosis?.serviceLabel, diagnosis?.upstreamCall?.split(' · ')[0]]
+    .filter(Boolean)
+    .join(' ');
   const subject = [
     '[Synapse] Issue report',
     toSubjectPart(report.code, 'general'),
+    ...(failure ? [toSubjectPart(failure, '')] : []),
     toSubjectPart(reporter.institution, 'no institution'),
     reference ?? 'no ref',
   ].join(' · ');
@@ -145,6 +166,7 @@ export function buildIssueReportEmail({
     payload: {
       name: 'Synapse Support',
       reporter,
+      diagnosis,
       description: report.description || undefined,
       shownMessage: report.shownMessage || undefined,
       lastMessage: report.lastMessage || undefined,
@@ -165,7 +187,7 @@ export function buildIssueReportEmail({
         timezone: report.client?.timezone,
         screen: report.client?.screen,
       },
-      summaries: summaries.map(toEmailSummary),
+      summaries: merged.map(toEmailSummary),
       missing,
       recentErrors: (report.recentErrors ?? []).map((entry) => ({
         ...entry,

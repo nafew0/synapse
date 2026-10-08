@@ -3,6 +3,7 @@ import { AxiosError } from 'axios';
 import { logger, tenantStorage, setErrorLogHook } from '@librechat/data-schemas';
 import { ErrorTypes, ViolationTypes, PublicErrorCodes } from 'librechat-data-provider';
 import type { TErrorSummary } from './public';
+import { logAxiosError } from '~/utils/axios';
 import {
   toChatError,
   toPublicError,
@@ -247,6 +248,39 @@ describe('captureLoggedErrors', () => {
     expect(summary?.message).toContain('Error uploading code environment file');
     expect(summary?.stack).toContain('Error uploading code environment file');
     await expect(getErrorSummaries('req-upload-1', 'someone-else')).resolves.toEqual([]);
+  });
+
+  it('records the failed upstream call logged by logAxiosError', async () => {
+    captureLoggedErrors();
+    const config = { method: 'post', url: 'https://code.example.test/v1/upload?key=abc' };
+    const error = new AxiosError(
+      'Request failed with status code 404',
+      'ERR_BAD_REQUEST',
+      config as never,
+      {},
+      {
+        status: 404,
+        statusText: 'Not Found',
+        headers: {},
+        config: config as never,
+        data: { error: 'Not found' },
+      },
+    );
+
+    await tenantStorage.run({ requestId: 'req-axios-1', userId: 'owner' }, async () => {
+      logAxiosError({ message: 'Error uploading code environment file', error });
+    });
+
+    const summary = await waitForSummary('req-axios-1', 'owner');
+    expect(summary).toMatchObject({
+      status: 404,
+      upstream: {
+        status: 404,
+        method: 'POST',
+        url: 'https://code.example.test/v1/upload',
+        body: '{"error":"Not found"}',
+      },
+    });
   });
 
   it('does not store errors logged outside a user request or already captured', async () => {
