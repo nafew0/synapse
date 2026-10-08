@@ -1696,6 +1696,10 @@ export type TStartupConfig = {
   socialLoginEnabled: boolean;
   passwordResetEnabled: boolean;
   emailEnabled: boolean;
+  /** True when outgoing email and a support recipient are configured for "Report an issue". */
+  issueReportsEnabled?: boolean;
+  /** Support mailbox shown as a fallback when an issue report cannot be sent. */
+  supportEmail?: string;
   showBirthdayIcon: boolean;
   helpAndFaqURL: string;
   /** Admin panel link, only present for users with admin access */

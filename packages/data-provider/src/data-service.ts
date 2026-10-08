@@ -1,5 +1,6 @@
 import type { AxiosResponse } from 'axios';
 import type { TInsightsAccessResponse, TInsightsParams, TInsightsResponse } from './types/insights';
+import type { TIssueReportRequest } from './errors';
 import type { TFileConfig } from './file-config';
 import type * as t from './types';
 import * as permissions from './accessPermissions';
@@ -1351,6 +1352,10 @@ export function markBannerSeen(bannerId: string): Promise<void> {
 
 export function dismissBanner(bannerId: string): Promise<void> {
   return request.post(endpoints.bannerDismiss(bannerId));
+}
+
+export function createIssueReport(payload: TIssueReportRequest): Promise<void> {
+  return request.post(endpoints.issueReports(), payload);
 }
 
 export function updateFeedback(
