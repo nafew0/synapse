@@ -1,12 +1,13 @@
 import OpenAI from 'openai';
 import { AxiosError } from 'axios';
-import { logger, tenantStorage } from '@librechat/data-schemas';
+import { logger, tenantStorage, setErrorLogHook } from '@librechat/data-schemas';
 import { ErrorTypes, ViolationTypes, PublicErrorCodes } from 'librechat-data-provider';
 import type { TErrorSummary } from './public';
 import {
   toChatError,
   toPublicError,
-  getErrorSummary,
+  getErrorSummaries,
+  captureLoggedErrors,
   toChatErrorText,
   toPublicErrorBody,
 } from './public';
@@ -34,7 +35,7 @@ async function waitForSummary(
   userId: string,
 ): Promise<TErrorSummary | undefined> {
   for (let attempt = 0; attempt < 20; attempt++) {
-    const summary = await getErrorSummary(requestId, userId);
+    const [summary] = await getErrorSummaries(requestId, userId);
     if (summary) {
       return summary;
     }
@@ -189,7 +190,7 @@ describe('toPublicErrorBody', () => {
   });
 });
 
-describe('getErrorSummary', () => {
+describe('getErrorSummaries', () => {
   beforeEach(() => {
     jest.spyOn(logger, 'error').mockImplementation(() => logger);
   });
@@ -219,10 +220,48 @@ describe('getErrorSummary', () => {
     });
     expect(summary?.message).toContain('Rate limit');
 
-    await expect(getErrorSummary('req-summary-1', 'someone-else')).resolves.toBeUndefined();
+    await expect(getErrorSummaries('req-summary-1', 'someone-else')).resolves.toEqual([]);
   });
 
   it('returns nothing for an unknown request id', async () => {
-    await expect(getErrorSummary('req-missing', 'owner')).resolves.toBeUndefined();
+    await expect(getErrorSummaries('req-missing', 'owner')).resolves.toEqual([]);
+  });
+});
+
+describe('captureLoggedErrors', () => {
+  afterEach(() => {
+    setErrorLogHook(undefined);
+  });
+
+  it('keeps a summary of any error logged inside an authenticated request', async () => {
+    captureLoggedErrors();
+    const error = new Error(
+      'Error uploading code environment file: Request failed with status code 404',
+    );
+
+    await tenantStorage.run({ requestId: 'req-upload-1', userId: 'owner' }, async () => {
+      logger.error('[/files] Error processing file:', error);
+    });
+
+    const summary = await waitForSummary('req-upload-1', 'owner');
+    expect(summary?.message).toContain('Error uploading code environment file');
+    expect(summary?.stack).toContain('Error uploading code environment file');
+    await expect(getErrorSummaries('req-upload-1', 'someone-else')).resolves.toEqual([]);
+  });
+
+  it('does not store errors logged outside a user request or already captured', async () => {
+    captureLoggedErrors();
+    logger.error('startup failure');
+    await tenantStorage.run({ requestId: 'req-anon-1' }, async () => {
+      logger.error('anonymous failure');
+    });
+    await tenantStorage.run({ requestId: 'req-public-1', userId: 'owner' }, async () => {
+      toPublicError(new Error('boom'));
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    await expect(getErrorSummaries('req-anon-1', 'owner')).resolves.toEqual([]);
+    const summaries = await getErrorSummaries('req-public-1', 'owner');
+    expect(summaries).toHaveLength(1);
   });
 });

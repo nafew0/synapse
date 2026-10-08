@@ -8,6 +8,7 @@ import {
   QueryKeys,
   Constants,
   EToolResources,
+  PublicErrorCodes,
   mergeFileConfig,
   isAssistantsEndpoint,
   getEndpointFileConfig,
@@ -288,7 +289,10 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
         if (error?.code === 'ERR_CANCELED') {
           setError('com_error_files_upload_canceled');
         } else {
-          recordError(getErrorInfo(error));
+          const info = getErrorInfo(error);
+          recordError(
+            info.code === PublicErrorCodes.UNKNOWN ? { ...info, code: 'file_upload_failed' } : info,
+          );
           addError(getErrorMessage(error, localize, 'com_error_files_upload'));
         }
         uploadLifecycle?.onError?.(file_id);

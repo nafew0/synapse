@@ -74,13 +74,14 @@ router.post('/', async (req, res) => {
     if (sseStream) {
       sseStream.sendError({
         message,
+        requestId: req.requestId,
         code: 500,
         temp_file_id: metadata.temp_file_id,
         tool_resource: metadata.tool_resource,
         display_to_user: true,
       });
     } else {
-      res.status(500).json({ message });
+      res.status(500).json({ message, requestId: req.requestId });
     }
   } finally {
     try {

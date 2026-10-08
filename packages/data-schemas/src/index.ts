@@ -57,6 +57,8 @@ export { GENESIS_HASH, PLATFORM_CHAIN_KEY } from './schema/auditLog';
 export { default as logger } from './config/winston';
 export { default as meiliLogger } from './config/meiliLogger';
 export { redactMessage } from './config/parsers';
+export { setErrorLogHook, SKIP_ERROR_HOOK } from './config/errorHook';
+export type { TLoggedError } from './config/errorHook';
 export {
   tenantStorage,
   getTenantId,

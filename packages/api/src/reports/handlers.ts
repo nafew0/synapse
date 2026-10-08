@@ -7,7 +7,7 @@ import type { TErrorSummary } from '~/errors/public';
 import type { ServerRequest } from '~/types/http';
 import { buildIssueReportEmail, getSupportRecipients, isIssueReportingEnabled } from './service';
 import { collectRequestIds, parseIssueReport } from './schema';
-import { getErrorSummary } from '~/errors/public';
+import { getErrorSummaries } from '~/errors/public';
 import { standardCache } from '~/cache';
 
 const DEDUP_TTL_MS = 10 * 60 * 1000;
@@ -36,11 +36,11 @@ function currentRequestId(req: ServerRequest): string | undefined {
 }
 
 async function loadSummaries(requestIds: string[], userId: string): Promise<TLoadedSummaries> {
-  const found = await Promise.all(requestIds.map((id) => getErrorSummary(id, userId)));
+  const found = await Promise.all(requestIds.map((id) => getErrorSummaries(id, userId)));
   return found.reduce<TLoadedSummaries>(
-    (acc, summary, index) => {
-      if (summary) {
-        acc.summaries.push(summary);
+    (acc, summaries, index) => {
+      if (summaries.length > 0) {
+        acc.summaries.push(...summaries);
       } else {
         acc.missing.push(requestIds[index]);
       }

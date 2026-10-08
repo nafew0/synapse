@@ -144,6 +144,7 @@ export function getErrorInfo(error: unknown): TErrorInfo {
     const info: TErrorInfo = fromBody(data, response.status) ?? {
       code: codeFromStatus(response.status),
       status: response.status,
+      requestId: isRequestId(data?.requestId) ? data?.requestId : undefined,
     };
     if (!info.requestId && isRequestId(headerId)) {
       info.requestId = headerId;

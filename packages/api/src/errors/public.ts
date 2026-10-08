@@ -1,6 +1,13 @@
 import { randomUUID } from 'crypto';
 import { CacheKeys, PublicErrorCodes } from 'librechat-data-provider';
-import { logger, redactMessage, tenantStorage } from '@librechat/data-schemas';
+import {
+  logger,
+  redactMessage,
+  tenantStorage,
+  setErrorLogHook,
+  SKIP_ERROR_HOOK,
+} from '@librechat/data-schemas';
+import type { TLoggedError } from '@librechat/data-schemas';
 import type { TPublicError } from 'librechat-data-provider';
 import type { Keyv } from 'keyv';
 import type { TTypedError } from './classify';
@@ -10,6 +17,7 @@ import { standardCache } from '~/cache';
 const SUMMARY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const SUMMARY_MESSAGE_MAX = 1000;
 const SUMMARY_STACK_LINES = 4;
+const MAX_SUMMARIES_PER_REQUEST = 5;
 
 export type TErrorContext = {
   requestId?: string;
@@ -53,7 +61,36 @@ function getSummaryCache(): Keyv {
 }
 
 function summaryKey(requestId: string): string {
-  return `summary:${requestId}`;
+  return `summaries:${requestId}`;
+}
+
+/** Serializes appends per request id so concurrent errors in one request don't overwrite each other. */
+const pendingAppends = new Map<string, Promise<void>>();
+
+function appendSummary(summary: TErrorSummary): void {
+  const key = summaryKey(summary.requestId);
+  const previous = pendingAppends.get(key) ?? Promise.resolve();
+  const next = previous
+    .then(async () => {
+      const cache = getSummaryCache();
+      const existing = ((await cache.get(key)) as TErrorSummary[] | undefined) ?? [];
+      await cache.set(key, [...existing, summary].slice(-MAX_SUMMARIES_PER_REQUEST));
+    })
+    .catch((cacheError: Error) =>
+      logger.warn('[publicError] Failed to cache error summary', cacheError.message),
+    )
+    .finally(() => {
+      if (pendingAppends.get(key) === next) {
+        pendingAppends.delete(key);
+      }
+    });
+  pendingAppends.set(key, next);
+}
+
+function trimStack(stack?: string): string | undefined {
+  return stack
+    ? redactMessage(stack.split('\n').slice(0, SUMMARY_STACK_LINES).join('\n'))
+    : undefined;
 }
 
 type TErrorFields = { message?: string; stack?: string; status?: number; statusCode?: number };
@@ -89,9 +126,7 @@ function buildSummary(
     code,
     status,
     message: redactMessage(message, SUMMARY_MESSAGE_MAX),
-    stack: stack
-      ? redactMessage(stack.split('\n').slice(0, SUMMARY_STACK_LINES).join('\n'))
-      : undefined,
+    stack: trimStack(stack),
     route: ctx.route,
     provider: ctx.provider,
     model: ctx.model,
@@ -130,14 +165,10 @@ export function toPublicError(error: unknown, ctx: TErrorContext = {}): TPublicE
   logger.error(`[publicError] ${code} (request_id=${requestId})`, {
     ...resolved,
     error: getErrorParts(error),
+    [SKIP_ERROR_HOOK]: true,
   });
 
-  const summary = buildSummary(requestId, code, error, resolved);
-  getSummaryCache()
-    .set(summaryKey(requestId), summary)
-    .catch((cacheError: Error) =>
-      logger.warn('[publicError] Failed to cache error summary', cacheError.message),
-    );
+  appendSummary(buildSummary(requestId, code, error, resolved));
 
   return typed ? { code, requestId, typed } : { code, requestId };
 }
@@ -159,23 +190,48 @@ export function toChatError(error: unknown, ctx: TErrorContext = {}): string {
   return toChatErrorText(toPublicError(error, ctx));
 }
 
-/** Returns the cached summary only when it belongs to `userId`, so users cannot read others' errors. */
-export async function getErrorSummary(
+/**
+ * Returns the cached summaries for a request that belong to `userId`,
+ * so users cannot read other users' errors.
+ */
+export async function getErrorSummaries(
   requestId: string,
   userId: string,
-): Promise<TErrorSummary | undefined> {
+): Promise<TErrorSummary[]> {
   try {
-    const summary = (await getSummaryCache().get(summaryKey(requestId))) as
-      | TErrorSummary
+    const summaries = (await getSummaryCache().get(summaryKey(requestId))) as
+      | TErrorSummary[]
       | undefined;
-    if (!summary || summary.userId !== userId) {
-      return undefined;
-    }
-    return summary;
+    return (summaries ?? []).filter((summary) => summary.userId === userId);
   } catch (error) {
     logger.warn('[publicError] Failed to read error summary', (error as Error).message);
-    return undefined;
+    return [];
   }
+}
+
+function summarizeLoggedError(entry: TLoggedError): TErrorSummary {
+  return {
+    requestId: entry.requestId,
+    userId: entry.userId,
+    code: classifyError({ message: entry.message }),
+    message: redactMessage(entry.message, SUMMARY_MESSAGE_MAX),
+    stack: trimStack(entry.stack),
+    route: entry.path,
+    at: new Date().toISOString(),
+  };
+}
+
+/**
+ * Captures every error logged while serving an authenticated request, so an
+ * issue report for that request id includes it — even on routes that log
+ * their own errors instead of using `toPublicError`. Call once at startup.
+ */
+export function captureLoggedErrors(): void {
+  setErrorLogHook((entry) => {
+    if (entry.userId) {
+      appendSummary(summarizeLoggedError(entry));
+    }
+  });
 }
 
 /** Builds an HTTP JSON body for an error response. */
