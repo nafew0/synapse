@@ -492,6 +492,9 @@ export const bannerSeen = (bannerId: string) => `${banner()}/${encodeURIComponen
 export const bannerDismiss = (bannerId: string) =>
   `${banner()}/${encodeURIComponent(bannerId)}/dismiss`;
 
+// Issue reports
+export const issueReports = () => `${BASE_URL}/api/reports`;
+
 // Message Feedback
 export const feedback = (conversationId: string, messageId: string) =>
   `${BASE_URL}/api/messages/${conversationId}/${messageId}/feedback`;

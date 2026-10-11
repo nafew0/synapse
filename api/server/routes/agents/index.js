@@ -1,4 +1,5 @@
 const express = require('express');
+const { PublicErrorCodes } = require('librechat-data-provider');
 const {
   isEnabled,
   GenerationJobManager,
@@ -15,6 +16,7 @@ const {
   createMessageFilterPii,
   isAgentTriggerRequest,
   exemptAgentTriggerFromIpLimiter,
+  toChatErrorText,
 } = require('@librechat/api');
 const { createSseStreamTelemetry } = require('@librechat/api/telemetry');
 const { logger } = require('@librechat/data-schemas');
@@ -384,7 +386,8 @@ router.get('/chat/stream/:streamId', async (req, res) => {
         return;
       }
     }
-    onError('Failed to subscribe to stream');
+    logger.warn(`[AgentStream] Failed to subscribe to stream ${streamId}`);
+    onError(toChatErrorText({ code: PublicErrorCodes.CONNECTION_LOST, requestId: req.requestId }));
     return;
   }
 });

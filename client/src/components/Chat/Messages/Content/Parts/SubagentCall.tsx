@@ -740,7 +740,7 @@ function tickerLineKey(line: SubagentTickerLine): string {
     case 'tool_complete':
       return `done:${line.toolName}`;
     case 'error':
-      return `error:${line.message ?? ''}`;
+      return 'error';
   }
 }
 
@@ -853,12 +853,9 @@ function TickerLineView({ line }: { line: SubagentTickerLine }): JSX.Element {
       </li>
     );
   }
-  /* error */
-  const errorPrefix = localize('com_ui_subagent_ticker_error');
   return (
     <li className="flex w-full items-baseline gap-1 overflow-hidden text-text-warning">
-      <span className="shrink-0">{errorPrefix}:</span>
-      <span className="min-w-0 flex-1 truncate">{line.message ?? ''}</span>
+      <span className="min-w-0 flex-1 truncate">{localize('com_ui_subagent_errored')}</span>
     </li>
   );
 }

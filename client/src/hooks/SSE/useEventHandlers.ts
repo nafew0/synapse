@@ -46,6 +46,7 @@ import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedRespons
 import { shouldResetSubagentAtomsOnConversationChange } from './cleanup';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
+import { CONNECTION_ERROR_TEXT, toErrorText } from './errors';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { useApplyAgentTemplate } from '~/hooks/Agents';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -212,9 +213,7 @@ const createErrorMessage = ({
   const latestMessage = currentMessages?.[currentMessages.length - 1];
   let errorMessage: TMessage;
   const text = submission.initialResponse.text.length > 45 ? submission.initialResponse.text : '';
-  const errorText =
-    (errorMetadata?.text || text || (error as Error | undefined)?.message) ??
-    'Error cancelling request';
+  const errorText = errorMetadata?.text || text || toErrorText(error);
   const latestContent = latestMessage?.content ?? [];
   let isValidContentPart = false;
   if (latestContent.length > 0) {
@@ -974,7 +973,7 @@ export default function useEventHandlers({
       if (!data) {
         const convoId = conversationId || `_${v4()}`;
         const errorMetadata = parseErrorResponse({
-          text: 'Error connecting to server, try refreshing the page.',
+          text: CONNECTION_ERROR_TEXT,
           ...submission,
           conversationId: convoId,
         });

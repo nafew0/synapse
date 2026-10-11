@@ -43,6 +43,10 @@ export * from './crypto';
 export * from './flow/manager';
 /* Middleware */
 export * from './middleware';
+/* User-facing errors */
+export * from './errors';
+/* Issue reports */
+export * from './reports';
 /* Memory */
 export * from './memory';
 /* Model Specs */

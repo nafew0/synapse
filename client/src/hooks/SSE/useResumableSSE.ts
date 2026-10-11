@@ -7,7 +7,6 @@ import {
   request,
   Constants,
   QueryKeys,
-  ErrorTypes,
   StepEvents,
   apiBaseUrl,
   SteerEvents,
@@ -18,7 +17,6 @@ import {
   UsageEvents,
   createPayload,
   ApprovalEvents,
-  ViolationTypes,
   removeNullishValues,
 } from 'librechat-data-provider';
 import type {
@@ -78,6 +76,7 @@ import useEventHandlers, { buildCreatedInitialResponse } from './useEventHandler
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useAuthContext } from '~/hooks/AuthContext';
 import useUsageHandler from './useUsageHandler';
+import { toErrorText } from './errors';
 import store from '~/store';
 
 type ChatHelpers = Pick<
@@ -295,38 +294,21 @@ const parseSSEErrorData = (body: string): unknown | null => {
   return null;
 };
 
-const getSSEErrorText = (payload: unknown): string | null => {
-  if (typeof payload === 'string') {
-    return payload;
-  }
-
-  if (payload == null || typeof payload !== 'object') {
-    return null;
-  }
-
-  const record = payload as Record<string, unknown>;
-  const text = record.text ?? record.message ?? record.error;
-  return typeof text === 'string' && text.length > 0 ? text : null;
-};
-
-const getStreamStartFailureText = (errorData?: unknown): string => {
-  if (typeof errorData === 'string') {
-    const sseErrorData = parseSSEErrorData(errorData);
+/** Start failures carry either an SSE-formatted error body or a `{ code, requestId }` JSON body. */
+export const getStreamStartFailureText = (error: unknown): string => {
+  const data = toStartGenerationError(error)?.response?.data;
+  if (typeof data === 'string') {
+    const sseErrorData = parseSSEErrorData(data);
     if (sseErrorData != null) {
-      return getSSEErrorText(sseErrorData) ?? JSON.stringify(sseErrorData);
+      return toErrorText(sseErrorData);
     }
-
-    return errorData || 'Error connecting to server, try refreshing the page.';
   }
-
-  return errorData
-    ? JSON.stringify(errorData)
-    : 'Error connecting to server, try refreshing the page.';
+  return toErrorText(error);
 };
 
-const getStreamStartFailureData = (errorData?: unknown): TResData =>
+const getStreamStartFailureData = (error: unknown): TResData =>
   ({
-    text: getStreamStartFailureText(errorData),
+    text: getStreamStartFailureText(error),
     metadata: markStreamStartFailedMetadata(),
   }) as unknown as TResData;
 
@@ -2839,35 +2821,18 @@ export default function useResumableSSE(
           try {
             const errorData = JSON.parse(e.data);
             errorSupportsV2 = supportsGenerationProtocolV2(errorData);
-            const errorString = errorData.error ?? errorData.message ?? JSON.stringify(errorData);
-
-            // Check if it's a known error type (ViolationTypes or ErrorTypes)
-            let isKnownError = false;
-            try {
-              const parsed =
-                typeof errorString === 'string' ? JSON.parse(errorString) : errorString;
-              const errorType = parsed?.type ?? parsed?.code;
-              if (errorType) {
-                const violationValues = Object.values(ViolationTypes) as string[];
-                const errorTypeValues = Object.values(ErrorTypes) as string[];
-                isKnownError =
-                  violationValues.includes(errorType) || errorTypeValues.includes(errorType);
-              }
-            } catch {
-              // Not JSON or parsing failed - treat as generic error
-            }
-
-            logger.log('ResumableSSE', 'Error type check:', { isKnownError, errorString });
-
-            // Display the error to user via errorHandler
+            const errorText = toErrorText(errorData);
+            logger.log('ResumableSSE', 'Server error mapped to:', errorText);
             errorHandler({
-              data: { text: errorString } as unknown as Parameters<typeof errorHandler>[0]['data'],
+              data: { text: errorText } as unknown as Parameters<typeof errorHandler>[0]['data'],
               submission: currentSubmission as EventSubmission,
             });
           } catch (parseError) {
             logger.error('ResumableSSE', 'Failed to parse server error:', parseError);
             errorHandler({
-              data: { text: e.data } as unknown as Parameters<typeof errorHandler>[0]['data'],
+              data: { text: toErrorText(e.data) } as unknown as Parameters<
+                typeof errorHandler
+              >[0]['data'],
               submission: currentSubmission as EventSubmission,
             });
           }
@@ -3449,7 +3414,6 @@ export default function useResumableSSE(
       logger.error('ResumableSSE', 'Error starting generation:', lastError);
 
       const startError = toStartGenerationError(lastError);
-      const errorData = startError?.response?.data;
       const responseStatus = startError?.response?.status;
       if (responseStatus != null && responseStatus >= 400 && responseStatus < 500) {
         // The server rejected admission before exposing a generation. Restore
@@ -3493,7 +3457,7 @@ export default function useResumableSSE(
         return null;
       }
       errorHandler({
-        data: getStreamStartFailureData(errorData),
+        data: getStreamStartFailureData(lastError),
         submission: currentSubmission as EventSubmission,
       });
       setShowStopButton(false);

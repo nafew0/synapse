@@ -169,10 +169,7 @@ class ModelEndHandler {
       const agentContext = graph.getAgentContext(metadata);
       if (data?.output?.additional_kwargs?.stop_reason === 'refusal') {
         const info = { ...data.output.additional_kwargs };
-        errorMessage = JSON.stringify({
-          type: ErrorTypes.REFUSAL,
-          info,
-        });
+        errorMessage = JSON.stringify({ type: ErrorTypes.REFUSAL });
         logger.debug(`[ModelEndHandler] Model refused to respond`, {
           ...info,
           userId: metadata.user_id,

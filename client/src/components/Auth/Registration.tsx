@@ -5,15 +5,34 @@ import { Turnstile } from '@marsidev/react-turnstile';
 import { useNavigate, useOutletContext, useLocation } from 'react-router-dom';
 import { useRegisterUserMutation } from 'librechat-data-provider/react-query';
 import { ThemeContext, SecretInput, Spinner, Button, Input, isDark } from '@librechat/client';
-import type { TRegisterUser, TError } from 'librechat-data-provider';
+import type { TRegisterUser } from 'librechat-data-provider';
 import type { TLoginLayoutContext } from '~/common';
 import { useLocalize, TranslationKeys } from '~/hooks';
+import { getErrorInfo, getErrorMessage } from '~/utils/errors';
 import { ErrorMessage } from './ErrorMessage';
 
 /** The handle is chosen on this form, not recalled, so it must not advertise itself as the
  *  credential identifier: `autocomplete="username"` is what makes password managers drop the
  *  saved email address into it. */
 const AUTOCOMPLETE_BY_FIELD: Record<string, string> = { username: 'nickname' };
+
+/** Statuses whose meaning is specific to registration; anything else uses the generic message. */
+const REGISTRATION_ERROR_KEYS: Partial<Record<number, TranslationKeys>> = {
+  400: 'com_auth_error_create',
+  403: 'com_auth_error_email_not_allowed',
+  404: 'com_auth_error_create',
+  409: 'com_auth_error_username_taken',
+};
+
+/** Localized registration failure; the server's own message is never shown. */
+export function getRegistrationError(
+  error: unknown,
+  localize: (key: TranslationKeys) => string,
+): string {
+  const { status } = getErrorInfo(error);
+  const key = status != null ? REGISTRATION_ERROR_KEYS[status] : undefined;
+  return key ? localize(key) : getErrorMessage(error, localize, 'com_auth_error_create');
+}
 
 const Registration: React.FC = () => {
   const navigate = useNavigate();
@@ -118,9 +137,7 @@ const Registration: React.FC = () => {
     },
     onError: (error: unknown) => {
       setIsSubmitting(false);
-      if ((error as TError).response?.data?.message) {
-        setErrorMessage((error as TError).response?.data?.message ?? '');
-      }
+      setErrorMessage(getRegistrationError(error, localize));
     },
   });
 
@@ -192,11 +209,7 @@ const Registration: React.FC = () => {
   return (
     <>
       {inviteError && <ErrorMessage>{inviteError}</ErrorMessage>}
-      {errorMessage && (
-        <ErrorMessage>
-          {localize('com_auth_error_create')} {errorMessage}
-        </ErrorMessage>
-      )}
+      {errorMessage && <ErrorMessage>{errorMessage}</ErrorMessage>}
       {registerUser.isSuccess && countdown > 0 && (
         <div
           className="rounded-md border border-status-success-border bg-status-success-subtle px-3 py-2 text-sm text-text-secondary"

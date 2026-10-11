@@ -357,8 +357,9 @@ describe('useFileHandling', () => {
           expect.objectContaining({ fileList: [resizedFile] }),
         );
         expect(mockMutate).not.toHaveBeenCalled();
+        expect(mockLocalize).toHaveBeenCalledWith('com_error_files_upload_too_large', { 0: '5' });
         expect(mockShowToast).toHaveBeenCalledWith({
-          message: 'File size limit exceeded: 5 MB',
+          message: 'com_error_files_upload_too_large',
           status: 'error',
           duration: 5000,
         });
@@ -399,7 +400,7 @@ describe('useFileHandling', () => {
         );
         expect(mockMutate).not.toHaveBeenCalled();
         expect(mockShowToast).toHaveBeenCalledWith({
-          message: 'Total file size limit exceeded: 7 MB',
+          message: 'com_error_files_total_too_large',
           status: 'error',
           duration: 5000,
         });
@@ -562,7 +563,7 @@ describe('useFileHandling', () => {
 
         expect(mockMutate).toHaveBeenCalledTimes(1);
         expect(mockShowToast).toHaveBeenCalledWith({
-          message: 'Total file size limit exceeded: 7 MB',
+          message: 'com_error_files_total_too_large',
           status: 'error',
           duration: 5000,
         });
@@ -597,7 +598,7 @@ describe('useFileHandling', () => {
         expect(mockValidateFileSizes.mock.calls[1][0].files.size).toBe(1);
         expect(mockMutate).toHaveBeenCalledTimes(1);
         expect(mockShowToast).toHaveBeenCalledWith({
-          message: 'Total file size limit exceeded: 7 MB',
+          message: 'com_error_files_total_too_large',
           status: 'error',
           duration: 5000,
         });
@@ -1164,6 +1165,50 @@ describe('useFileHandling', () => {
 
       expect(recovery).not.toHaveBeenCalled();
       consoleLog.mockRestore();
+    });
+
+    it('shows a localized upload error instead of the server message', async () => {
+      jest.useFakeTimers();
+      const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+      try {
+        const { default: useFileHandling } = await import('../useFileHandling');
+        const { result } = renderHook(() => useFileHandling());
+
+        await act(async () => {
+          await result.current.handleFiles([
+            new File(['notes'], 'notes.txt', { type: 'text/plain' }),
+          ]);
+        });
+
+        const uploadBody = mockMutate.mock.calls[0][0] as FormData;
+        act(() =>
+          mockUploadOptions.onError?.(
+            {
+              message: 'Request failed with status code 500',
+              response: {
+                status: 500,
+                data: { message: 'RAG API error: connect ECONNREFUSED 10.0.0.4:8000' },
+                headers: {},
+              },
+            },
+            uploadBody,
+          ),
+        );
+        await act(async () => {
+          jest.advanceTimersByTime(250);
+        });
+
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'com_error_files_upload',
+          status: 'error',
+          duration: 5000,
+        });
+        const messages = mockShowToast.mock.calls.map(([toast]) => String(toast.message));
+        expect(messages.some((message) => message.includes('ECONNREFUSED'))).toBe(false);
+      } finally {
+        consoleLog.mockRestore();
+        jest.useRealTimers();
+      }
     });
   });
 });

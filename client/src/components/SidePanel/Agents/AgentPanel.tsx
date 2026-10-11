@@ -32,6 +32,7 @@ import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import AgentPanelSkeleton from './AgentPanelSkeleton';
 import AdvancedPanel from './Advanced/AdvancedPanel';
 import { Panel, isEphemeralAgent } from '~/common';
+import useErrorToast from '~/hooks/useErrorToast';
 import AgentConfig from './AgentConfig';
 import AgentSelect from './AgentSelect';
 import AgentFooter from './AgentFooter';
@@ -279,6 +280,7 @@ export default function AgentPanel() {
   const localize = useLocalize();
   const { user } = useAuthContext();
   const { showToast } = useToastContext();
+  const showErrorToast = useErrorToast();
   const {
     activePanel,
     agentsConfig,
@@ -451,15 +453,7 @@ export default function AgentPanel() {
       submittedDirtyRef.current = false;
       submittedRef.current = {};
     },
-    onError: (err) => {
-      const error = err as Error;
-      showToast({
-        message: `${localize('com_agents_update_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
-        }`,
-        status: 'error',
-      });
-    },
+    onError: (err) => showErrorToast(err, 'com_agents_update_error'),
   });
 
   const create = useCreateAgentMutation({
@@ -481,15 +475,7 @@ export default function AgentPanel() {
         });
       }
     },
-    onError: (err) => {
-      const error = err as Error;
-      showToast({
-        message: `${localize('com_agents_create_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
-        }`,
-        status: 'error',
-      });
-    },
+    onError: (err) => showErrorToast(err, 'com_agents_create_error'),
   });
 
   const onSubmit = useCallback(

@@ -100,6 +100,7 @@ const {
   hasYouTubeVideoParts,
   appendYouTubeVideoParts,
   resolveGoogleVideoError,
+  toChatError,
   resolveYouTubeInjectionConfig,
   decrementPendingRequest,
   maybePrewarmCodeSandbox,
@@ -3398,10 +3399,7 @@ class AgentClient extends BaseClient {
           { conversationId: this.conversationId, name: err?.name, code: err?.code },
         );
       } else {
-        logger.error(
-          '[api/server/controllers/agents/client.js #sendCompletion] Unhandled error type',
-          err,
-        );
+        const chatError = toChatError(err, this.getErrorContext('chatCompletion'));
         const videoError = resolveGoogleVideoError({
           error: err,
           provider: this.options.agent?.provider,
@@ -3409,9 +3407,7 @@ class AgentClient extends BaseClient {
         });
         this.contentParts.push({
           type: ContentTypes.ERROR,
-          [ContentTypes.ERROR]:
-            videoError ??
-            `An error occurred while processing the request${err?.message ? `: ${err.message}` : ''}`,
+          [ContentTypes.ERROR]: videoError ?? chatError,
         });
       }
     } finally {
@@ -3739,13 +3735,9 @@ class AgentClient extends BaseClient {
           },
         );
       } else {
-        logger.error(
-          '[api/server/controllers/agents/client.js #resumeCompletion] Unhandled error',
-          err,
-        );
         this.contentParts.push({
           type: ContentTypes.ERROR,
-          [ContentTypes.ERROR]: `An error occurred while resuming the request${err?.message ? `: ${err.message}` : ''}`,
+          [ContentTypes.ERROR]: toChatError(err, this.getErrorContext('resumeCompletion')),
         });
       }
     } finally {
@@ -4133,6 +4125,21 @@ class AgentClient extends BaseClient {
       return 'claude';
     }
     return 'o200k_base';
+  }
+
+  /** Server-side context logged with a public chat error; never sent to the client. */
+  getErrorContext(route) {
+    const req = this.options.req;
+    return {
+      route: `agents/${route}`,
+      requestId: req?.requestId,
+      userId: this.user ?? req?.user?.id,
+      conversationId: this.conversationId,
+      agentId: this.options.agent?.id,
+      provider: this.options.agent?.provider,
+      model: this.options.agent?.model_parameters?.model ?? this.model,
+      streamId: req?._resumableStreamId ?? undefined,
+    };
   }
 }
 

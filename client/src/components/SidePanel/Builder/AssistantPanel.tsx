@@ -23,6 +23,7 @@ import { useSelectAssistant, useLocalize } from '~/hooks';
 import { useAssistantsMapContext } from '~/Providers';
 import AppendDateCheckbox from './AppendDateCheckbox';
 import CapabilitiesForm from './CapabilitiesForm';
+import useErrorToast from '~/hooks/useErrorToast';
 import AssistantAvatar from './AssistantAvatar';
 import AssistantSelect from './AssistantSelect';
 import ContextButton from './ContextButton';
@@ -56,6 +57,7 @@ export default function AssistantPanel({
   const { data: allTools = [] } = useAvailableAgentToolsQuery();
   const { onSelect: onSelectAssistant } = useSelectAssistant(endpoint);
   const { showToast } = useToastContext();
+  const showErrorToast = useErrorToast();
   const localize = useLocalize();
 
   const methods = useForm<AssistantForm>({
@@ -99,15 +101,7 @@ export default function AssistantPanel({
         }`,
       });
     },
-    onError: (err) => {
-      const error = err as Error;
-      showToast({
-        message: `${localize('com_assistants_update_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
-        }`,
-        status: 'error',
-      });
-    },
+    onError: (err) => showErrorToast(err, 'com_assistants_update_error'),
   });
 
   const create = useCreateAssistantMutation({
@@ -119,15 +113,7 @@ export default function AssistantPanel({
         }`,
       });
     },
-    onError: (err) => {
-      const error = err as Error;
-      showToast({
-        message: `${localize('com_assistants_create_error')}${
-          error.message ? ` ${localize('com_ui_error')}: ${error.message}` : ''
-        }`,
-        status: 'error',
-      });
-    },
+    onError: (err) => showErrorToast(err, 'com_assistants_create_error'),
   });
 
   const files = useMemo(() => {

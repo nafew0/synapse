@@ -715,13 +715,14 @@ router.post('/', async (req, res) => {
     if (sseStream) {
       sseStream.sendError({
         message,
+        requestId: req.requestId,
         code: errorStatusCode,
         temp_file_id: metadata.temp_file_id,
         tool_resource: metadata.tool_resource,
         display_to_user: true,
       });
     } else {
-      res.status(errorStatusCode).json({ message });
+      res.status(errorStatusCode).json({ message, requestId: req.requestId });
     }
   } finally {
     if (cleanup) {

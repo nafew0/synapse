@@ -1,6 +1,6 @@
 const { randomUUID } = require('crypto');
 const { logger } = require('@librechat/data-schemas');
-const { Constants, EModelEndpoint } = require('librechat-data-provider');
+const { Constants, EModelEndpoint, PublicErrorCodes } = require('librechat-data-provider');
 const {
   GenerationJobManager,
   isPendingActionStale,
@@ -23,6 +23,8 @@ const {
   checkAndIncrementPendingRequest,
   isSteerPreemptSupported,
   toPendingSteer,
+  toPublicError,
+  toChatErrorText,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -1045,7 +1047,14 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
       checkpointGeneration,
     });
   } catch (err) {
-    logger.error('[ResumeAgentController] Resume failed', err);
+    const publicError = toPublicError(err, {
+      route: 'agents/resume',
+      requestId: req.requestId,
+      userId: req.user?.id,
+      conversationId,
+      streamId,
+      agentId: req.body?.agent_id,
+    });
     if (pausePersistenceFailed) {
       // failPausePersistence already performed the exact requires_action ->
       // error transition. Only its CAS winner owns this generation's checkpoint
@@ -1087,7 +1096,11 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
         errorFinalized =
           (await GenerationJobManager.completeJob(
             streamId,
-            err?.message ?? 'Resume failed',
+            toChatErrorText(
+              publicError.code === PublicErrorCodes.UNKNOWN
+                ? { ...publicError, code: PublicErrorCodes.CONNECTION_LOST }
+                : publicError,
+            ),
             job.createdAt,
           )) === true;
       } catch (completeErr) {

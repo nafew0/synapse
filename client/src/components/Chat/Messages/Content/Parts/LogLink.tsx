@@ -4,6 +4,7 @@ import { FileSources, sharedFileDownload } from 'librechat-data-provider';
 import { useCodeOutputDownload, useFileDownload } from '~/data-provider';
 import { isHttpDownloadTarget, triggerDownload } from '~/utils';
 import { useShareContext } from '~/Providers';
+import useLocalize from '~/hooks/useLocalize';
 
 interface LogLinkProps {
   href: string;
@@ -47,6 +48,7 @@ export const useAttachmentLink = ({
   user,
   source,
 }: AttachmentLinkOptions) => {
+  const localize = useLocalize();
   const { showToast } = useToastContext();
   const { shareId } = useShareContext();
 
@@ -85,7 +87,7 @@ export const useAttachmentLink = ({
         console.error('Error downloading file: No data found');
         showToast({
           status: 'error',
-          message: 'Error downloading file',
+          message: localize('com_ui_download_error'),
         });
         return false;
       }

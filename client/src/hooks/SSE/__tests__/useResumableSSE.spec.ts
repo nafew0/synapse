@@ -2573,7 +2573,7 @@ describe('useResumableSSE', () => {
     expect(mockErrorHandler).toHaveBeenCalledWith(
       expect.objectContaining({
         data: {
-          text: JSON.stringify({ message: 'failed to start' }),
+          text: JSON.stringify({ type: 'unknown' }),
           metadata: { streamStartFailed: true },
         },
         submission,
@@ -2583,6 +2583,35 @@ describe('useResumableSSE', () => {
     expect(mockSetIsSubmitting).toHaveBeenCalledWith(false);
     expect(mockSetShowStopButton).not.toHaveBeenCalledWith(true);
     expect(mockSetShowStopButton).toHaveBeenCalledWith(false);
+    unmount();
+  });
+
+  it('passes only the public code and request id from a failed start', async () => {
+    (request.post as jest.Mock).mockRejectedValueOnce({
+      response: {
+        status: 429,
+        data: {
+          code: 'service_busy',
+          requestId: 'req-123',
+          message: '429 Rate limit reached for gpt-x in organization org-abc',
+        },
+      },
+    });
+    const submission = buildSubmission();
+    const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+
+    await waitFor(() => {
+      expect(mockSetSubmission).toHaveBeenCalledWith(null);
+    });
+
+    expect(mockErrorHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          text: JSON.stringify({ type: 'service_busy', requestId: 'req-123' }),
+          metadata: { streamStartFailed: true },
+        },
+      }),
+    );
     unmount();
   });
 
@@ -2782,7 +2811,7 @@ describe('useResumableSSE', () => {
     expect(mockErrorHandler).toHaveBeenCalledWith(
       expect.objectContaining({
         data: {
-          text: 'No model spec selected',
+          text: JSON.stringify({ type: 'unknown' }),
           metadata: { streamStartFailed: true },
         },
         submission,
@@ -2809,7 +2838,7 @@ describe('useResumableSSE', () => {
     expect(mockErrorHandler).toHaveBeenCalledWith(
       expect.objectContaining({
         data: {
-          text: 'No model spec selected',
+          text: JSON.stringify({ type: 'unknown' }),
           metadata: { streamStartFailed: true },
         },
         submission,
@@ -2842,7 +2871,7 @@ describe('useResumableSSE', () => {
     expect(mockErrorHandler).toHaveBeenCalledWith(
       expect.objectContaining({
         data: {
-          text: 'Request was blocked',
+          text: JSON.stringify({ type: 'unknown' }),
           metadata: { streamStartFailed: true },
         },
         submission,

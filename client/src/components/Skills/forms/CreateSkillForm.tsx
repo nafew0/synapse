@@ -13,8 +13,9 @@ import type { TSkill, TCreateSkill, TSkillWarning } from 'librechat-data-provide
 import { useCreateSkillMutation } from '~/data-provider';
 import SkillContentEditor from './SkillContentEditor';
 import CategorySelector from './CategorySelector';
+import useErrorToast from '~/hooks/useErrorToast';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
+import { cn, getResponseStatus } from '~/utils';
 
 const DEFAULT_BODY = `# Overview
 
@@ -68,6 +69,7 @@ export default function CreateSkillForm({
   const localize = useLocalize();
   const navigate = useNavigate();
   const { showToast } = useToastContext();
+  const showErrorToast = useErrorToast();
   const [isEditingContent, setIsEditingContent] = useState(true);
 
   const methods = useForm<CreateSkillFormValues>({
@@ -95,10 +97,11 @@ export default function CreateSkillForm({
       }
     },
     onError: (error: unknown) => {
-      const message =
-        (error as { response?: { data?: { message?: string } } })?.response?.data?.message ??
-        localize('com_ui_skill_create_error');
-      showToast({ status: 'error', message });
+      if (getResponseStatus(error) === 409) {
+        showToast({ status: 'error', message: localize('com_ui_skill_name_exists') });
+        return;
+      }
+      showErrorToast(error, 'com_ui_skill_create_error');
     },
   });
 

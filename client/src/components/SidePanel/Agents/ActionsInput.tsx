@@ -31,6 +31,7 @@ import type { Spec } from './ActionsTable';
 import { ActionsTable, ActionsTableSkeleton, columns } from './ActionsTable';
 import ActionCallback from '~/components/SidePanel/Builder/ActionCallback';
 import { useUpdateAgentAction } from '~/data-provider';
+import useErrorToast from '~/hooks/useErrorToast';
 import { useLocalize } from '~/hooks';
 import { logger } from '~/utils';
 
@@ -67,6 +68,7 @@ export default function ActionsInput({
 
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const showErrorToast = useErrorToast();
   const { handleSubmit, reset } = useFormContext<ActionAuthForm>();
   const [validationResult, setValidationResult] = useState<null | ValidationResult>(null);
   const [inputValue, setInputValue] = useState('');
@@ -121,10 +123,7 @@ export default function ActionsInput({
       }
     },
     onError(error) {
-      showToast({
-        message: (error as Error).message || localize('com_assistants_update_actions_error'),
-        status: 'error',
-      });
+      showErrorToast(error, 'com_assistants_update_actions_error');
     },
   });
 

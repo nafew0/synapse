@@ -1696,6 +1696,10 @@ export type TStartupConfig = {
   socialLoginEnabled: boolean;
   passwordResetEnabled: boolean;
   emailEnabled: boolean;
+  /** True when outgoing email and a support recipient are configured for "Report an issue". */
+  issueReportsEnabled?: boolean;
+  /** Support mailbox shown as a fallback when an issue report cannot be sent. */
+  supportEmail?: string;
   showBirthdayIcon: boolean;
   helpAndFaqURL: string;
   /** Admin panel link, only present for users with admin access */
@@ -2591,6 +2595,14 @@ export enum CacheKeys {
    * Key for per-conversation stateful code sandbox prewarm/warm state.
    */
   SANDBOX_PREWARM = 'SANDBOX_PREWARM',
+  /**
+   * Key for short-lived, redacted error summaries keyed by request id (attached to issue reports).
+   */
+  ERROR_SUMMARIES = 'ERROR_SUMMARIES',
+  /**
+   * Key for issue report de-duplication markers.
+   */
+  ISSUE_REPORTS = 'ISSUE_REPORTS',
   /**
    * Key for the title generation cache.
    */

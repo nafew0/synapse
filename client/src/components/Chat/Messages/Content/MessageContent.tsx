@@ -3,8 +3,9 @@ import { useRecoilValue } from 'recoil';
 import { Alert, DelayedRender } from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageContentProps, TDisplayProps } from '~/common';
+import { CONNECTION_ERROR_TEXT, LEGACY_CONNECTION_ERROR_TEXT } from '~/hooks/SSE/errors';
+import Error, { UNFINISHED_ERROR_CODE } from '~/components/Messages/Content/Error';
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
-import Error from '~/components/Messages/Content/Error';
 import { useMessageContext } from '~/Providers';
 import EmptyText from './Parts/EmptyText';
 import MarkdownLite from './MarkdownLite';
@@ -16,9 +17,10 @@ import Markdown from './Markdown';
 import { cn } from '~/utils';
 import store from '~/store';
 
-const ERROR_CONNECTION_TEXT = 'Error connecting to server, try refreshing the page.';
 const DELAYED_ERROR_TIMEOUT = 5500;
 const UNFINISHED_DELAY = 250;
+const UNFINISHED_TEXT = JSON.stringify({ type: UNFINISHED_ERROR_CODE });
+const connectionErrorTexts = new Set([CONNECTION_ERROR_TEXT, LEGACY_CONNECTION_ERROR_TEXT]);
 
 const parseThinkingContent = (text: string) => {
   const thinkingMatch = text.match(/:::thinking([\s\S]*?):::/);
@@ -74,14 +76,18 @@ export const ErrorMessage = ({
   message,
   className = '',
 }: Pick<TDisplayProps, 'text' | 'className'> & { message?: TMessage }) => {
-  if (text === ERROR_CONNECTION_TEXT) {
+  if (connectionErrorTexts.has(text)) {
     return <ConnectionError message={message} />;
   }
 
   return (
     <Container message={message}>
       <ErrorBox className={className}>
-        <Error text={text} />
+        <Error
+          text={text}
+          messageId={message?.messageId}
+          conversationId={message?.conversationId}
+        />
       </ErrorBox>
     </Container>
   );
@@ -127,10 +133,7 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
 };
 
 export const UnfinishedMessage = ({ message }: { message: TMessage }) => (
-  <ErrorMessage
-    message={message}
-    text="The response is incomplete; it's either still processing, was cancelled, or censored. Refresh or try a different prompt."
-  />
+  <ErrorMessage message={message} text={UNFINISHED_TEXT} />
 );
 
 const MessageContent = ({

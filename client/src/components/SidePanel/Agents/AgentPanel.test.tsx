@@ -511,10 +511,13 @@ describe('AgentPanel - Update Agent Toast Messages', () => {
 
       await waitFor(() => {
         expect(mockShowToast).toHaveBeenCalledWith({
-          message: 'com_agents_update_error com_ui_error: Update failed',
+          message: 'There was an error updating your agent.',
           status: 'error',
         });
       });
+      expect(mockShowToast).not.toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.stringContaining('Update failed') }),
+      );
     });
   });
 });
