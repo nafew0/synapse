@@ -48,7 +48,11 @@ export default function useToast(showDelay = 100): {
         severity: (status as NotificationSeverity) ?? severity,
         showIcon,
         action,
+        duration,
       });
+      if (!Number.isFinite(duration)) {
+        return;
+      }
       // Hides the toast after the specified duration
       hideTimerRef.current = window.setTimeout(() => {
         setToast((prevToast: ToastState) => ({ ...prevToast, open: false }));

@@ -22,6 +22,7 @@ import useKeyboardShortcuts from '~/hooks/useKeyboardShortcuts';
 import useSidebarState from '~/hooks/Nav/useSidebarState';
 import { TermsAndConditionsModal } from '~/components/ui';
 import useDrawerSwipe from '~/hooks/Nav/useDrawerSwipe';
+import useToastArea from '~/hooks/Nav/useToastArea';
 import { useHealthCheck } from '~/data-provider';
 import { Banner } from '~/components/Banners';
 
@@ -68,6 +69,7 @@ export default function Root() {
     open: sidebarExpanded,
     onOpenChange: handleDrawerOpenChange,
   });
+  useToastArea({ paneRef, enabled: isAuthenticated && !isSmallScreen });
 
   useHealthCheck(isAuthenticated);
 

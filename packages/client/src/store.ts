@@ -15,6 +15,7 @@ export type ToastState = {
   severity: NotificationSeverity;
   showIcon: boolean;
   action?: TToastAction;
+  duration?: number;
 };
 
 export const toastState: PrimitiveAtom<ToastState> & {

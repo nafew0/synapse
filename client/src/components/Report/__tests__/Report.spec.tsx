@@ -213,7 +213,7 @@ describe('Report an issue', () => {
       act(() => show({ message: 'Upload failed. Please try again.', status: 'error' }));
       const toast = baseShowToast.mock.calls[0][0];
       expect(toast.action.label).toBe(en.com_ui_report_issue);
-      expect(toast.duration).toBeGreaterThanOrEqual(8000);
+      expect(toast.duration).toBe(Infinity);
 
       act(() => toast.action.onClick());
       expect(await screen.findByRole('dialog')).toBeInTheDocument();

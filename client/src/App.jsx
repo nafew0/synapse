@@ -71,7 +71,7 @@ const App = () => {
                     <QueryDevtoolsGate />
                     <ReportHost />
                     <Toast />
-                    <RadixToast.Viewport className="pointer-events-none fixed inset-x-0 top-0 z-[1000] mx-auto my-2 flex max-w-[560px] flex-col items-stretch justify-start" />
+                    <RadixToast.Viewport className="pointer-events-none fixed left-[var(--toast-area-left,0px)] right-[var(--toast-area-right,0px)] top-0 z-[1000] mx-auto my-2 flex max-w-[560px] flex-col items-stretch justify-start" />
                   </DndProvider>
                 </ReportToastProvider>
               </ToastProvider>
