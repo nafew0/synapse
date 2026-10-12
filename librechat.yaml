@@ -141,6 +141,12 @@ creditPackages:
 
 interface:
   customWelcome: 'Welcome to Synapse!'
+  privacyPolicy:
+    externalUrl: '/legal/privacy.html'
+    openNewTab: true
+  termsOfService:
+    externalUrl: '/legal/terms.html'
+    openNewTab: true
   fileSearch: true
   modelSelect: true
   parameters: false

@@ -1,0 +1,43 @@
+:root{
+  --bg:#F2F6F5; --surface:#FFFFFF; --ink:#132322; --ink-soft:#4C5F5C; --ink-faint:#7C8D8A;
+  --teal:#1B5E5C; --teal-deep:#0E3F3D; --teal-tint:#E4EFED; --orange:#E2793D;
+  --orange-tint:#FBE7D8; --line:#DCE6E3;
+  --shadow:0 1px 2px rgba(14,63,61,0.06), 0 8px 24px -12px rgba(14,63,61,0.18);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0C1615; --surface:#122120; --ink:#EAF3F1; --ink-soft:#AEC2BF; --ink-faint:#7E938F;
+    --teal:#4FBAB4; --teal-deep:#8FDAD4; --teal-tint:#17302E; --orange:#F1975E;
+    --orange-tint:#2C2013; --line:#223836;
+    --shadow:0 1px 2px rgba(0,0,0,0.3), 0 8px 28px -12px rgba(0,0,0,0.55);
+  }
+}
+*{box-sizing:border-box}
+html{font-size:18px}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:'Inter',-apple-system,'Segoe UI','Nikosh',sans-serif;
+  line-height:1.7; -webkit-font-smoothing:antialiased;
+}
+@media (max-width:640px){ html{font-size:16px} }
+a{color:var(--teal-deep)}
+:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
+.page{max-width:820px;margin:0 auto;padding:32px 16px 64px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:24px}
+.top nav{display:flex;gap:16px;flex-wrap:wrap;font-size:.85rem}
+.brand{font-weight:700;color:var(--teal-deep);text-decoration:none}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:28px}
+@media (max-width:640px){ .card{padding:20px} }
+h1{margin:0 0 4px;font-size:1.9rem;text-wrap:balance}
+h2{margin:2rem 0 .4rem;font-size:1.2rem;color:var(--teal-deep)}
+.meta{color:var(--ink-faint);font-size:.85rem;margin:0 0 1rem}
+.todo{background:var(--orange-tint);border-left:3px solid var(--orange);padding:2px 8px;border-radius:4px}
+table{width:100%;border-collapse:collapse;font-size:.9rem;display:block;overflow-x:auto}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--ink-soft);font-weight:600}
+footer{margin-top:24px;color:var(--ink-faint);font-size:.8rem}
+@media print{
+  body{background:#fff;color:#000}
+  .top nav,footer nav{display:none}
+  .card{box-shadow:none;border:none;padding:0}
+}
