@@ -41,3 +41,14 @@ footer{margin-top:24px;color:var(--ink-faint);font-size:.8rem}
   .top nav,footer nav{display:none}
   .card{box-shadow:none;border:none;padding:0}
 }
+.lede{font-size:1.02rem;color:var(--ink-soft)}
+.glance{background:var(--teal-tint);border-radius:12px;padding:14px 18px;margin:1.2rem 0}
+.glance h2{margin:0 0 .3rem;font-size:1rem}
+.glance ul{margin:0;padding-left:1.1rem}
+.toc{border:1px solid var(--line);border-radius:12px;padding:12px 18px;margin:1.2rem 0;font-size:.9rem}
+.toc strong{display:block;margin-bottom:.3rem;color:var(--ink-soft)}
+.toc ol{margin:0;padding-left:1.2rem;columns:2;column-gap:28px}
+@media (max-width:640px){ .toc ol{columns:1} }
+h2{scroll-margin-top:16px}
+h3{margin:1.2rem 0 .2rem;font-size:1rem}
+.note{border-left:3px solid var(--teal);padding:2px 12px;color:var(--ink-soft);font-size:.92rem}

@@ -21,60 +21,120 @@
 </header>
 <main class="card">
 <h1>Privacy Policy</h1>
-<p class="meta">Operated by BdREN · Version 0.1 (draft) · Effective date: <span class="todo">[to be set on approval]</span></p>
-<p>This policy explains what data Synapse handles, why, and for how long. <span class="todo">Draft prepared by engineering from the live configuration; pending BdREN legal review.</span></p>
+<p class="meta">Operated by BdREN · Version 0.1 (draft) · Effective: <span class="todo">[date of approval]</span> · Last updated: 12 October 2026</p>
+<p class="lede">Synapse is an AI assistant for students, researchers and staff of BdREN member institutions. This policy explains what happens to the information you put into it, who else handles it, and how to get it deleted.</p>
+<p class="todo">DRAFT for BdREN legal review. Every retention period below is the target policy in the data retention plan. Publish only after each one is enforced in production.</p>
+<nav class="toc" aria-label="Contents"><strong>Contents</strong><ol><li><a href="#s1">Who we are</a></li><li><a href="#s2">The short version</a></li><li><a href="#s3">Information we collect</a></li><li><a href="#s4">How we use it</a></li><li><a href="#s5">Who processes your data</a></li><li><a href="#s6">Your institution</a></li><li><a href="#s7">How long we keep data</a></li><li><a href="#s8">Your choices and rights</a></li><li><a href="#s9">Security</a></li><li><a href="#s10">Cookies and local storage</a></li><li><a href="#s11">Children</a></li><li><a href="#s12">Changes and contact</a></li></ol></nav>
 
-<h2>1. Who we are</h2>
-<p>Synapse is operated by the Bangladesh Research and Education Network (BdREN). Contact: <a href="mailto:info@bdren.ai">info@bdren.ai</a>.</p>
+<h2 id="s1">1. Who we are</h2>
+<p>Synapse is run by the Bangladesh Research and Education Network (BdREN) (&ldquo;BdREN&rdquo;, &ldquo;we&rdquo;, &ldquo;us&rdquo;), the data controller for the information described here. Your institution gives you access and may have its own rules for how you use it. <span class="todo">[Legal: registered address and registration details.]</span></p>
 
-<h2>2. What we collect</h2>
+<h2 id="s2">2. The short version</h2>
+<div class="glance">
 <ul>
-  <li>Account data: name, email address, and the institution you belong to.</li>
-  <li>Conversations, including the files you attach and the files the assistant creates.</li>
-  <li>Voice input, when you use the microphone.</li>
-  <li>Usage records such as token counts and quotas.</li>
-  <li>Technical logs needed to run and secure the service.</li>
+  <li>Your messages and files are sent to AI model providers so they can answer you.</li>
+  <li>We do not sell your data and we do not show advertising.</li>
+  <li>We ask our model providers not to train on your prompts and to use zero-data-retention endpoints where one exists.</li>
+  <li>You can delete any conversation, and your whole account, yourself.</li>
+  <li>Quality traces are kept for 30 days, then deleted.</li>
+</ul>
+</div>
+
+<h2 id="s3">3. Information we collect</h2>
+<h3>Information you give us</h3>
+<ul>
+  <li><strong>Account:</strong> your name, email address, username, password (stored only as a hash), profile picture, and your institution.</li>
+  <li><strong>Content:</strong> the messages you write, the files and images you attach, and anything you ask Synapse to create.</li>
+  <li><strong>Voice:</strong> audio you record with the microphone button, used only to turn your speech into text.</li>
+  <li><strong>Feedback and reports:</strong> ratings you give a reply, and the description and technical details you send with &ldquo;Report an issue&rdquo;.</li>
+</ul>
+<h3>Information created as you use Synapse</h3>
+<ul>
+  <li><strong>Usage records:</strong> which model you used, token counts and quota use. These do not contain your content.</li>
+  <li><strong>Technical logs:</strong> time, request path, error messages, and IP address, used to keep the service running and secure.</li>
+  <li><strong>Quality traces:</strong> a record of each AI run (your prompt, the model's reply and the tools used), linked to your user and institution identifiers, used to find and fix problems.</li>
+  <li><strong>Sign-in data:</strong> session and refresh tokens, and the time of your last sign-in.</li>
+</ul>
+<h3>Information from your institution</h3>
+<p>Your institution administrator may invite you or create your account, giving us your name, email address and role.</p>
+
+<h2 id="s4">4. How we use it</h2>
+<ul>
+  <li>To answer you, run tools you ask for (search the web, edit a document, run code) and keep your conversation history.</li>
+  <li>To sign you in, protect accounts and prevent abuse.</li>
+  <li>To apply usage limits and show your institution how Synapse is used.</li>
+  <li>To find and fix errors and improve reliability, using traces and the reports you send.</li>
+  <li>To contact you about your account, for example invitations and password resets.</li>
+</ul>
+<p>We do not use your content to train AI models, and we do not use it for advertising.</p>
+
+<h2 id="s5">5. Who processes your data</h2>
+<p>Synapse depends on the services below. We share only what each one needs to do its job.</p>
+<table>
+  <tr><th>Service</th><th>Purpose</th><th>What it receives</th></tr>
+  <tr><td>OpenRouter and the model provider you choose</td><td>Generate replies and images</td><td>Your prompts, attached files and images</td></tr>
+  <tr><td>Grok speech-to-text, through OpenRouter</td><td>Transcribe voice input</td><td>Your recorded audio</td></tr>
+  <tr><td>Firecrawl</td><td>Web search and page reading in Office Assistant</td><td>Search queries and the web addresses fetched</td></tr>
+  <tr><td>BdREN code sandbox</td><td>Run code and edit documents</td><td>Files you work on, kept for a short time</td></tr>
+  <tr><td>BdREN document search</td><td>Search inside your uploaded files</td><td>The text of your uploaded documents</td></tr>
+  <tr><td>Langfuse (BdREN-hosted)</td><td>Quality traces</td><td>Prompts, replies, user and institution identifiers</td></tr>
+  <tr><td>BdREN mail server</td><td>Invitations, password resets, issue reports</td><td>Your email address and the message</td></tr>
+</table>
+<p class="note">Model providers outside Bangladesh may process your prompts in other countries. We configure Synapse to prefer providers that do not store or train on prompts, but a provider's own policy applies to what it receives. Do not enter information you are not allowed to share with a third party, such as another person's national ID or health details.</p>
+<p>We also disclose information if the law requires it, or to protect the safety and security of users and the service. We do not sell personal information.</p>
+
+<h2 id="s6">6. Your institution</h2>
+<p>Each institution is kept separate: members of one institution cannot see another institution's data. An institution administrator can add and remove members and see usage figures for the institution. <span class="todo">[Legal/ops: state exactly what administrators can see, in particular whether they can read conversation content.]</span> If you use an account issued by your institution, the institution may also have its own policies.</p>
+
+<h2 id="s7">7. How long we keep data</h2>
+<table>
+  <tr><th>Data</th><th>How long</th></tr>
+  <tr><td>Account</td><td>While it is active. Removed 30 days after you delete it. Accounts unused for 2 years are warned, then deleted.</td></tr>
+  <tr><td>Conversations, messages and attached files</td><td>Until you delete them, or 12 months after the last activity in the conversation, whichever is first</td></tr>
+  <tr><td>Temporary chats</td><td>24 hours</td></tr>
+  <tr><td>Document text used for search</td><td>Removed with the file; leftovers cleared within 7 days</td></tr>
+  <tr><td>Files in the code sandbox</td><td>2 days</td></tr>
+  <tr><td>Shared links</td><td>90 days unless renewed, or until you revoke them</td></tr>
+  <tr><td>Quality traces</td><td>30 days</td></tr>
+  <tr><td>Feedback and issue reports</td><td>12 months</td></tr>
+  <tr><td>Usage records (no content)</td><td>3 years, for accounting and audit</td></tr>
+  <tr><td>Error logs</td><td>30 days</td></tr>
+  <tr><td>Sign-in sessions</td><td>Access token 15 minutes; you stay signed in for up to 7 days</td></tr>
+  <tr><td>Backups</td><td>Rotated out within 35 days, so deleted data can remain in backups for that long</td></tr>
+</table>
+<p class="todo">Check each row against the enforced configuration in docs/data-retention-plan.md before publishing.</p>
+
+<h2 id="s8">8. Your choices and rights</h2>
+<ul>
+  <li><strong>Delete a conversation</strong> from the sidebar. Its files and document text go with it.</li>
+  <li><strong>Delete your account</strong> from Settings. This removes your conversations, files and profile.</li>
+  <li><strong>Use a temporary chat</strong> when you do not want a conversation kept.</li>
+  <li><strong>Access, correct or export your data, or object to how we use it:</strong> write to <a href="mailto:info@bdren.ai">info@bdren.ai</a> from the email address on your account. We aim to reply within 30 days.</li>
+  <li><strong>Complain:</strong> if you are not satisfied with our reply, you may raise it with the relevant data protection authority. <span class="todo">[Legal: confirm the authority and applicable law.]</span></li>
 </ul>
 
-<h2>3. How your data is processed</h2>
-<table>
-  <tr><th>Purpose</th><th>Service</th><th>What is sent</th></tr>
-  <tr><td>AI models</td><td>OpenRouter, then the model provider you choose</td><td>Your prompts and attached files</td></tr>
-  <tr><td>Speech-to-text</td><td>Grok STT through OpenRouter</td><td>Your audio</td></tr>
-  <tr><td>Web search (Office Assistant)</td><td>Firecrawl</td><td>Search queries and pages requested</td></tr>
-  <tr><td>Code and file tools</td><td>Our sandbox runner</td><td>Files you work on</td></tr>
-  <tr><td>Quality and debugging traces</td><td>Langfuse</td><td>Prompts, outputs, user and institution identifiers</td></tr>
-  <tr><td>Email</td><td>Our mail service</td><td>Invitations, password resets, issue reports</td></tr>
-</table>
-<p class="todo">Confirm each row against the production configuration before publishing.</p>
+<h2 id="s9">9. Security</h2>
+<ul>
+  <li>Traffic between your browser and Synapse is encrypted (HTTPS).</li>
+  <li>Passwords are stored as one-way hashes. Sessions expire automatically.</li>
+  <li>Each institution's data is isolated from the others, and uploaded images require you to be signed in.</li>
+  <li>Access to servers and logs is limited to the BdREN team that runs the service.</li>
+</ul>
+<p>No online service is perfectly secure. If a breach affects your data, we will tell you and your institution as the law requires.</p>
 
-<h2>4. Institutions</h2>
-<p>An institution administrator can manage members and see usage for that institution. <span class="todo">[Legal/ops: confirm exactly what administrators can and cannot see, for example conversation content.]</span></p>
+<h2 id="s10">10. Cookies and local storage</h2>
+<p>Synapse sets only the cookies it needs to keep you signed in (a refresh token valid for up to 7 days, and a session cookie). Your browser also stores settings such as theme and language, and unsent message drafts. We do not use advertising or cross-site tracking cookies.</p>
 
-<h2>5. How long we keep data</h2>
-<table>
-  <tr><th>Data</th><th>Retention</th></tr>
-  <tr><td>Conversations and files</td><td class="todo">[see docs/data-retention-plan.md]</td></tr>
-  <tr><td>Traces (Langfuse)</td><td class="todo">[see docs/data-retention-plan.md]</td></tr>
-  <tr><td>Application logs</td><td>14 days</td></tr>
-  <tr><td>Sign-in sessions</td><td>Access 15 minutes; refresh up to 7 days</td></tr>
-  <tr><td>Usage records</td><td class="todo">[ops to confirm]</td></tr>
-</table>
-<p>Only retention that is actually enforced at publication time should be listed here.</p>
+<h2 id="s11">11. Children</h2>
+<p>Synapse is for members of BdREN institutions and is not directed at children under 13. <span class="todo">[Legal: confirm the minimum age.]</span></p>
 
-<h2>6. Your rights</h2>
-<p>You can delete your conversations and your account from within Synapse. For other requests, including export, write to <a href="mailto:info@bdren.ai">info@bdren.ai</a>.</p>
-
-<h2>7. Security</h2>
-<p>Traffic is encrypted in transit, access is controlled by sign-in, and each institution's data is isolated from the others.</p>
-
-<h2>8. Cookies</h2>
-<p>Synapse uses only the cookies needed to keep you signed in. We do not use advertising or tracking cookies.</p>
-
-<h2>9. Changes</h2>
-<p>We will update the version and effective date above whenever this policy changes.</p>
+<h2 id="s12">12. Changes and contact</h2>
+<p>When we change this policy we update the version and date at the top, and for material changes we will tell you in the app. Questions, requests or complaints: <a href="mailto:info@bdren.ai">info@bdren.ai</a>.</p>
 </main>
-<footer>Questions: <a href="mailto:info@bdren.ai">info@bdren.ai</a></footer>
+<footer>
+  <p>Questions about this page: <a href="mailto:info@bdren.ai">info@bdren.ai</a></p>
+  <p>&copy; Bangladesh Research and Education Network (BdREN). Synapse is an AI assistant service for member institutions.</p>
+</footer>
 </div>
 </body>
 </html>
