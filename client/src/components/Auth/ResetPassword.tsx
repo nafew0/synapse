@@ -6,6 +6,7 @@ import { useResetPasswordMutation } from 'librechat-data-provider/react-query';
 import type { TResetPassword } from 'librechat-data-provider';
 import type { TLoginLayoutContext } from '~/common';
 import { useLocalize } from '~/hooks';
+import { useMascot, useMascotAttempt, withSecretFocus } from './Mascot';
 
 function ResetPassword() {
   const localize = useLocalize();
@@ -19,6 +20,8 @@ function ResetPassword() {
   const [params] = useSearchParams();
   const password = watch('password');
   const resetPassword = useResetPasswordMutation();
+  const mascot = useMascot();
+  useMascotAttempt(resetPassword.error, resetPassword.isLoading);
   const { setError, setHeaderText, startupConfig } = useOutletContext<TLoginLayoutContext>();
   const authInputClassName =
     'webkit-dark-styles transition-color peer h-auto w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pr-12 pt-3 text-text-primary duration-200 hover:border-border-light focus:border-accent-primary focus:outline-none focus-visible:border-accent-primary';
@@ -33,6 +36,7 @@ function ResetPassword() {
         setError('com_auth_error_invalid_reset_token');
       },
       onSuccess: () => {
+        mascot.noteSuccess();
         setHeaderText('com_auth_reset_password_success');
       },
     });
@@ -63,6 +67,7 @@ function ResetPassword() {
       aria-label="Password reset form"
       method="POST"
       onSubmit={handleSubmit(onSubmit)}
+      onKeyDown={mascot.noteKeystroke}
     >
       <div className="mb-2">
         <div className="relative">
@@ -82,17 +87,20 @@ function ResetPassword() {
             id="password"
             autoComplete="current-password"
             aria-label={localize('com_auth_password')}
-            {...register('password', {
-              required: localize('com_auth_password_required'),
-              minLength: {
-                value: startupConfig?.minPasswordLength || 8,
-                message: localize('com_auth_password_min_length'),
-              },
-              maxLength: {
-                value: 128,
-                message: localize('com_auth_password_max_length'),
-              },
-            })}
+            {...withSecretFocus(
+              register('password', {
+                required: localize('com_auth_password_required'),
+                minLength: {
+                  value: startupConfig?.minPasswordLength || 8,
+                  message: localize('com_auth_password_min_length'),
+                },
+                maxLength: {
+                  value: 128,
+                  message: localize('com_auth_password_max_length'),
+                },
+              }),
+              mascot,
+            )}
             aria-invalid={!!errors.password}
             className={authInputClassName}
             placeholder=" "
@@ -114,9 +122,12 @@ function ResetPassword() {
           <SecretInput
             id="confirm_password"
             aria-label={localize('com_auth_password_confirm')}
-            {...register('confirm_password', {
-              validate: (value) => value === password || localize('com_auth_password_not_match'),
-            })}
+            {...withSecretFocus(
+              register('confirm_password', {
+                validate: (value) => value === password || localize('com_auth_password_not_match'),
+              }),
+              mascot,
+            )}
             aria-invalid={!!errors.confirm_password}
             className={authInputClassName}
             placeholder=" "

@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef } from 'react';
 import { Mascot, useTheme, isDark } from '@librechat/client';
 import type { MascotInput, MascotInputSource } from '@librechat/client';
-import type { ReactNode } from 'react';
+import type { UseFormRegisterReturn } from 'react-hook-form';
+import type { ReactNode, FocusEvent } from 'react';
 import { useLocalize } from '~/hooks';
 
 /**
@@ -28,7 +29,7 @@ const NOOP: MascotController = {
 
 const MascotContext = createContext<MascotController>(NOOP);
 
-/** Safe outside the provider, so the register and reset screens need no changes. */
+/** Safe outside the provider: every call is a no-op there. */
 export const useMascot = (): MascotController => useContext(MascotContext);
 
 /**
@@ -114,7 +115,8 @@ export function AuthLockup({ appTitle }: { appTitle: string }) {
 }
 
 /**
- * Mirrors an auth error into the rig. It fires on a failed submit response,
+ * Mirrors a submit into the rig: in flight while `submitting`, then the failed
+ * beat if the attempt ends with an error. It fires on a failed submit response,
  * never on field validation — a malformed email should not make the mascot
  * flinch — and it runs alongside the visible error, never instead of it.
  *
@@ -122,9 +124,13 @@ export function AuthLockup({ appTitle }: { appTitle: string }) {
  * string, so watching the message alone would show the beat once and then go
  * quiet for every attempt after it.
  */
-export function useMascotFailure(error: unknown, submitting: boolean): void {
-  const { noteFailure } = useMascot();
+export function useMascotAttempt(error: unknown, submitting: boolean): void {
+  const { setSubmitting, noteFailure } = useMascot();
   const armed = useRef(false);
+
+  useEffect(() => {
+    setSubmitting(submitting);
+  }, [submitting, setSubmitting]);
 
   useEffect(() => {
     if (submitting) {
@@ -137,4 +143,23 @@ export function useMascotFailure(error: unknown, submitting: boolean): void {
     armed.current = false;
     noteFailure();
   }, [error, submitting, noteFailure]);
+}
+
+/**
+ * Wraps a registered password field so the mascot looks away while it holds
+ * focus. It chains onto react-hook-form's own onBlur; spreading the field after
+ * a plain onBlur would silently replace it.
+ */
+export function withSecretFocus<T extends UseFormRegisterReturn>(
+  field: T,
+  mascot: MascotController,
+): T & { onFocus: () => void } {
+  return {
+    ...field,
+    onFocus: () => mascot.setSecretFocused(true),
+    onBlur: (event: FocusEvent<HTMLInputElement>) => {
+      mascot.setSecretFocused(false);
+      return field.onBlur(event);
+    },
+  };
 }

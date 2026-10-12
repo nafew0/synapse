@@ -8,6 +8,7 @@ import { ThemeContext, SecretInput, Spinner, Button, Input, isDark } from '@libr
 import type { TRegisterUser, TError } from 'librechat-data-provider';
 import type { TLoginLayoutContext } from '~/common';
 import { useLocalize, TranslationKeys } from '~/hooks';
+import { useMascot, useMascotAttempt, withSecretFocus } from './Mascot';
 import { ErrorMessage } from './ErrorMessage';
 
 const Registration: React.FC = () => {
@@ -35,6 +36,7 @@ const Registration: React.FC = () => {
   const queryParams = new URLSearchParams(location.search);
   const token = queryParams.get('token');
   const validTheme = isDark(theme) ? 'dark' : 'light';
+  const mascot = useMascot();
 
   /** An invitation is addressed to one person: prefill what the administrator
    *  already supplied and pin the address, so the account cannot be created for
@@ -83,6 +85,7 @@ const Registration: React.FC = () => {
     },
     onSuccess: () => {
       setIsSubmitting(false);
+      mascot.noteSuccess();
       setCountdown(3);
       const timer = setInterval(() => {
         setCountdown((prevCountdown) => {
@@ -104,6 +107,8 @@ const Registration: React.FC = () => {
     },
   });
 
+  useMascotAttempt(registerUser.error, isSubmitting);
+
   const renderInput = (
     id: string,
     label: TranslationKeys,
@@ -112,10 +117,11 @@ const Registration: React.FC = () => {
     readOnly = false,
   ) => {
     const fieldLabel = localize(label);
-    const field = register(
+    const registered = register(
       id as 'name' | 'email' | 'username' | 'password' | 'confirm_password',
       validation,
     );
+    const field = type === 'password' ? withSecretFocus(registered, mascot) : registered;
 
     return (
       <div className="mb-4">
@@ -196,6 +202,7 @@ const Registration: React.FC = () => {
             className="mt-6"
             aria-label="Registration form"
             method="POST"
+            onKeyDown={mascot.noteKeystroke}
             onSubmit={handleSubmit((data: TRegisterUser) =>
               registerUser.mutate({ ...data, token: token ?? undefined }),
             )}
