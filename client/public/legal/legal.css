@@ -56,7 +56,7 @@ h3{margin:1.2rem 0 .2rem;font-size:1rem}
 .toc ol{margin:0;padding:0;list-style:none;border-left:2px solid var(--line)}
 .toc a{display:block;padding:5px 12px;margin-left:-2px;border-left:2px solid transparent;color:var(--ink-soft);text-decoration:none}
 .toc a:hover,.toc a:focus-visible{color:var(--teal-deep);border-left-color:var(--teal)}
-@media (max-width:820px){
+@media (max-width:1000px){
   .layout{grid-template-columns:minmax(0,1fr)}
   .layout>.toc,.layout>main{grid-column:1}
   .layout>.toc{width:auto}
