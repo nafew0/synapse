@@ -23,6 +23,7 @@ export default function EndpointIcon({
   agentsMap,
   context,
   size = 20,
+  animated = true,
 }: {
   conversation: TConversation | TPreset | null;
   endpointsConfig: TEndpointsConfig;
@@ -32,6 +33,7 @@ export default function EndpointIcon({
   agentsMap?: TAgentsMap;
   className?: string;
   size?: number;
+  animated?: boolean;
 }) {
   const convoIconURL = conversation?.iconURL ?? '';
   const originalEndpoint = conversation?.endpoint;
@@ -55,7 +57,7 @@ export default function EndpointIcon({
     isImageURL(convoIconURL) || (convoIconURL !== '' && convoIconURL !== originalEndpoint);
 
   if (!hasCustomIcon && isOfficeAssistant(agent)) {
-    return <OfficeAssistantAvatar size={size} className={className} />;
+    return <OfficeAssistantAvatar size={size} className={className} animated={animated} />;
   }
 
   const iconURL = hasCustomIcon ? convoIconURL : entityAvatar || convoIconURL;

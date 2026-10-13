@@ -49,6 +49,7 @@ jest.mock('../ToolOutput', () => ({
 
 jest.mock('lucide-react', () => ({
   ChevronDown: () => <span>{'chevron'}</span>,
+  LoaderCircle: () => <span data-testid="activity-spinner">{'spinner'}</span>,
   Users: () => <span>{'users'}</span>,
   MessageCircleQuestion: () => <span data-testid="question-icon">{'question'}</span>,
 }));
@@ -231,7 +232,37 @@ describe('ToolCallGroup image hoisting', () => {
     expect(screen.queryByTestId('inner-0')).not.toBeInTheDocument();
   });
 
-  it('keeps a pending-label group expanded while its tool has no output', () => {
+  it('auto-collapses completed empty-output tools when their run steps closed', () => {
+    const completedParts = [
+      {
+        part: {
+          ...makePart('t1', '', 'convert_document'),
+          [ContentTypes.TOOL_CALL]: {
+            ...(makePart('t1', '', 'convert_document')[ContentTypes.TOOL_CALL] ?? {}),
+            runStepStatus: 'completed',
+          },
+        },
+        idx: 0,
+      },
+      {
+        part: {
+          ...makePart('t2', '', 'convert_document'),
+          [ContentTypes.TOOL_CALL]: {
+            ...(makePart('t2', '', 'convert_document')[ContentTypes.TOOL_CALL] ?? {}),
+            runStepStatus: 'completed',
+          },
+        },
+        idx: 1,
+      },
+    ];
+
+    renderGroup({ ...baseProps, parts: completedParts, lastContentIdx: 1 });
+
+    expect(screen.queryByTestId('inner-0')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('inner-1')).not.toBeInTheDocument();
+  });
+
+  it('keeps a pending-label group compact while its tool has no output', () => {
     const voidToolParts = [{ part: makePart('t1', '', 'update_settings'), idx: 0 }];
     const labelPart = {
       part: {
@@ -250,7 +281,8 @@ describe('ToolCallGroup image hoisting', () => {
       isSubmitting: true,
     });
 
-    expect(screen.getByTestId('inner-0')).toBeInTheDocument();
+    expect(screen.getByTestId('activity-spinner')).toBeInTheDocument();
+    expect(screen.queryByTestId('inner-0')).not.toBeInTheDocument();
   });
 
   it('does not render tool bodies for an initially collapsed large completed group', () => {
@@ -378,6 +410,7 @@ describe('ToolCallGroup image hoisting', () => {
 
     const button = screen.getByRole('button', { name: 'Used 2 tools' });
     const collapsible = button.nextElementSibling as HTMLElement;
+    fireEvent.click(button);
     fireEvent.click(button);
     fireEvent.transitionEnd(collapsible);
 

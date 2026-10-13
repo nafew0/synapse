@@ -29,6 +29,10 @@ export interface UseToolCallStateInput {
   hasInput: boolean;
   onExpand?: () => void;
   runStepStatus?: PartMetadata['runStepStatus'];
+  /** Keep a live operation compact even when the user auto-expands completed tool details. */
+  hideDetailsWhileRunning?: boolean;
+  /** Ignore the global auto-expand preference; details remain available by explicit click. */
+  autoExpandDetails?: boolean;
   /**
    * A failure this call's own output cannot express — currently a
    * backgrounded task that settled as `error`, where the dispatch step's
@@ -46,21 +50,12 @@ export default function useToolCallState({
   hasInput,
   onExpand,
   runStepStatus,
+  hideDetailsWhileRunning = false,
+  autoExpandDetails = true,
   extraError = false,
 }: UseToolCallStateInput): ToolCallState {
   const autoExpand = useRecoilValue(store.autoExpandTools);
   const hasOutput = output.length > 0;
-  const hasContent = hasInput || hasOutput;
-
-  const [showCode, setShowCode] = useState(() => autoExpand && hasContent);
-  const { style: expandStyle, ref: expandRef } = useExpandCollapse(showCode);
-
-  useEffect(() => {
-    if (autoExpand && hasContent) {
-      setShowCode(true);
-    }
-  }, [autoExpand, hasContent]);
-
   const isClosed = runStepStatus != null;
   /**
    * Passing 1 in for a closed step stops `useProgress` scheduling its 200ms
@@ -92,6 +87,19 @@ export default function useToolCallState({
     isSubmitting,
     hasError: (hasOutput && isError(output)) || extraError,
   });
+  const hasContent = hasInput || hasOutput;
+  const detailsAvailable = !hideDetailsWhileRunning || phase !== 'running';
+  const canShowDetails = hasContent && detailsAvailable;
+  const shouldAutoExpand = autoExpand && autoExpandDetails;
+
+  const [showCode, setShowCode] = useState(() => shouldAutoExpand && canShowDetails);
+  const { style: expandStyle, ref: expandRef } = useExpandCollapse(showCode);
+
+  useEffect(() => {
+    if (shouldAutoExpand && canShowDetails) {
+      setShowCode(true);
+    }
+  }, [shouldAutoExpand, canShowDetails]);
 
   return {
     showCode,
@@ -100,6 +108,6 @@ export default function useToolCallState({
     expandRef,
     phase,
     hasOutput,
-    hasContent,
+    hasContent: canShowDetails,
   };
 }

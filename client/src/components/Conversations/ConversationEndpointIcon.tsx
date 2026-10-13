@@ -14,6 +14,7 @@ type ConversationEndpointIconProps = {
   className?: string;
   context?: EndpointIconContext;
   size?: number;
+  animated?: boolean;
 };
 
 function ConversationEndpointIcon({
@@ -21,6 +22,7 @@ function ConversationEndpointIcon({
   className,
   context = 'menu-item',
   size = 20,
+  animated = true,
 }: ConversationEndpointIconProps) {
   const { data: endpointsConfig = emptyEndpointsConfig } = useGetEndpointsQuery();
   const agentsMap = useAgentsMapContext();
@@ -35,6 +37,7 @@ function ConversationEndpointIcon({
       className={className}
       size={size}
       context={context}
+      animated={animated}
     />
   );
 }
@@ -44,6 +47,7 @@ export default memo(ConversationEndpointIcon, (prevProps, nextProps) => {
     prevProps.className === nextProps.className &&
     prevProps.context === nextProps.context &&
     prevProps.size === nextProps.size &&
+    prevProps.animated === nextProps.animated &&
     areConversationIconFieldsEqual(prevProps.conversation, nextProps.conversation)
   );
 });

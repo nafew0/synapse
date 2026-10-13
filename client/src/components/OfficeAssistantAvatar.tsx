@@ -12,9 +12,14 @@ export const isOfficeAssistantId = (agentId: string | null | undefined): boolean
 type OfficeAssistantAvatarProps = {
   size: number | string;
   className?: string;
+  animated?: boolean;
 };
 
-export default function OfficeAssistantAvatar({ size, className }: OfficeAssistantAvatarProps) {
+export default function OfficeAssistantAvatar({
+  size,
+  className,
+  animated = true,
+}: OfficeAssistantAvatarProps) {
   const prefersReducedMotion = useReducedMotion();
 
   return (
@@ -25,7 +30,7 @@ export default function OfficeAssistantAvatar({ size, className }: OfficeAssista
       height={size}
       className={className}
       animate={
-        prefersReducedMotion
+        !animated || prefersReducedMotion
           ? undefined
           : {
               y: [0, -4, 1, 0],
