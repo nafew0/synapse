@@ -8,10 +8,11 @@ jest.mock('@lobehub/icons', () => {
       React.createElement('svg', { 'data-testid': `${brand}-icon`, width: size });
     return { Avatar };
   };
+  const gemini = createIcon('google');
 
   return {
     Anthropic: createIcon('anthropic'),
-    Gemini: createIcon('google'),
+    Gemini: { ...gemini, Color: gemini.Avatar },
     OpenAI: createIcon('openai'),
   };
 });
@@ -49,13 +50,7 @@ describe('ModelIcon', () => {
   });
 
   it('uses a custom avatar before the provider icon', () => {
-    render(
-      <ModelIcon
-        modelId="claude-opus-4-6"
-        endpoint="anthropic"
-        avatarUrl="/avatar.png"
-      />,
-    );
+    render(<ModelIcon modelId="claude-opus-4-6" endpoint="anthropic" avatarUrl="/avatar.png" />);
 
     expect(document.querySelector('img')).toHaveAttribute('src', '/avatar.png');
     expect(screen.queryByTestId('anthropic-icon')).not.toBeInTheDocument();

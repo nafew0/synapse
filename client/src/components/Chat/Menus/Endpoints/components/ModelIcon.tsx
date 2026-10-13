@@ -51,10 +51,7 @@ export function ModelIcon({ modelId, endpoint, avatarUrl, entityIcon }: ModelIco
 
   if (entityIcon) {
     return (
-      <span
-        aria-hidden="true"
-        className="flex h-5 w-5 flex-shrink-0 items-center justify-center"
-      >
+      <span aria-hidden="true" className="flex h-5 w-5 flex-shrink-0 items-center justify-center">
         {entityIcon}
       </span>
     );
@@ -88,7 +85,7 @@ export function ModelIcon({ modelId, endpoint, avatarUrl, entityIcon }: ModelIco
   if (brand === 'google') {
     return (
       <span aria-hidden="true" className="flex h-5 w-5 flex-shrink-0">
-        <Gemini.Avatar size={20} />
+        <Gemini.Color size={20} />
       </span>
     );
   }

@@ -6,6 +6,7 @@ import { getModelSpecIconURL, getIconKey } from '~/utils';
 import { URLIcon } from '~/components/Endpoints/URLIcon';
 import { icons } from '~/hooks/Endpoint/Icons';
 import { isImageURL } from '~/utils/icons';
+import { getModelBrand, ModelIcon } from './ModelIcon';
 
 interface SpecIconProps {
   currentSpec: TModelSpec;
@@ -19,9 +20,21 @@ type IconType = (props: IconMapProps) => React.JSX.Element;
 const SpecIcon: React.FC<SpecIconProps> = ({ currentSpec, endpointsConfig, agentAvatarURL }) => {
   const iconURL = getModelSpecIconURL(currentSpec, agentAvatarURL);
   const endpoint = currentSpec.preset?.endpoint;
+  const modelId = currentSpec.preset?.model;
   const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
   const iconKey = getIconKey({ endpoint, endpointsConfig, endpointIconURL });
   const shouldRenderURLIcon = isImageURL(iconURL);
+
+  if (
+    !currentSpec.iconURL &&
+    !currentSpec.preset?.iconURL &&
+    !agentAvatarURL &&
+    typeof modelId === 'string' &&
+    getModelBrand(modelId, endpoint ?? '')
+  ) {
+    return <ModelIcon modelId={modelId} endpoint={endpoint ?? ''} />;
+  }
+
   let Icon: IconType;
 
   if (!shouldRenderURLIcon) {
