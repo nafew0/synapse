@@ -84,6 +84,8 @@ export function SearchResults({ results, localize, searchValue }: SearchResultsP
                       currentSpec={spec}
                       endpointsConfig={endpointsConfig}
                       agentAvatarURL={getSpecAgentAvatarURL(spec, agentsMap)}
+                      agentId={spec.preset?.agent_id}
+                      officeAssistantSize={16}
                     />
                   </div>
                 )}

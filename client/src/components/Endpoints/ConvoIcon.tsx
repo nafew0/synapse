@@ -5,6 +5,7 @@ import { getIconKey, getEntity, getIconEndpoint } from '~/utils';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import { icons } from '~/hooks/Endpoint/Icons';
 import { isImageURL } from '~/utils/icons';
+import OfficeAssistantAvatar, { isOfficeAssistant } from '~/components/OfficeAssistantAvatar';
 
 export default function ConvoIcon({
   conversation,
@@ -49,6 +50,10 @@ export default function ConvoIcon({
   const endpointIconURL = getEndpointField(endpointsConfig, endpoint, 'iconURL');
   const iconKey = getIconKey({ endpoint, endpointsConfig, endpointIconURL });
   const Icon = icons[iconKey] ?? null;
+
+  if (isAgent && isOfficeAssistant(entity as t.Agent | undefined) && !isImageURL(iconURL)) {
+    return <OfficeAssistantAvatar size={size ?? 30} className={className} />;
+  }
 
   return (
     <>

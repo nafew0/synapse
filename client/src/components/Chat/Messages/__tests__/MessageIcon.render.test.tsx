@@ -33,6 +33,12 @@ jest.mock('~/components/Endpoints/Icon', () => {
   Icon.displayName = 'Icon';
   return { __esModule: true, default: Icon };
 });
+jest.mock('~/components/Chat/Menus/Endpoints/components/ModelIcon', () => ({
+  getModelBrand: jest.fn((modelId: string) => (modelId.startsWith('openai/') ? 'openai' : null)),
+  ModelIcon: ({ modelId }: { modelId: string }) => (
+    <div data-testid="model-icon" data-model={modelId} />
+  ),
+}));
 
 import MessageIcon from '../MessageIcon';
 
@@ -78,6 +84,22 @@ describe('MessageIcon render cycles', () => {
     );
   });
 
+  it('uses the model brand instead of the OpenRouter endpoint fallback', () => {
+    render(
+      <MessageIcon
+        iconData={{
+          endpoint: 'OpenRouter',
+          model: 'openai/gpt-5.6-luna',
+          iconURL: 'OpenRouter',
+          isCreatedByUser: false,
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('model-icon')).toHaveAttribute('data-model', 'openai/gpt-5.6-luna');
+    expect(screen.queryByTestId('icon')).not.toBeInTheDocument();
+  });
+
   it('does not re-render when parent re-renders with same field values but new object references', () => {
     const agent = makeAgent();
     const { rerender } = render(<MessageIcon iconData={baseIconData} agent={agent} />);
@@ -88,7 +110,7 @@ describe('MessageIcon render cycles', () => {
     expect(iconRenderCount.current).toBe(0);
   });
 
-  it('does not re-render when agent object reference changes but name and avatar are the same', () => {
+  it('re-renders when the agent ID changes because it can affect the rendered icon', () => {
     const agent1 = makeAgent();
     const { rerender } = render(<MessageIcon iconData={baseIconData} agent={agent1} />);
     iconRenderCount.current = 0;
@@ -96,7 +118,7 @@ describe('MessageIcon render cycles', () => {
     const agent2 = makeAgent({ id: 'agent_456' });
     rerender(<MessageIcon iconData={baseIconData} agent={agent2} />);
 
-    expect(iconRenderCount.current).toBe(0);
+    expect(iconRenderCount.current).toBe(1);
   });
 
   it('re-renders when agent avatar filepath changes', () => {

@@ -54,6 +54,8 @@ export function ModelSpecItem({ spec, isSelected, posInSet, setSize }: ModelSpec
               currentSpec={spec}
               endpointsConfig={endpointsConfig}
               agentAvatarURL={agentAvatarURL}
+              agentId={spec.preset?.agent_id}
+              officeAssistantSize={16}
             />
           </div>
         )}
