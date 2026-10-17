@@ -176,6 +176,13 @@ describe('Startup readiness wiring', () => {
     expect(triggerDeliveryIndex).toBeGreaterThan(-1);
     expect(readyIndex).toBeGreaterThan(triggerDeliveryIndex);
   });
+
+  it('signals PM2 only after readiness checks pass', () => {
+    const readyIndex = source.indexOf('serverReady = true;');
+    const signalIndex = source.indexOf("process.send?.('ready');");
+
+    expect(signalIndex).toBeGreaterThan(readyIndex);
+  });
 });
 
 describe('Server Configuration', () => {

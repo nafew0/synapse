@@ -429,6 +429,7 @@ const startServer = async () => {
       await initializeAgentTriggerService({ address: server.address() });
       serverReady = true;
       logger.info('Server readiness checks passing.');
+      process.send?.('ready');
     } catch (initErr) {
       serverReady = false;
       logger.error('Post-listen initialization failed:', initErr);
