@@ -20,11 +20,11 @@
   </nav>
 </header>
 <div class="layout">
-<nav class="toc" aria-label="Contents"><strong>Contents</strong><ol><li><a href="#s1">Our commitments</a></li><li><a href="#s2">Information we collect</a></li><li><a href="#s3">How we use it</a></li><li><a href="#s4">Your institution</a></li><li><a href="#s5">How long we keep data</a></li><li><a href="#s6">Your choices and rights</a></li><li><a href="#s7">Security</a></li><li><a href="#s8">Cookies and local storage</a></li><li><a href="#s9">Changes and contact</a></li></ol></nav>
+<nav class="toc" aria-label="Contents"><strong>Contents</strong><ol><li><a href="#s1">Our commitments</a></li><li><a href="#s2">Information we collect</a></li><li><a href="#s3">How we use it and why</a></li><li><a href="#s4">Where your data goes</a></li><li><a href="#s5">AI and automated decisions</a></li><li><a href="#s6">Your institution</a></li><li><a href="#s7">How long we keep data</a></li><li><a href="#s8">Your rights and choices</a></li><li><a href="#s9">Age</a></li><li><a href="#s10">Security</a></li><li><a href="#s11">Cookies and local storage</a></li><li><a href="#s12">Changes and contact</a></li></ol></nav>
 <main class="card">
 <h1>Privacy Policy</h1>
-<p class="meta">Operated by BdREN · Version 0.1 (draft) · Effective: <span class="todo">[date of approval]</span> · Last updated: 12 October 2026</p>
-<p class="lede">Synapse is an AI assistant for students, researchers and staff of BdREN member institutions. This policy explains what happens to the information you put into it, who else handles it, and how to get it deleted.</p>
+<p class="meta">Operated by BdREN · Version 0.2 (draft) · Effective: <span class="todo">[date of approval]</span> · Last updated: 17 October 2026</p>
+<p class="lede">Synapse is an AI assistant for students, researchers and staff of BdREN member institutions. This policy explains what happens to the information you put into it, who else handles it, and how to get it deleted. It is written with reference to Bangladesh's Personal Data Protection Ordinance 2025 and the draft National AI Policy 2026&ndash;2030. <span class="todo">[Legal: confirm the laws to cite.]</span></p>
 <p class="todo">DRAFT for BdREN legal review. Every retention period below is the target policy in the data retention plan. Publish only after each one is enforced in production.</p>
 
 <h2 id="s1">1. Our commitments</h2>
@@ -54,7 +54,7 @@
 <h3>Information from your institution</h3>
 <p>Your institution administrator may invite you or create your account, giving us your name, email address and role.</p>
 
-<h2 id="s3">3. How we use it</h2>
+<h2 id="s3">3. How we use it and why</h2>
 <ul>
   <li>To answer you, run tools you ask for (search the web, edit a document, run code) and keep your conversation history.</li>
   <li>To sign you in, protect accounts and prevent abuse.</li>
@@ -62,11 +62,25 @@
   <li>To find and fix errors and improve reliability, using traces and the reports you send.</li>
   <li>To contact you about your account, for example invitations and password resets.</li>
 </ul>
+<p>We use your data only for these purposes, and only because you or your institution asked for the service. Sending a message, attaching a file or pressing the microphone is your consent to process that content to answer you. You can withdraw that consent at any time by deleting the content, deleting your account, or writing to us. We do not use your data for profiling, behavioural tracking or advertising.</p>
 
-<h2 id="s4">4. Your institution</h2>
+<h2 id="s4">4. Where your data goes</h2>
+<p>Your account, conversations and files are stored on BdREN servers. To answer a request, the part of it that a tool needs is sent to the service that does the work: an AI model provider through OpenRouter, a speech-to-text service for voice, and a web search service when you ask the Office Assistant to look something up. Some of these providers are outside Bangladesh, so that part of your request leaves the country when you use them.</p>
+<p class="note">Please do not enter sensitive personal data you are not allowed to share with a third party, such as health records, biometric data, financial account details, national ID numbers, or personal data about children.</p>
+<p>We choose providers that do not train on prompts and, where available, do not retain them, and we do not allow any provider to use your data for advertising. <span class="todo">[Ops: confirm once the OpenRouter no-training and zero-retention settings are on.]</span></p>
+
+<h2 id="s5">5. AI and automated decisions</h2>
+<ul>
+  <li>Synapse is an assistant. It gives suggestions and drafts; it does not make decisions about you with legal or similar significant effect, and BdREN does not use it to grade, rank, score or profile you.</li>
+  <li>You are always told when you are talking to AI. Replies can be wrong, so check them before relying on them.</li>
+  <li>We do not train AI models on your data, so there is nothing of yours to be unlearned. If you delete your data, it is deleted from Synapse as described below.</li>
+  <li>If your institution uses Synapse output in a decision about you, you may ask the institution for an explanation and for review by a person.</li>
+</ul>
+
+<h2 id="s6">6. Your institution</h2>
 <p>Each institution is kept separate: members of one institution cannot see another institution's data. An institution administrator can add and remove members and see usage figures for the institution. <span class="todo">[Legal/ops: state exactly what administrators can see, in particular whether they can read conversation content.]</span> If you use an account issued by your institution, the institution may also have its own policies.</p>
 
-<h2 id="s5">5. How long we keep data</h2>
+<h2 id="s7">7. How long we keep data</h2>
 <table>
   <tr><th>Data</th><th>How long</th></tr>
   <tr><td>Account</td><td>While it is active. Removed 30 days after you delete it. Accounts unused for 2 years are warned, then deleted.</td></tr>
@@ -84,16 +98,22 @@
 </table>
 <p class="todo">Check each row against the enforced configuration in docs/data-retention-plan.md before publishing.</p>
 
-<h2 id="s6">6. Your choices and rights</h2>
+<h2 id="s8">8. Your rights and choices</h2>
 <ul>
   <li><strong>Delete a conversation</strong> from the sidebar. Its files and document text go with it.</li>
   <li><strong>Delete your account</strong> from Settings. This removes your conversations, files and profile.</li>
   <li><strong>Use a temporary chat</strong> when you do not want a conversation kept.</li>
-  <li><strong>Access, correct or export your data, or object to how we use it:</strong> write to <a href="mailto:info@bdren.ai">info@bdren.ai</a> from the email address on your account. We aim to reply within 30 days.</li>
-  <li><strong>Complain:</strong> if you are not satisfied with our reply, you may raise it with the relevant data protection authority. <span class="todo">[Legal: confirm the authority and applicable law.]</span></li>
+  <li><strong>Know, access and correct:</strong> ask what we hold about you and have mistakes fixed.</li>
+  <li><strong>Object or withdraw consent:</strong> tell us to stop using your data for a purpose, and we will, unless the law requires us to keep it.</li>
+  <li><strong>Erasure and export:</strong> ask us to delete your data or give you a copy.</li>
+  <li><strong>Human review:</strong> ask for a person to look at any decision about you that relied on Synapse output.</li>
 </ul>
+<p>To use these rights, write to <a href="mailto:info@bdren.ai">info@bdren.ai</a> from the email address on your account. We aim to reply within 30 days, and we will not charge you or ask for more than we need to confirm it is you. If you are not satisfied, you may complain to the relevant data protection authority. <span class="todo">[Legal: confirm the authority and applicable law.]</span></p>
 
-<h2 id="s7">7. Security</h2>
+<h2 id="s9">9. Age</h2>
+<p>Synapse is for members of BdREN institutions. We do not knowingly collect data from anyone under 16 without the consent of a parent or legal guardian, we never use children's data to train models or for commercial purposes, and we do not profile or track children. If you think a child's data has been entered without consent, write to us and we will delete it. <span class="todo">[Legal: confirm the age rules and who obtains guardian consent, the institution or BdREN.]</span></p>
+
+<h2 id="s10">10. Security</h2>
 <ul>
   <li>Traffic between your browser and Synapse is encrypted (HTTPS).</li>
   <li>Passwords are stored as one-way hashes. Sessions expire automatically.</li>
@@ -102,10 +122,10 @@
 </ul>
 <p>No online service is perfectly secure. If a breach affects your data, we will tell you and your institution as the law requires.</p>
 
-<h2 id="s8">8. Cookies and local storage</h2>
+<h2 id="s11">11. Cookies and local storage</h2>
 <p>Synapse sets only the cookies it needs to keep you signed in (a refresh token valid for up to 7 days, and a session cookie). Your browser also stores settings such as theme and language, and unsent message drafts. We do not use advertising or cross-site tracking cookies.</p>
 
-<h2 id="s9">9. Changes and contact</h2>
+<h2 id="s12">12. Changes and contact</h2>
 <p>When we change this policy we update the version and date at the top, and for material changes we will tell you in the app. Questions, requests or complaints: <a href="mailto:info@bdren.ai">info@bdren.ai</a>.</p>
 </main>
 </div>
