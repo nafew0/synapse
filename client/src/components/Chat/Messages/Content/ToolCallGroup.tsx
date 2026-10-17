@@ -1,12 +1,13 @@
 import { useState, useRef, useMemo, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Button } from '@librechat/client';
-import { ChevronDown, MessageCircleQuestion, Users } from 'lucide-react';
+import { ChevronDown, LoaderCircle, MessageCircleQuestion, Users } from 'lucide-react';
 import { Tools, Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider';
 import type {
   TAttachment,
   TMessageContentParts,
   Agents,
+  PartMetadata,
   FunctionToolCall,
 } from 'librechat-data-provider';
 import type { PartWithIndex } from './ParallelContent';
@@ -43,12 +44,18 @@ function getToolMeta(part: TMessageContentParts): ToolMeta | null {
   const isStandard =
     'args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL);
   if (isStandard) {
-    const tc = toolCall as Agents.ToolCall & { progress?: number };
+    const tc = toolCall as Agents.ToolCall & {
+      progress?: number;
+      runStepStatus?: PartMetadata['runStepStatus'];
+    };
     /** Subagents can finish with `progress === 1` and no final output
      *  text (the parent saw "" / undefined back). Fall back to progress
      *  so the group header flips from "Running N agents" to "Ran N
      *  agents" on completion even when the child returned no text. */
-    const completed = !!tc.output || tc.progress === 1;
+    /** A run-step close is terminal even for tools whose useful result is an
+     * attachment or an empty string. Without it, those rows remain expanded
+     * after completion because neither `output` nor `progress` is reliable. */
+    const completed = !!tc.output || tc.progress === 1 || tc.runStepStatus != null;
     const name = tc.name ?? '';
     const iconName = isBashProgrammaticToolCall(name, tc.args) ? Tools.bash_tool : name;
     return { name, iconName, hasOutput: completed };
@@ -208,9 +215,10 @@ export default function ToolCallGroup({
    *  and leaving those expanded defeats the grouping. */
   const autoCollapse = !autoExpand && allCompleted && (count >= 2 || activityLabelText.length > 0);
   const initialState = initialExpansionState?.userOverride === true ? initialExpansionState : null;
-  const [isExpanded, setIsExpanded] = useState(
-    initialState?.isExpanded ?? (autoExpand || !autoCollapse),
-  );
+  /** Keep agent activity at one animated summary line unless the reader opts
+   * into its details. Pending approval is the exception: its controls must
+   * remain reachable without an extra reveal. */
+  const [isExpanded, setIsExpanded] = useState(initialState?.isExpanded ?? hasPendingApproval);
   const [userOverride, setUserOverride] = useState(initialState != null);
   const [shouldRenderBody, setShouldRenderBody] = useState(isExpanded);
   const previousIsExpandedRef = useRef(isExpanded);
@@ -320,13 +328,35 @@ export default function ToolCallGroup({
     () => isSubmitting && toolMetadata.some((m) => m && !m.hasOutput),
     [toolMetadata, isSubmitting],
   );
-
-  useEffect(() => {
-    if (hasActiveToolCall && !userOverride) {
-      setShouldRenderBody(true);
-      setIsExpanded(true);
-    }
-  }, [hasActiveToolCall, userOverride]);
+  let groupIcon: React.ReactNode;
+  if (hasActiveToolCall) {
+    groupIcon = (
+      <div className="flex h-5 w-5 shrink-0 items-center justify-center text-text-secondary">
+        <LoaderCircle
+          className="size-4 animate-spin motion-reduce:animate-none"
+          aria-hidden="true"
+        />
+      </div>
+    );
+  } else if (allSubagents || allAskQuestions) {
+    groupIcon = (
+      <div
+        className="flex h-5 w-5 shrink-0 items-center justify-center text-text-secondary"
+        aria-hidden="true"
+      >
+        <CategoryIcon size={14} />
+      </div>
+    );
+  } else {
+    groupIcon = (
+      <StackedToolIcons
+        toolNames={iconToolNames}
+        mcpIconMap={mcpIconMap}
+        maxIcons={4}
+        isAnimating={false}
+      />
+    );
+  }
 
   return (
     <div className="mb-2 mt-1" ref={rootRef}>
@@ -338,29 +368,7 @@ export default function ToolCallGroup({
         aria-expanded={isExpanded}
         aria-label={groupLabel}
       >
-        {allSubagents || allAskQuestions ? (
-          /** Homogeneous category groups get a single category glyph instead
-           *  of StackedToolIcons' generic wrenches: a Users glyph for
-           *  subagents, a question glyph for ask_user_question — matching
-           *  their individual card headers and reading as the category
-           *  rather than "tools". */
-          <div
-            className={cn(
-              'flex h-5 w-5 shrink-0 items-center justify-center text-text-secondary',
-              !allCompleted && isSubmitting && 'animate-pulse text-text-primary',
-            )}
-            aria-hidden="true"
-          >
-            <CategoryIcon size={14} />
-          </div>
-        ) : (
-          <StackedToolIcons
-            toolNames={iconToolNames}
-            mcpIconMap={mcpIconMap}
-            maxIcons={4}
-            isAnimating={!allCompleted && isSubmitting}
-          />
-        )}
+        {groupIcon}
         <span
           className={cn(
             'tool-status-text min-w-0 truncate font-medium',

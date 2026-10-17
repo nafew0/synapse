@@ -8,6 +8,7 @@ import { CustomMenuItem as MenuItem } from '../CustomMenu';
 import useActiveItem from '../useActiveItem';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import { ModelIcon } from './ModelIcon';
 
 interface EndpointModelItemProps {
   modelId: string | null;
@@ -70,32 +71,8 @@ function EndpointModelItemComponent({
     onToggleFavorite(modelId);
   };
 
-  const renderAvatar = () => {
-    const isAgentOrAssistant =
-      isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value);
-    const showEndpointIcon = isAgentOrAssistant && endpoint.icon;
-
-    const getContent = () => {
-      if (avatarUrl) {
-        return <img src={avatarUrl} alt={modelName ?? ''} className="h-full w-full object-cover" />;
-      }
-      if (showEndpointIcon) {
-        return endpoint.icon;
-      }
-      return null;
-    };
-
-    const content = getContent();
-    if (!content) {
-      return null;
-    }
-
-    return (
-      <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center overflow-hidden rounded-full">
-        {content}
-      </div>
-    );
-  };
+  const isAgentOrAssistant =
+    isAgentsEndpoint(endpoint.value) || isAssistantsEndpoint(endpoint.value);
 
   return (
     <MenuItem
@@ -107,7 +84,12 @@ function EndpointModelItemComponent({
       className="group flex w-full cursor-pointer items-center justify-between rounded-lg px-2 text-sm"
     >
       <div className="flex w-full min-w-0 items-center gap-2 px-1 py-1">
-        {renderAvatar()}
+        <ModelIcon
+          modelId={modelId ?? ''}
+          endpoint={endpoint.value}
+          avatarUrl={avatarUrl ?? undefined}
+          entityIcon={isAgentOrAssistant ? endpoint.icon : undefined}
+        />
         <span className="truncate">{modelName}</span>
         {isGlobal && <EarthIcon className="ml-1 size-4 text-surface-submit" />}
       </div>

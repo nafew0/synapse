@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import copy from 'copy-to-clipboard';
 import { useRecoilValue } from 'recoil';
+import { LoaderCircle } from 'lucide-react';
 import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import { parseBackgroundHandle, splitBackgroundAttachments } from './handle';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
@@ -72,17 +73,20 @@ export default function BashCall({
       )
     : null;
 
-  const { showCode, toggleCode, expandStyle, expandRef, phase, hasOutput } = useToolCallState({
-    initialProgress,
-    isSubmitting,
-    output,
-    hasInput: !!command,
-    onExpand,
-    runStepStatus,
-    extraError: backgroundFailed,
-  });
+  const { showCode, toggleCode, expandStyle, expandRef, phase, hasOutput, hasContent } =
+    useToolCallState({
+      initialProgress,
+      isSubmitting,
+      output,
+      hasInput: !!command,
+      onExpand,
+      runStepStatus,
+      extraError: backgroundFailed,
+      hideDetailsWhileRunning: true,
+      autoExpandDetails: false,
+    });
 
-  const highlighted = useLazyHighlight(command || undefined, 'bash');
+  const highlighted = useLazyHighlight(showCode ? command || undefined : undefined, 'bash');
   const { ref: commandPaneRef, onScroll: onCommandPaneScroll } = useFollowScroll<HTMLDivElement>(
     highlighted ?? command,
     phase === 'running',
@@ -140,15 +144,16 @@ export default function BashCall({
             backgroundHandle == null && backgrounded !== true ? runStepDurationMs : undefined
           }
           icon={
-            <LangIcon
-              lang="bash"
-              className={cn(
-                'size-4 shrink-0 text-text-secondary',
-                phase === 'running' && 'animate-pulse',
-              )}
-            />
+            phase === 'running' ? (
+              <LoaderCircle
+                className="size-4 shrink-0 animate-spin motion-reduce:animate-none"
+                aria-hidden="true"
+              />
+            ) : (
+              <LangIcon lang="bash" className="size-4 shrink-0 text-text-secondary" />
+            )
           }
-          hasInput={!!command || hasOutput}
+          hasInput={hasContent}
           isExpanded={showCode}
         />
       </div>

@@ -277,7 +277,12 @@ function Conversation({
           isSmallScreen={isSmallScreen}
           localize={localize}
         >
-          <ConversationEndpointIcon conversation={conversation} size={20} context="menu-item" />
+          <ConversationEndpointIcon
+            conversation={conversation}
+            size={20}
+            context="menu-item"
+            animated={false}
+          />
         </ConvoLink>
       )}
       {isSharedBadgeVisible && (

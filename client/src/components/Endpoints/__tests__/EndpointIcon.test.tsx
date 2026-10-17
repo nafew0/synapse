@@ -35,6 +35,13 @@ jest.mock('~/components/Endpoints/MinimalIcon', () => ({
   ),
 }));
 
+jest.mock('~/components/Chat/Menus/Endpoints/components/ModelIcon', () => ({
+  getModelBrand: jest.fn((modelId: string) => (modelId.startsWith('openai/') ? 'openai' : null)),
+  ModelIcon: ({ modelId }: { modelId: string }) => (
+    <div data-testid="model-icon" data-model={modelId} />
+  ),
+}));
+
 const endpointsConfig = {
   [EModelEndpoint.agents]: { order: 0 },
   [EModelEndpoint.google]: { order: 1 },
@@ -91,5 +98,18 @@ describe('EndpointIcon', () => {
       'data-endpoint',
       EModelEndpoint.google,
     );
+  });
+
+  it('uses the model brand instead of an OpenRouter fallback in conversation lists', () => {
+    const conversation = {
+      endpoint: 'OpenRouter',
+      model: 'openai/gpt-5.6-luna',
+      iconURL: 'OpenRouter',
+    } as unknown as TConversation;
+
+    render(<EndpointIcon conversation={conversation} endpointsConfig={endpointsConfig} />);
+
+    expect(screen.getByTestId('model-icon')).toHaveAttribute('data-model', 'openai/gpt-5.6-luna');
+    expect(screen.queryByTestId('minimal-icon')).not.toBeInTheDocument();
   });
 });

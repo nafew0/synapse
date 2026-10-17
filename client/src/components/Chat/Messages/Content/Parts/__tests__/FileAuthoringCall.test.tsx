@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import FileAuthoringCall from '../FileAuthoringCall';
 
 jest.mock('~/hooks', () => ({
@@ -27,14 +27,18 @@ jest.mock('~/components/Chat/Messages/Content/ProgressText', () => ({
   __esModule: true,
   default: ({
     phase,
+    onClick,
     inProgressText,
     finishedText,
   }: {
     phase: 'running' | 'completed' | 'cancelled' | 'failed';
+    onClick?: () => void;
     inProgressText: string;
     finishedText: string;
   }) => (
-    <div data-testid="progress-text">{phase === 'running' ? inProgressText : finishedText}</div>
+    <button type="button" data-testid="progress-text" onClick={onClick}>
+      {phase === 'running' ? inProgressText : finishedText}
+    </button>
   ),
 }));
 
@@ -64,21 +68,36 @@ jest.mock('../useLazyHighlight', () => {
   return { __esModule: true, default: useMockLazyHighlight };
 });
 
-jest.mock('../useToolCallState', () => ({
-  __esModule: true,
+jest.mock('../useToolCallState', () => {
+  const { useState } = jest.requireActual<typeof import('react')>('react');
   /** Mirrors the real hook: options object in, a single `phase` out. */
-  default: ({ initialProgress }: { initialProgress: number }) => ({
-    showCode: true,
-    toggleCode: jest.fn(),
-    expandStyle: {},
-    expandRef: { current: null },
-    progress: initialProgress,
-    phase: initialProgress < 1 ? 'running' : 'completed',
-  }),
-}));
+  function useMockToolCallState({
+    initialProgress,
+    hideDetailsWhileRunning,
+    autoExpandDetails,
+  }: {
+    initialProgress: number;
+    hideDetailsWhileRunning?: boolean;
+    autoExpandDetails?: boolean;
+  }) {
+    const [showCode, setShowCode] = useState(
+      autoExpandDetails !== false && !(hideDetailsWhileRunning && initialProgress < 1),
+    );
+    return {
+      showCode,
+      toggleCode: () => setShowCode((current: boolean) => !current),
+      expandStyle: {},
+      expandRef: { current: null },
+      progress: initialProgress,
+      phase: initialProgress < 1 ? 'running' : 'completed',
+      hasContent: !(hideDetailsWhileRunning && initialProgress < 1),
+    };
+  }
+  return { __esModule: true, default: useMockToolCallState };
+});
 
 describe('FileAuthoringCall', () => {
-  it('shows create_file content args while the call is in progress', () => {
+  it('keeps create_file content hidden while the call is in progress', () => {
     render(
       <FileAuthoringCall
         toolName="create_file"
@@ -93,11 +112,11 @@ describe('FileAuthoringCall', () => {
     );
 
     expect(screen.getByTestId('progress-text')).toHaveTextContent('Creating SKILL.md');
-    expect(screen.getByTestId('code-window-header')).toHaveAttribute('data-language', 'SKILL.md');
-    expect(screen.getByText(/Use this skill for testing/)).toBeInTheDocument();
+    expect(screen.queryByTestId('code-window-header')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Use this skill for testing/)).not.toBeInTheDocument();
   });
 
-  it('keeps authored content visible alongside the output after create_file completes', () => {
+  it('keeps authored content collapsed after create_file completes', () => {
     render(
       <FileAuthoringCall
         toolName="create_file"
@@ -112,6 +131,13 @@ describe('FileAuthoringCall', () => {
     );
 
     expect(screen.getByTestId('progress-text')).toHaveTextContent('Created SKILL.md');
+    expect(screen.queryByTestId('code-window-header')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Large generated body stays visible/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Created skills/demo/SKILL.md (4096 chars).'),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('progress-text'));
     expect(screen.getByTestId('code-window-header')).toHaveAttribute('data-language', 'SKILL.md');
     expect(screen.getByText(/Large generated body stays visible/)).toBeInTheDocument();
     expect(screen.getByText('Created skills/demo/SKILL.md (4096 chars).')).toBeInTheDocument();
@@ -158,6 +184,8 @@ describe('FileAuthoringCall', () => {
       />,
     );
 
+    fireEvent.click(screen.getByTestId('progress-text'));
+
     const preview = screen.getByText((_, element) => element?.tagName.toLowerCase() === 'code');
     expect(preview).toHaveTextContent('-old line');
     expect(preview).toHaveTextContent('+new line');
@@ -179,13 +207,15 @@ describe('FileAuthoringCall', () => {
       />,
     );
 
+    fireEvent.click(screen.getByTestId('progress-text'));
+
     const preview = screen.getByText((_, element) => element?.tagName.toLowerCase() === 'code');
     expect(preview).toHaveTextContent('-missing text');
     expect(preview).toHaveTextContent('+replacement');
     expect(screen.getByText(/matched 0 locations/)).toBeInTheDocument();
   });
 
-  it('shows edit_file replacement args while the call is in progress', () => {
+  it('keeps edit_file replacement args hidden while the call is in progress', () => {
     render(
       <FileAuthoringCall
         toolName="edit_file"
@@ -201,15 +231,11 @@ describe('FileAuthoringCall', () => {
     );
 
     expect(screen.getByTestId('progress-text')).toHaveTextContent('Editing SKILL.md');
-    expect(screen.getByTestId('code-window-header')).toHaveAttribute('data-language', 'diff');
-    const preview = screen.getByText((_, element) => element?.tagName.toLowerCase() === 'code');
-    expect(preview).toHaveTextContent('--- old_text');
-    expect(preview).toHaveTextContent('+++ new_text');
-    expect(preview).toHaveTextContent('-description: Old behavior');
-    expect(preview).toHaveTextContent('+description: New behavior');
+    expect(screen.queryByTestId('code-window-header')).not.toBeInTheDocument();
+    expect(screen.queryByText(/description: Old behavior/)).not.toBeInTheDocument();
   });
 
-  it('streams create_file content from partial JSON string args during run_step_delta', () => {
+  it('hides partial create_file content during run_step_delta', () => {
     render(
       <FileAuthoringCall
         toolName="create_file"
@@ -221,11 +247,11 @@ describe('FileAuthoringCall', () => {
     );
 
     expect(screen.getByTestId('progress-text')).toHaveTextContent('Creating SKILL.md');
-    expect(screen.getByTestId('code-window-header')).toHaveAttribute('data-language', 'SKILL.md');
-    expect(screen.getByText(/Streaming body so far/)).toBeInTheDocument();
+    expect(screen.queryByTestId('code-window-header')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Streaming body so far/)).not.toBeInTheDocument();
   });
 
-  it('streams edit_file replacement preview from partial JSON string args', () => {
+  it('hides partial edit_file replacement args while streaming', () => {
     render(
       <FileAuthoringCall
         toolName="edit_file"
@@ -238,12 +264,11 @@ describe('FileAuthoringCall', () => {
       />,
     );
 
-    const preview = screen.getByText((_, element) => element?.tagName.toLowerCase() === 'code');
-    expect(preview).toHaveTextContent('-description: Old behavior');
-    expect(preview).toHaveTextContent('+description: New beh');
+    expect(screen.queryByTestId('code-window-header')).not.toBeInTheDocument();
+    expect(screen.queryByText(/description: Old behavior/)).not.toBeInTheDocument();
   });
 
-  it('streams batched edit_file previews from a partial edits array', () => {
+  it('hides batched edit previews while streaming', () => {
     const args =
       '{"file_path":"skills/demo/SKILL.md","edits":[' +
       '{"old_text":"first old","new_text":"first new"},' +
@@ -258,16 +283,11 @@ describe('FileAuthoringCall', () => {
       />,
     );
 
-    const preview = screen.getByText((_, element) => element?.tagName.toLowerCase() === 'code');
-    expect(preview).toHaveTextContent('--- old_text 1');
-    expect(preview).toHaveTextContent('-first old');
-    expect(preview).toHaveTextContent('+first new');
-    expect(preview).toHaveTextContent('--- old_text 2');
-    expect(preview).toHaveTextContent('-second old');
-    expect(preview).toHaveTextContent('+second n');
+    expect(screen.queryByTestId('code-window-header')).not.toBeInTheDocument();
+    expect(screen.queryByText(/first old/)).not.toBeInTheDocument();
   });
 
-  it('shows batched edit_file replacements from edits args while the call is in progress', () => {
+  it('hides batched edit replacements while the call is in progress', () => {
     render(
       <FileAuthoringCall
         toolName="edit_file"
@@ -284,11 +304,8 @@ describe('FileAuthoringCall', () => {
       />,
     );
 
-    const preview = screen.getByText((_, element) => element?.tagName.toLowerCase() === 'code');
-    expect(preview).toHaveTextContent('--- old_text 1');
-    expect(preview).toHaveTextContent('+++ new_text 2');
-    expect(preview).toHaveTextContent('-first old');
-    expect(preview).toHaveTextContent('+second new');
+    expect(screen.queryByTestId('code-window-header')).not.toBeInTheDocument();
+    expect(screen.queryByText(/first old/)).not.toBeInTheDocument();
   });
 });
 
@@ -322,7 +339,7 @@ const mockScrollMetrics = (
   return state;
 };
 
-describe('FileAuthoringCall streaming follow-scroll', () => {
+describe('FileAuthoringCall detail visibility', () => {
   const streamingCreate = (content: string) => (
     <FileAuthoringCall
       toolName="create_file"
@@ -333,15 +350,11 @@ describe('FileAuthoringCall streaming follow-scroll', () => {
     />
   );
 
-  it('pins the preview to the authored content as rendered, including the highlight commit', () => {
+  it('does not mount an authored-content preview while the file is being created', () => {
     const { container, rerender } = render(streamingCreate('# Demo\\nline one'));
-    const pane = container.querySelector('.overflow-auto') as HTMLElement;
-    const state = mockScrollMetrics(pane, 300, { deriveHeightFromText: true });
-
     rerender(streamingCreate('# Demo\\nline one\\nline two of the streamed body'));
 
-    expect(pane.textContent).toContain('line two of the streamed body');
-    expect(state.scrollTop).toBe((pane.textContent?.length ?? 0) * 10);
+    expect(container.querySelector('.overflow-auto')).not.toBeInTheDocument();
   });
 
   it('leaves a finished create_file preview alone', () => {
@@ -355,6 +368,7 @@ describe('FileAuthoringCall streaming follow-scroll', () => {
       />
     );
     const { container, rerender } = render(finishedCreate('# Demo\nline one'));
+    fireEvent.click(screen.getByTestId('progress-text'));
     const pane = container.querySelector('.overflow-auto') as HTMLElement;
     const state = mockScrollMetrics(pane, 300);
     state.scrollHeight = 1200;

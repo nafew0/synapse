@@ -55,6 +55,7 @@ jest.mock('lucide-react', () => ({
   ChevronDown: () => <span>{'chevron'}</span>,
   TriangleAlert: () => <span>{'alert'}</span>,
   Users: () => <span>{'users'}</span>,
+  LoaderCircle: () => <span>{'loader'}</span>,
 }));
 
 jest.mock('@librechat/client', () => ({
@@ -276,7 +277,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     );
   });
 
-  it('keeps a running tool group open when an individual tool is expanded before completion', () => {
+  it('keeps a running tool group open when the reader expands it and a tool before completion', () => {
     const runningContent = [makeMcpToolCall('t1', false), makeMcpToolCall('t2', false)];
     const completedContent = [makeMcpToolCall('t1'), makeMcpToolCall('t2')];
 
@@ -287,8 +288,10 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     );
 
     const toggle = screen.getByRole('button', { name: 'Used 2 tools' });
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
 
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
     fireEvent.click(screen.getAllByTestId('progress-text')[0]);
 
     rerender(
