@@ -1,4 +1,5 @@
 import type { TStartupConfig } from 'librechat-data-provider';
+import { getLinkAttributes } from '~/utils';
 import { useLocalize } from '~/hooks';
 
 type FooterProps = {
@@ -29,12 +30,20 @@ function Footer({ startupConfig, immersive = false }: FooterProps) {
     >
       <nav className="flex flex-wrap items-center justify-center gap-x-7 gap-y-2">
         {privacyPolicy?.externalUrl && (
-          <a className={linkClassName} href={privacyPolicy.externalUrl} rel="noreferrer">
+          <a
+            className={linkClassName}
+            href={privacyPolicy.externalUrl}
+            {...getLinkAttributes(privacyPolicy.openNewTab)}
+          >
             {localize('com_ui_privacy_policy')}
           </a>
         )}
         {termsOfService?.externalUrl && (
-          <a className={linkClassName} href={termsOfService.externalUrl} rel="noreferrer">
+          <a
+            className={linkClassName}
+            href={termsOfService.externalUrl}
+            {...getLinkAttributes(termsOfService.openNewTab)}
+          >
             {localize('com_ui_terms_of_service')}
           </a>
         )}
