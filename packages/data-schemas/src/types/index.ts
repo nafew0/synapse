@@ -41,6 +41,7 @@ export * from './institution';
 export * from './institutionImportJob';
 export * from './institutionInvite';
 export * from './institutionPackage';
+export * from './usagePackage';
 export * from './platformAdmin';
 export * from './usagePolicy';
 export * from './usageBucket';
