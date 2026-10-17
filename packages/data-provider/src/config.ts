@@ -2854,6 +2854,12 @@ export enum ErrorTypes {
    * SSE stream 404 — job completed, expired, or was deleted before the subscriber connected
    */
   STREAM_EXPIRED = 'stream_expired',
+  /**
+   * A usage-plan allowance ran out. Carries the exhausted window and the instant
+   * it reopens, so the refusal can tell the user when to come back rather than
+   * only that they were blocked.
+   */
+  TOKEN_QUOTA_EXCEEDED = 'token_quota_exceeded',
 }
 
 /**

@@ -78,7 +78,7 @@ function normalizePolicyInput(input, fallback) {
   return {
     mode,
     timezone,
-    period: 'calendar_month',
+    period: ['calendar_month', 'calendar_week'],
     limits: {
       institutionTokens: normalizeNullableLimit(
         input.limits?.institutionTokens ?? fallback.limits?.institutionTokens,
@@ -87,6 +87,18 @@ function normalizePolicyInput(input, fallback) {
       memberTokens: normalizeNullableLimit(
         input.limits?.memberTokens ?? fallback.limits?.memberTokens,
         'Member limit',
+      ),
+      memberTokensWeekly: normalizeNullableLimit(
+        input.limits?.memberTokensWeekly ?? fallback.limits?.memberTokensWeekly,
+        'Member weekly limit',
+      ),
+      memberImages: normalizeNullableLimit(
+        input.limits?.memberImages ?? fallback.limits?.memberImages,
+        'Member image limit',
+      ),
+      memberImagesWeekly: normalizeNullableLimit(
+        input.limits?.memberImagesWeekly ?? fallback.limits?.memberImagesWeekly,
+        'Member weekly image limit',
       ),
       modelTokens: [...modelLimits.values()],
     },

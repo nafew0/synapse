@@ -5,7 +5,7 @@ import type { SettingsContextValue } from './types';
 import useProviderKeys from '../SettingsTabs/ProviderKeys/useProviderKeys';
 import { useHasAccess, useAuthContext, useGetAgentsConfig } from '~/hooks';
 import usePersonalizationAccess from '~/hooks/usePersonalizationAccess';
-import { useGetStartupConfig } from '~/data-provider';
+import { useGetStartupConfig, useGetUserQuota } from '~/data-provider';
 import store from '~/store';
 
 export function useSettingsContext(): SettingsContextValue {
@@ -28,6 +28,10 @@ export function useSettingsContext(): SettingsContextValue {
   });
 
   const balanceEnabled = startupConfig?.balance?.enabled === true;
+  /** The endpoint 204s for a member with no tenant or no institution, so the
+   *  presence of meters is itself the signal that a policy applies. */
+  const quotaQuery = useGetUserQuota({ enabled: user != null });
+  const quotaEnabled = (quotaQuery.data?.meters?.length ?? 0) > 0;
   const langfuseConnectionAccess = startupConfig?.langfuseConnectionAccess === true;
   const adminPanelURL = startupConfig?.adminPanelURL ?? '';
   const isLocalProvider = user?.provider === 'local';
@@ -45,6 +49,7 @@ export function useSettingsContext(): SettingsContextValue {
   return useMemo(
     () => ({
       balanceEnabled,
+      quotaEnabled,
       hasAnyPersonalizationFeature,
       hasMemoryOptOut,
       hasStatefulCodeSessions,
@@ -62,6 +67,7 @@ export function useSettingsContext(): SettingsContextValue {
     }),
     [
       balanceEnabled,
+      quotaEnabled,
       hasAnyPersonalizationFeature,
       hasMemoryOptOut,
       hasStatefulCodeSessions,

@@ -6,9 +6,10 @@ const usageBucketSchema: Schema<IUsageBucket> = new Schema<IUsageBucket>(
     tenantId: { type: String, required: true, trim: true },
     periodStart: { type: Date, required: true },
     periodEnd: { type: Date, required: true },
+    /** `member_images` counts images rather than tokens — see IUsageBucket. */
     scopeType: {
       type: String,
-      enum: ['institution', 'member', 'model'],
+      enum: ['institution', 'member', 'model', 'member_images'],
       required: true,
     },
     scopeKey: { type: String, required: true, trim: true },

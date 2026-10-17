@@ -133,6 +133,9 @@ jest.mock('@librechat/data-schemas', () => {
 
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
+  /** Quota refusals are persisted on the terminal error path; nothing in these
+   *  tests is a refusal, so the predicate just answers false. */
+  isEnforcementDenial: jest.fn(() => false),
   toPendingSteer: jest.fn((item) => item),
   /** Recorded onto the job so the steer route can honour the OWNING replica's
    *  seal capability rather than its own probe. */

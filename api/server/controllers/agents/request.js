@@ -29,6 +29,7 @@ const {
   toChatError,
   toPublicError,
   toChatErrorText,
+  isEnforcementDenial,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -108,6 +109,61 @@ async function attachConversationCreatedAt(req, conversationId, conversationAnch
   req.conversationCreatedAt = resolved.createdAt;
   if (resolved.conversation !== undefined) {
     req.resolvedConversation = resolved.conversation ?? null;
+  }
+}
+
+/**
+ * Persists a usage-limit refusal as a message in the thread.
+ *
+ * Generation errors on this route are published through the resumable-stream job
+ * and never written to the database, so a refusal vanished on refresh — leaving
+ * the user's prompt sitting there with no explanation of why nothing answered
+ * it. A quota refusal is a durable fact about the account, not a transient
+ * failure, so it is the one error worth keeping.
+ *
+ * Deliberately narrow: only enforcement denials are persisted. Persisting every
+ * generation error would be a much larger behavioural change and would fill
+ * histories with transient network noise.
+ *
+ * Best-effort — a write failure here must never mask the original refusal, which
+ * the client has already received over the stream.
+ */
+async function persistQuotaRefusal({ req, error, job, text }) {
+  /** Best-effort in the whole: this runs on the terminal error path, after the
+   *  refusal has already been published to the client. Anything thrown here —
+   *  including a missing dependency — would skip the cleanup that follows and
+   *  strand the request slot, so nothing inside may escape. */
+  try {
+    if (!isEnforcementDenial(error) || req.body?.isTemporary === true) {
+      return;
+    }
+    const conversationId = job?.metadata?.conversationId ?? req.body?.conversationId;
+    const responseMessageId = job?.metadata?.responseMessageId;
+    const parentMessageId =
+      job?.metadata?.userMessage?.messageId ?? req.body?.messageId ?? Constants.NO_PARENT;
+    if (!conversationId || !responseMessageId) {
+      return;
+    }
+    await saveMessage(
+      { userId: req.user.id, isTemporary: false, interfaceConfig: req.config?.interfaceConfig },
+      {
+        user: req.user.id,
+        messageId: responseMessageId,
+        conversationId,
+        parentMessageId,
+        sender: 'System',
+        /** The same public envelope the stream published, so a reloaded thread
+         *  shows the notice the live stream did. */
+        text,
+        isCreatedByUser: false,
+        error: true,
+        unfinished: false,
+        final: true,
+      },
+      { context: 'agents/request.js - persistQuotaRefusal' },
+    );
+  } catch (saveError) {
+    logger.warn('[ResumableAgentController] failed to persist quota refusal', saveError);
   }
 }
 
@@ -1868,6 +1924,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           } finally {
             startupTelemetry?.end('error', error);
           }
+          await persistQuotaRefusal({ req, error, job, text: generationError });
         }
 
         try {

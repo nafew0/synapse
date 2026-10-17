@@ -26,6 +26,7 @@ const {
   computeUsageCostUSD,
   aggregateEmittedUsage,
   aggregateBillableUsage,
+  splitImageUsage,
   resolveAgentTokenConfig,
   buildPersistedContextUsage,
   computeSummaryUsedTokens,
@@ -2455,8 +2456,27 @@ class AgentClient extends BaseClient {
     return this.usage;
   }
 
+  /**
+   * Token usage for the quota meter, with image generations removed.
+   *
+   * An image is billed per image by the provider, so metering the ~4,175 tokens
+   * it reports would charge ~$0.001 against a real cost of ~$0.04. The image
+   * itself is settled separately via {@link getQuotaImageCount}.
+   */
   getQuotaUsage() {
-    return aggregateBillableUsage(this.collectedUsage);
+    const { tokenUsages } = splitImageUsage(this.collectedUsage);
+    return aggregateBillableUsage(tokenUsages);
+  }
+
+  /**
+   * Images produced by this run, for the image meter.
+   *
+   * The reservation was made on the `agents` endpoint before any subagent chose
+   * a model, so an image delegated to the image specialist can only be
+   * attributed at settlement.
+   */
+  getQuotaImageCount() {
+    return splitImageUsage(this.collectedUsage).images;
   }
 
   /**

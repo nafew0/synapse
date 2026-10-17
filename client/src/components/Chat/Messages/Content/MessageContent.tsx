@@ -3,8 +3,11 @@ import { useRecoilValue } from 'recoil';
 import { Alert, DelayedRender } from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageContentProps, TDisplayProps } from '~/common';
+import Error, {
+  UNFINISHED_ERROR_CODE,
+  getErrorSeverity,
+} from '~/components/Messages/Content/Error';
 import { CONNECTION_ERROR_TEXT, LEGACY_CONNECTION_ERROR_TEXT } from '~/hooks/SSE/errors';
-import Error, { UNFINISHED_ERROR_CODE } from '~/components/Messages/Content/Error';
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import { useMessageContext } from '~/Providers';
 import EmptyText from './Parts/EmptyText';
@@ -78,6 +81,18 @@ export const ErrorMessage = ({
 }: Pick<TDisplayProps, 'text' | 'className'> & { message?: TMessage }) => {
   if (connectionErrorTexts.has(text)) {
     return <ConnectionError message={message} />;
+  }
+
+  /** A notice renders its own card (surface background, own border), so wrapping
+   *  it in `ErrorBox` would double the frame. Only genuine failures get the box. */
+  if (getErrorSeverity(text) === 'notice') {
+    return (
+      <Container message={message}>
+        <div role="status" aria-live="polite" className={className}>
+          <Error text={text} />
+        </div>
+      </Container>
+    );
   }
 
   return (

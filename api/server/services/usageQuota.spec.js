@@ -4,12 +4,19 @@ jest.mock('@librechat/data-schemas', () => ({
   runAsSystem: (fn) => fn(),
 }));
 
-jest.mock('@librechat/api', () => ({
-  matchModelName: (model) => {
-    if (String(model).includes('gpt-4o')) return 'gpt-4o';
-    return undefined;
-  },
-}));
+jest.mock('@librechat/api', () => {
+  const actual = jest.requireActual('@librechat/api');
+  return {
+    matchModelName: (model) => {
+      if (String(model).includes('gpt-4o')) return 'gpt-4o';
+      return undefined;
+    },
+    isEnforcementDenial: actual.isEnforcementDenial,
+    toBillingTokens: actual.toBillingTokens,
+    unitFor: actual.unitFor,
+    weightFor: actual.weightFor,
+  };
+});
 
 jest.mock('~/db/models', () => ({
   Institution: {},
@@ -22,6 +29,8 @@ const {
   QuotaError,
   canonicalizeModel,
   getCalendarMonthRange,
+  getCalendarWeekRange,
+  getPolicyRanges,
   isEnforcementDenial,
 } = require('./usageQuota');
 
@@ -88,5 +97,64 @@ describe('isEnforcementDenial', () => {
   it('never treats an unrelated database error as a refusal', () => {
     expect(isEnforcementDenial(new Error('connection reset'))).toBe(false);
     expect(isEnforcementDenial(undefined)).toBe(false);
+  });
+});
+
+describe('usageQuota calendar weeks', () => {
+  /** 2026-07-15 is a Wednesday; the ISO week it belongs to starts Monday 13 July. */
+  it('anchors the week to Monday 00:00 in the institution timezone', () => {
+    const range = getCalendarWeekRange('Asia/Dhaka', new Date('2026-07-15T12:00:00.000Z'));
+    expect(range.start.toISOString()).toBe('2026-07-12T18:00:00.000Z');
+    expect(range.end.toISOString()).toBe('2026-07-19T18:00:00.000Z');
+  });
+
+  it('keeps a Monday in its own week rather than the previous one', () => {
+    const range = getCalendarWeekRange('Asia/Dhaka', new Date('2026-07-13T06:00:00.000Z'));
+    expect(range.start.toISOString()).toBe('2026-07-12T18:00:00.000Z');
+  });
+
+  it('rolls a Sunday into the week that is about to end', () => {
+    const range = getCalendarWeekRange('Asia/Dhaka', new Date('2026-07-19T06:00:00.000Z'));
+    expect(range.start.toISOString()).toBe('2026-07-12T18:00:00.000Z');
+    expect(range.end.toISOString()).toBe('2026-07-19T18:00:00.000Z');
+  });
+
+  /** US DST begins Sunday 2026-03-08, inside the Mon 2 -> Mon 9 week. Both
+   *  boundaries stay LOCAL midnight — 05:00Z under EST, 04:00Z under EDT — so the
+   *  week is 167 hours, not 168. Adding 7x24h to the start would have put the
+   *  reset an hour late and overlapped the following week. */
+  it('holds both Monday boundaries across a DST transition inside the week', () => {
+    const range = getCalendarWeekRange('America/New_York', new Date('2026-03-04T12:00:00.000Z'));
+    expect(range.start.toISOString()).toBe('2026-03-02T05:00:00.000Z');
+    expect(range.end.toISOString()).toBe('2026-03-09T04:00:00.000Z');
+    expect(range.end.getTime() - range.start.getTime()).toBe(167 * 60 * 60 * 1000);
+  });
+
+  it('hands the next week the boundary the DST week ended on', () => {
+    const dstWeek = getCalendarWeekRange('America/New_York', new Date('2026-03-04T12:00:00.000Z'));
+    const nextWeek = getCalendarWeekRange('America/New_York', new Date('2026-03-11T12:00:00.000Z'));
+    expect(nextWeek.start.getTime()).toBe(dstWeek.end.getTime());
+    expect(nextWeek.end.getTime() - nextWeek.start.getTime()).toBe(168 * 60 * 60 * 1000);
+  });
+
+  it('a later week never overlaps the one before it', () => {
+    const first = getCalendarWeekRange('Asia/Dhaka', new Date('2026-07-15T12:00:00.000Z'));
+    const next = getCalendarWeekRange('Asia/Dhaka', new Date('2026-07-22T12:00:00.000Z'));
+    expect(next.start.getTime()).toBe(first.end.getTime());
+  });
+});
+
+describe('getPolicyRanges', () => {
+  const policy = (period) => ({ timezone: 'Asia/Dhaka', period });
+
+  it('returns a week range only when the policy enforces one', () => {
+    expect(getPolicyRanges(policy(['calendar_month'])).week).toBeNull();
+    expect(getPolicyRanges(policy(['calendar_month', 'calendar_week'])).week).not.toBeNull();
+  });
+
+  it('tolerates a legacy scalar period', () => {
+    const ranges = getPolicyRanges(policy('calendar_month'));
+    expect(ranges.month.start).toBeInstanceOf(Date);
+    expect(ranges.week).toBeNull();
   });
 });

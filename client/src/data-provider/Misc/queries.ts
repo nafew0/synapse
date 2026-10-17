@@ -57,6 +57,26 @@ export const useGetUserBalance = (
   });
 };
 
+/**
+ * The signed-in user's remaining allowance on both meters.
+ *
+ * Refetched on focus and mount because a hard wall must not be discovered by a
+ * failed request: a member who exhausted their weekly tokens in another tab
+ * should see it here before trying to send.
+ */
+export const useGetUserQuota = (
+  config?: UseQueryOptions<t.TQuotaResponse>,
+): QueryObserverResult<t.TQuotaResponse> => {
+  const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
+  return useQuery<t.TQuotaResponse>([QueryKeys.quota], () => dataService.getUserQuota(), {
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchOnMount: true,
+    ...config,
+    enabled: (config?.enabled ?? true) === true && queriesEnabled,
+  });
+};
+
 export const useGetSearchEnabledQuery = (
   config?: UseQueryOptions<boolean>,
 ): QueryObserverResult<boolean> => {

@@ -15,6 +15,29 @@ const usageReservationSchema: Schema<IUsageReservation> = new Schema<IUsageReser
     outputTokenCap: { type: Number, required: true, min: 0 },
     reservedTokens: { type: Number, required: true, min: 0 },
     actualTokens: { type: Number, min: 0 },
+    /** Quota weight in force when this reservation was created. Read back at
+     *  settlement rather than recomputed, so a policy change mid-request cannot
+     *  settle against a different weight than it reserved. Billing-only: this
+     *  never reaches `Transaction`, which stays raw provider cost. */
+    weight: { type: Number, required: true, default: 1, min: 0 },
+    unit: { type: String, enum: ['tokens', 'images'], default: 'tokens' },
+    /** Images attributed to this TOKEN reservation at settlement (an agent run
+     *  that delegated to the image specialist). Doubles as the idempotency
+     *  guard so a replayed settlement cannot double-count the image meter. */
+    imagesSettled: { type: Number, default: 0, min: 0 },
+    /** Buckets this reservation holds capacity in, one per enforced window. */
+    scopes: {
+      type: [
+        {
+          _id: false,
+          scopeType: { type: String, required: true },
+          scopeKey: { type: String, required: true },
+          periodStart: { type: Date, required: true },
+          periodEnd: { type: Date, required: true },
+        },
+      ],
+      default: [],
+    },
     status: {
       type: String,
       enum: ['reserved', 'settled', 'released', 'expired'],

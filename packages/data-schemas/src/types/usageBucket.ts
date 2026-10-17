@@ -1,6 +1,12 @@
 import type { Document, Types } from 'mongoose';
 
-export type UsageBucketScope = 'institution' | 'member' | 'model';
+/**
+ * `member_images` counts IMAGES, not tokens, in `usedTokens`/`reservedTokens`.
+ * A separate `unit` field was deliberately avoided: it would belong in the
+ * `usage_bucket_scope_period` unique index and force an index migration on a
+ * live collection, whereas `scopeType` is already part of that key.
+ */
+export type UsageBucketScope = 'institution' | 'member' | 'model' | 'member_images';
 
 export interface IUsageBucket extends Document {
   _id: Types.ObjectId;
@@ -10,6 +16,7 @@ export interface IUsageBucket extends Document {
   scopeType: UsageBucketScope;
   scopeKey: string;
   policyVersion: number;
+  /** Weighted tokens, or image count when `scopeType` is `member_images`. */
   usedTokens: number;
   reservedTokens: number;
   createdAt?: Date;

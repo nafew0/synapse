@@ -39,6 +39,10 @@ export type SectionId =
 
 export interface SettingsContextValue {
   balanceEnabled: boolean;
+  /** True when a usage policy applies to this member — independent of
+   *  `balanceEnabled`, since quota and the credit ledger are different units
+   *  and only one is ever shown. */
+  quotaEnabled: boolean;
   hasAnyPersonalizationFeature: boolean;
   hasMemoryOptOut: boolean;
   hasStatefulCodeSessions: boolean;

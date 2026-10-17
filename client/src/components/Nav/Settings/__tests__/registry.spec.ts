@@ -9,6 +9,7 @@ const validTabSections = new Map(TABS.map((t) => [t.id, new Set(t.sections.map((
 
 const settingsContext: SettingsContextValue = {
   balanceEnabled: false,
+  quotaEnabled: false,
   hasAnyPersonalizationFeature: false,
   hasMemoryOptOut: false,
   hasStatefulCodeSessions: false,
@@ -99,5 +100,41 @@ describe('settings registry', () => {
     it('hides the setting when stateful code sessions are unavailable', () => {
       expect(entry?.show?.({ ...settingsContext, hasStatefulCodeSessions: false })).toBe(false);
     });
+  });
+});
+
+describe('billing rows', () => {
+  const shown = (ctx: Partial<SettingsContextValue>) =>
+    registry
+      .filter((entry) => entry.show?.({ ...settingsContext, ...ctx }) !== false)
+      .map((entry) => entry.id);
+
+  /** Quota and the credit ledger are different units — weighted billing tokens
+   *  vs. real provider cost — so showing both would present two numbers that
+   *  disagree with no way to tell which one blocks a request. */
+  it('never shows the quota row and the credit row together', () => {
+    const ids = shown({ balanceEnabled: true, quotaEnabled: true });
+    expect(ids).toContain('usageQuota');
+    expect(ids).not.toContain('tokenCredits');
+  });
+
+  /** The regression this guards: the quota panel was invisible because the only
+   *  billing row was gated on `balanceEnabled`, which is false on a usage plan. */
+  it('shows the quota row when a usage policy applies but balance is off', () => {
+    const ids = shown({ balanceEnabled: false, quotaEnabled: true });
+    expect(ids).toContain('usageQuota');
+    expect(ids).not.toContain('tokenCredits');
+  });
+
+  it('falls back to the credit row when no usage policy applies', () => {
+    const ids = shown({ balanceEnabled: true, quotaEnabled: false });
+    expect(ids).toContain('tokenCredits');
+    expect(ids).not.toContain('usageQuota');
+  });
+
+  it('shows neither when both are off', () => {
+    const ids = shown({ balanceEnabled: false, quotaEnabled: false });
+    expect(ids).not.toContain('tokenCredits');
+    expect(ids).not.toContain('usageQuota');
   });
 });

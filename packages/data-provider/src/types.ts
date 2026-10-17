@@ -855,6 +855,35 @@ export type TUpdateFeedbackResponse = {
   feedback?: TMinimalFeedback;
 };
 
+/** Which allowance a quota meter tracks. */
+export type TQuotaMeter = 'tokens' | 'images';
+
+/** The window a meter resets on. Fixed calendar windows anchored to UTC. */
+export type TQuotaWindow = 'week' | 'month';
+
+export type TQuotaMeterState = {
+  meter: TQuotaMeter;
+  window: TQuotaWindow;
+  /** Weighted consumption — Claude used directly counts double. */
+  used: number;
+  /** `null` when the member has no ceiling (unlimited override or shadow mode). */
+  limit: number | null;
+  remaining: number | null;
+  unlimited: boolean;
+  blocked: boolean;
+  /** ISO instant the window reopens. */
+  resetsAt: string;
+};
+
+export type TQuotaResponse = {
+  tenantId: string;
+  unit: 'billing_tokens';
+  /** False while the institution is still in shadow mode: usage is recorded but
+   *  nothing is refused, so the UI must not present the meters as walls. */
+  enforced: boolean;
+  meters: TQuotaMeterState[];
+};
+
 export type TBalanceResponse = {
   tokenCredits: number;
   // Automatic refill settings

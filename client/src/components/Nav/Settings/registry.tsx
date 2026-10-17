@@ -652,11 +652,22 @@ export const registry: SettingEntry[] = [
   },
   // Account · Billing
   {
+    id: 'usageQuota',
+    tab: ACCOUNT,
+    section: 'billing',
+    labelKey: 'com_ui_usage_allowance',
+    keywords: ['quota', 'limit', 'allowance', 'tokens', 'images', 'usage'],
+    /** Quota and the credit ledger are different units — weighted billing tokens
+     *  vs. real cost — so exactly one of these two rows ever renders. */
+    show: (ctx) => ctx.quotaEnabled,
+    Component: TokenCredits,
+  },
+  {
     id: 'tokenCredits',
     tab: ACCOUNT,
     section: 'billing',
     labelKey: 'com_ui_settings_label_credits',
-    show: (ctx) => ctx.balanceEnabled,
+    show: (ctx) => ctx.balanceEnabled && !ctx.quotaEnabled,
     Component: TokenCredits,
   },
   {

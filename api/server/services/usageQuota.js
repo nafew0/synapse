@@ -3,42 +3,88 @@ const { getTransactionSupport, logger, runAsSystem } = require('@librechat/data-
 const {
   checkEmailConfig,
   matchModelName,
+  isEnforcementDenial,
   recordQuotaDenial,
   recordReservationExpiry,
+  toBillingTokens,
+  unitFor,
+  weightFor,
 } = require('@librechat/api');
 const models = require('~/db/models');
 const { sendEmail } = require('~/server/utils');
 
 const DEFAULT_TIMEZONE = 'Asia/Dhaka';
+/**
+ * Quota windows reset on the international standard, UTC — NOT the institution's
+ * local timezone. Every tenant's week therefore turns over at the same instant
+ * (Monday 00:00 UTC) and the reset time we show a user is unambiguous.
+ *
+ * `policy.timezone` still governs display and warning emails; it no longer moves
+ * a bucket boundary.
+ */
+const QUOTA_RESET_TIMEZONE = 'UTC';
 const DEFAULT_RESERVATION_TTL_MS = 15 * 60 * 1000;
 const DEFAULT_MAX_OUTPUT_TOKENS = 4096;
 let transactionSupportCache = null;
 
 class QuotaError extends Error {
   constructor(details) {
-    super('Token quota exceeded');
-    this.name = 'QuotaError';
-    this.statusCode = 429;
-    this.details = {
+    const resolved = {
       code: 'TOKEN_QUOTA_EXCEEDED',
       ...details,
     };
+    /**
+     * The message is a JSON envelope, not prose, because that is the only way a
+     * refusal survives the trip to the UI: `handleAbortError` forwards
+     * `error.message` verbatim ONLY when it carries a `"type"`, and the client's
+     * error renderer keys its localized copy off `type`/`code`. A plain string
+     * here surfaced as "Something went wrong… Token quota exceeded", which told
+     * the user nothing about when they could try again.
+     *
+     * Only display fields are included — never the institution's limits.
+     */
+    super(
+      JSON.stringify({
+        /**
+         * `type` ONLY — deliberately no `code`. The client resolves its handler
+         * as `json.code || json.type`, checking `code` FIRST, so shipping the
+         * uppercase `TOKEN_QUOTA_EXCEEDED` alongside meant the lookup missed the
+         * handler registered under the lowercase type and rendered raw JSON at
+         * the user. The full code stays on `this.details` for logs and the API
+         * body, where nothing keys off it by precedence.
+         */
+        type: 'token_quota_exceeded',
+        limitCode: resolved.limitCode ?? null,
+        window: resolved.window ?? null,
+        meter: resolved.meter ?? null,
+        resetAt: resolved.resetAt ?? null,
+      }),
+    );
+    this.name = 'QuotaError';
+    this.statusCode = 429;
+    this.details = resolved;
     this.body = { error: this.details };
   }
 }
 
 /**
- * Codes that must reach the caller as a refusal. Everything else raised by the
- * quota engine is an availability problem: chat must keep working, because a
- * shadow-mode institution has not opted into having requests blocked at all.
+ * Which allowance ran out, so the UI can name it and the window it resets on.
+ *
+ * This is additive: `code` stays `TOKEN_QUOTA_EXCEEDED` because callers and
+ * `FAIL_CLOSED_QUOTA_CODES` already branch on it, and a hard wall must keep
+ * failing closed. `limitCode` narrows the same refusal for display.
  */
-const FAIL_CLOSED_QUOTA_CODES = new Set([
-  'TOKEN_QUOTA_EXCEEDED',
-  'QUOTA_ENFORCEMENT_REQUIRES_TRANSACTIONS',
-]);
-
-function isEnforcementDenial(error) {
-  return error instanceof QuotaError && FAIL_CLOSED_QUOTA_CODES.has(error.details?.code);
+function resolveLimitCode(scopeType, window) {
+  if (scopeType === 'member_images') {
+    return window === 'week' ? 'IMAGE_WEEKLY_CAP' : 'IMAGE_MONTHLY_CAP';
+  }
+  if (scopeType === 'member') {
+    return window === 'week' ? 'WEEKLY_CAP' : 'MONTHLY_CAP';
+  }
+  if (scopeType === 'model') {
+    return 'MODEL_CAP';
+  }
+  return 'INSTITUTION_CAP';
 }
 
 function normalizeProviderKey(provider) {
@@ -123,6 +169,66 @@ function getCalendarMonthRange(timeZone = DEFAULT_TIMEZONE, now = new Date()) {
   };
 }
 
+/**
+ * The weekly window resets in full at each boundary — no rollover, no carry-over.
+ * A new week simply writes a new bucket (the unique index is keyed on
+ * `periodStart`), so the reset needs no job and no mutation.
+ *
+ * ISO weeks: Monday 00:00 in the institution's timezone.
+ */
+function getCalendarWeekRange(timeZone = DEFAULT_TIMEZONE, now = new Date()) {
+  let parts;
+  try {
+    parts = zonedParts(now, timeZone);
+  } catch {
+    throw new QuotaError({
+      code: 'INVALID_INSTITUTION_TIMEZONE',
+      scope: 'institution',
+      timezone: timeZone,
+    });
+  }
+  /** Weekday of the LOCAL calendar date, not of the UTC instant: east of UTC a
+   *  local midnight falls on the previous UTC day, which would shift the week
+   *  boundary by one day. `Date#getUTCDay` is Sunday-based; shift Monday to 0. */
+  const localDate = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+  const isoDayIndex = (localDate.getUTCDay() + 6) % 7;
+  const weekStartDate = new Date(localDate.getTime() - isoDayIndex * 24 * 60 * 60 * 1000);
+  const weekEndDate = new Date(localDate.getTime() + (7 - isoDayIndex) * 24 * 60 * 60 * 1000);
+  /** Both boundaries are resolved from calendar fields, so a DST transition
+   *  inside the week moves the wall-clock offset without moving the boundary. */
+  return {
+    timezone: timeZone,
+    start: zonedDateTimeToUtc(
+      {
+        year: weekStartDate.getUTCFullYear(),
+        month: weekStartDate.getUTCMonth() + 1,
+        day: weekStartDate.getUTCDate(),
+      },
+      timeZone,
+    ),
+    end: zonedDateTimeToUtc(
+      {
+        year: weekEndDate.getUTCFullYear(),
+        month: weekEndDate.getUTCMonth() + 1,
+        day: weekEndDate.getUTCDate(),
+      },
+      timeZone,
+    ),
+  };
+}
+
+/** Windows a policy enforces, each with the ranges scopes are bucketed into. */
+function getPolicyRanges(policy, now = new Date()) {
+  const periods = Array.isArray(policy.period)
+    ? policy.period
+    : [policy.period ?? 'calendar_month'];
+  const month = getCalendarMonthRange(QUOTA_RESET_TIMEZONE, now);
+  const week = periods.includes('calendar_week')
+    ? getCalendarWeekRange(QUOTA_RESET_TIMEZONE, now)
+    : null;
+  return { month, week };
+}
+
 async function supportsTransactions() {
   const supported = await getTransactionSupport(mongoose, transactionSupportCache);
   transactionSupportCache = supported;
@@ -148,10 +254,13 @@ async function getActivePolicy(tenantId) {
       version: 0,
       mode: 'shadow',
       timezone: institution.timezone || DEFAULT_TIMEZONE,
-      period: 'calendar_month',
+      period: ['calendar_month'],
       limits: {
         institutionTokens: null,
         memberTokens: null,
+        memberTokensWeekly: null,
+        memberImages: null,
+        memberImagesWeekly: null,
         modelTokens: [],
       },
       warningThresholds: [0.8, 0.9],
@@ -181,24 +290,74 @@ function getModelLimit(policy, modelKey) {
   );
 }
 
-function buildScopes({ tenantId, userId, modelKey, policy }) {
-  return [
+/**
+ * Scopes reserved against for one request, each carrying the window it buckets
+ * into. Buckets are keyed on `(tenantId, periodStart, scopeType, scopeKey)`, so
+ * the same scope in the weekly and monthly window are distinct rows.
+ *
+ * A `null` limit records usage without ever denying — that is how an unlimited
+ * override (superadmin) and shadow mode both stay fully observable.
+ */
+function buildScopes({ tenantId, userId, modelKey, policy, ranges, unit = 'tokens' }) {
+  const memberKey = String(userId);
+  /** Image endpoints are billed per image by the provider; metering their tokens
+   *  would misprice them by orders of magnitude, so they use their own meter and
+   *  never touch the token buckets. */
+  if (unit === 'images') {
+    const scopes = [
+      {
+        scopeType: 'member_images',
+        scopeKey: memberKey,
+        limit: policy.limits?.memberImages ?? null,
+        range: ranges.month,
+        window: 'month',
+      },
+    ];
+    if (ranges.week) {
+      scopes.push({
+        scopeType: 'member_images',
+        scopeKey: memberKey,
+        limit: policy.limits?.memberImagesWeekly ?? null,
+        range: ranges.week,
+        window: 'week',
+      });
+    }
+    return scopes;
+  }
+
+  const scopes = [
     {
       scopeType: 'institution',
       scopeKey: tenantId,
       limit: policy.limits?.institutionTokens ?? null,
+      range: ranges.month,
+      window: 'month',
     },
     {
       scopeType: 'member',
-      scopeKey: String(userId),
+      scopeKey: memberKey,
       limit: policy.limits?.memberTokens ?? null,
+      range: ranges.month,
+      window: 'month',
     },
     {
       scopeType: 'model',
       scopeKey: modelKey,
       limit: getModelLimit(policy, modelKey),
+      range: ranges.month,
+      window: 'month',
     },
   ];
+  if (ranges.week) {
+    scopes.push({
+      scopeType: 'member',
+      scopeKey: memberKey,
+      limit: policy.limits?.memberTokensWeekly ?? null,
+      range: ranges.week,
+      window: 'week',
+    });
+  }
+  return scopes;
 }
 
 async function loadBucket({ tenantId, range, scope, policyVersion, session }) {
@@ -266,6 +425,9 @@ async function reserveBucket({ tenantId, range, scope, policyVersion, tokens, en
   const reserved = current?.reservedTokens ?? 0;
   throw new QuotaError({
     scope: scope.scopeType,
+    limitCode: resolveLimitCode(scope.scopeType, scope.window),
+    window: scope.window ?? 'month',
+    meter: scope.scopeType === 'member_images' ? 'images' : 'tokens',
     modelKey: scope.scopeType === 'model' ? scope.scopeKey : undefined,
     limit: scope.limit,
     used,
@@ -288,6 +450,7 @@ async function reserveUsage({
   provider,
   model,
   reservationKey,
+  endpoint,
   estimatedInputTokens,
   requestedOutputTokens,
   metadata,
@@ -301,7 +464,15 @@ async function reserveUsage({
 
   const canonical = canonicalizeModel({ provider, model });
   const policy = await getActivePolicy(tenantId);
-  const range = getCalendarMonthRange(policy.timezone);
+  const ranges = getPolicyRanges(policy);
+  const range = ranges.month;
+  /** The request ENDPOINT, not the provider key, decides weight and unit:
+   *  direct Claude and the Office Assistant's Claude both report provider
+   *  `anthropic`, so the provider cannot tell them apart. Falls back to
+   *  `provider` for callers that predate the explicit `endpoint` argument. */
+  const quotaEndpoint = endpoint ?? provider;
+  const unit = unitFor(quotaEndpoint);
+  const weight = unit === 'images' ? 1 : weightFor(quotaEndpoint);
   const existing = await runAsSystem(() =>
     models.UsageReservation.findOne({ tenantId, reservationKey }).lean().exec(),
   );
@@ -334,8 +505,19 @@ async function reserveUsage({
     Number.isFinite(requestedOutputTokens) ? requestedOutputTokens : DEFAULT_MAX_OUTPUT_TOKENS,
     0,
   );
-  const scopes = buildScopes({ tenantId, userId, modelKey: canonical.modelKey, policy });
-  const finiteRemaining = [];
+  const scopes = buildScopes({
+    tenantId,
+    userId,
+    modelKey: canonical.modelKey,
+    policy,
+    ranges,
+    unit,
+  });
+  /** Remaining is tracked PER SCOPE, not as a bare list: the scope that actually
+   *  binds is the one with the least left, and the refusal has to name that
+   *  window. Choosing by limit size instead reported the month — and its reset
+   *  three weeks out — when it was the week that had run dry. */
+  const scopeRemaining = [];
   for (const scope of scopes) {
     if (scope.limit == null) {
       continue;
@@ -343,44 +525,61 @@ async function reserveUsage({
     const bucket = await runAsSystem(() =>
       models.UsageBucket.findOne({
         tenantId,
-        periodStart: range.start,
+        periodStart: scope.range.start,
         scopeType: scope.scopeType,
         scopeKey: scope.scopeKey,
       })
         .lean()
         .exec(),
     );
-    finiteRemaining.push(
-      Math.max(scope.limit - (bucket?.usedTokens ?? 0) - (bucket?.reservedTokens ?? 0), 0),
-    );
+    scopeRemaining.push({
+      scope,
+      remaining: Math.max(
+        scope.limit - (bucket?.usedTokens ?? 0) - (bucket?.reservedTokens ?? 0),
+        0,
+      ),
+    });
   }
+  const finiteRemaining = scopeRemaining.map((entry) => entry.remaining);
   const smallestRemaining =
     finiteRemaining.length > 0 ? Math.min(...finiteRemaining) : Number.POSITIVE_INFINITY;
-  const proposedOutputCap = Math.max(
-    Math.min(requestedOutput, smallestRemaining - inputReservation),
-    0,
-  );
   const enforcing = policy.mode === 'enforce';
-  const outputTokenCap = enforcing ? proposedOutputCap : requestedOutput;
-  const reservedTokens = inputReservation + outputTokenCap;
+  /** An image reservation holds exactly one unit, so the output-cap machinery —
+   *  which trims a token budget to fit the remaining allowance — does not apply:
+   *  an image is indivisible, and capping its "output tokens" would deny every
+   *  request whose token estimate exceeds the image allowance. */
+  const isImageUnit = unit === 'images';
+  const proposedOutputCap = isImageUnit
+    ? requestedOutput
+    : Math.max(Math.min(requestedOutput, smallestRemaining - inputReservation), 0);
+  const outputTokenCap = enforcing && !isImageUnit ? proposedOutputCap : requestedOutput;
+  /** Token endpoints hold WEIGHTED tokens — the weight is a quota construct and
+   *  never reaches `Transaction`, which stays raw provider cost. */
+  const reservedTokens = isImageUnit
+    ? 1
+    : toBillingTokens(inputReservation + outputTokenCap, weight);
 
-  if (enforcing && outputTokenCap < 1) {
+  if (enforcing && (isImageUnit ? smallestRemaining < 1 : outputTokenCap < 1)) {
+    /** The binding scope is whichever has the least remaining — that is the value
+     *  that drove `smallestRemaining` and therefore the denial. Ties resolve to
+     *  the first, which `buildScopes` orders month-before-week. */
     const limitingScope =
-      scopes.find((scope) => {
-        if (scope.limit == null) {
-          return false;
-        }
-        return scope.limit <= inputReservation;
-      }) ?? scopes.find((scope) => scope.limit != null);
+      scopeRemaining.find((entry) => entry.remaining === smallestRemaining)?.scope ??
+      scopes.find((scope) => scope.limit != null);
     recordQuotaDenial(limitingScope?.scopeType ?? 'institution');
     throw new QuotaError({
       scope: limitingScope?.scopeType ?? 'institution',
+      limitCode: resolveLimitCode(limitingScope?.scopeType, limitingScope?.window),
+      window: limitingScope?.window ?? 'month',
+      meter: isImageUnit ? 'images' : 'tokens',
       modelKey: limitingScope?.scopeType === 'model' ? canonical.modelKey : undefined,
       limit: limitingScope?.limit ?? 0,
       used: Math.max((limitingScope?.limit ?? 0) - smallestRemaining, 0),
       reserved: 0,
       remaining: Math.max(smallestRemaining, 0),
-      resetAt: range.end.toISOString(),
+      /** The instant the exhausted window reopens — a hard wall must tell the
+       *  user when it lifts, not merely that it exists. */
+      resetAt: (limitingScope?.range ?? range).end.toISOString(),
     });
   }
 
@@ -402,6 +601,14 @@ async function reserveUsage({
           estimatedInputTokens: inputReservation,
           outputTokenCap,
           reservedTokens,
+          weight,
+          unit,
+          scopes: scopes.map((scope) => ({
+            scopeType: scope.scopeType,
+            scopeKey: scope.scopeKey,
+            periodStart: scope.range.start,
+            periodEnd: scope.range.end,
+          })),
           status: 'reserved',
           expiresAt: new Date(Date.now() + DEFAULT_RESERVATION_TTL_MS),
           metadata: {
@@ -420,7 +627,7 @@ async function reserveUsage({
     for (const scope of scopes) {
       await reserveBucket({
         tenantId,
-        range,
+        range: scope.range,
         scope,
         policyVersion: Math.max(policy.version, 1),
         tokens: reservedTokens,
@@ -468,11 +675,34 @@ async function reserveUsage({
   };
 }
 
+/**
+ * Buckets a reservation holds capacity in. Reservations written before
+ * multi-window support carry no `scopes`, so they fall back to the original
+ * institution/member/model triple on the reservation's own period.
+ */
 function reservationScopes(reservation) {
+  if (Array.isArray(reservation.scopes) && reservation.scopes.length > 0) {
+    return reservation.scopes;
+  }
   return [
-    { scopeType: 'institution', scopeKey: reservation.tenantId },
-    { scopeType: 'member', scopeKey: reservation.userId.toString() },
-    { scopeType: 'model', scopeKey: reservation.modelKey },
+    {
+      scopeType: 'institution',
+      scopeKey: reservation.tenantId,
+      periodStart: reservation.periodStart,
+      periodEnd: reservation.periodEnd,
+    },
+    {
+      scopeType: 'member',
+      scopeKey: reservation.userId.toString(),
+      periodStart: reservation.periodStart,
+      periodEnd: reservation.periodEnd,
+    },
+    {
+      scopeType: 'model',
+      scopeKey: reservation.modelKey,
+      periodStart: reservation.periodStart,
+      periodEnd: reservation.periodEnd,
+    },
   ];
 }
 
@@ -522,7 +752,7 @@ async function transitionReservation({ tenantId, reservationKey, actualTokens, s
       const result = await models.UsageBucket.updateOne(
         {
           tenantId,
-          periodStart: previous.periodStart,
+          periodStart: scope.periodStart ?? previous.periodStart,
           scopeType: scope.scopeType,
           scopeKey: scope.scopeKey,
           reservedTokens: { $gte: heldTokens },
@@ -562,12 +792,91 @@ async function transitionReservation({ tenantId, reservationKey, actualTokens, s
   return updated;
 }
 
-async function settleUsage({ tenantId, reservationKey, usage }) {
-  const actualTokens =
+/**
+ * Consumes the image meter for images produced inside a TOKEN reservation —
+ * i.e. generated by the Office Assistant delegating to the image specialist.
+ *
+ * These were never reserved: at reservation time the request was on the `agents`
+ * endpoint and no subagent had chosen a model yet. So capacity is taken at
+ * settlement, after the fact.
+ *
+ * Consequence, accepted deliberately: a user can exceed the image allowance by
+ * at most the images in one request, because the count is unknowable until the
+ * run completes. At ~$0.04 an image that is the right trade against holding
+ * speculative image capacity on every agent request.
+ *
+ * Idempotent via `imagesSettled` on the reservation, so a retried or replayed
+ * settlement cannot double-count.
+ */
+async function consumeSettledImages({ tenantId, reservation, images, session }) {
+  const count = Math.max(Number(images) || 0, 0);
+  if (count === 0 || reservation == null || reservation.unit === 'images') {
+    return;
+  }
+  const claimed = await models.UsageReservation.findOneAndUpdate(
+    { tenantId, reservationKey: reservation.reservationKey, imagesSettled: { $in: [null, 0] } },
+    { $set: { imagesSettled: count } },
+    { new: false, session },
+  )
+    .lean()
+    .exec();
+  if (!claimed) {
+    return;
+  }
+  const policy = await getActivePolicy(tenantId);
+  const ranges = getPolicyRanges(policy);
+  const scopes = buildScopes({
+    tenantId,
+    userId: reservation.userId,
+    modelKey: reservation.modelKey,
+    policy,
+    ranges,
+    unit: 'images',
+  });
+  for (const scope of scopes) {
+    await loadBucket({
+      tenantId,
+      range: scope.range,
+      scope,
+      policyVersion: Math.max(policy.version, 1),
+      session,
+    });
+    await models.UsageBucket.updateOne(
+      {
+        tenantId,
+        periodStart: scope.range.start,
+        scopeType: scope.scopeType,
+        scopeKey: scope.scopeKey,
+      },
+      { $inc: { usedTokens: count } },
+      { session },
+    ).exec();
+  }
+}
+
+/**
+ * @param {object} params
+ * @param {number} [params.images] Images generated by this request. For an
+ *   image-unit reservation this is the settled count; for a token reservation
+ *   (an agent run that delegated to the image specialist) it is consumed
+ *   separately against the image meter.
+ */
+async function settleUsage({ tenantId, reservationKey, usage, images }) {
+  const rawTokens =
     Math.max(usage?.inputTokens ?? 0, 0) +
     Math.max(usage?.cacheWriteTokens ?? 0, 0) +
     Math.max(usage?.cacheReadTokens ?? 0, 0) +
     Math.max(usage?.outputTokens ?? 0, 0);
+  /** Read the weight the reservation was CREATED with rather than recomputing
+   *  it: a policy edit mid-request must not settle against a different weight
+   *  than it reserved, or the bucket drifts permanently. */
+  const existing = await runAsSystem(() =>
+    models.UsageReservation.findOne({ tenantId, reservationKey }).lean().exec(),
+  );
+  const actualTokens =
+    existing?.unit === 'images'
+      ? Math.max(images ?? existing.reservedTokens ?? 1, 0)
+      : toBillingTokens(rawTokens, existing?.weight ?? 1);
   const reservation = await transitionReservation({
     tenantId,
     reservationKey,
@@ -575,6 +884,9 @@ async function settleUsage({ tenantId, reservationKey, usage }) {
     status: 'settled',
   });
   if (reservation?.status === 'settled') {
+    if (existing?.unit !== 'images') {
+      await consumeSettledImages({ tenantId, reservation: existing, images });
+    }
     await emitUsageWarnings(reservation);
   }
   return reservation;
@@ -778,14 +1090,89 @@ async function reconcileQuotaState({ limit = 100, now = new Date() } = {}) {
   };
 }
 
+/**
+ * A member's remaining allowance on both meters and both windows.
+ *
+ * Reads only the CURRENT windows — there is no date range, so this cannot be
+ * walked backwards into a usage-history API by a caller who only holds
+ * quota-read permission.
+ *
+ * A `null` limit means unlimited (shadow mode, or a superadmin override): usage
+ * is still reported, `remaining` is simply absent.
+ */
+async function getMemberQuota({ tenantId, userId, now = new Date() }) {
+  const policy = await getActivePolicy(tenantId);
+  const ranges = getPolicyRanges(policy, now);
+  const memberKey = String(userId);
+  const windows = [
+    { window: 'month', range: ranges.month },
+    ...(ranges.week ? [{ window: 'week', range: ranges.week }] : []),
+  ];
+  const periodStarts = windows.map((entry) => entry.range.start);
+  const buckets = await runAsSystem(() =>
+    models.UsageBucket.find({
+      tenantId,
+      scopeKey: memberKey,
+      scopeType: { $in: ['member', 'member_images'] },
+      periodStart: { $in: periodStarts },
+    })
+      .lean()
+      .exec(),
+  );
+
+  const limitFor = (meter, window) => {
+    const limits = policy.limits ?? {};
+    if (meter === 'images') {
+      return (window === 'week' ? limits.memberImagesWeekly : limits.memberImages) ?? null;
+    }
+    return (window === 'week' ? limits.memberTokensWeekly : limits.memberTokens) ?? null;
+  };
+
+  const meters = [];
+  for (const meter of ['tokens', 'images']) {
+    const scopeType = meter === 'images' ? 'member_images' : 'member';
+    for (const { window, range } of windows) {
+      const bucket = buckets.find(
+        (candidate) =>
+          candidate.scopeType === scopeType &&
+          new Date(candidate.periodStart).getTime() === range.start.getTime(),
+      );
+      const used = (bucket?.usedTokens ?? 0) + (bucket?.reservedTokens ?? 0);
+      const limit = limitFor(meter, window);
+      meters.push({
+        meter,
+        window,
+        used,
+        limit,
+        remaining: limit == null ? null : Math.max(limit - used, 0),
+        unlimited: limit == null,
+        blocked: limit != null && used >= limit,
+        resetsAt: range.end.toISOString(),
+      });
+    }
+  }
+
+  return {
+    tenantId,
+    /** Weighted, not raw: this is the number the wall is enforced against. */
+    unit: 'billing_tokens',
+    enforced: policy.mode === 'enforce',
+    meters,
+  };
+}
+
 async function getQuotaHealth({ tenantId, now = new Date() }) {
   const policy = await getActivePolicy(tenantId);
-  const range = getCalendarMonthRange(policy.timezone, now);
+  const ranges = getPolicyRanges(policy, now);
+  const range = ranges.month;
+  const periodStarts = [ranges.month.start, ...(ranges.week ? [ranges.week.start] : [])];
   const buckets = await runAsSystem(() =>
-    models.UsageBucket.find({ tenantId, periodStart: range.start }).lean().exec(),
+    models.UsageBucket.find({ tenantId, periodStart: { $in: periodStarts } })
+      .lean()
+      .exec(),
   );
   const warnings = await runAsSystem(() =>
-    models.UsageWarning.find({ tenantId, periodStart: range.start })
+    models.UsageWarning.find({ tenantId, periodStart: { $in: periodStarts } })
       .sort({ createdAt: -1 })
       .lean()
       .exec(),
@@ -795,14 +1182,21 @@ async function getQuotaHealth({ tenantId, now = new Date() }) {
     range,
     warnings,
     buckets: buckets.map((bucket) => {
+      /** A member now has one bucket per window, so scopeType+scopeKey alone is
+       *  ambiguous — the period start is what separates weekly from monthly. */
+      const isImages = bucket.scopeType === 'member_images';
       const scope = buildScopes({
         tenantId,
-        userId: bucket.scopeType === 'member' ? bucket.scopeKey : '',
+        userId: bucket.scopeType === 'member' || isImages ? bucket.scopeKey : '',
         modelKey: bucket.scopeType === 'model' ? bucket.scopeKey : '',
         policy,
+        ranges,
+        unit: isImages ? 'images' : 'tokens',
       }).find(
         (candidate) =>
-          candidate.scopeType === bucket.scopeType && candidate.scopeKey === bucket.scopeKey,
+          candidate.scopeType === bucket.scopeType &&
+          candidate.scopeKey === bucket.scopeKey &&
+          candidate.range.start.getTime() === new Date(bucket.periodStart).getTime(),
       );
       const limit = scope?.limit ?? null;
       const consumed = bucket.usedTokens + bucket.reservedTokens;
@@ -867,13 +1261,20 @@ async function emitUsageWarnings(reservation) {
   const policy = await getActivePolicy(reservation.tenantId);
   const thresholds = policy.warningThresholds ?? [0.8, 0.9];
   const scopes = reservationScopes(reservation);
+  const ranges = getPolicyRanges(policy);
   for (const scope of scopes) {
     const limit = buildScopes({
       tenantId: reservation.tenantId,
       userId: reservation.userId,
       modelKey: reservation.modelKey,
       policy,
-    }).find((candidate) => candidate.scopeType === scope.scopeType)?.limit;
+      ranges,
+      unit: reservation.unit === 'images' ? 'images' : 'tokens',
+    }).find(
+      (candidate) =>
+        candidate.scopeType === scope.scopeType &&
+        candidate.range.start.getTime() === new Date(scope.periodStart).getTime(),
+    )?.limit;
     if (limit == null || limit <= 0) {
       continue;
     }
@@ -1183,11 +1584,15 @@ async function getShadowReadiness({ tenantId, minimumDays = 7, minimumCalls = 10
 
 module.exports = {
   DEFAULT_TIMEZONE,
+  QUOTA_RESET_TIMEZONE,
   QuotaError,
   assertEnforcementTopology,
   canonicalizeModel,
   getActivePolicy,
   getCalendarMonthRange,
+  getCalendarWeekRange,
+  getMemberQuota,
+  getPolicyRanges,
   getQuotaHealth,
   getShadowReadiness,
   isEnforcementDenial,

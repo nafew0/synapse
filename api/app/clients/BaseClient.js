@@ -785,6 +785,11 @@ class BaseClient {
           tenantId,
           userId: this.user ?? this.options.req.user?.id,
           provider: this.options.endpointType ?? this.options.endpoint,
+          /** The raw endpoint decides the quota weight and unit. `provider`
+           *  cannot: direct Claude and the Office Assistant's Claude both
+           *  resolve to `anthropic`, and the image endpoint is billed per
+           *  image rather than per token. */
+          endpoint: this.options.endpoint,
           model: this.modelOptions?.model ?? this.model,
           reservationKey: quotaReservationKey,
           estimatedInputTokens: promptTokens,
@@ -966,6 +971,10 @@ class BaseClient {
       const settlement = {
         tenantId,
         reservationKey: quotaReservationKey,
+        /** Images are billed per image, so they settle on their own meter. Only
+         *  the agent client can report them: the reservation was made on the
+         *  `agents` endpoint before any subagent chose a model. */
+        images: this.getQuotaImageCount != null ? this.getQuotaImageCount() : 0,
         usage: {
           inputTokens: Math.max(
             Number(

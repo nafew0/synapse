@@ -1,5 +1,5 @@
-import { useState, memo, useRef } from 'react';
-import { useSetRecoilState } from 'recoil';
+import { useState, useEffect, memo, useRef } from 'react';
+import { useRecoilState, useSetRecoilState } from 'recoil';
 import * as Menu from '@ariakit/react/menu';
 import { GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
 import {
@@ -100,6 +100,14 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
   });
   const [showSettings, setShowSettings] = useState(false);
   const setShowShortcutsDialog = useSetRecoilState(store.showShortcutsDialog);
+  /** Anywhere in the app can ask for settings on a given tab (e.g. the usage
+   *  notice's "Manage plan"); the dialog itself stays local state here. */
+  const [requestedTab, setRequestedTab] = useRecoilState(store.requestedSettingsTab);
+  useEffect(() => {
+    if (requestedTab != null) {
+      setShowSettings(true);
+    }
+  }, [requestedTab]);
   const [showArchived, setShowArchived] = useState(false);
   const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -200,7 +208,20 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
           triggerRef={accountSettingsButtonRef}
         />
       )}
-      {showSettings && <Settings open={showSettings} onOpenChange={setShowSettings} />}
+      {showSettings && (
+        <Settings
+          open={showSettings}
+          initialTab={requestedTab}
+          onOpenChange={(open) => {
+            setShowSettings(open);
+            if (!open) {
+              /** Clear the request so reopening from the menu lands on the
+               *  default tab rather than the last deep-linked one. */
+              setRequestedTab(null);
+            }
+          }}
+        />
+      )}
     </Menu.MenuProvider>
   );
 }
