@@ -1,0 +1,77 @@
+:root{
+  --bg:#F2F6F5; --surface:#FFFFFF; --ink:#132322; --ink-soft:#4C5F5C; --ink-faint:#7C8D8A;
+  --teal:#1B5E5C; --teal-deep:#0E3F3D; --teal-tint:#E4EFED; --orange:#E2793D;
+  --orange-tint:#FBE7D8; --line:#DCE6E3;
+  --shadow:0 1px 2px rgba(14,63,61,0.06), 0 8px 24px -12px rgba(14,63,61,0.18);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0C1615; --surface:#122120; --ink:#EAF3F1; --ink-soft:#AEC2BF; --ink-faint:#7E938F;
+    --teal:#4FBAB4; --teal-deep:#8FDAD4; --teal-tint:#17302E; --orange:#F1975E;
+    --orange-tint:#2C2013; --line:#223836;
+    --shadow:0 1px 2px rgba(0,0,0,0.3), 0 8px 28px -12px rgba(0,0,0,0.55);
+  }
+}
+*{box-sizing:border-box}
+html{font-size:18px}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:'Inter',-apple-system,'Segoe UI','Nikosh',sans-serif;
+  line-height:1.7; -webkit-font-smoothing:antialiased;
+}
+@media (max-width:640px){ html{font-size:16px} }
+a{color:var(--teal-deep)}
+:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
+.page{max-width:1440px;margin:0 auto;padding:32px 16px 64px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:24px}
+.top nav{display:flex;gap:16px;flex-wrap:wrap;font-size:.85rem}
+.brand{font-weight:700;color:var(--teal-deep);text-decoration:none}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:28px}
+@media (max-width:640px){ .card{padding:20px} }
+h1{margin:0 0 4px;font-size:1.9rem;text-wrap:balance}
+h2{margin:2rem 0 .4rem;font-size:1.2rem;color:var(--teal-deep)}
+.meta{color:var(--ink-faint);font-size:.85rem;margin:0 0 1rem}
+.todo{background:var(--orange-tint);border-left:3px solid var(--orange);padding:2px 8px;border-radius:4px}
+table{width:100%;border-collapse:collapse;font-size:.9rem;display:block;overflow-x:auto}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--ink-soft);font-weight:600}
+footer{margin-top:24px;color:var(--ink-faint);font-size:.8rem}
+@media print{
+  body{background:#fff;color:#000}
+  .top nav,footer nav{display:none}
+  .card{box-shadow:none;border:none;padding:0}
+}
+.lede{font-size:1.02rem;color:var(--ink-soft)}
+.glance{background:var(--teal-tint);border-radius:12px;padding:14px 18px;margin:1.2rem 0}
+.glance h2{margin:0 0 .3rem;font-size:1rem}
+.glance ul{margin:0;padding-left:1.1rem}
+h2{scroll-margin-top:16px}
+h3{margin:1.2rem 0 .2rem;font-size:1rem}
+.note{border-left:3px solid var(--teal);padding:2px 12px;color:var(--ink-soft);font-size:.92rem}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,800px) minmax(0,1fr);gap:24px;align-items:start}
+.layout>.toc{grid-column:1;justify-self:start;width:200px}
+.layout>main{grid-column:2}
+.toc{position:sticky;top:16px;font-size:.88rem;max-height:calc(100vh - 32px);overflow-y:auto}
+.toc strong{display:block;margin-bottom:.5rem;color:var(--ink-faint);font-size:.75rem;text-transform:uppercase;letter-spacing:.06em}
+.toc ol{margin:0;padding:0;list-style:none;border-left:2px solid var(--line)}
+.toc a{display:block;padding:5px 12px;margin-left:-2px;border-left:2px solid transparent;color:var(--ink-soft);text-decoration:none}
+.toc a:hover,.toc a:focus-visible{color:var(--teal-deep);border-left-color:var(--teal)}
+@media (max-width:1280px){
+  .layout{grid-template-columns:minmax(0,1fr)}
+  .layout>.toc,.layout>main{grid-column:1}
+  .layout>.toc{width:auto}
+  .toc{position:static;max-height:none}
+  .toc ol{display:flex;flex-wrap:wrap;gap:4px 12px;border-left:none}
+  .toc a{padding:2px 0;border-left:none;margin:0;text-decoration:underline}
+}
+@media print{.toc{display:none}.layout{display:block}}
+.lead{font-size:1.1rem;color:var(--ink-soft);margin:.4rem 0 1rem}
+.cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:1.2rem 0 .4rem}
+@media (max-width:640px){ .cards{grid-template-columns:1fr} }
+.cards div{background:var(--teal-tint);border-radius:12px;padding:14px 16px}
+.cards b{display:block;color:var(--teal-deep);margin-bottom:2px}
+.cards span{color:var(--ink-soft);font-size:.92rem;line-height:1.55}
+h2{font-size:1.3rem;margin-top:2.4rem}
+.plain{list-style:none;padding:0}
+.plain li{padding:10px 0;border-bottom:1px solid var(--line)}
+.plain li:last-child{border-bottom:none}
