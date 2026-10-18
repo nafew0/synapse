@@ -258,13 +258,13 @@ presentation tasks.
    while the old router (Claude in front of GPT specialists) is still live would under-reserve
    every Office Assistant request, because the reservation would be priced at the agent's model
    only. Mitigation: ship `feat/single-agent-office` first (phase 7, step 1).
-1a. **Firecrawl and other per-call tool fees** are real costs outside the token meter. Measure
+2. **Firecrawl and other per-call tool fees** are real costs outside the token meter. Measure
    them during shadow week. If they matter, charge a fixed number of credits per call.
-2. **A wrong rate leaks free usage.** A model missing from the rate table falls back to a cheap
+3. **A wrong rate leaks free usage.** A model missing from the rate table falls back to a cheap
    family default. Mitigation: the phase 1 test fails when a served model has no exact rate.
-3. **Detached subagent usage** can arrive after settlement (phase 2, step 4).
-4. **Exchange-rate edits reprice everyone at once.** A rate change shrinks or grows every
+4. **Detached subagent usage** can arrive after settlement (phase 2, step 4).
+5. **Exchange-rate edits reprice everyone at once.** A rate change shrinks or grows every
    dollar allowance immediately. Every change is audited; announce changes before making
    them.
-5. **Cache staleness.** Package and pricing caches must be invalidated on every write and
+6. **Cache staleness.** Package and pricing caches must be invalidated on every write and
    across processes (Redis or a short TTL), or an edit takes effect on only one server.
