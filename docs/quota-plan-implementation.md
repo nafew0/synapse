@@ -50,6 +50,16 @@ phases 1 to 3 land, packages do not limit anyone.
 | 6 Retire old systems | Not started | |
 | 7 Rollout | Not started | |
 
+**In-app test, 2026-10-18** (local backend + synapse-admin on the `SynapseQuotaTest` database, a
+member on a ৳0.50/month package): packages, pricing and assignments worked through both the API and the
+admin UI, with audit entries; wrong-scope assignments were refused (400) and members were refused the
+admin API (403); every settled reservation matched its `Transaction` credits; the weekly wall refused
+with "You've used this week's allowance … Resets Mon, Oct 19, 6:00 AM"; a member override lifted the
+wall at once. Four bugs found and fixed (`c5052dcc0`, `1438f474a`): a header crash on trimmed
+requests (latent on bdren-prod), the output cap never reaching the model, the input estimate missing
+the instructions, and the live notice and saved refusal losing their details or thread.
+Still not metered: title generation (about 55 credits per new chat in the test).
+
 **Differences from this plan, as built:**
 
 - **Credits and tokens side by side.** A request is metered in credits only when its institution
