@@ -110,7 +110,6 @@ const {
   resolveYouTubeInjectionConfig,
   decrementPendingRequest,
   maybePrewarmCodeSandbox,
-  quotaAccountFor,
 } = require('@librechat/api');
 const {
   Run,
@@ -140,7 +139,7 @@ const {
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
-const { recordAuxiliaryCredits } = require('~/server/services/usageQuota');
+const { recordAuxiliaryCredits, resolveQuotaAccount } = require('~/server/services/usageQuota');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { resolveConfigServers, getAccessibleMcpServerNames } = require('~/server/services/MCP');
 const { getMCPServerTools } = require('~/server/services/Config');
@@ -2471,7 +2470,7 @@ class AgentClient extends BaseClient {
    */
   async chargeAuxiliaryCredits({ context, credits, model }) {
     const req = this.options.req;
-    const tenantId = quotaAccountFor(req?.user);
+    const tenantId = req?.user ? await resolveQuotaAccount(req.user) : null;
     if (!tenantId) {
       return;
     }

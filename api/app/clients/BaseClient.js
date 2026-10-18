@@ -15,7 +15,6 @@ const {
   getTransactionsConfig,
   encodeAndFormatDocuments,
   getLangfuseTraceMessageFields,
-  quotaAccountFor,
 } = require('@librechat/api');
 const {
   Constants,
@@ -38,6 +37,7 @@ const {
   releaseUsage,
   reserveUsage,
   settleUsage,
+  resolveQuotaAccount,
   isEnforcementDenial,
 } = require('~/server/services/usageQuota');
 const { logViolation } = require('~/cache');
@@ -608,6 +608,26 @@ class BaseClient {
     };
   }
 
+  /**
+   * The institution, or the individuals account for a standalone user; staff are not metered.
+   * A failed lookup meters nothing, as a failed reservation does.
+   */
+  async resolveQuotaTenant() {
+    const user = this.options.req?.user;
+    if (!user) {
+      return null;
+    }
+    try {
+      return await resolveQuotaAccount(user);
+    } catch (error) {
+      logger.error(
+        '[BaseClient] quota account lookup failed; continuing without quota accounting',
+        error,
+      );
+      return null;
+    }
+  }
+
   async sendMessage(message, opts = {}) {
     const appConfig = this.options.req?.config;
     /** @type {Promise<TMessage>} */
@@ -779,8 +799,7 @@ class BaseClient {
       );
     }
 
-    /** The institution, or the individuals account for a standalone user; staff are not metered. */
-    const tenantId = quotaAccountFor(this.options.req?.user);
+    const tenantId = await this.resolveQuotaTenant();
     const quotaReservationKey = `${conversationId}:${responseMessageId}:primary:0`;
     let quota;
     if (tenantId) {

@@ -1,8 +1,7 @@
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
-const { quotaAccountFor } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
-const { getMemberQuota } = require('~/server/services/usageQuota');
+const { getMemberQuota, resolveQuotaAccount } = require('~/server/services/usageQuota');
 
 const router = express.Router();
 
@@ -12,13 +11,13 @@ const router = express.Router();
  * only the current windows, so it cannot serve usage history.
  */
 router.get('/', requireJwtAuth, async (req, res) => {
-  const tenantId = quotaAccountFor(req.user);
-  if (!tenantId) {
-    /** Platform staff have no quota account, so no usage policy applies; the UI shows no allowance
-     *  rather than a zeroed one, which would read as "exhausted". */
-    return res.sendStatus(204);
-  }
   try {
+    const tenantId = req.user ? await resolveQuotaAccount(req.user) : null;
+    if (!tenantId) {
+      /** Platform staff have no quota account, so no usage policy applies; the UI shows no allowance
+       *  rather than a zeroed one, which would read as "exhausted". */
+      return res.sendStatus(204);
+    }
     const quota = await getMemberQuota({
       tenantId,
       userId: req.user.id,

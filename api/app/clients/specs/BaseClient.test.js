@@ -5,6 +5,7 @@ jest.mock('~/server/services/usageQuota', () => ({
   reserveUsage: (...args) => mockReserveUsage(...args),
   settleUsage: (...args) => mockSettleUsage(...args),
   releaseUsage: (...args) => mockReleaseUsage(...args),
+  resolveQuotaAccount: async (user) => user?.tenantId ?? null,
 }));
 const { Constants, ContentTypes } = require('librechat-data-provider');
 const { FakeClient, initializeFakeClient } = require('./FakeClient');

@@ -17,6 +17,7 @@ const {
   CREDITS_PER_USD,
   effectiveBdtPerUsd,
   isUsageAccount,
+  quotaAccountFor,
   checkEmailConfig,
   recordQuotaDenial,
   isEnforcementDenial,
@@ -251,6 +252,40 @@ async function supportsTransactions() {
 }
 
 /** The institution (which carries its usage packages) and the policy it points at. */
+const PLATFORM_STAFF_TTL_MS = 60_000;
+let platformStaff = { loadedAt: 0, ids: new Set(), emails: new Set() };
+
+/** Active platform admins, cached briefly: checked on every request of a user outside any institution. */
+async function loadPlatformStaff(now = Date.now()) {
+  if (now - platformStaff.loadedAt < PLATFORM_STAFF_TTL_MS) {
+    return platformStaff;
+  }
+  const admins = await runAsSystem(() =>
+    models.PlatformAdmin.find({ active: true }).select('userId email').lean().exec(),
+  );
+  platformStaff = {
+    loadedAt: now,
+    ids: new Set(admins.flatMap((admin) => (admin.userId ? [String(admin.userId)] : []))),
+    emails: new Set(admins.map((admin) => admin.email)),
+  };
+  return platformStaff;
+}
+
+/**
+ * The quota account a request is metered under: the user's institution, or the individuals
+ * account. Platform staff register without an institution like individuals do, but are never metered.
+ */
+async function resolveQuotaAccount(user) {
+  const account = quotaAccountFor(user);
+  if (!isUsageAccount(account)) {
+    return account;
+  }
+  const staff = await loadPlatformStaff();
+  const userId = String(user.id ?? user._id ?? '');
+  const email = String(user.email ?? '').toLowerCase();
+  return staff.ids.has(userId) || staff.emails.has(email) ? null : account;
+}
+
 /** Where a quota key's packages and policy version live: an institution, or a non-institution account. */
 function quotaOwnerModel(tenantId) {
   return isUsageAccount(tenantId) ? models.UsageAccount : models.Institution;
@@ -2449,6 +2484,7 @@ async function getShadowReadiness({ tenantId, minimumDays = 7, minimumCalls = 10
 }
 
 module.exports = {
+  resolveQuotaAccount,
   quotaOwnerModel,
   loadQuotaContext,
   ensureUsageAccount,

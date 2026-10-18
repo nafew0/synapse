@@ -103,8 +103,35 @@ describe('usageQuota for users outside any institution (replica set)', () => {
         'UsagePricing',
         'User',
         'Transaction',
+        'PlatformAdmin',
       ].map((name) => models[name].deleteMany({})),
     );
+  });
+
+  /** The only test that resolves accounts, so the platform-staff cache is loaded here first. */
+  it('meters standalone users, never platform staff, and institution members by institution', async () => {
+    const boundStaff = await models.User.create({
+      email: 'staff@example.test',
+      accountScope: 'standalone',
+    });
+    await models.PlatformAdmin.create({ email: 'staff@example.test', userId: boundStaff._id });
+    await models.PlatformAdmin.create({ email: 'unbound@example.test' });
+    await models.PlatformAdmin.create({ email: 'former@example.test', active: false });
+    const standalone = (email) => ({
+      id: String(new mongoose.Types.ObjectId()),
+      email,
+      accountScope: 'standalone',
+    });
+
+    expect(
+      await quota.resolveQuotaAccount({ ...standalone('x'), id: String(boundStaff._id) }),
+    ).toBeNull();
+    expect(await quota.resolveQuotaAccount(standalone('Unbound@example.test'))).toBeNull();
+    expect(await quota.resolveQuotaAccount(standalone('former@example.test'))).toBe(tenantId);
+    expect(await quota.resolveQuotaAccount(standalone('solo@example.test'))).toBe(tenantId);
+    expect(
+      await quota.resolveQuotaAccount({ id: 'm', tenantId: 'uni', accountScope: 'institution' }),
+    ).toBe('uni');
   });
 
   it('meters nothing until the account is given a trial package', async () => {
