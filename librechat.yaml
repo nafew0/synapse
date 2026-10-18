@@ -601,13 +601,29 @@ endpoints:
       titleModel: openai/gpt-5.6-luna
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
+      # OpenRouter list prices, USD per 1M tokens, checked 2026-10-18. Usage credits are
+      # charged at these rates, so keep them in step with openrouter.ai/api/v1/models.
+      # OpenRouter's price follows the provider it routes to and can change within a day.
       tokenConfig:
         'google/gemini-3.8-flash':
-          prompt: 0.75
-          completion: 3.75
-          read: 0.075
+          prompt: 0.825
+          completion: 4.125
+          read: 0.0825
           write: 0.0417
           context: 1048576
+        'deepseek/deepseek-v4-flash-0731':
+          prompt: 0.10
+          completion: 0.30
+          read: 0.03
+          context: 1048576
+        # The dotted id matches no key in tx.ts/tokens.ts (they list `claude-haiku-4-5`), so
+        # without this entry it fell back to `claude-`: 0.8/2.4 and a 100K context.
+        'anthropic/claude-haiku-4.5':
+          prompt: 1
+          completion: 5
+          read: 0.1
+          write: 1.25
+          context: 200000
 
     # Separate endpoint so `addParams` below (modalities/image_config) only ever
     # reaches the image models. Sending `modalities: ["image","text"]`
