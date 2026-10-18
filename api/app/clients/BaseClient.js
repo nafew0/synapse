@@ -78,8 +78,10 @@ function applyQuotaOutputCap(target, cap, setIfMissing = false) {
       applied = true;
     }
   }
+  /** `maxTokens` is the key the run's LangChain chat models read; `max_output_tokens` on
+   *  agent parameters was ignored, so an uncapped spec ran past its quota cap. */
   if (!applied && setIfMissing) {
-    target.max_output_tokens = cap;
+    target.maxTokens = cap;
   }
   if (target.modelKwargs && typeof target.modelKwargs === 'object') {
     applyQuotaOutputCap(target.modelKwargs, cap);
@@ -818,9 +820,13 @@ class BaseClient {
       applyQuotaOutputCap(payload, quota.outputTokenCap);
       applyQuotaOutputCap(opts, quota.outputTokenCap);
       applyQuotaOutputCap(this.options.agent?.model_parameters, quota.outputTokenCap, true);
-      if (quota.outputCapped) {
-        this.options.res?.setHeader?.('X-Quota-Event', 'QUOTA_OUTPUT_CAPPED');
-        this.options.res?.setHeader?.('X-Quota-Output-Cap', String(quota.outputTokenCap));
+      /** Streaming routes have already sent their headers, and setting one then throws
+       *  ERR_HTTP_HEADERS_SENT after the reservation is held. The cap still reaches the
+       *  client through `metadata.quota` on the response message. */
+      const res = this.options.res;
+      if (quota.outputCapped && res?.setHeader && !res.headersSent) {
+        res.setHeader('X-Quota-Event', 'QUOTA_OUTPUT_CAPPED');
+        res.setHeader('X-Quota-Output-Cap', String(quota.outputTokenCap));
       }
     }
 

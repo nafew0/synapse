@@ -2478,9 +2478,17 @@ class AgentClient extends BaseClient {
     const agent = this.options.agent;
     const model = agent?.model ?? agent?.model_parameters?.model ?? this.model;
     const endpoint = agent?.provider ?? this.options.endpoint;
+    /** Instructions join the prompt inside the run, after `promptTokens` is counted, so the
+     *  reservation adds them. Tool definitions are still not counted. */
+    const instructions = [agent?.instructions, agent?.additional_instructions]
+      .filter((value) => typeof value === 'string' && value.length > 0)
+      .join('\n');
     return {
       model,
       endpoint,
+      overheadTokens: instructions
+        ? countFormattedMessageTokens({ role: 'system', content: instructions }, this.getEncoding())
+        : 0,
       rates: creditRates({
         model,
         endpoint,

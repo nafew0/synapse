@@ -158,6 +158,57 @@ describe('BaseClient', () => {
     );
   });
 
+  test('caps a spec with no output limit through maxTokens, the key the chat model reads', async () => {
+    mockReserveUsage.mockResolvedValue({
+      outputTokenCap: 40,
+      outputCapped: true,
+      canonical: { modelKey: 'gpt-4o-mini' },
+    });
+    TestClient.options.req = { user: { id: 'user-1', tenantId: 'tenant-a' }, body: {} };
+    TestClient.options.res = { headersSent: true, setHeader: jest.fn() };
+    TestClient.user = 'user-1';
+    TestClient.options.agent = { model_parameters: { model: 'gpt-4o-mini' } };
+    TestClient.saveMessageToDatabase = jest.fn().mockResolvedValue({ message: {} });
+
+    await TestClient.sendMessage('Hello');
+
+    expect(TestClient.options.agent.model_parameters).toMatchObject({ maxTokens: 40 });
+    expect(TestClient.options.agent.model_parameters.max_output_tokens).toBeUndefined();
+  });
+
+  test('caps output on a streaming response whose headers were already sent', async () => {
+    mockReserveUsage.mockResolvedValue({
+      outputTokenCap: 25,
+      outputCapped: true,
+      canonical: { modelKey: 'gpt-4o-mini' },
+    });
+    TestClient.options.req = {
+      user: { id: 'user-1', tenantId: 'tenant-a' },
+      body: { max_tokens: 100 },
+    };
+    /** What Node does once an SSE stream has flushed its headers. */
+    const setHeader = jest.fn(() => {
+      throw Object.assign(new Error('Cannot set headers after they are sent to the client'), {
+        code: 'ERR_HTTP_HEADERS_SENT',
+      });
+    });
+    TestClient.options.res = { headersSent: true, setHeader };
+    TestClient.user = 'user-1';
+    TestClient.model = 'gpt-4o-mini';
+    TestClient.options.agent = { model_parameters: { max_output_tokens: 100 } };
+    TestClient.saveMessageToDatabase = jest.fn().mockResolvedValue({ message: {} });
+
+    const response = await TestClient.sendMessage('Hello');
+
+    expect(setHeader).not.toHaveBeenCalled();
+    expect(TestClient.options.agent.model_parameters.max_output_tokens).toBe(25);
+    expect(mockSettleUsage).toHaveBeenCalledTimes(1);
+    expect(response.metadata.quota).toMatchObject({
+      event: 'QUOTA_OUTPUT_CAPPED',
+      outputTokenCap: 25,
+    });
+  });
+
   test('returns the input messages without instructions when addInstructions() is called with empty instructions', () => {
     const messages = [{ content: 'Hello' }, { content: 'How are you?' }, { content: 'Goodbye' }];
     const instructions = '';
