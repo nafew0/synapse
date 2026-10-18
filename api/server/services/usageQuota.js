@@ -2450,6 +2450,7 @@ async function getShadowReadiness({ tenantId, minimumDays = 7, minimumCalls = 10
 
 module.exports = {
   quotaOwnerModel,
+  loadQuotaContext,
   ensureUsageAccount,
   DEFAULT_TIMEZONE,
   QUOTA_RESET_TIMEZONE,

@@ -6,6 +6,7 @@ const {
   canonicalizeModel,
   getActivePolicy,
   getCreditConsole,
+  loadQuotaContext,
   getCalendarMonthRange,
   getQuotaHealth,
   quotaOwnerModel,
@@ -298,8 +299,8 @@ async function listUsagePolicies({ tenantId, limit = 50, offset = 0 }) {
  * the engine's own keys.
  */
 async function getPolicyConsole({ tenantId }) {
-  const [policy, health, sources, credits] = await Promise.all([
-    getActivePolicy(tenantId),
+  const [{ institution: owner, policy }, health, sources, credits] = await Promise.all([
+    loadQuotaContext(tenantId),
     getQuotaHealth({ tenantId }),
     /** An account that is not an institution sees the platform's own model list. */
     getQuotaModelSources(isUsageAccount(tenantId) ? undefined : tenantId),
@@ -311,7 +312,8 @@ async function getPolicyConsole({ tenantId }) {
     limits: policy.limits?.modelTokens ?? [],
   });
   /** `credits` is set once the institution is on usage packages; the token view stays for the rest. */
-  return { policy, health, models, credits };
+  /** The packages the console edits: an account's default member package is its trial. */
+  return { policy, health, models, credits, usagePackage: owner.usagePackage ?? null };
 }
 
 module.exports = {
