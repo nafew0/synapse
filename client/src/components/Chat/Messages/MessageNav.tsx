@@ -1,12 +1,12 @@
 import { memo, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronUp, ChevronDown } from 'lucide-react';
-import { ContentTypes } from 'librechat-data-provider';
+import { ContentTypes, ErrorTypes } from 'librechat-data-provider';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
 import { useMessagesConversation, useMessagesSubmission } from '~/Providers';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
+import { cn, getErrorInfo, getErrorMessage } from '~/utils';
 
 type MessageEntry = {
   id: string;
@@ -36,8 +36,12 @@ export function extractPreviewFromContent(content?: TMessageContentParts[]): str
   return '';
 }
 
-export function buildEntry(id: string, msg: TMessage): MessageEntry {
-  const raw = msg.text?.trim() ? msg.text : extractPreviewFromContent(msg.content);
+/** Turns a saved error (stored as JSON) into the words the reader saw. */
+type DescribeError = (text: string) => string;
+
+export function buildEntry(id: string, msg: TMessage, describeError?: DescribeError): MessageEntry {
+  const text = msg.text?.trim() ? msg.text : extractPreviewFromContent(msg.content);
+  const raw = msg.error === true && describeError ? describeError(text) : text;
   const trimmed = raw.trim();
   return {
     id,
@@ -93,7 +97,11 @@ export function buildSteerEntry(node: HTMLElement, id: string): MessageEntry {
   };
 }
 
-function getMessageEntries(root: ParentNode, messagesById: Map<string, TMessage>): MessageEntry[] {
+function getMessageEntries(
+  root: ParentNode,
+  messagesById: Map<string, TMessage>,
+  describeError?: DescribeError,
+): MessageEntry[] {
   const nodes = root.querySelectorAll<HTMLElement>(ENTRY_NODE_SELECTOR);
   const entries: MessageEntry[] = [];
   const seen = new Set<string>();
@@ -109,7 +117,7 @@ function getMessageEntries(root: ParentNode, messagesById: Map<string, TMessage>
       continue;
     }
     const msg = messagesById.get(id);
-    entries.push(msg ? buildEntry(id, msg) : buildFallbackEntry(node, id));
+    entries.push(msg ? buildEntry(id, msg, describeError) : buildFallbackEntry(node, id));
   }
   if (entries.length > 0 && root.querySelector('#' + MESSAGES_END_ID)) {
     entries.push({ id: MESSAGES_END_ID, isUser: false, preview: '', isEnd: true });
@@ -249,6 +257,13 @@ const chevronButtonClasses = cn(
 
 function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivElement> }) {
   const localize = useLocalize();
+  const describeError = useCallback<DescribeError>(
+    (text) =>
+      getErrorInfo(text).code === ErrorTypes.TOKEN_QUOTA_EXCEEDED
+        ? localize('com_error_quota_title')
+        : getErrorMessage(text, localize),
+    [localize],
+  );
   const { conversationId } = useMessagesConversation();
   const { isSubmitting } = useMessagesSubmission();
   const { data: messages } = useGetMessagesByConvoId(
@@ -406,7 +421,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
     }
     refreshTimerRef.current = setTimeout(() => {
       const root = scrollableRef.current ?? document;
-      const next = getMessageEntries(root, messagesByIdRef.current);
+      const next = getMessageEntries(root, messagesByIdRef.current, describeError);
       setEntries((prev) => {
         if (
           prev.length === next.length &&
@@ -418,7 +433,7 @@ function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivE
       });
       reconcileObservedElements();
     }, 200);
-  }, [scrollableRef, reconcileObservedElements]);
+  }, [scrollableRef, reconcileObservedElements, describeError]);
 
   useEffect(() => {
     refreshEntries();

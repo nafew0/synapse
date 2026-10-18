@@ -335,6 +335,29 @@ describe('MessageNav', () => {
       expect(entry.preview).toBe('alpha-preview');
     });
 
+    it('labels a saved error with readable words, not its JSON', () => {
+      const json = '{"type":"token_quota_exceeded","limitCode":"WEEKLY_CAP"}';
+      const describe = jest.fn(() => 'Usage limit reached');
+      const entry = buildEntry(
+        'e',
+        asTMessage(buildMessage({ messageId: 'e', text: json, error: true })),
+        describe,
+      );
+      expect(entry.preview).toBe('Usage limit reached');
+      expect(describe).toHaveBeenCalledWith(json);
+    });
+
+    it('leaves ordinary messages to their own text', () => {
+      const describe = jest.fn(() => 'unused');
+      const entry = buildEntry(
+        'a',
+        asTMessage(buildMessage({ messageId: 'a', text: 'hello' })),
+        describe,
+      );
+      expect(entry.preview).toBe('hello');
+      expect(describe).not.toHaveBeenCalled();
+    });
+
     it('falls back to DOM text content for messages without React Query data', () => {
       const node = document.createElement('div');
       node.className = 'message-render';
