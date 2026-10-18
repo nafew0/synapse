@@ -45,10 +45,12 @@ const institutionInviteSchema: Schema<IInstitutionInvite> = new Schema<IInstitut
       required: true,
       trim: true,
     },
-    creditPackageId: {
+    /** The member usage package the invited person gets on accepting; none means their default. */
+    usagePackageKey: {
       type: String,
       default: null,
       trim: true,
+      lowercase: true,
     },
     status: {
       type: String,

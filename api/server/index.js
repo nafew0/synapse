@@ -337,7 +337,6 @@ const startServer = async () => {
   app.use('/api/admin/skills', routes.adminSkills);
   app.use('/api/admin/usage', routes.adminUsage);
   app.use('/api/admin/users', routes.adminUsers);
-  app.use('/api/admin/billing', routes.adminBilling);
   app.use('/api/admin/audit-log', routes.adminAuditLog);
   app.use('/api/admin/banner', routes.adminBanner);
   app.use('/api/platform/institutions', routes.platformInstitutions);

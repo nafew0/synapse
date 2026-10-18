@@ -9,7 +9,6 @@ export * from './convo';
 export * from './chatProject';
 export * from './session';
 export * from './balance';
-export * from './creditGrant';
 export * from './banner';
 export * from './transaction';
 export * from './message';

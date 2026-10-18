@@ -165,7 +165,7 @@ router.post('/invite', requireManageUsers, async (req, res) => {
       email: req.body?.email,
       name: req.body?.name,
       requestedRole: req.body?.role,
-      creditPackageId: req.body?.creditPackageId,
+      usagePackageKey: req.body?.usagePackageKey,
       invitedBy: req.user,
       context: buildAuditContext(req),
     });

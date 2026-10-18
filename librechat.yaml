@@ -119,26 +119,6 @@ balance:
   startBalance: 0
   autoRefillEnabled: false
 
-creditPackages:
-  currency: BDT
-  list:
-    - id: waiver
-      label: Waived / Complimentary
-      price: 0
-      credits: 1000000
-    - id: starter
-      label: Starter
-      price: 500
-      credits: 10000000
-    - id: standard
-      label: Standard
-      price: 2000
-      credits: 25000000
-    - id: premium
-      label: Premium
-      price: 5000
-      credits: 75000000
-
 interface:
   customWelcome: 'Welcome to Synapse!'
   fileSearch: true

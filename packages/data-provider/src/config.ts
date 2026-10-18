@@ -1620,7 +1620,6 @@ export const interfaceSchema = z
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
 export type TBalanceConfig = z.infer<typeof balanceSchema>;
-export type TCreditPackagesConfig = z.infer<typeof creditPackagesSchema>;
 export type TTransactionsConfig = z.infer<typeof transactionsSchema>;
 
 export const turnstileOptionsSchema = z
@@ -1666,7 +1665,6 @@ export type TStartupConfig = {
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;
-  creditPackages?: TCreditPackagesConfig;
   transactions?: TTransactionsConfig;
   discordLoginEnabled: boolean;
   facebookLoginEnabled: boolean;
@@ -1925,33 +1923,6 @@ export const balanceSchema = z.object({
   refillAmount: z.number().optional().default(10000),
 });
 
-export const creditPackagesSchema = z.object({
-  currency: z.string().trim().min(1).default('BDT'),
-  list: z
-    .array(
-      z.object({
-        id: z.string().trim().min(1),
-        label: z.string().trim().min(1),
-        price: z.number().nonnegative(),
-        credits: z.number().int().positive(),
-      }),
-    )
-    .min(1)
-    .superRefine((packages, ctx) => {
-      const ids = new Set<string>();
-      packages.forEach((pkg, index) => {
-        if (ids.has(pkg.id)) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: [index, 'id'],
-            message: 'Package IDs must be unique',
-          });
-        }
-        ids.add(pkg.id);
-      });
-    }),
-});
-
 export const transactionsSchema = z.object({
   enabled: z.boolean().optional().default(true),
 });
@@ -2150,7 +2121,6 @@ export const configSchema = z.object({
     })
     .default({ socialLogins: defaultSocialLogins }),
   balance: balanceSchema.optional(),
-  creditPackages: creditPackagesSchema.optional(),
   transactions: transactionsSchema.optional(),
   speech: z
     .object({

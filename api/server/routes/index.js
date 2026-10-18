@@ -11,7 +11,6 @@ const adminRoles = require('./admin/roles');
 const adminSkills = require('./admin/skills');
 const adminUsage = require('./admin/usage');
 const adminUsers = require('./admin/users');
-const adminBilling = require('./admin/billing');
 const adminAuditLog = require('./admin/audit');
 const adminBanner = require('./admin/banner');
 const platformInstitutions = require('./platform/institutions');
@@ -66,7 +65,6 @@ module.exports = {
   adminSkills,
   adminUsage,
   adminUsers,
-  adminBilling,
   adminAuditLog,
   adminBanner,
   platformInstitutions,
