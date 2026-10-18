@@ -15,8 +15,10 @@ const TENANT_ISOLATION_APPLIED = Symbol.for('librechat:tenantIsolation');
  * status rows and tenant-scoped override rows, so its methods apply explicit
  * tenant filters instead of ambient ALS scoping. AuditLog composes its tenant
  * filter from the JWT-resolved caller and uses `{ tenantId: { $exists: false } }`
- * for platform-level entries. Adding an entry here must be a deliberate,
- * reviewed decision — that is the whole point of this guard.
+ * for platform-level entries. UsageAccount is a platform-level quota owner like
+ * Institution: its `tenantId` names the account (`__individuals__`), not a caller's
+ * tenant, and only platform code and the quota engine read it. Adding an entry here
+ * must be a deliberate, reviewed decision — that is the whole point of this guard.
  */
 const MANUAL_TENANT_SCOPING = new Set<string>([
   'SystemGrant',
@@ -29,6 +31,7 @@ const MANUAL_TENANT_SCOPING = new Set<string>([
   'UsageBucket',
   'UsageReservation',
   'UsageWarning',
+  'UsageAccount',
 ]);
 
 function isPluginApplied(schema: mongoose.Schema): boolean {
