@@ -360,6 +360,17 @@ describe('usageQuota credit metering (replica set)', () => {
       );
       expect(week.usedTokens).toBe(56);
     });
+
+    /** Nothing is reserved for a title, so counting it would read as a 100% underestimate. */
+    it('stays out of the shadow gate estimate and coverage figures', async () => {
+      await charge(56);
+      const { metrics } = await quota.getShadowReadiness({ tenantId });
+      expect(metrics).toMatchObject({
+        attributableCalls: 0,
+        underestimatedCalls: 0,
+        estimationOverageRate: 0,
+      });
+    });
   });
 
   describe('getCreditConsole', () => {

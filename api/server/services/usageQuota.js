@@ -2137,6 +2137,10 @@ async function assertEnforcementTopology() {
   return { enforcing: true, transactionCapable };
 }
 
+/** Titles and activity labels are written as settled reservations with nothing reserved up front:
+ *  they say nothing about how well requests are estimated, so the shadow gate leaves them out. */
+const PRIMARY_RESERVATIONS = { 'metadata.auxiliary': { $ne: true } };
+
 /**
  * Measures whether an institution's shadow observation is trustworthy enough to
  * switch on enforcement.
@@ -2168,7 +2172,7 @@ async function getShadowReadiness({ tenantId, minimumDays = 7, minimumCalls = 10
   ] = await runAsSystem(() =>
     Promise.all([
       models.UsageReservation.aggregate([
-        { $match: { tenantId, createdAt: { $gte: cutoff } } },
+        { $match: { tenantId, createdAt: { $gte: cutoff }, ...PRIMARY_RESERVATIONS } },
         {
           $group: {
             _id: null,
@@ -2226,7 +2230,7 @@ async function getShadowReadiness({ tenantId, minimumDays = 7, minimumCalls = 10
           },
         },
       ]),
-      models.UsageReservation.find({ tenantId })
+      models.UsageReservation.find({ tenantId, ...PRIMARY_RESERVATIONS })
         .sort({ createdAt: 1 })
         .limit(1)
         .select('createdAt')
