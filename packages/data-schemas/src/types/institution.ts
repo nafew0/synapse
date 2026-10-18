@@ -12,19 +12,6 @@ export interface IInstitution extends Document {
   timezone?: string;
   usagePolicyVersion?: number;
   usagePackage?: InstitutionUsagePackage | null;
-  packageAssignment?: {
-    packageId: string;
-    packageSnapshot: {
-      name: string;
-      description?: string;
-      price: number;
-      currency: string;
-      monthlyTokenLimit: number;
-    };
-    monthlyTokenLimit: number;
-    assignedAt: Date;
-    assignedBy?: Types.ObjectId | string;
-  } | null;
   limits?: {
     maxActiveMembers?: number | null;
   };

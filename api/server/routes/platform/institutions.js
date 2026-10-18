@@ -264,8 +264,6 @@ router.post('/', async (req, res) => {
       adminEmail,
       adminName,
       limits,
-      packageId,
-      monthlyTokenLimit,
     } = req.body ?? {};
     if (!tenantId || !name) {
       return res.status(400).json({ error: 'tenantId and name are required' });
@@ -296,7 +294,7 @@ router.post('/', async (req, res) => {
       if (existing) {
         return null;
       }
-      const created = await db.createInstitution({
+      return db.createInstitution({
         tenantId,
         name,
         slug,
@@ -306,14 +304,6 @@ router.post('/', async (req, res) => {
         stats: { activeMembers: 0 },
         createdBy: req.user.id ?? req.user._id,
       });
-      if (packageId) {
-        const pkg = await models.InstitutionPackage.findOne({ id: packageId, active: true }).lean().exec();
-        if (!pkg) throw new HttpError(400, 'Active institution package not found');
-        const effectiveLimit = Number.isInteger(monthlyTokenLimit) && monthlyTokenLimit > 0 ? monthlyTokenLimit : pkg.monthlyTokenLimit;
-        created.packageAssignment = { packageId: pkg.id, packageSnapshot: { name: pkg.name, description: pkg.description, price: pkg.price, currency: pkg.currency, monthlyTokenLimit: pkg.monthlyTokenLimit }, monthlyTokenLimit: effectiveLimit, assignedAt: new Date(), assignedBy: req.user.id ?? req.user._id };
-        await created.save();
-      }
-      return created;
     });
 
     if (!institution) {
@@ -489,22 +479,6 @@ router.post('/:tenantId/agent-access/reconcile', async (req, res) => {
     return res.status(200).json(result);
   } catch (error) {
     return sendAgentAccessError(res, error, 'Failed to reconcile agent access');
-  }
-});
-
-router.post('/:tenantId/package', async (req, res) => {
-  try {
-    const institution = await runAsSystem(() => db.getInstitutionByTenantId(req.params.tenantId));
-    if (!institution) return res.status(404).json({ error: 'Institution not found' });
-    const pkg = await runAsSystem(() => models.InstitutionPackage.findOne({ id: req.body?.packageId, active: true }).lean().exec());
-    if (!pkg) return res.status(400).json({ error: 'Active institution package not found' });
-    const monthlyTokenLimit = Number.isInteger(req.body?.monthlyTokenLimit) && req.body.monthlyTokenLimit > 0 ? req.body.monthlyTokenLimit : pkg.monthlyTokenLimit;
-    const updated = await runAsSystem(() => models.Institution.findOneAndUpdate({ tenantId: req.params.tenantId }, { $set: { packageAssignment: { packageId: pkg.id, packageSnapshot: { name: pkg.name, description: pkg.description, price: pkg.price, currency: pkg.currency, monthlyTokenLimit: pkg.monthlyTokenLimit }, monthlyTokenLimit, assignedAt: new Date(), assignedBy: req.user.id ?? req.user._id } } }, { new: true }).lean().exec());
-    await recordPlatformAudit(req, { action: 'institution.updated', target: { type: 'institution', id: req.params.tenantId }, metadata: { packageId: pkg.id, monthlyTokenLimit } });
-    return res.json({ institution: updated });
-  } catch (error) {
-    logger.error('[platform/institutions] package assignment failed', error);
-    return res.status(500).json({ error: 'Failed to assign institution package' });
   }
 });
 

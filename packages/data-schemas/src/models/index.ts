@@ -36,7 +36,6 @@ import { createInstitutionImportJobModel } from './institutionImportJob';
 import { createTokenModel } from './token';
 import { createAgentModel } from './agent';
 import { createInstitutionInviteModel } from './institutionInvite';
-import { createInstitutionPackageModel } from './institutionPackage';
 import { createUsagePackageModel, createUsagePricingModel } from './usagePackage';
 import { createSkillModel } from './skill';
 import { createGroupModel } from './group';
@@ -99,7 +98,6 @@ export function createModels(mongoose: typeof import('mongoose')): {
   Institution: ReturnType<typeof createInstitutionModel>;
   InstitutionImportJob: ReturnType<typeof createInstitutionImportJobModel>;
   InstitutionInvite: ReturnType<typeof createInstitutionInviteModel>;
-  InstitutionPackage: ReturnType<typeof createInstitutionPackageModel>;
   UsagePackage: ReturnType<typeof createUsagePackageModel>;
   UsagePricing: ReturnType<typeof createUsagePricingModel>;
   PlatformAdmin: ReturnType<typeof createPlatformAdminModel>;
@@ -155,7 +153,6 @@ export function createModels(mongoose: typeof import('mongoose')): {
     Institution: createInstitutionModel(mongoose),
     InstitutionImportJob: createInstitutionImportJobModel(mongoose),
     InstitutionInvite: createInstitutionInviteModel(mongoose),
-    InstitutionPackage: createInstitutionPackageModel(mongoose),
     UsagePackage: createUsagePackageModel(mongoose),
     UsagePricing: createUsagePricingModel(mongoose),
     PlatformAdmin: createPlatformAdminModel(mongoose),

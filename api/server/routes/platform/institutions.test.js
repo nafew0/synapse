@@ -32,7 +32,6 @@ jest.mock('@librechat/data-schemas', () => ({
  *  and keeps these route tests free of a live database. */
 jest.mock('~/db/models', () => ({
   Institution: { findOneAndUpdate: jest.fn() },
-  InstitutionPackage: { findOne: jest.fn() },
   User: { find: jest.fn() },
   Agent: { find: jest.fn(), findOne: jest.fn() },
   Group: { find: jest.fn(), findOne: jest.fn() },
