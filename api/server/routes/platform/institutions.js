@@ -1,4 +1,5 @@
 const express = require('express');
+const { isUsageAccount, isReservedTenantId } = require('@librechat/api');
 const { logger, runAsSystem, INSTITUTION_ADMIN_ROLE } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const requirePlatformSuperadmin = require('~/server/middleware/platformAdmin');
@@ -267,6 +268,9 @@ router.post('/', async (req, res) => {
     } = req.body ?? {};
     if (!tenantId || !name) {
       return res.status(400).json({ error: 'tenantId and name are required' });
+    }
+    if (isReservedTenantId(tenantId)) {
+      return res.status(400).json({ error: 'tenantId must not start with "__"' });
     }
     if (!adminUserId && !adminEmail) {
       return res.status(400).json({
@@ -557,7 +561,10 @@ router.post('/:tenantId/policies', async (req, res) => {
     });
     await recordPlatformAudit(req, {
       action: 'institution.usage_policy_changed',
-      target: { type: 'institution', id: req.params.tenantId },
+      target: {
+        type: isUsageAccount(req.params.tenantId) ? 'usage_account' : 'institution',
+        id: req.params.tenantId,
+      },
       metadata: {
         before: before.policy,
         after: result.policy,

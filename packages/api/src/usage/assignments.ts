@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import { logger } from '@librechat/data-schemas';
+import { logger, USAGE_ACCOUNT_NAMES } from '@librechat/data-schemas';
 import type {
   IUser,
+  QuotaOwner,
   AuditAction,
-  IInstitution,
   IUsagePackage,
   AuditMetadata,
   UsagePackageScope,
@@ -37,11 +37,11 @@ const memberAssignmentSchema = z
 
 export interface UsageAssignmentDeps {
   getUsagePackage: (key: string) => Promise<IUsagePackage | null>;
-  getInstitutionByTenantId: (tenantId: string) => Promise<IInstitution | null>;
-  updateInstitutionByTenantId: (
+  getQuotaOwner: (tenantId: string) => Promise<QuotaOwner | null>;
+  setQuotaOwnerPackage: (
     tenantId: string,
-    updates: Partial<IInstitution>,
-  ) => Promise<IInstitution | null>;
+    usagePackage: InstitutionUsagePackage | null,
+  ) => Promise<QuotaOwner | null>;
   getUserById: (userId: string, fields?: string) => Promise<IUser | null>;
   updateUser: (userId: string, updates: Partial<IUser>) => Promise<IUser | null>;
   recordAuditEntry: (
@@ -76,6 +76,12 @@ function actorOf(req: ServerRequest): { id: string | undefined; name: string } {
     id: user?.id ?? user?._id?.toString(),
     name: user?.name || user?.email || 'platform-superadmin',
   };
+}
+
+/** An account that is not an institution is audited as such, so its history reads correctly. */
+function ownerTarget(owner: QuotaOwner): { type: string; id: string; name: string } {
+  const type = owner.tenantId in USAGE_ACCOUNT_NAMES ? 'usage_account' : 'institution';
+  return { type, id: owner.tenantId, name: owner.name };
 }
 
 function sendError(res: Response, error: unknown, fallback: string): Response {
@@ -133,8 +139,11 @@ export function createUsageAssignmentHandlers(deps: UsageAssignmentDeps): UsageA
     }
     try {
       const { packageKey: own, memberPackageKey } = parsed.data;
+      if (own != null && tenantId in USAGE_ACCOUNT_NAMES) {
+        return res.status(400).json({ error: 'This account has no shared allowance to package' });
+      }
       const [institution] = await Promise.all([
-        deps.getInstitutionByTenantId(tenantId),
+        deps.getQuotaOwner(tenantId),
         own ? requirePackage(own, 'institution') : null,
         memberPackageKey ? requirePackage(memberPackageKey, 'member') : null,
       ]);
@@ -147,18 +156,13 @@ export function createUsageAssignmentHandlers(deps: UsageAssignmentDeps): UsageA
         assignedAt: new Date(),
         assignedBy: actorOf(req).id,
       };
-      const updated = await deps.updateInstitutionByTenantId(tenantId, { usagePackage });
-      await audit(
-        req,
-        'platform.usage_package_assigned',
-        { type: 'institution', id: tenantId, name: institution.name },
-        {
-          packageKey: own,
-          memberPackageKey,
-          previous_packageKey: institution.usagePackage?.packageKey ?? null,
-          previous_memberPackageKey: institution.usagePackage?.memberPackageKey ?? null,
-        },
-      );
+      const updated = await deps.setQuotaOwnerPackage(tenantId, usagePackage);
+      await audit(req, 'platform.usage_package_assigned', ownerTarget(institution), {
+        packageKey: own,
+        memberPackageKey,
+        previous_packageKey: institution.usagePackage?.packageKey ?? null,
+        previous_memberPackageKey: institution.usagePackage?.memberPackageKey ?? null,
+      });
       return res.json({ tenantId, usagePackage: updated?.usagePackage ?? usagePackage });
     } catch (error) {
       return sendError(res, error, 'Failed to assign the institution package');
@@ -168,20 +172,15 @@ export function createUsageAssignmentHandlers(deps: UsageAssignmentDeps): UsageA
   async function clearInstitutionPackage(req: TenantRequest, res: Response) {
     const tenantId = req.params.tenantId ?? '';
     try {
-      const institution = await deps.getInstitutionByTenantId(tenantId);
+      const institution = await deps.getQuotaOwner(tenantId);
       if (!institution) {
         return res.status(404).json({ error: 'Institution not found' });
       }
-      await deps.updateInstitutionByTenantId(tenantId, { usagePackage: null });
-      await audit(
-        req,
-        'platform.usage_package_revoked',
-        { type: 'institution', id: tenantId, name: institution.name },
-        {
-          previous_packageKey: institution.usagePackage?.packageKey ?? null,
-          previous_memberPackageKey: institution.usagePackage?.memberPackageKey ?? null,
-        },
-      );
+      await deps.setQuotaOwnerPackage(tenantId, null);
+      await audit(req, 'platform.usage_package_revoked', ownerTarget(institution), {
+        previous_packageKey: institution.usagePackage?.packageKey ?? null,
+        previous_memberPackageKey: institution.usagePackage?.memberPackageKey ?? null,
+      });
       return res.json({ tenantId, usagePackage: null });
     } catch (error) {
       return sendError(res, error, 'Failed to remove the institution package');

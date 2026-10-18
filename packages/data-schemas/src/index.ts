@@ -43,7 +43,11 @@ export {
   digestMCPAuthorityValue,
 } from './methods';
 export { FAVORITE_ITEM_TYPES } from './types/favorite';
-export { USAGE_PACKAGE_SCOPES } from './types/usagePackage';
+export {
+  USAGE_ACCOUNT_NAMES,
+  USAGE_PACKAGE_SCOPES,
+  INDIVIDUAL_USAGE_ACCOUNT,
+} from './types/usagePackage';
 export type * from './types';
 export type * from './methods';
 export {

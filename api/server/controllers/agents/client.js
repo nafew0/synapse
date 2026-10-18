@@ -110,6 +110,7 @@ const {
   resolveYouTubeInjectionConfig,
   decrementPendingRequest,
   maybePrewarmCodeSandbox,
+  quotaAccountFor,
 } = require('@librechat/api');
 const {
   Run,
@@ -2470,7 +2471,7 @@ class AgentClient extends BaseClient {
    */
   async chargeAuxiliaryCredits({ context, credits, model }) {
     const req = this.options.req;
-    const tenantId = req?.user?.tenantId;
+    const tenantId = quotaAccountFor(req?.user);
     if (!tenantId) {
       return;
     }

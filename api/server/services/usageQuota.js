@@ -1,5 +1,10 @@
 const mongoose = require('mongoose');
-const { getTransactionSupport, logger, runAsSystem } = require('@librechat/data-schemas');
+const {
+  logger,
+  runAsSystem,
+  USAGE_ACCOUNT_NAMES,
+  getTransactionSupport,
+} = require('@librechat/data-schemas');
 const {
   unitFor,
   weightFor,
@@ -11,6 +16,7 @@ const {
   toBillingTokens,
   CREDITS_PER_USD,
   effectiveBdtPerUsd,
+  isUsageAccount,
   checkEmailConfig,
   recordQuotaDenial,
   isEnforcementDenial,
@@ -245,10 +251,49 @@ async function supportsTransactions() {
 }
 
 /** The institution (which carries its usage packages) and the policy it points at. */
-async function loadQuotaContext(tenantId) {
-  const institution = await runAsSystem(() =>
-    models.Institution.findOne({ tenantId }).lean().exec(),
+/** Where a quota key's packages and policy version live: an institution, or a non-institution account. */
+function quotaOwnerModel(tenantId) {
+  return isUsageAccount(tenantId) ? models.UsageAccount : models.Institution;
+}
+
+/** An account that has never been configured: no packages, no policy, so nothing is refused. */
+function emptyUsageAccount(tenantId) {
+  return {
+    tenantId,
+    name: USAGE_ACCOUNT_NAMES[tenantId] ?? tenantId,
+    timezone: QUOTA_RESET_TIMEZONE,
+    usagePolicyVersion: 0,
+    usagePackage: null,
+  };
+}
+
+/** Creates a non-institution account the first time an admin configures it. */
+async function ensureUsageAccount(tenantId) {
+  const defaults = emptyUsageAccount(tenantId);
+  return runAsSystem(() =>
+    models.UsageAccount.findOneAndUpdate(
+      { tenantId },
+      { $setOnInsert: { name: defaults.name, timezone: defaults.timezone } },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    )
+      .lean()
+      .exec(),
   );
+}
+
+/** The quota owner of a key: its institution, or its account (empty until configured). */
+async function loadQuotaOwner(tenantId) {
+  const owner = await runAsSystem(() =>
+    quotaOwnerModel(tenantId).findOne({ tenantId }).lean().exec(),
+  );
+  if (!owner && isUsageAccount(tenantId)) {
+    return emptyUsageAccount(tenantId);
+  }
+  return owner;
+}
+
+async function loadQuotaContext(tenantId) {
+  const institution = await loadQuotaOwner(tenantId);
   if (!institution) {
     throw new QuotaError({
       code: 'INSTITUTION_NOT_FOUND',
@@ -307,13 +352,19 @@ function getCreditRanges(now = new Date()) {
   };
 }
 
-/** The four credit buckets a request draws from: the institution's and the member's, each per month and per week. */
+/**
+ * The credit buckets a request draws from: the institution's and the member's, each per month and per
+ * week. An account that is not an institution has no shared pool, so its users draw only on their own.
+ */
 function buildCreditScopes({ tenantId, userId, limits, ranges }) {
   const memberKey = String(userId);
-  return [
-    ['institution_credits', tenantId, limits.institution],
-    ['member_credits', memberKey, limits.member],
-  ].flatMap(([scopeType, scopeKey, windows]) => [
+  const owners = isUsageAccount(tenantId)
+    ? [['member_credits', memberKey, limits.member]]
+    : [
+        ['institution_credits', tenantId, limits.institution],
+        ['member_credits', memberKey, limits.member],
+      ];
+  return owners.flatMap(([scopeType, scopeKey, windows]) => [
     { scopeType, scopeKey, limit: windows.month, range: ranges.month, window: 'month' },
     { scopeType, scopeKey, limit: windows.week, range: ranges.week, window: 'week' },
   ]);
@@ -857,6 +908,10 @@ async function reserveUsage(params) {
   const { institution, policy } = await loadQuotaContext(tenantId);
   if (usesCredits(institution.usagePackage, memberPackage)) {
     return reserveCredits({ ...params, canonical, institution, policy });
+  }
+  /** Accounts that are not institutions are metered in credits only: with no package, nothing applies. */
+  if (isUsageAccount(tenantId)) {
+    return null;
   }
   return reserveTokens({ ...params, canonical, policy });
 }
@@ -1681,6 +1736,9 @@ async function getMemberQuota({ tenantId, userId, memberPackage, now = new Date(
   if (usesCredits(institution.usagePackage, memberPackage)) {
     return getMemberCreditQuota({ tenantId, userId, institution, policy, memberPackage, now });
   }
+  if (isUsageAccount(tenantId)) {
+    return null;
+  }
   const ranges = getPolicyRanges(policy, now);
   const memberKey = String(userId);
   const windows = [
@@ -1784,49 +1842,67 @@ async function getCreditConsole({ tenantId, now = new Date() }) {
     };
   };
 
-  const buckets = await runAsSystem(() =>
-    models.UsageBucket.find({
-      tenantId,
-      scopeType: { $in: ['institution_credits', 'member_credits'] },
-      periodStart: { $in: [ranges.week.start, ranges.month.start] },
-    })
-      .lean()
-      .exec(),
+  const pooled = !isUsageAccount(tenantId);
+  const memberMonth = { tenantId, scopeType: 'member_credits', periodStart: ranges.month.start };
+  const [poolBuckets, monthBuckets, memberTotal] = await runAsSystem(() =>
+    Promise.all([
+      pooled
+        ? models.UsageBucket.find({
+            tenantId,
+            scopeType: 'institution_credits',
+            periodStart: { $in: [ranges.week.start, ranges.month.start] },
+          })
+            .lean()
+            .exec()
+        : [],
+      models.UsageBucket.find(memberMonth)
+        .sort({ usedTokens: -1 })
+        .limit(CREDIT_CONSOLE_MEMBER_LIMIT)
+        .lean()
+        .exec(),
+      models.UsageBucket.countDocuments(memberMonth),
+    ]),
   );
   const defaults = resolveCreditLimits({
     institutionPackage: institution.usagePackage,
     catalog,
     now,
   });
-  const institutionMeters = Object.fromEntries(
-    ['week', 'month'].map((window) => [
-      window,
-      meter(
-        buckets.find((b) => b.scopeType === 'institution_credits' && windowOf(b) === window),
-        defaults.institution[window],
-        window,
-      ),
+  const institutionMeters = pooled
+    ? Object.fromEntries(
+        ['week', 'month'].map((window) => [
+          window,
+          meter(
+            poolBuckets.find((bucket) => windowOf(bucket) === window),
+            defaults.institution[window],
+            window,
+          ),
+        ]),
+      )
+    : null;
+
+  const busiestKeys = monthBuckets.map((bucket) => bucket.scopeKey);
+  const [weekBuckets, users] = await runAsSystem(() =>
+    Promise.all([
+      models.UsageBucket.find({
+        tenantId,
+        scopeType: 'member_credits',
+        periodStart: ranges.week.start,
+        scopeKey: { $in: busiestKeys },
+      })
+        .lean()
+        .exec(),
+      models.User.find({ _id: { $in: busiestKeys } })
+        .select('name email usagePackage')
+        .lean()
+        .exec(),
     ]),
   );
-
-  const byMember = new Map();
-  for (const bucket of buckets) {
-    if (bucket.scopeType !== 'member_credits') {
-      continue;
-    }
-    const entry = byMember.get(bucket.scopeKey) ?? {};
-    entry[windowOf(bucket)] = bucket;
-    byMember.set(bucket.scopeKey, entry);
-  }
-  const busiest = [...byMember.entries()]
-    .sort(([, a], [, b]) => (b.month?.usedTokens ?? 0) - (a.month?.usedTokens ?? 0))
-    .slice(0, CREDIT_CONSOLE_MEMBER_LIMIT);
-  const users = await runAsSystem(() =>
-    models.User.find({ _id: { $in: busiest.map(([userId]) => userId) } })
-      .select('name email usagePackage')
-      .lean()
-      .exec(),
-  );
+  const weekByKey = new Map(weekBuckets.map((bucket) => [bucket.scopeKey, bucket]));
+  const busiest = monthBuckets.map((bucket) => [
+    bucket.scopeKey,
+    { month: bucket, week: weekByKey.get(bucket.scopeKey) },
+  ]);
   const usersById = new Map(users.map((user) => [String(user._id), user]));
   const members = busiest.map(([userId, windows]) => {
     const user = usersById.get(userId);
@@ -1853,6 +1929,8 @@ async function getCreditConsole({ tenantId, now = new Date() }) {
   const pkgOf = (key) => (key ? catalog.packages.get(key) : null);
   return {
     enforced: policy.mode === 'enforce',
+    pooled,
+    memberTotal,
     institutionPackage: pkgOf(institution.usagePackage?.packageKey)?.name ?? null,
     defaultMemberPackage: pkgOf(institution.usagePackage?.memberPackageKey)?.name ?? null,
     institution: institutionMeters,
@@ -1955,7 +2033,11 @@ async function emailUsageWarning(warning) {
   }
   const [institution, admins] = await runAsSystem(() =>
     Promise.all([
-      models.Institution.findOne({ tenantId: warning.tenantId }).select('name').lean().exec(),
+      quotaOwnerModel(warning.tenantId)
+        .findOne({ tenantId: warning.tenantId })
+        .select('name')
+        .lean()
+        .exec(),
       models.User.find({
         tenantId: warning.tenantId,
         role: 'INSTITUTION_ADMIN',
@@ -2101,10 +2183,16 @@ async function emitUsageWarnings(reservation) {
  */
 async function hasActiveEnforcingPolicy() {
   return await runAsSystem(async () => {
-    const institutions = await models.Institution.find({ usagePolicyVersion: { $gte: 1 } })
-      .select('tenantId usagePolicyVersion')
-      .lean()
-      .exec();
+    const owners = await Promise.all(
+      [models.Institution, models.UsageAccount].map((model) =>
+        model
+          .find({ usagePolicyVersion: { $gte: 1 } })
+          .select('tenantId usagePolicyVersion')
+          .lean()
+          .exec(),
+      ),
+    );
+    const institutions = owners.flat();
     const batchSize = 200;
     for (let index = 0; index < institutions.length; index += batchSize) {
       const batch = institutions.slice(index, index + batchSize);
@@ -2137,6 +2225,29 @@ async function assertEnforcementTopology() {
   return { enforcing: true, transactionCapable };
 }
 
+/**
+ * The ledger rows that belong to a quota key. Institution rows carry the `tenantId`; an individual's
+ * rows carry none, so they are told apart from platform staff by the user's account scope.
+ */
+function ledgerScope(tenantId, match) {
+  if (!isUsageAccount(tenantId)) {
+    return [{ $match: { tenantId, ...match } }];
+  }
+  return [
+    { $match: { tenantId: null, ...match } },
+    {
+      $lookup: {
+        from: models.User.collection.name,
+        localField: 'user',
+        foreignField: '_id',
+        pipeline: [{ $match: { accountScope: 'standalone' } }, { $project: { _id: 1 } }],
+        as: 'individual',
+      },
+    },
+    { $match: { 'individual.0': { $exists: true } } },
+  ];
+}
+
 /** Titles and activity labels are written as settled reservations with nothing reserved up front:
  *  they say nothing about how well requests are estimated, so the shadow gate leaves them out. */
 const PRIMARY_RESERVATIONS = { 'metadata.auxiliary': { $ne: true } };
@@ -2162,6 +2273,12 @@ const PRIMARY_RESERVATIONS = { 'metadata.auxiliary': { $ne: true } };
 async function getShadowReadiness({ tenantId, minimumDays = 7, minimumCalls = 1000 }) {
   const now = new Date();
   const cutoff = new Date(now.getTime() - minimumDays * 24 * 60 * 60 * 1000);
+  /** This key's billed calls since the cutoff, followed by `stages`. */
+  const ledger = (stages) =>
+    mongoose.models.Transaction.aggregate([
+      ...ledgerScope(tenantId, { createdAt: { $gte: cutoff } }),
+      ...stages,
+    ]);
   const [
     reservationSummary,
     firstReservation,
@@ -2236,18 +2353,21 @@ async function getShadowReadiness({ tenantId, minimumDays = 7, minimumCalls = 10
         .select('createdAt')
         .lean()
         .exec(),
-      mongoose.models.Transaction.countDocuments({
-        tenantId,
-        createdAt: { $gte: cutoff },
-        $or: [
-          { requestKey: { $exists: false } },
-          { providerKey: { $exists: false } },
-          { modelKey: { $exists: false } },
-          { user: { $exists: false } },
-        ],
-      }),
-      mongoose.models.Transaction.aggregate([
-        { $match: { tenantId, createdAt: { $gte: cutoff }, requestKey: { $type: 'string' } } },
+      ledger([
+        {
+          $match: {
+            $or: [
+              { requestKey: { $exists: false } },
+              { providerKey: { $exists: false } },
+              { modelKey: { $exists: false } },
+              { user: { $exists: false } },
+            ],
+          },
+        },
+        { $count: 'events' },
+      ]).then((rows) => rows[0]?.events ?? 0),
+      ledger([
+        { $match: { requestKey: { $type: 'string' } } },
         {
           $group: {
             _id: { requestKey: '$requestKey', tokenType: '$tokenType', valueKey: '$valueKey' },
@@ -2257,27 +2377,13 @@ async function getShadowReadiness({ tenantId, minimumDays = 7, minimumCalls = 10
         { $match: { count: { $gt: 1 } } },
         { $count: 'groups' },
       ]),
-      mongoose.models.Transaction.aggregate([
-        {
-          $match: {
-            tenantId,
-            createdAt: { $gte: cutoff },
-            context: 'message',
-            messageId: { $type: 'string' },
-          },
-        },
+      ledger([
+        { $match: { context: 'message', messageId: { $type: 'string' } } },
         { $group: { _id: { conversationId: '$conversationId', messageId: '$messageId' } } },
         { $count: 'calls' },
       ]),
-      mongoose.models.Transaction.aggregate([
-        {
-          $match: {
-            tenantId,
-            createdAt: { $gte: cutoff },
-            context: { $ne: 'message' },
-            requestKey: { $type: 'string' },
-          },
-        },
+      ledger([
+        { $match: { context: { $ne: 'message' }, requestKey: { $type: 'string' } } },
         { $group: { _id: '$requestKey' } },
         { $count: 'calls' },
       ]),
@@ -2343,6 +2449,8 @@ async function getShadowReadiness({ tenantId, minimumDays = 7, minimumCalls = 10
 }
 
 module.exports = {
+  quotaOwnerModel,
+  ensureUsageAccount,
   DEFAULT_TIMEZONE,
   QUOTA_RESET_TIMEZONE,
   QuotaError,

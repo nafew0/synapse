@@ -32,5 +32,7 @@ usageBucketSchema.index(
   { unique: true, name: 'usage_bucket_scope_period' },
 );
 usageBucketSchema.index({ tenantId: 1, periodEnd: 1 });
+/** The busiest members of a window, ranked in the database rather than in memory. */
+usageBucketSchema.index({ tenantId: 1, scopeType: 1, periodStart: 1, usedTokens: -1 });
 
 export default usageBucketSchema;

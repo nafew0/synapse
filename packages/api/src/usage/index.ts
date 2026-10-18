@@ -7,3 +7,4 @@ export * from './rates';
 export * from './credits';
 export * from './catalog';
 export * from './assignments';
+export * from './accounts';

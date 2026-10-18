@@ -1,5 +1,6 @@
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
+const { quotaAccountFor } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { getMemberQuota } = require('~/server/services/usageQuota');
 
@@ -11,20 +12,19 @@ const router = express.Router();
  * only the current windows, so it cannot serve usage history.
  */
 router.get('/', requireJwtAuth, async (req, res) => {
-  const tenantId = req.user?.tenantId;
+  const tenantId = quotaAccountFor(req.user);
   if (!tenantId) {
-    /** No tenant means no usage policy applies; the UI shows no allowance
+    /** Platform staff have no quota account, so no usage policy applies; the UI shows no allowance
      *  rather than a zeroed one, which would read as "exhausted". */
     return res.sendStatus(204);
   }
   try {
-    return res.status(200).json(
-      await getMemberQuota({
-        tenantId,
-        userId: req.user.id,
-        memberPackage: req.user.usagePackage,
-      }),
-    );
+    const quota = await getMemberQuota({
+      tenantId,
+      userId: req.user.id,
+      memberPackage: req.user.usagePackage,
+    });
+    return quota ? res.status(200).json(quota) : res.sendStatus(204);
   } catch (error) {
     if (error?.details?.code === 'INSTITUTION_NOT_FOUND') {
       return res.sendStatus(204);

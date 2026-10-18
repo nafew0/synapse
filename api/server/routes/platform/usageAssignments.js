@@ -6,8 +6,8 @@ const db = require('~/models');
 
 const handlers = createUsageAssignmentHandlers({
   getUsagePackage: db.getUsagePackage,
-  getInstitutionByTenantId: db.getInstitutionByTenantId,
-  updateInstitutionByTenantId: db.updateInstitutionByTenantId,
+  getQuotaOwner: db.getQuotaOwner,
+  setQuotaOwnerPackage: db.setQuotaOwnerPackage,
   getUserById: db.getUserById,
   updateUser: db.updateUser,
   recordAuditEntry: db.recordAuditEntry,

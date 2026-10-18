@@ -1,7 +1,8 @@
 import { Model } from 'mongoose';
 import usagePackageSchema from '~/schema/usagePackage';
+import usageAccountSchema from '~/schema/usageAccount';
 import usagePricingSchema from '~/schema/usagePricing';
-import type { IUsagePackage, IUsagePricing } from '~/types';
+import type { IUsageAccount, IUsagePackage, IUsagePricing } from '~/types';
 
 export function createUsagePackageModel(mongoose: typeof import('mongoose')): Model<IUsagePackage> {
   return (
@@ -14,5 +15,12 @@ export function createUsagePricingModel(mongoose: typeof import('mongoose')): Mo
   return (
     mongoose.models.UsagePricing ||
     mongoose.model<IUsagePricing>('UsagePricing', usagePricingSchema)
+  );
+}
+
+export function createUsageAccountModel(mongoose: typeof import('mongoose')): Model<IUsageAccount> {
+  return (
+    mongoose.models.UsageAccount ||
+    mongoose.model<IUsageAccount>('UsageAccount', usageAccountSchema)
   );
 }

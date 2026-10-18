@@ -15,6 +15,7 @@ const {
   getTransactionsConfig,
   encodeAndFormatDocuments,
   getLangfuseTraceMessageFields,
+  quotaAccountFor,
 } = require('@librechat/api');
 const {
   Constants,
@@ -778,7 +779,8 @@ class BaseClient {
       );
     }
 
-    const tenantId = this.options.req?.user?.tenantId;
+    /** The institution, or the individuals account for a standalone user; staff are not metered. */
+    const tenantId = quotaAccountFor(this.options.req?.user);
     const quotaReservationKey = `${conversationId}:${responseMessageId}:primary:0`;
     let quota;
     if (tenantId) {

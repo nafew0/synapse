@@ -187,6 +187,18 @@ describe('platform institutions route', () => {
     expect(response.body.error).toMatch(/initial institution admin/i);
   });
 
+  it('refuses a tenantId reserved for quota accounts', async () => {
+    const response = await invokeRoute({
+      path: '/',
+      method: 'post',
+      body: { tenantId: '__individuals__', name: 'Impostor', adminEmail: 'a@example.test' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.error).toMatch(/must not start with "__"/);
+    expect(mockRecordAuditEntry).not.toHaveBeenCalled();
+  });
+
   it('invites a tenant-less existing identity instead of trying to appoint it directly', async () => {
     mockGetInstitution.mockResolvedValue({ tenantId: 'tenant-a', name: 'Tenant A' });
     mockFindUser.mockResolvedValue({

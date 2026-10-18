@@ -114,7 +114,11 @@ import { createAgentMethods, type AgentMethods, type AgentDeps } from './agent';
 /* Config */
 import { createConfigMethods, type ConfigMethods } from './config';
 import { createInstitutionMethods, type InstitutionMethods } from './institution';
-import { createUsagePackageMethods, type UsagePackageMethods } from './usagePackage';
+import {
+  createUsagePackageMethods,
+  type QuotaOwner,
+  type UsagePackageMethods,
+} from './usagePackage';
 import { createPlatformAdminMethods, type PlatformAdminMethods } from './platformAdmin';
 import {
   createMCPAuthorityMethods,
@@ -412,6 +416,7 @@ export type {
   ConfigMethods,
   InstitutionMethods,
   UsagePackageMethods,
+  QuotaOwner,
   PlatformAdminMethods,
   MCPAuthorityMethods,
   MCPAuthorityMethodHooks,

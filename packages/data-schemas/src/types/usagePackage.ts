@@ -63,3 +63,27 @@ export interface MemberUsagePackage {
   assignedBy?: Types.ObjectId | string;
   expiresAt?: Date | null;
 }
+
+/** The quota account of users who belong to no institution. Not a valid institution `tenantId`. */
+export const INDIVIDUAL_USAGE_ACCOUNT = '__individuals__';
+
+/** Display names of the accounts that are not institutions. */
+export const USAGE_ACCOUNT_NAMES: Readonly<Record<string, string>> = {
+  [INDIVIDUAL_USAGE_ACCOUNT]: 'Individuals',
+};
+
+/**
+ * A quota account that is not an institution. It carries the fields the quota engine reads from an
+ * institution, so both are metered the same way, without appearing anywhere institutions are listed.
+ */
+export interface IUsageAccount extends Document {
+  _id: Types.ObjectId;
+  tenantId: string;
+  name: string;
+  timezone?: string;
+  usagePolicyVersion?: number;
+  /** `memberPackageKey` is the package a user gets until an admin assigns their own. */
+  usagePackage?: InstitutionUsagePackage | null;
+  createdAt?: Date;
+  updatedAt?: Date;
+}

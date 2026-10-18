@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { buildQuotaModelRows } = require('@librechat/api');
+const { isUsageAccount, buildQuotaModelRows } = require('@librechat/api');
 const { getTransactionSupport, runAsSystem } = require('@librechat/data-schemas');
 const models = require('~/db/models');
 const {
@@ -8,6 +8,8 @@ const {
   getCreditConsole,
   getCalendarMonthRange,
   getQuotaHealth,
+  quotaOwnerModel,
+  ensureUsageAccount,
   getShadowReadiness,
 } = require('./usageQuota');
 const { getQuotaModelSources } = require('./usageLabels');
@@ -200,6 +202,10 @@ async function createUsagePolicy({
     }
   }
 
+  if (isUsageAccount(tenantId)) {
+    await ensureUsageAccount(tenantId);
+  }
+  const owner = quotaOwnerModel(tenantId);
   const nextVersion = preview.currentVersion + 1;
   const session = transactionCapable ? await mongoose.startSession() : null;
   let created;
@@ -215,19 +221,20 @@ async function createUsagePolicy({
             ],
           }
         : { tenantId, usagePolicyVersion: preview.currentVersion };
-    const institution = await models.Institution.findOneAndUpdate(
-      versionFilter,
-      {
-        $set: {
-          usagePolicyVersion: nextVersion,
-          timezone: preview.proposedPolicy.timezone,
+    const updatedOwner = await owner
+      .findOneAndUpdate(
+        versionFilter,
+        {
+          $set: {
+            usagePolicyVersion: nextVersion,
+            timezone: preview.proposedPolicy.timezone,
+          },
         },
-      },
-      { new: true, session },
-    )
+        { new: true, session },
+      )
       .lean()
       .exec();
-    if (!institution) {
+    if (!updatedOwner) {
       throw new PolicyError(409, 'POLICY_VERSION_CONFLICT', 'The policy changed; reload and retry');
     }
     const docs = await models.UsagePolicy.create(
@@ -254,7 +261,7 @@ async function createUsagePolicy({
   } catch (error) {
     if (!session && error instanceof Error) {
       await runAsSystem(() =>
-        models.Institution.updateOne(
+        owner.updateOne(
           { tenantId, usagePolicyVersion: nextVersion },
           { $set: { usagePolicyVersion: preview.currentVersion } },
         ),
@@ -294,7 +301,8 @@ async function getPolicyConsole({ tenantId }) {
   const [policy, health, sources, credits] = await Promise.all([
     getActivePolicy(tenantId),
     getQuotaHealth({ tenantId }),
-    getQuotaModelSources(tenantId),
+    /** An account that is not an institution sees the platform's own model list. */
+    getQuotaModelSources(isUsageAccount(tenantId) ? undefined : tenantId),
     getCreditConsole({ tenantId }),
   ]);
   const models = buildQuotaModelRows({

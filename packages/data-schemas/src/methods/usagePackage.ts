@@ -1,11 +1,23 @@
 import type { Model, Types } from 'mongoose';
-import type { IUsagePackage, IUsagePricing, UsagePackageFields, UsagePricingFields } from '~/types';
+import { USAGE_ACCOUNT_NAMES } from '~/types/usagePackage';
+import type {
+  IInstitution,
+  IUsageAccount,
+  IUsagePackage,
+  IUsagePricing,
+  UsagePackageFields,
+  UsagePricingFields,
+  InstitutionUsagePackage,
+} from '~/types';
 
 type ActorId = Types.ObjectId | string | null | undefined;
 
 const PRICING_KEY = 'default';
 
 export type UsagePackageUpdate = Partial<Omit<UsagePackageFields, 'key'>>;
+
+/** Whoever a quota key's packages belong to: an institution, or an account that is not one. */
+export type QuotaOwner = Pick<IInstitution | IUsageAccount, 'tenantId' | 'name' | 'usagePackage'>;
 
 export interface UsagePackageMethods {
   listUsagePackages: (options?: { includeArchived?: boolean }) => Promise<IUsagePackage[]>;
@@ -18,6 +30,13 @@ export interface UsagePackageMethods {
   ) => Promise<IUsagePackage | null>;
   getUsagePricing: () => Promise<IUsagePricing | null>;
   saveUsagePricing: (fields: UsagePricingFields, actorId?: ActorId) => Promise<IUsagePricing>;
+  /** The institution, or the account, a quota key names; an unconfigured account reads as empty. */
+  getQuotaOwner: (tenantId: string) => Promise<QuotaOwner | null>;
+  /** Sets a quota owner's packages, creating the account on its first write. */
+  setQuotaOwnerPackage: (
+    tenantId: string,
+    usagePackage: InstitutionUsagePackage | null,
+  ) => Promise<QuotaOwner | null>;
 }
 
 /** Packages and pricing are platform-wide rows with no `tenantId`. */
@@ -27,7 +46,39 @@ export function createUsagePackageMethods(
   const getModels = () => ({
     UsagePackage: mongoose.models.UsagePackage as Model<IUsagePackage>,
     UsagePricing: mongoose.models.UsagePricing as Model<IUsagePricing>,
+    UsageAccount: mongoose.models.UsageAccount as Model<IUsageAccount>,
+    Institution: mongoose.models.Institution as Model<IInstitution>,
   });
+
+  const isAccount = (tenantId: string) => tenantId in USAGE_ACCOUNT_NAMES;
+
+  async function getQuotaOwner(tenantId: string): Promise<QuotaOwner | null> {
+    const { UsageAccount, Institution } = getModels();
+    if (!isAccount(tenantId)) {
+      return Institution.findOne({ tenantId }).lean<IInstitution>();
+    }
+    const account = await UsageAccount.findOne({ tenantId }).lean<IUsageAccount>();
+    return account ?? { tenantId, name: USAGE_ACCOUNT_NAMES[tenantId], usagePackage: null };
+  }
+
+  async function setQuotaOwnerPackage(
+    tenantId: string,
+    usagePackage: InstitutionUsagePackage | null,
+  ): Promise<QuotaOwner | null> {
+    const { UsageAccount, Institution } = getModels();
+    if (!isAccount(tenantId)) {
+      return Institution.findOneAndUpdate(
+        { tenantId },
+        { $set: { usagePackage } },
+        { new: true },
+      ).lean<IInstitution>();
+    }
+    return UsageAccount.findOneAndUpdate(
+      { tenantId },
+      { $set: { usagePackage }, $setOnInsert: { name: USAGE_ACCOUNT_NAMES[tenantId] } },
+      { new: true, upsert: true, setDefaultsOnInsert: true },
+    ).lean<IUsageAccount>();
+  }
 
   async function listUsagePackages({ includeArchived = false } = {}): Promise<IUsagePackage[]> {
     const filter = includeArchived ? {} : { active: true };
@@ -92,5 +143,7 @@ export function createUsagePackageMethods(
     updateUsagePackage,
     getUsagePricing,
     saveUsagePricing,
+    getQuotaOwner,
+    setQuotaOwnerPackage,
   };
 }

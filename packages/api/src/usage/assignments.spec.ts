@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createModels, createMethods } from '@librechat/data-schemas';
+import { createModels, createMethods, INDIVIDUAL_USAGE_ACCOUNT } from '@librechat/data-schemas';
 import type { AllMethods, IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
@@ -60,8 +60,8 @@ function createHandlers(recordAuditEntry = jest.fn(methods.recordAuditEntry)) {
     recordAuditEntry,
     handlers: createUsageAssignmentHandlers({
       getUsagePackage: methods.getUsagePackage,
-      getInstitutionByTenantId: methods.getInstitutionByTenantId,
-      updateInstitutionByTenantId: methods.updateInstitutionByTenantId,
+      getQuotaOwner: methods.getQuotaOwner,
+      setQuotaOwnerPackage: methods.setQuotaOwnerPackage,
       getUserById: methods.getUserById,
       updateUser: methods.updateUser,
       recordAuditEntry,
@@ -167,6 +167,61 @@ describe('usage package assignment', () => {
       res,
     );
     expect(res.statusCode).toBe(404);
+  });
+
+  describe('the individuals account', () => {
+    it('creates the account with its trial package on the first assignment', async () => {
+      await seed();
+      const { handlers } = createHandlers();
+      const res = createResponse();
+      await handlers.setInstitutionPackage(
+        createRequest({ tenantId: INDIVIDUAL_USAGE_ACCOUNT }, { memberPackageKey: 'standard' }),
+        res,
+      );
+      expect(res.statusCode).toBe(200);
+      expect(await methods.getQuotaOwner(INDIVIDUAL_USAGE_ACCOUNT)).toMatchObject({
+        name: 'Individuals',
+        usagePackage: { packageKey: null, memberPackageKey: 'standard' },
+      });
+      expect(await mongoose.models.Institution.countDocuments({})).toBe(1);
+      const audit = await mongoose.models.AuditLog.findOne({
+        action: 'platform.usage_package_assigned',
+      }).lean<{ target: { type: string; id: string } }>();
+      expect(audit?.target).toMatchObject({ type: 'usage_account', id: INDIVIDUAL_USAGE_ACCOUNT });
+    });
+
+    it('refuses a shared package, since individuals have no pool', async () => {
+      await seed();
+      const { handlers, recordAuditEntry } = createHandlers();
+      const res = createResponse();
+      await handlers.setInstitutionPackage(
+        createRequest({ tenantId: INDIVIDUAL_USAGE_ACCOUNT }, { packageKey: 'pool' }),
+        res,
+      );
+      expect(res.statusCode).toBe(400);
+      expect(recordAuditEntry).not.toHaveBeenCalled();
+    });
+
+    it('reads as empty until configured, and clears back to empty', async () => {
+      expect(await methods.getQuotaOwner(INDIVIDUAL_USAGE_ACCOUNT)).toMatchObject({
+        usagePackage: null,
+      });
+      await seed();
+      const { handlers } = createHandlers();
+      await handlers.setInstitutionPackage(
+        createRequest({ tenantId: INDIVIDUAL_USAGE_ACCOUNT }, { memberPackageKey: 'standard' }),
+        createResponse(),
+      );
+      const res = createResponse();
+      await handlers.clearInstitutionPackage(
+        createRequest({ tenantId: INDIVIDUAL_USAGE_ACCOUNT }),
+        res,
+      );
+      expect(res.statusCode).toBe(200);
+      expect(await methods.getQuotaOwner(INDIVIDUAL_USAGE_ACCOUNT)).toMatchObject({
+        usagePackage: null,
+      });
+    });
   });
 
   it("sets and clears a member's own package with an expiry", async () => {
