@@ -1,0 +1,9 @@
+{
+  "name": "@librechat/eval-office",
+  "private": true,
+  "type": "module",
+  "description": "End-to-end evaluation harness for the Office Assistant",
+  "scripts": {
+    "eval": "node run.ts"
+  }
+}

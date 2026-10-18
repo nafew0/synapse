@@ -1,0 +1,12 @@
+title: Generate an illustration
+category: image
+prompt: Generate an image of a tidy university office desk with a laptop, a plant and a coffee mug, flat illustration style.
+on_question: first_option
+expect:
+  handoff: [agent_office_images]
+  files:
+    min: 1
+    items:
+      - ext: [png, jpg, jpeg, webp]
+        min_width: 256
+rubric: One clear flat-style illustration showing a desk, laptop, plant and coffee mug.

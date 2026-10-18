@@ -1,0 +1,19 @@
+title: Create a notice, then revise it twice
+category: multi-turn
+turns:
+  - prompt: >-
+      Write a one-page office notice in Word announcing that the library will be closed on
+      12 November 2026 for maintenance. Deliver the .docx.
+    expect:
+      files: { count: 1, items: [{ ext: docx, contains: ["12 November 2026"] }] }
+  - prompt: Change the closure date to 19 November 2026 and add a line that e-resources stay available.
+    expect:
+      files: { count: 1, items: [{ ext: docx, contains: ["19 November 2026", "e-resources"], not_contains: ["12 November 2026"] }] }
+  - prompt: Now add a signature block for "Registrar, Office Eval University" at the bottom.
+expect:
+  files:
+    count: 1
+    items:
+      - ext: docx
+        contains: ["19 November 2026", "e-resources", "Registrar"]
+rubric: The final notice must keep the earlier revisions and read as one coherent notice.

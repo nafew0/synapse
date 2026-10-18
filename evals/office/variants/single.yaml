@@ -1,0 +1,5 @@
+# One gpt-5.6-luna agent that picks the docx/xlsx/pptx/pdf skill itself; images stay a handoff.
+# Manifest copied from feat/single-agent-office (5dafcde22).
+label: Single agent (gpt-5.6-luna)
+manifest: manifests/single-agent.yaml
+skills: app:skill

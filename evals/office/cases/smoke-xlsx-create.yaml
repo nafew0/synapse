@@ -1,0 +1,13 @@
+title: Build a budget workbook with formulas
+category: xlsx
+prompt: >-
+  Create an Excel workbook for a department event budget with columns Item, Quantity, Unit Cost
+  (BDT) and Total, eight realistic line items, a Total column computed with formulas, and a grand
+  total row. Deliver the .xlsx file.
+expect:
+  files:
+    count: 1
+    items:
+      - ext: xlsx
+        min_formulas: 9
+rubric: Totals must be formulas (Quantity × Unit Cost) and the grand total must sum them.

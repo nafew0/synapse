@@ -1,0 +1,13 @@
+title: Five-slide deck from scratch
+category: pptx
+prompt: >-
+  Create a 5-slide PowerPoint presentation on cyber hygiene for university office staff: a title
+  slide, three content slides and a closing slide with key takeaways. Check it visually and fix
+  anything wrong before delivering.
+expect:
+  files:
+    count: 1
+    items:
+      - ext: pptx
+        slides: 5
+rubric: No text overflow or overlapping shapes; each content slide has a clear title and concise points.

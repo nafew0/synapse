@@ -1,0 +1,17 @@
+title: Turn spreadsheet data into a chart slide
+category: multi-file
+attach: [fixtures/regional-sales.xlsx]
+prompt: >-
+  Using the attached regional sales workbook, make a 3-slide presentation: a title slide, a slide
+  with a chart of yearly totals by region, and a slide naming the best and weakest region with
+  their totals. Give me the .pptx.
+expect:
+  files:
+    count: 1
+    items:
+      - ext: pptx
+        slides: 3
+        contains: [Dhaka, Sylhet]
+rubric: >-
+  Yearly totals are Dhaka 575, Chattogram 400, Khulna 283, Rajshahi 253, Sylhet 199. The chart and
+  the summary must use these numbers; Dhaka is best and Sylhet weakest.

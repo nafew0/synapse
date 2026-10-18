@@ -1,0 +1,4 @@
+# What production runs today: a Haiku router handing off to specialist agents.
+label: Production router + specialists
+manifest: app:config/phase-one-office-agents.yaml
+skills: app:skill

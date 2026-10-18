@@ -1,0 +1,20 @@
+title: Edit a styled Word policy
+category: docx
+attach: [fixtures/leave-policy.docx]
+prompt: >-
+  Update the attached leave policy: change the title to "Leave Policy 2027" and add a new section
+  "5. Remote Work" after section 4 saying staff may work remotely up to two days a week with their
+  head of department's approval. Keep everything else exactly as it is and give me the updated file.
+expect:
+  files:
+    count: 1
+    items:
+      - ext: docx
+        contains: ["Leave Policy 2027", "Remote Work", "two days"]
+        not_contains: ["Leave Policy 2026"]
+        fonts: [Georgia]
+        keeps_text_from: fixtures/leave-policy.docx
+  reply: { language: en }
+rubric: >-
+  The new section must match the existing headings' style and numbering. Sections 1-4 must be
+  unchanged. The title must read "Leave Policy 2027".
