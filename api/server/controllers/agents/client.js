@@ -136,6 +136,7 @@ const {
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { recordAuxiliaryCredits } = require('~/server/services/usageQuota');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { resolveConfigServers, getAccessibleMcpServerNames } = require('~/server/services/MCP');
 const { getMCPServerTools } = require('~/server/services/Config');
@@ -2448,6 +2449,44 @@ class AgentClient extends BaseClient {
     if (result && updateStreamUsage) {
       this.usage = result;
     }
+    /** The reply's own calls settle through its reservation; titles and activity labels have
+     *  none, so their cost is charged to the allowance here, at the price just recorded. */
+    if (context !== 'message' && result?.credits > 0) {
+      await this.chargeAuxiliaryCredits({ context, credits: result.credits, model });
+    }
+  }
+
+  /**
+   * Charges a call outside the reply's reservation to the member's credit allowance. Keyed per
+   * call, so a retried recording cannot charge twice. Never fails the caller.
+   * @param {{ context: string, credits: number, model?: string }} params
+   */
+  async chargeAuxiliaryCredits({ context, credits, model }) {
+    const req = this.options.req;
+    const tenantId = req?.user?.tenantId;
+    if (!tenantId) {
+      return;
+    }
+    this.auxiliaryChargeSeq = (this.auxiliaryChargeSeq ?? 0) + 1;
+    const runKey =
+      this.jobCreatedAt != null
+        ? `${this.responseMessageId}:${this.jobCreatedAt}`
+        : this.responseMessageId;
+    try {
+      await recordAuxiliaryCredits({
+        tenantId,
+        userId: this.user ?? req.user.id,
+        memberPackage: req.user.usagePackage,
+        reservationKey: `${this.conversationId}:${runKey}:${context}:${this.auxiliaryChargeSeq}`,
+        credits,
+        metadata: { context, model: model ?? null },
+      });
+    } catch (error) {
+      logger.error(
+        `[AgentClient] Failed to charge ${context} credits to the usage allowance`,
+        error,
+      );
+    }
   }
 
   /**
@@ -2478,9 +2517,13 @@ class AgentClient extends BaseClient {
     const agent = this.options.agent;
     const model = agent?.model ?? agent?.model_parameters?.model ?? this.model;
     const endpoint = agent?.provider ?? this.options.endpoint;
-    /** Instructions join the prompt inside the run, after `promptTokens` is counted, so the
-     *  reservation adds them. Tool definitions are still not counted. */
-    const instructions = [agent?.instructions, agent?.additional_instructions]
+    /** Instructions and tool definitions join the prompt inside the run, after `promptTokens`
+     *  is counted, so the reservation adds them. */
+    const toolDefinitions =
+      Array.isArray(agent?.toolDefinitions) && agent.toolDefinitions.length > 0
+        ? JSON.stringify(agent.toolDefinitions)
+        : '';
+    const instructions = [agent?.instructions, agent?.additional_instructions, toolDefinitions]
       .filter((value) => typeof value === 'string' && value.length > 0)
       .join('\n');
     return {

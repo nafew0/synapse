@@ -541,6 +541,8 @@ export interface RecordUsageParams {
 export interface RecordUsageResult {
   input_tokens: number;
   output_tokens: number;
+  /** Credits (USD × 1e6) of the transactions written, when they were priced here (bulk path). */
+  credits?: number;
 }
 
 export interface DetachedSubagentUsageRecorderParams {
@@ -749,6 +751,9 @@ export async function recordCollectedUsage(
   return {
     input_tokens,
     output_tokens: total_output_tokens,
+    ...(useBulk && {
+      credits: allDocs.reduce((sum, entry) => sum + Math.abs(entry.tokenValue ?? 0), 0),
+    }),
   };
 }
 

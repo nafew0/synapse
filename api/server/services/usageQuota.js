@@ -716,6 +716,109 @@ async function reserveCredits({
 }
 
 /**
+ * Charges a model call that had no reservation of its own (a title, an activity label) to the
+ * credit buckets. It already ran, so it is recorded as a settled reservation rather than checked
+ * against the limit; the next request sees the smaller allowance. Idempotent on `reservationKey`.
+ * Tenants still on the token policy are left alone.
+ */
+async function recordAuxiliaryCredits({
+  tenantId,
+  userId,
+  memberPackage,
+  reservationKey,
+  credits,
+  metadata,
+}) {
+  const amount = Math.round(Number(credits) || 0);
+  if (!tenantId || !userId || !reservationKey || amount <= 0) {
+    return null;
+  }
+  const { institution, policy } = await loadQuotaContext(tenantId);
+  if (!usesCredits(institution.usagePackage, memberPackage)) {
+    return null;
+  }
+  const ranges = getCreditRanges();
+  const limits = resolveCreditLimits({
+    institutionPackage: institution.usagePackage,
+    memberPackage,
+    catalog: await usageCatalog.load(),
+  });
+  const scopes = buildCreditScopes({ tenantId, userId, limits, ranges });
+  const policyVersion = Math.max(policy.version, 1);
+  const transactionCapable = await supportsTransactions();
+  const session = transactionCapable ? await mongoose.startSession() : null;
+  let reservation = null;
+  const execute = async () => {
+    const [created] = await models.UsageReservation.create(
+      [
+        {
+          tenantId,
+          reservationKey,
+          userId,
+          providerKey: 'auxiliary',
+          modelKey: metadata?.model ?? 'auxiliary',
+          policyVersion,
+          periodStart: ranges.month.start,
+          periodEnd: ranges.month.end,
+          estimatedInputTokens: 0,
+          outputTokenCap: 0,
+          reservedTokens: 0,
+          actualTokens: amount,
+          weight: 1,
+          unit: 'credits',
+          scopes: scopes.map((scope) => ({
+            scopeType: scope.scopeType,
+            scopeKey: scope.scopeKey,
+            periodStart: scope.range.start,
+            periodEnd: scope.range.end,
+            limit: scope.limit,
+            window: scope.window,
+          })),
+          status: 'settled',
+          settledAt: new Date(),
+          expiresAt: new Date(Date.now() + DEFAULT_RESERVATION_TTL_MS),
+          metadata: { ...metadata, auxiliary: true },
+        },
+      ],
+      { session },
+    );
+    reservation = created.toObject();
+    for (const scope of scopes) {
+      const query = await loadBucket({
+        tenantId,
+        range: scope.range,
+        scope,
+        policyVersion,
+        session,
+      });
+      await models.UsageBucket.updateOne(
+        query,
+        { $inc: { usedTokens: amount } },
+        { session },
+      ).exec();
+    }
+  };
+  try {
+    if (session) {
+      await session.withTransaction(execute);
+    } else {
+      await runAsSystem(execute);
+    }
+  } catch (error) {
+    if (error?.code === 11000) {
+      return null;
+    }
+    throw error;
+  } finally {
+    if (session) {
+      await session.endSession();
+    }
+  }
+  await emitUsageWarnings(reservation);
+  return reservation;
+}
+
+/**
  * Reserves capacity for one request. Metered in credits once the institution or the member has a
  * usage package; otherwise on the token policy.
  *
@@ -2124,6 +2227,7 @@ module.exports = {
   isEnforcementDenial,
   reconcileExpiredReservations,
   reconcileQuotaState,
+  recordAuxiliaryCredits,
   releaseUsage,
   reserveUsage,
   settleUsage,

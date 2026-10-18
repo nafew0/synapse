@@ -75,7 +75,7 @@ describe('recordCollectedUsage — bulk path parity', () => {
 
       const result = await recordCollectedUsage(deps, { ...baseParams, collectedUsage });
 
-      expect(result).toEqual({ input_tokens: 100, output_tokens: 50 });
+      expect(result).toMatchObject({ input_tokens: 100, output_tokens: 50 });
       expect(mockSpendTokens).not.toHaveBeenCalled();
       expect(mockInsertMany).toHaveBeenCalledTimes(1);
 
@@ -100,7 +100,7 @@ describe('recordCollectedUsage — bulk path parity', () => {
 
       const result = await recordCollectedUsage(deps, { ...baseParams, collectedUsage });
 
-      expect(result).toEqual({ input_tokens: 100, output_tokens: 110 });
+      expect(result).toMatchObject({ input_tokens: 100, output_tokens: 110 });
       expect(mockInsertMany).toHaveBeenCalledTimes(1);
       const docs = mockInsertMany.mock.calls[0][0];
       expect(docs).toHaveLength(4); // 2 non-null entries × 2 docs each

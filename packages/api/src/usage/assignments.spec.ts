@@ -97,7 +97,7 @@ async function seed() {
     email: 'member@uni.edu',
     name: 'Member',
     tenantId: 'uni',
-  } as Partial<IUser>)) as IUser;
+  } as Parameters<AllMethods['createUser']>[0])) as IUser;
   return String(user._id);
 }
 

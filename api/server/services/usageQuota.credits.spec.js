@@ -254,6 +254,71 @@ describe('usageQuota credit metering (replica set)', () => {
     });
   });
 
+  describe('calls outside a reservation (titles, activity labels)', () => {
+    beforeEach(async () => {
+      await createPackage('pool', 10_000_000);
+      /** 1,000 credits a month, so 350 a week. */
+      await createPackage('member', 1_000);
+    });
+
+    const charge = (credits, key = 'conv:resp:title:1') =>
+      quota.recordAuxiliaryCredits({
+        tenantId,
+        userId,
+        reservationKey: key,
+        credits,
+        metadata: { context: 'title', model: 'openai/gpt-5.6-luna' },
+      });
+
+    it('charges all four credit buckets as a settled record', async () => {
+      const record = await charge(56);
+      expect(record).toMatchObject({ unit: 'credits', status: 'settled', actualTokens: 56 });
+      const buckets = await models.UsageBucket.find({
+        scopeType: { $in: ['member_credits', 'institution_credits'] },
+      }).lean();
+      expect(buckets).toHaveLength(4);
+      for (const charged of buckets) {
+        expect(charged).toMatchObject({ usedTokens: 56, reservedTokens: 0 });
+      }
+    });
+
+    it('charges a retried recording only once', async () => {
+      await charge(56);
+      expect(await charge(56)).toBeNull();
+      const week = await bucket(
+        'member_credits',
+        String(userId),
+        quota.getCalendarWeekRange(quota.QUOTA_RESET_TIMEZONE).start,
+      );
+      expect(week.usedTokens).toBe(56);
+    });
+
+    it('leaves a tenant on the token policy alone', async () => {
+      await models.Institution.updateOne({ tenantId }, { $set: { usagePackage: null } });
+      expect(await charge(56)).toBeNull();
+      expect(await models.UsageReservation.countDocuments({})).toBe(0);
+    });
+
+    it('counts toward the wall, so the next request is refused', async () => {
+      await charge(340);
+      await expect(reserve()).rejects.toMatchObject({
+        details: expect.objectContaining({ limitCode: 'WEEKLY_CAP' }),
+      });
+    });
+
+    it('survives a bucket repair', async () => {
+      await charge(56);
+      await models.UsageBucket.updateMany({}, { $set: { usedTokens: 0 } });
+      await quota.reconcileQuotaState({ now: new Date() });
+      const week = await bucket(
+        'member_credits',
+        String(userId),
+        quota.getCalendarWeekRange(quota.QUOTA_RESET_TIMEZONE).start,
+      );
+      expect(week.usedTokens).toBe(56);
+    });
+  });
+
   describe('getMemberQuota', () => {
     it('reports the member in credits and taka, and only whether the institution is blocked', async () => {
       await createPackage('pool', 10_000_000);
