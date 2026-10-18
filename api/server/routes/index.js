@@ -18,6 +18,7 @@ const platformInstitutions = require('./platform/institutions');
 const platformUsers = require('./platform/users');
 const platformInstitutionPackages = require('./platform/institutionPackages');
 const platformUsagePackages = require('./platform/usagePackages');
+const platformUsageAssignments = require('./platform/usageAssignments');
 const platformAgentsCatalog = require('./platform/agentsCatalog');
 const endpoints = require('./endpoints');
 const staticRoute = require('./static');
@@ -73,6 +74,7 @@ module.exports = {
   platformUsers,
   platformInstitutionPackages,
   platformUsagePackages,
+  platformUsageAssignments,
   platformAgentsCatalog,
   keys,
   apiKeys,

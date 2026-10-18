@@ -21,6 +21,7 @@ const quotaMessageKeys = {
   IMAGE_MONTHLY_CAP: 'com_error_quota_images_monthly',
   MODEL_CAP: 'com_error_quota_model',
   INSTITUTION_CAP: 'com_error_quota_institution',
+  INSTITUTION_WEEKLY_CAP: 'com_error_quota_institution_weekly',
 } as const;
 
 const quotaTitleKeys = {
@@ -30,6 +31,7 @@ const quotaTitleKeys = {
   IMAGE_MONTHLY_CAP: 'com_error_quota_title_images',
   MODEL_CAP: 'com_error_quota_title_model',
   INSTITUTION_CAP: 'com_error_quota_title_institution',
+  INSTITUTION_WEEKLY_CAP: 'com_error_quota_title_institution',
 } as const;
 
 type QuotaLimitCode = keyof typeof quotaMessageKeys;

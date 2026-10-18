@@ -1,15 +1,23 @@
 const mongoose = require('mongoose');
 const { getTransactionSupport, logger, runAsSystem } = require('@librechat/data-schemas');
 const {
-  checkEmailConfig,
-  matchModelName,
-  isEnforcementDenial,
-  recordQuotaDenial,
-  recordReservationExpiry,
-  toBillingTokens,
   unitFor,
   weightFor,
+  usesCredits,
+  matchModelName,
+  estimateCredits,
+  creditLimitCode,
+  toBillingTokens,
+  CREDITS_PER_USD,
+  effectiveBdtPerUsd,
+  checkEmailConfig,
+  recordQuotaDenial,
+  isEnforcementDenial,
+  resolveCreditLimits,
+  outputTokensForCredits,
+  recordReservationExpiry,
 } = require('@librechat/api');
+const usageCatalog = require('./usageCatalog');
 const models = require('~/db/models');
 const { sendEmail } = require('~/server/utils');
 
@@ -235,7 +243,8 @@ async function supportsTransactions() {
   return supported;
 }
 
-async function getActivePolicy(tenantId) {
+/** The institution (which carries its usage packages) and the policy it points at. */
+async function loadQuotaContext(tenantId) {
   const institution = await runAsSystem(() =>
     models.Institution.findOne({ tenantId }).lean().exec(),
   );
@@ -249,7 +258,7 @@ async function getActivePolicy(tenantId) {
 
   const version = institution.usagePolicyVersion ?? 0;
   if (version < 1) {
-    return {
+    const policy = {
       tenantId,
       version: 0,
       mode: 'shadow',
@@ -268,6 +277,7 @@ async function getActivePolicy(tenantId) {
       inputSafetyTokens: 256,
       effectiveAt: institution.createdAt || new Date(0),
     };
+    return { institution, policy };
   }
 
   const policy = await runAsSystem(() =>
@@ -281,7 +291,31 @@ async function getActivePolicy(tenantId) {
       policyVersion: version,
     });
   }
-  return policy;
+  return { institution, policy };
+}
+
+async function getActivePolicy(tenantId) {
+  return (await loadQuotaContext(tenantId)).policy;
+}
+
+/** Month and week windows. Credit scopes always enforce both, whatever the policy's `period`. */
+function getCreditRanges(now = new Date()) {
+  return {
+    month: getCalendarMonthRange(QUOTA_RESET_TIMEZONE, now),
+    week: getCalendarWeekRange(QUOTA_RESET_TIMEZONE, now),
+  };
+}
+
+/** The four credit buckets a request draws from: the institution's and the member's, each per month and per week. */
+function buildCreditScopes({ tenantId, userId, limits, ranges }) {
+  const memberKey = String(userId);
+  return [
+    ['institution_credits', tenantId, limits.institution],
+    ['member_credits', memberKey, limits.member],
+  ].flatMap(([scopeType, scopeKey, windows]) => [
+    { scopeType, scopeKey, limit: windows.month, range: ranges.month, window: 'month' },
+    { scopeType, scopeKey, limit: windows.week, range: ranges.week, window: 'week' },
+  ]);
 }
 
 function getModelLimit(policy, modelKey) {
@@ -444,26 +478,277 @@ function conservativeInputTokens(policy, estimatedInputTokens) {
   );
 }
 
-async function reserveUsage({
+/** Writes a reservation and holds its capacity in every scope, in one transaction where available. */
+async function persistReservation({
+  tenantId,
+  reservationKey,
+  doc,
+  scopes,
+  policy,
+  tokens,
+  transactionCapable,
+}) {
+  const session = transactionCapable ? await mongoose.startSession() : null;
+  let result;
+  let concurrentReplay = false;
+  const execute = async () => {
+    const reservation = await models.UsageReservation.create([doc], { session });
+    result = reservation[0].toObject();
+    for (const scope of scopes) {
+      await reserveBucket({
+        tenantId,
+        range: scope.range,
+        scope,
+        policyVersion: Math.max(policy.version, 1),
+        tokens,
+        enforce: policy.mode === 'enforce',
+        session,
+      });
+    }
+  };
+
+  try {
+    if (session) {
+      await session.withTransaction(execute);
+    } else {
+      await runAsSystem(execute);
+    }
+  } catch (error) {
+    if (error?.code !== 11000) {
+      throw error;
+    }
+    const replay = await runAsSystem(() =>
+      models.UsageReservation.findOne({ tenantId, reservationKey }).lean().exec(),
+    );
+    if (!replay) {
+      throw error;
+    }
+    result = replay;
+    concurrentReplay = true;
+  } finally {
+    if (session) {
+      await session.endSession();
+    }
+  }
+  return { result, concurrentReplay };
+}
+
+/** Remaining capacity of each limited scope, read before reserving so a refusal can name the binding window. */
+async function readScopeRemaining(tenantId, scopes) {
+  const limited = scopes.filter((scope) => scope.limit != null);
+  const buckets = await Promise.all(
+    limited.map((scope) =>
+      runAsSystem(() =>
+        models.UsageBucket.findOne({
+          tenantId,
+          periodStart: scope.range.start,
+          scopeType: scope.scopeType,
+          scopeKey: scope.scopeKey,
+        })
+          .lean()
+          .exec(),
+      ),
+    ),
+  );
+  return limited.map((scope, index) => ({
+    scope,
+    remaining: Math.max(
+      scope.limit - (buckets[index]?.usedTokens ?? 0) - (buckets[index]?.reservedTokens ?? 0),
+      0,
+    ),
+  }));
+}
+
+/**
+ * Reserves a request against its institution's and member's credit allowances: the estimated
+ * cost at the request's own model, trimmed to what is left so an over-long answer is cut short
+ * rather than refused. Settlement replaces the estimate with the actual cost.
+ */
+async function reserveCredits({
   tenantId,
   userId,
-  provider,
-  model,
   reservationKey,
-  endpoint,
+  canonical,
+  institution,
+  policy,
+  memberPackage,
+  pricingContext,
   estimatedInputTokens,
   requestedOutputTokens,
   metadata,
 }) {
+  const ranges = getCreditRanges();
+  const enforcing = policy.mode === 'enforce';
+  const [catalog, existing] = await Promise.all([
+    usageCatalog.load(),
+    runAsSystem(() => models.UsageReservation.findOne({ tenantId, reservationKey }).lean().exec()),
+  ]);
+  if (existing) {
+    return {
+      reservation: existing,
+      policy,
+      range: ranges.month,
+      canonical,
+      outputTokenCap: enforcing ? existing.outputTokenCap : null,
+      outputCapped:
+        enforcing &&
+        existing.outputTokenCap < (existing.metadata?.requestedOutputTokens ?? Infinity),
+      idempotentReplay: true,
+    };
+  }
+
+  const transactionCapable = await supportsTransactions();
+  if (enforcing && !transactionCapable) {
+    throw new QuotaError({
+      code: 'QUOTA_ENFORCEMENT_REQUIRES_TRANSACTIONS',
+      scope: 'institution',
+      tenantId,
+    });
+  }
+
+  const limits = resolveCreditLimits({
+    institutionPackage: institution.usagePackage,
+    memberPackage,
+    catalog,
+  });
+  const scopes = buildCreditScopes({ tenantId, userId, limits, ranges });
+  /** Credits per token at the request's own model, priced by the client with the billing table. */
+  const rates = pricingContext?.rates ?? { input: 0, output: 0 };
+  const inputTokens = conservativeInputTokens(policy, estimatedInputTokens);
+  const requestedOutput = Math.max(
+    Number.isFinite(requestedOutputTokens) ? requestedOutputTokens : DEFAULT_MAX_OUTPUT_TOKENS,
+    0,
+  );
+  const inputCredits = estimateCredits({ inputTokens, outputTokens: 0 }, rates);
+  const scopeRemaining = await readScopeRemaining(tenantId, scopes);
+  const smallestRemaining =
+    scopeRemaining.length > 0
+      ? Math.min(...scopeRemaining.map((entry) => entry.remaining))
+      : Number.POSITIVE_INFINITY;
+  const proposedOutputCap = Math.min(
+    requestedOutput,
+    outputTokensForCredits(smallestRemaining, inputCredits, rates.output),
+  );
+  const outputTokenCap = enforcing ? proposedOutputCap : requestedOutput;
+
+  if (
+    enforcing &&
+    (smallestRemaining <= 0 || smallestRemaining < inputCredits || outputTokenCap < 1)
+  ) {
+    /** Ties resolve to the first scope, ordered institution before member and month before week. */
+    const limitingScope = scopeRemaining.find(
+      (entry) => entry.remaining === smallestRemaining,
+    ).scope;
+    recordQuotaDenial(limitingScope.scopeType);
+    throw new QuotaError({
+      scope: limitingScope.scopeType,
+      limitCode: creditLimitCode(limitingScope.scopeType, limitingScope.window),
+      window: limitingScope.window,
+      meter: 'credits',
+      limit: limitingScope.limit,
+      used: Math.max(limitingScope.limit - smallestRemaining, 0),
+      reserved: 0,
+      remaining: smallestRemaining,
+      resetAt: limitingScope.range.end.toISOString(),
+    });
+  }
+
+  const reservedCredits = estimateCredits({ inputTokens, outputTokens: outputTokenCap }, rates);
+  const fullCredits = estimateCredits({ inputTokens, outputTokens: requestedOutput }, rates);
+  const { result, concurrentReplay } = await persistReservation({
+    tenantId,
+    reservationKey,
+    scopes,
+    policy,
+    tokens: reservedCredits,
+    transactionCapable,
+    doc: {
+      tenantId,
+      reservationKey,
+      userId,
+      providerKey: canonical.providerKey,
+      modelKey: canonical.modelKey,
+      policyVersion: Math.max(policy.version, 1),
+      periodStart: ranges.month.start,
+      periodEnd: ranges.month.end,
+      estimatedInputTokens: inputTokens,
+      outputTokenCap,
+      reservedTokens: reservedCredits,
+      weight: 1,
+      unit: 'credits',
+      scopes: scopes.map((scope) => ({
+        scopeType: scope.scopeType,
+        scopeKey: scope.scopeKey,
+        periodStart: scope.range.start,
+        periodEnd: scope.range.end,
+        limit: scope.limit,
+        window: scope.window,
+      })),
+      status: 'reserved',
+      expiresAt: new Date(Date.now() + DEFAULT_RESERVATION_TTL_MS),
+      metadata: {
+        ...metadata,
+        requestedOutputTokens: requestedOutput,
+        proposedOutputCap: Number.isFinite(proposedOutputCap) ? proposedOutputCap : requestedOutput,
+        rates,
+        quotaModel: pricingContext?.model ?? null,
+        institutionPackageKey: limits.institutionPackageKey,
+        memberPackageKey: limits.memberPackageKey,
+        shadowWouldDeny:
+          !enforcing && scopeRemaining.some((entry) => entry.remaining < fullCredits),
+      },
+    },
+  });
+
+  return {
+    reservation: result,
+    policy,
+    range: ranges.month,
+    canonical,
+    outputTokenCap: enforcing ? result.outputTokenCap : null,
+    outputCapped: enforcing && result.outputTokenCap < requestedOutput,
+    proposedOutputCap,
+    idempotentReplay: concurrentReplay,
+  };
+}
+
+/**
+ * Reserves capacity for one request. Metered in credits once the institution or the member has a
+ * usage package; otherwise on the token policy.
+ *
+ * @param {object} params
+ * @param {object} [params.memberPackage] The member's own package (`req.user.usagePackage`).
+ * @param {object} [params.pricingContext] `{ model, endpoint, rates }`: the model the request is
+ *   priced at (for an agent, its own model) and its credits per input and output token.
+ */
+async function reserveUsage(params) {
+  const { tenantId, userId, reservationKey, provider, model, memberPackage } = params;
   if (!tenantId || !userId || !reservationKey) {
     throw new QuotaError({
       code: 'INVALID_QUOTA_CONTEXT',
       scope: 'institution',
     });
   }
-
   const canonical = canonicalizeModel({ provider, model });
-  const policy = await getActivePolicy(tenantId);
+  const { institution, policy } = await loadQuotaContext(tenantId);
+  if (usesCredits(institution.usagePackage, memberPackage)) {
+    return reserveCredits({ ...params, canonical, institution, policy });
+  }
+  return reserveTokens({ ...params, canonical, policy });
+}
+
+async function reserveTokens({
+  tenantId,
+  userId,
+  provider,
+  reservationKey,
+  endpoint,
+  estimatedInputTokens,
+  requestedOutputTokens,
+  metadata,
+  canonical,
+  policy,
+}) {
   const ranges = getPolicyRanges(policy);
   const range = ranges.month;
   /** The request ENDPOINT, not the provider key, decides weight and unit:
@@ -583,85 +868,45 @@ async function reserveUsage({
     });
   }
 
-  const session = transactionCapable ? await mongoose.startSession() : null;
-  let result;
-  let concurrentReplay = false;
-  const execute = async () => {
-    const reservation = await models.UsageReservation.create(
-      [
-        {
-          tenantId,
-          reservationKey,
-          userId,
-          providerKey: canonical.providerKey,
-          modelKey: canonical.modelKey,
-          policyVersion: Math.max(policy.version, 1),
-          periodStart: range.start,
-          periodEnd: range.end,
-          estimatedInputTokens: inputReservation,
-          outputTokenCap,
-          reservedTokens,
-          weight,
-          unit,
-          scopes: scopes.map((scope) => ({
-            scopeType: scope.scopeType,
-            scopeKey: scope.scopeKey,
-            periodStart: scope.range.start,
-            periodEnd: scope.range.end,
-          })),
-          status: 'reserved',
-          expiresAt: new Date(Date.now() + DEFAULT_RESERVATION_TTL_MS),
-          metadata: {
-            ...metadata,
-            requestedOutputTokens: requestedOutput,
-            proposedOutputCap,
-            shadowWouldDeny:
-              policy.mode === 'shadow' &&
-              finiteRemaining.some((remaining) => remaining < inputReservation + requestedOutput),
-          },
-        },
-      ],
-      { session },
-    );
-    result = reservation[0].toObject();
-    for (const scope of scopes) {
-      await reserveBucket({
-        tenantId,
-        range: scope.range,
-        scope,
-        policyVersion: Math.max(policy.version, 1),
-        tokens: reservedTokens,
-        enforce: policy.mode === 'enforce',
-        session,
-      });
-    }
-  };
-
-  try {
-    if (session) {
-      await session.withTransaction(execute);
-    } else {
-      await runAsSystem(execute);
-    }
-  } catch (error) {
-    if (error?.code === 11000) {
-      const replay = await runAsSystem(() =>
-        models.UsageReservation.findOne({ tenantId, reservationKey }).lean().exec(),
-      );
-      if (replay) {
-        result = replay;
-        concurrentReplay = true;
-      } else {
-        throw error;
-      }
-    } else {
-      throw error;
-    }
-  } finally {
-    if (session) {
-      await session.endSession();
-    }
-  }
+  const { result, concurrentReplay } = await persistReservation({
+    tenantId,
+    reservationKey,
+    scopes,
+    policy,
+    tokens: reservedTokens,
+    transactionCapable,
+    doc: {
+      tenantId,
+      reservationKey,
+      userId,
+      providerKey: canonical.providerKey,
+      modelKey: canonical.modelKey,
+      policyVersion: Math.max(policy.version, 1),
+      periodStart: range.start,
+      periodEnd: range.end,
+      estimatedInputTokens: inputReservation,
+      outputTokenCap,
+      reservedTokens,
+      weight,
+      unit,
+      scopes: scopes.map((scope) => ({
+        scopeType: scope.scopeType,
+        scopeKey: scope.scopeKey,
+        periodStart: scope.range.start,
+        periodEnd: scope.range.end,
+      })),
+      status: 'reserved',
+      expiresAt: new Date(Date.now() + DEFAULT_RESERVATION_TTL_MS),
+      metadata: {
+        ...metadata,
+        requestedOutputTokens: requestedOutput,
+        proposedOutputCap,
+        shadowWouldDeny:
+          policy.mode === 'shadow' &&
+          finiteRemaining.some((remaining) => remaining < inputReservation + requestedOutput),
+      },
+    },
+  });
 
   return {
     reservation: result,
@@ -861,22 +1106,50 @@ async function consumeSettledImages({ tenantId, reservation, images, session }) 
  *   (an agent run that delegated to the image specialist) it is consumed
  *   separately against the image meter.
  */
-async function settleUsage({ tenantId, reservationKey, usage, images }) {
+/** Fallback when the client could not price its own run: the tokens at the rates the reservation was made at. */
+function creditsFromTokens(usage, rates) {
+  const input =
+    Math.max(usage?.inputTokens ?? 0, 0) +
+    Math.max(usage?.cacheWriteTokens ?? 0, 0) +
+    Math.max(usage?.cacheReadTokens ?? 0, 0);
+  return Math.ceil(
+    input * (rates?.input ?? 0) + Math.max(usage?.outputTokens ?? 0, 0) * (rates?.output ?? 0),
+  );
+}
+
+/** What a settlement charges, in the reservation's own unit. */
+function settledAmount(existing, { usage, images, credits }) {
+  if (existing?.unit === 'credits') {
+    const actual = Number.isFinite(credits)
+      ? Math.round(credits)
+      : creditsFromTokens(usage, existing.metadata?.rates);
+    return Math.max(actual, 0);
+  }
+  if (existing?.unit === 'images') {
+    return Math.max(images ?? existing.reservedTokens ?? 1, 0);
+  }
   const rawTokens =
     Math.max(usage?.inputTokens ?? 0, 0) +
     Math.max(usage?.cacheWriteTokens ?? 0, 0) +
     Math.max(usage?.cacheReadTokens ?? 0, 0) +
     Math.max(usage?.outputTokens ?? 0, 0);
+  return toBillingTokens(rawTokens, existing?.weight ?? 1);
+}
+
+/**
+ * @param {object} params
+ * @param {number} [params.credits] Actual credits of the run (credit reservations), priced per
+ *   call by the client exactly as `Transaction` prices it.
+ * @param {number} [params.images] Images generated by this request (token reservations only).
+ */
+async function settleUsage({ tenantId, reservationKey, usage, images, credits }) {
   /** Read the weight the reservation was CREATED with rather than recomputing
    *  it: a policy edit mid-request must not settle against a different weight
    *  than it reserved, or the bucket drifts permanently. */
   const existing = await runAsSystem(() =>
     models.UsageReservation.findOne({ tenantId, reservationKey }).lean().exec(),
   );
-  const actualTokens =
-    existing?.unit === 'images'
-      ? Math.max(images ?? existing.reservedTokens ?? 1, 0)
-      : toBillingTokens(rawTokens, existing?.weight ?? 1);
+  const actualTokens = settledAmount(existing, { usage, images, credits });
   const reservation = await transitionReservation({
     tenantId,
     reservationKey,
@@ -884,7 +1157,7 @@ async function settleUsage({ tenantId, reservationKey, usage, images }) {
     status: 'settled',
   });
   if (reservation?.status === 'settled') {
-    if (existing?.unit !== 'images') {
+    if (existing?.unit === 'tokens' || existing?.unit == null) {
       await consumeSettledImages({ tenantId, reservation: existing, images });
     }
     await emitUsageWarnings(reservation);
@@ -933,7 +1206,14 @@ async function reconcileExpiredReservations({ limit = 100 } = {}) {
  */
 async function computePeriodTotals(key, session) {
   const pipeline = [
-    { $match: { tenantId: key.tenantId, periodStart: key.periodStart } },
+    {
+      $match: {
+        tenantId: key.tenantId,
+        periodStart: key.periodStart,
+        /** Credit reservations repair their own buckets: see `reconcileCreditBuckets`. */
+        unit: { $ne: 'credits' },
+      },
+    },
     {
       $group: {
         _id: { userId: '$userId', modelKey: '$modelKey' },
@@ -1014,6 +1294,99 @@ async function writePeriodTotals({ key, policyVersion, totals, session }) {
  * transactions only closed periods are repaired — a period whose end has
  * passed can never receive another reservation, so there is nothing to race.
  */
+/** Credit bucket totals for one window, from the scopes each credit reservation recorded. */
+async function computeCreditTotals(key, session) {
+  const aggregation = models.UsageReservation.aggregate([
+    { $match: { tenantId: key.tenantId, unit: 'credits', 'scopes.periodStart': key.periodStart } },
+    { $unwind: '$scopes' },
+    { $match: { 'scopes.periodStart': key.periodStart } },
+    {
+      $group: {
+        _id: { scopeType: '$scopes.scopeType', scopeKey: '$scopes.scopeKey' },
+        usedTokens: {
+          $sum: {
+            $cond: [{ $eq: ['$status', 'settled'] }, { $ifNull: ['$actualTokens', 0] }, 0],
+          },
+        },
+        reservedTokens: {
+          $sum: {
+            $cond: [{ $eq: ['$status', 'reserved'] }, { $ifNull: ['$reservedTokens', 0] }, 0],
+          },
+        },
+      },
+    },
+  ]);
+  if (session) {
+    aggregation.session(session);
+  }
+  const rows = await aggregation.exec();
+  return new Map(
+    rows.map((row) => [
+      `${row._id.scopeType}:${row._id.scopeKey}`,
+      {
+        scopeType: row._id.scopeType,
+        scopeKey: row._id.scopeKey,
+        usedTokens: row.usedTokens,
+        reservedTokens: row.reservedTokens,
+      },
+    ]),
+  );
+}
+
+/**
+ * Repairs credit buckets for every weekly and monthly window with no reservation in flight.
+ * Without transactions, only windows that have ended are repaired, as for token buckets.
+ */
+async function reconcileCreditBuckets({ limit, now, transactionCapable }) {
+  const windows = await runAsSystem(() =>
+    models.UsageReservation.aggregate([
+      { $match: { unit: 'credits' } },
+      { $unwind: '$scopes' },
+      {
+        $group: {
+          _id: {
+            tenantId: '$tenantId',
+            periodStart: '$scopes.periodStart',
+            periodEnd: '$scopes.periodEnd',
+          },
+          activeCount: { $sum: { $cond: [{ $eq: ['$status', 'reserved'] }, 1, 0] } },
+          policyVersion: { $max: '$policyVersion' },
+        },
+      },
+      { $match: { activeCount: 0 } },
+      { $sort: { '_id.periodStart': -1 } },
+      { $limit: Math.min(Math.max(limit, 1), 1000) },
+    ]),
+  );
+  let repaired = 0;
+  let deferred = 0;
+  for (const window of windows) {
+    const key = window._id;
+    const closed = new Date(key.periodEnd) <= now;
+    if (!transactionCapable && !closed) {
+      deferred += 1;
+      continue;
+    }
+    const repair = async (session) => {
+      const totals = await computeCreditTotals(key, session);
+      await writePeriodTotals({ key, policyVersion: window.policyVersion, totals, session });
+    };
+    if (!transactionCapable) {
+      await runAsSystem(() => repair(null));
+      repaired += 1;
+      continue;
+    }
+    const session = await mongoose.startSession();
+    try {
+      await runAsSystem(() => session.withTransaction(() => repair(session)));
+      repaired += 1;
+    } finally {
+      await session.endSession();
+    }
+  }
+  return { repaired, deferred };
+}
+
 async function reconcileQuotaState({ limit = 100, now = new Date() } = {}) {
   const expiry = await reconcileExpiredReservations({ limit });
   const transactionCapable = await supportsTransactions();
@@ -1082,11 +1455,15 @@ async function reconcileQuotaState({ limit = 100, now = new Date() } = {}) {
     }
   }
 
+  const credit = await reconcileCreditBuckets({ limit, now, transactionCapable });
+
   return {
     ...expiry,
     inspectedPeriods: periods.length,
     repairedPeriods,
     deferredPeriods,
+    repairedCreditWindows: credit.repaired,
+    deferredCreditWindows: credit.deferred,
   };
 }
 
@@ -1100,8 +1477,86 @@ async function reconcileQuotaState({ limit = 100, now = new Date() } = {}) {
  * A `null` limit means unlimited (shadow mode, or a superadmin override): usage
  * is still reported, `remaining` is simply absent.
  */
-async function getMemberQuota({ tenantId, userId, now = new Date() }) {
-  const policy = await getActivePolicy(tenantId);
+/**
+ * A credit member's allowance this week and month. The institution's pooled allowance is
+ * reported only as blocked or not, with its reset: its size is the institution's, not the member's.
+ */
+async function getMemberCreditQuota({ tenantId, userId, institution, policy, memberPackage, now }) {
+  const ranges = getCreditRanges(now);
+  const catalog = await usageCatalog.load();
+  const limits = resolveCreditLimits({
+    institutionPackage: institution.usagePackage,
+    memberPackage,
+    catalog,
+    now,
+  });
+  const scopes = buildCreditScopes({ tenantId, userId, limits, ranges });
+  const buckets = await runAsSystem(() =>
+    models.UsageBucket.find({
+      tenantId,
+      $or: scopes.map((scope) => ({
+        scopeType: scope.scopeType,
+        scopeKey: scope.scopeKey,
+        periodStart: scope.range.start,
+      })),
+    })
+      .lean()
+      .exec(),
+  );
+  const bdtPerCredit = effectiveBdtPerUsd(catalog.pricing) / CREDITS_PER_USD;
+  const toBdt = (credits) =>
+    credits == null ? null : Math.round(credits * bdtPerCredit * 100) / 100;
+  const meters = scopes.map((scope) => {
+    const bucket = buckets.find(
+      (candidate) =>
+        candidate.scopeType === scope.scopeType &&
+        candidate.scopeKey === scope.scopeKey &&
+        new Date(candidate.periodStart).getTime() === scope.range.start.getTime(),
+    );
+    const used = (bucket?.usedTokens ?? 0) + (bucket?.reservedTokens ?? 0);
+    const blocked = scope.limit != null && used >= scope.limit;
+    if (scope.scopeType === 'institution_credits') {
+      return {
+        meter: 'institution',
+        window: scope.window,
+        used: null,
+        limit: null,
+        remaining: null,
+        unlimited: scope.limit == null,
+        blocked,
+        resetsAt: scope.range.end.toISOString(),
+      };
+    }
+    const remaining = scope.limit == null ? null : Math.max(scope.limit - used, 0);
+    return {
+      meter: 'credits',
+      window: scope.window,
+      used,
+      limit: scope.limit,
+      remaining,
+      usedBdt: toBdt(used),
+      limitBdt: toBdt(scope.limit),
+      remainingBdt: toBdt(remaining),
+      unlimited: scope.limit == null,
+      blocked,
+      resetsAt: scope.range.end.toISOString(),
+    };
+  });
+  const pkg = limits.memberPackageKey ? catalog.packages.get(limits.memberPackageKey) : null;
+  return {
+    tenantId,
+    unit: 'credits',
+    enforced: policy.mode === 'enforce',
+    package: pkg ? { key: pkg.key, name: pkg.name, unlimited: pkg.unlimited === true } : null,
+    meters,
+  };
+}
+
+async function getMemberQuota({ tenantId, userId, memberPackage, now = new Date() }) {
+  const { institution, policy } = await loadQuotaContext(tenantId);
+  if (usesCredits(institution.usagePackage, memberPackage)) {
+    return getMemberCreditQuota({ tenantId, userId, institution, policy, memberPackage, now });
+  }
   const ranges = getPolicyRanges(policy, now);
   const memberKey = String(userId);
   const windows = [
@@ -1161,11 +1616,36 @@ async function getMemberQuota({ tenantId, userId, now = new Date() }) {
   };
 }
 
+/**
+ * Limit of a credit bucket for the institution view. Members on their own package are shown
+ * against the institution's default member package; their own limit lives on their user record.
+ */
+function creditBucketLimit(bucket, creditRanges, limits) {
+  const window =
+    new Date(bucket.periodStart).getTime() === creditRanges.week.start.getTime() ? 'week' : 'month';
+  const windows = bucket.scopeType === 'institution_credits' ? limits.institution : limits.member;
+  return windows[window] ?? null;
+}
+
 async function getQuotaHealth({ tenantId, now = new Date() }) {
-  const policy = await getActivePolicy(tenantId);
+  const { institution, policy } = await loadQuotaContext(tenantId);
   const ranges = getPolicyRanges(policy, now);
   const range = ranges.month;
-  const periodStarts = [ranges.month.start, ...(ranges.week ? [ranges.week.start] : [])];
+  const creditRanges = getCreditRanges(now);
+  const creditLimits = usesCredits(institution.usagePackage)
+    ? resolveCreditLimits({
+        institutionPackage: institution.usagePackage,
+        catalog: await usageCatalog.load(),
+        now,
+      })
+    : null;
+  const periodStarts = [
+    ...new Set(
+      [ranges.month.start, ranges.week?.start, creditRanges.week.start]
+        .filter(Boolean)
+        .map((date) => date.getTime()),
+    ),
+  ].map((time) => new Date(time));
   const buckets = await runAsSystem(() =>
     models.UsageBucket.find({ tenantId, periodStart: { $in: periodStarts } })
       .lean()
@@ -1182,6 +1662,17 @@ async function getQuotaHealth({ tenantId, now = new Date() }) {
     range,
     warnings,
     buckets: buckets.map((bucket) => {
+      if (isCreditScope(bucket.scopeType)) {
+        const limit = creditLimits ? creditBucketLimit(bucket, creditRanges, creditLimits) : null;
+        const consumed = bucket.usedTokens + bucket.reservedTokens;
+        return {
+          ...bucket,
+          limit,
+          remaining: limit == null ? null : Math.max(limit - consumed, 0),
+          utilization: limit == null || limit === 0 ? null : consumed / limit,
+          blocked: limit != null && consumed >= limit,
+        };
+      }
       /** A member now has one bucket per window, so scopeType+scopeKey alone is
        *  ambiguous — the period start is what separates weekly from monthly. */
       const isImages = bucket.scopeType === 'member_images';
@@ -1211,6 +1702,20 @@ async function getQuotaHealth({ tenantId, now = new Date() }) {
   };
 }
 
+function isCreditScope(scopeType) {
+  return scopeType === 'institution_credits' || scopeType === 'member_credits';
+}
+
+/** Credits are shown in taka at the current pricing; token and image counts as plain numbers. */
+async function usageAmountFormatter(scopeType) {
+  if (!isCreditScope(scopeType)) {
+    return (value) => String(value);
+  }
+  const { pricing } = await usageCatalog.load();
+  const rate = effectiveBdtPerUsd(pricing);
+  return (value) => `৳${((value / CREDITS_PER_USD) * rate).toFixed(2)}`;
+}
+
 async function emailUsageWarning(warning) {
   if (!checkEmailConfig()) {
     return;
@@ -1231,6 +1736,7 @@ async function emailUsageWarning(warning) {
   if (admins.length === 0) {
     return;
   }
+  const format = await usageAmountFormatter(warning.scopeType);
   await Promise.all(
     admins.map((admin) =>
       sendEmail({
@@ -1242,9 +1748,9 @@ async function emailUsageWarning(warning) {
           threshold: String(Math.round(warning.threshold * 100)),
           scope: warning.scopeType,
           scopeKey: warning.scopeKey,
-          used: String(warning.usedTokens),
-          reserved: String(warning.reservedTokens),
-          limit: String(warning.limit),
+          used: format(warning.usedTokens),
+          reserved: format(warning.reservedTokens),
+          limit: format(warning.limit),
           resetAt: warning.periodEnd.toISOString(),
         },
         template: 'usageWarning.handlebars',
@@ -1257,13 +1763,21 @@ async function emailUsageWarning(warning) {
   );
 }
 
-async function emitUsageWarnings(reservation) {
-  const policy = await getActivePolicy(reservation.tenantId);
-  const thresholds = policy.warningThresholds ?? [0.8, 0.9];
+/** Limits for a reservation's scopes. Credit scopes carry the limit they were reserved under. */
+function warningScopes(reservation, policy) {
   const scopes = reservationScopes(reservation);
+  if (reservation.unit === 'credits') {
+    return scopes.map((scope) => ({
+      scope,
+      limit: scope.limit ?? null,
+      periodStart: scope.periodStart,
+      periodEnd: scope.periodEnd,
+    }));
+  }
   const ranges = getPolicyRanges(policy);
-  for (const scope of scopes) {
-    const limit = buildScopes({
+  return scopes.map((scope) => ({
+    scope,
+    limit: buildScopes({
       tenantId: reservation.tenantId,
       userId: reservation.userId,
       modelKey: reservation.modelKey,
@@ -1274,14 +1788,23 @@ async function emitUsageWarnings(reservation) {
       (candidate) =>
         candidate.scopeType === scope.scopeType &&
         candidate.range.start.getTime() === new Date(scope.periodStart).getTime(),
-    )?.limit;
+    )?.limit,
+    periodStart: reservation.periodStart,
+    periodEnd: reservation.periodEnd,
+  }));
+}
+
+async function emitUsageWarnings(reservation) {
+  const policy = await getActivePolicy(reservation.tenantId);
+  const thresholds = policy.warningThresholds ?? [0.8, 0.9];
+  for (const { scope, limit, periodStart, periodEnd } of warningScopes(reservation, policy)) {
     if (limit == null || limit <= 0) {
       continue;
     }
     const bucket = await runAsSystem(() =>
       models.UsageBucket.findOne({
         tenantId: reservation.tenantId,
-        periodStart: reservation.periodStart,
+        periodStart,
         scopeType: scope.scopeType,
         scopeKey: scope.scopeKey,
       })
@@ -1300,14 +1823,14 @@ async function emitUsageWarnings(reservation) {
         models.UsageWarning.updateOne(
           {
             tenantId: reservation.tenantId,
-            periodStart: reservation.periodStart,
+            periodStart,
             scopeType: scope.scopeType,
             scopeKey: scope.scopeKey,
             threshold,
           },
           {
             $setOnInsert: {
-              periodEnd: reservation.periodEnd,
+              periodEnd,
               utilization,
               usedTokens: bucket.usedTokens,
               reservedTokens: bucket.reservedTokens,
@@ -1321,7 +1844,7 @@ async function emitUsageWarnings(reservation) {
         const warning = await runAsSystem(() =>
           models.UsageWarning.findOne({
             tenantId: reservation.tenantId,
-            periodStart: reservation.periodStart,
+            periodStart,
             scopeType: scope.scopeType,
             scopeKey: scope.scopeKey,
             threshold,

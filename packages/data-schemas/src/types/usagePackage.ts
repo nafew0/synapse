@@ -47,3 +47,19 @@ export interface IUsagePricing extends UsagePricingFields, Document {
   createdAt?: Date;
   updatedAt?: Date;
 }
+
+/** Packages assigned to an institution: its own pooled allowance and the default for its members. */
+export interface InstitutionUsagePackage {
+  packageKey?: string | null;
+  memberPackageKey?: string | null;
+  assignedAt?: Date;
+  assignedBy?: Types.ObjectId | string;
+}
+
+/** A member's own package; overrides the institution default until it expires. */
+export interface MemberUsagePackage {
+  packageKey: string;
+  assignedAt?: Date;
+  assignedBy?: Types.ObjectId | string;
+  expiresAt?: Date | null;
+}

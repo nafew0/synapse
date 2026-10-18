@@ -9,7 +9,14 @@ const usageBucketSchema: Schema<IUsageBucket> = new Schema<IUsageBucket>(
     /** `member_images` counts images rather than tokens — see IUsageBucket. */
     scopeType: {
       type: String,
-      enum: ['institution', 'member', 'model', 'member_images'],
+      enum: [
+        'institution',
+        'member',
+        'model',
+        'member_images',
+        'institution_credits',
+        'member_credits',
+      ],
       required: true,
     },
     scopeKey: { type: String, required: true, trim: true },

@@ -433,6 +433,7 @@
   "com_error_reference": "Reference: {{0}}",
   "com_error_quota_model": "This model has reached its shared allowance. Other models still work.",
   "com_error_quota_institution": "Your institution has reached its shared allowance.",
+  "com_error_quota_institution_weekly": "Your institution has used this week's shared allowance. Everything resumes automatically.",
   "com_error_quota_title_images": "Image limit reached",
   "com_error_quota_title_model": "Model limit reached",
   "com_error_quota_title_institution": "Institution limit reached",

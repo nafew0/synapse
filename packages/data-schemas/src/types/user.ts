@@ -4,6 +4,7 @@ import type {
   StatefulCodeEnvironment,
 } from 'librechat-data-provider';
 import type { Document, Types } from 'mongoose';
+import type { MemberUsagePackage } from './usagePackage';
 import { CursorPaginationParams, InstitutionMembershipStatus } from '~/common';
 
 export interface IUser extends Document {
@@ -70,6 +71,7 @@ export interface IUser extends Document {
   /** Explicit SaaS account scope; legacy records derive this from tenantId. */
   accountScope?: 'institution' | 'standalone';
   membershipStatus?: InstitutionMembershipStatus;
+  usagePackage?: MemberUsagePackage | null;
   suspendedAt?: Date | null;
   suspendedBy?: string | Types.ObjectId | null;
   removedAt?: Date | null;

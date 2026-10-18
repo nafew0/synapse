@@ -18,7 +18,13 @@ router.get('/', requireJwtAuth, async (req, res) => {
     return res.sendStatus(204);
   }
   try {
-    return res.status(200).json(await getMemberQuota({ tenantId, userId: req.user.id }));
+    return res.status(200).json(
+      await getMemberQuota({
+        tenantId,
+        userId: req.user.id,
+        memberPackage: req.user.usagePackage,
+      }),
+    );
   } catch (error) {
     if (error?.details?.code === 'INSTITUTION_NOT_FOUND') {
       return res.sendStatus(204);

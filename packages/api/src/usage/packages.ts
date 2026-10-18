@@ -43,16 +43,16 @@ const packageBody = z.object({
   sortOrder: z.number().int().default(0),
 });
 
-export const usagePackageCreateSchema = packageBody.extend({
+const usagePackageCreateSchema = packageBody.extend({
   key: z.string().trim().toLowerCase().regex(KEY_PATTERN),
 });
 
-export const usagePackageUpdateSchema = packageBody
+const usagePackageUpdateSchema = packageBody
   .partial()
   .strict()
   .refine((value) => Object.keys(value).length > 0, 'No fields to update');
 
-export const usagePricingSchema = z
+const usagePricingSchema = z
   .object({
     bdtPerUsd: z.number().min(1).max(10_000),
     providerFeePercent: z.number().min(0).max(100),
@@ -178,9 +178,21 @@ export interface UsagePackageHandlerDeps
     input: RecordAuditEntryInput,
     options?: RecordAuditEntryOptions,
   ) => Promise<unknown>;
+  /** Called after any successful write, e.g. to drop a cached catalog. */
+  onChange?: () => void;
 }
 
 type KeyRequest = ServerRequest & { params: { key?: string } };
+type Handler<R extends ServerRequest> = (req: R, res: Response) => Promise<Response>;
+
+export interface UsagePackageHandlers {
+  listPackages: Handler<ServerRequest>;
+  createPackage: Handler<ServerRequest>;
+  updatePackage: Handler<KeyRequest>;
+  archivePackage: Handler<KeyRequest>;
+  getPricing: Handler<ServerRequest>;
+  updatePricing: Handler<ServerRequest>;
+}
 
 function actorOf(req: ServerRequest): { id: string | undefined; name: string } {
   const user = req.user;
@@ -195,7 +207,7 @@ function validationError(res: Response, error: z.ZodError): Response {
 }
 
 /** Platform-superadmin handlers for the package catalogue and its pricing. Mount behind superadmin auth. */
-export function createUsagePackageHandlers(deps: UsagePackageHandlerDeps) {
+export function createUsagePackageHandlers(deps: UsagePackageHandlerDeps): UsagePackageHandlers {
   /** Every change is a platform-wide billing decision, so a failed audit write fails the request. */
   async function audit(
     req: ServerRequest,
@@ -253,6 +265,7 @@ export function createUsagePackageHandlers(deps: UsagePackageHandlerDeps) {
         { type: 'usage_package', id: created.key, name: created.name },
         diffMetadata<UsagePackageFields>(null, parsed.data),
       );
+      deps.onChange?.();
       return res.status(201).json({ package: toPricedPackage(created, pricing) });
     } catch (error) {
       if ((error as { code?: number })?.code === DUPLICATE_KEY_CODE) {
@@ -283,6 +296,7 @@ export function createUsagePackageHandlers(deps: UsagePackageHandlerDeps) {
       if (!updated) {
         return res.status(404).json({ error: 'Package not found' });
       }
+      deps.onChange?.();
       await audit(
         req,
         action,
@@ -329,6 +343,7 @@ export function createUsagePackageHandlers(deps: UsagePackageHandlerDeps) {
     try {
       const previous = await deps.getUsagePricing();
       const saved = await deps.saveUsagePricing(parsed.data, actorOf(req).id);
+      deps.onChange?.();
       await audit(
         req,
         'platform.usage_pricing_updated',

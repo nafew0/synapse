@@ -15,6 +15,8 @@ jest.mock('@librechat/api', () => {
     toBillingTokens: actual.toBillingTokens,
     unitFor: actual.unitFor,
     weightFor: actual.weightFor,
+    /** Built at module load; only the credit path reads from it. */
+    createUsageCatalog: actual.createUsageCatalog,
   };
 });
 

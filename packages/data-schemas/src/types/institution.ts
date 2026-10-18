@@ -1,4 +1,5 @@
 import type { Document, Types } from 'mongoose';
+import type { InstitutionUsagePackage } from './usagePackage';
 import type { InstitutionStatus } from '~/common';
 
 export interface IInstitution extends Document {
@@ -10,6 +11,7 @@ export interface IInstitution extends Document {
   authDomains?: string[];
   timezone?: string;
   usagePolicyVersion?: number;
+  usagePackage?: InstitutionUsagePackage | null;
   packageAssignment?: {
     packageId: string;
     packageSnapshot: {

@@ -4,7 +4,7 @@ export type UsageReservationStatus = 'reserved' | 'settled' | 'released' | 'expi
 
 /** What this reservation consumes. Images are billed per image by the provider,
  *  so counting their tokens would misprice them by orders of magnitude. */
-export type UsageReservationUnit = 'tokens' | 'images';
+export type UsageReservationUnit = 'tokens' | 'images' | 'credits';
 
 /** One bucket this reservation holds capacity in. A request now spans several
  *  windows, so the bucket a settlement must return capacity to can no longer be
@@ -14,6 +14,8 @@ export interface IUsageReservationScope {
   scopeKey: string;
   periodStart: Date;
   periodEnd: Date;
+  limit?: number | null;
+  window?: 'month' | 'week' | null;
 }
 
 export interface IUsageReservation extends Document {

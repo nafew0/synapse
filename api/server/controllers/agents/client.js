@@ -23,6 +23,8 @@ const {
   recordCollectedUsage,
   createDetachedSubagentUsageRecorder,
   sendEvent,
+  creditRates,
+  creditsForUsage,
   computeUsageCostUSD,
   aggregateEmittedUsage,
   aggregateBillableUsage,
@@ -2466,6 +2468,35 @@ class AgentClient extends BaseClient {
   getQuotaUsage() {
     const { tokenUsages } = splitImageUsage(this.collectedUsage);
     return aggregateBillableUsage(tokenUsages);
+  }
+
+  /**
+   * The model a credit reservation is estimated at: the agent's own. With the single-model
+   * Office Assistant this is its only text model; an image handoff is charged at settlement.
+   */
+  getQuotaPricingContext() {
+    const agent = this.options.agent;
+    const model = agent?.model ?? agent?.model_parameters?.model ?? this.model;
+    const endpoint = agent?.provider ?? this.options.endpoint;
+    return {
+      model,
+      endpoint,
+      rates: creditRates({
+        model,
+        endpoint,
+        endpointTokenConfig: this.options.endpointTokenConfig,
+        pricing: { getMultiplier: db.getMultiplier },
+      }),
+    };
+  }
+
+  /** Actual credits of this run: every call priced at its own model, as `Transaction` prices it. */
+  getQuotaCredits() {
+    return creditsForUsage(
+      this.collectedUsage,
+      { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+      (usage) => this.resolveAgentEndpointTokenConfig(usage),
+    );
   }
 
   /**

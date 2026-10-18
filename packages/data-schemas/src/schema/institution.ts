@@ -39,6 +39,16 @@ const institutionSchema: Schema<IInstitution> = new Schema<IInstitution>(
       default: 0,
       min: 0,
     },
+    /** Usage package keys: the institution's own pooled allowance and the default for its members. */
+    usagePackage: {
+      type: {
+        packageKey: { type: String, trim: true, default: null },
+        memberPackageKey: { type: String, trim: true, default: null },
+        assignedAt: { type: Date },
+        assignedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+      },
+      default: null,
+    },
     packageAssignment: {
       type: {
         packageId: { type: String, trim: true },

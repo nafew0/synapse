@@ -2,6 +2,7 @@ const express = require('express');
 const { createUsagePackageHandlers } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const requirePlatformSuperadmin = require('~/server/middleware/platformAdmin');
+const usageCatalog = require('~/server/services/usageCatalog');
 const db = require('~/models');
 
 const handlers = createUsagePackageHandlers({
@@ -12,6 +13,7 @@ const handlers = createUsagePackageHandlers({
   getUsagePricing: db.getUsagePricing,
   saveUsagePricing: db.saveUsagePricing,
   recordAuditEntry: db.recordAuditEntry,
+  onChange: usageCatalog.invalidate,
 });
 
 const router = express.Router();

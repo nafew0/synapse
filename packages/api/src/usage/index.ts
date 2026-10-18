@@ -4,3 +4,6 @@ export * from './denials';
 export * from './weights';
 export * from './packages';
 export * from './rates';
+export * from './credits';
+export * from './catalog';
+export * from './assignments';

@@ -118,6 +118,11 @@ describe('quota refusal message', () => {
     ['IMAGE_MONTHLY_CAP', 'com_error_quota_title_images', 'com_error_quota_images_monthly'],
     ['MODEL_CAP', 'com_error_quota_title_model', 'com_error_quota_model'],
     ['INSTITUTION_CAP', 'com_error_quota_title_institution', 'com_error_quota_institution'],
+    [
+      'INSTITUTION_WEEKLY_CAP',
+      'com_error_quota_title_institution',
+      'com_error_quota_institution_weekly',
+    ],
   ])('names the allowance for %s', (limitCode, titleKey, bodyKey) => {
     renderError({ type: 'token_quota_exceeded', limitCode, resetAt });
     expect(screen.getByText(titleKey)).toBeInTheDocument();

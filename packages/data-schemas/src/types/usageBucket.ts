@@ -6,7 +6,13 @@ import type { Document, Types } from 'mongoose';
  * `usage_bucket_scope_period` unique index and force an index migration on a
  * live collection, whereas `scopeType` is already part of that key.
  */
-export type UsageBucketScope = 'institution' | 'member' | 'model' | 'member_images';
+export type UsageBucketScope =
+  | 'institution'
+  | 'member'
+  | 'model'
+  | 'member_images'
+  | 'institution_credits'
+  | 'member_credits';
 
 export interface IUsageBucket extends Document {
   _id: Types.ObjectId;
@@ -16,7 +22,7 @@ export interface IUsageBucket extends Document {
   scopeType: UsageBucketScope;
   scopeKey: string;
   policyVersion: number;
-  /** Weighted tokens, or image count when `scopeType` is `member_images`. */
+  /** Weighted tokens; image count for `member_images`; credits (USD × 1e6) for `*_credits`. */
   usedTokens: number;
   reservedTokens: number;
   createdAt?: Date;

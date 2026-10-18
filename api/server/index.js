@@ -344,6 +344,7 @@ const startServer = async () => {
   app.use('/api/platform/users', routes.platformUsers);
   app.use('/api/platform/institution-packages', routes.platformInstitutionPackages);
   app.use('/api/platform/usage-packages', routes.platformUsagePackages);
+  app.use('/api/platform', routes.platformUsageAssignments);
   app.use('/api/platform/agents/catalog', routes.platformAgentsCatalog);
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);

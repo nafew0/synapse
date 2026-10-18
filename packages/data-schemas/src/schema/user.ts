@@ -187,6 +187,16 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       default: InstitutionMembershipStatuses.ACTIVE,
       index: true,
     },
+    /** The member's own usage package; when absent the institution default applies. */
+    usagePackage: {
+      type: {
+        packageKey: { type: String, trim: true, required: true },
+        assignedAt: { type: Date },
+        assignedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+        expiresAt: { type: Date, default: null },
+      },
+      default: null,
+    },
     suspendedAt: {
       type: Date,
       default: null,

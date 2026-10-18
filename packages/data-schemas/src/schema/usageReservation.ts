@@ -20,7 +20,7 @@ const usageReservationSchema: Schema<IUsageReservation> = new Schema<IUsageReser
      *  settle against a different weight than it reserved. Billing-only: this
      *  never reaches `Transaction`, which stays raw provider cost. */
     weight: { type: Number, required: true, default: 1, min: 0 },
-    unit: { type: String, enum: ['tokens', 'images'], default: 'tokens' },
+    unit: { type: String, enum: ['tokens', 'images', 'credits'], default: 'tokens' },
     /** Images attributed to this TOKEN reservation at settlement (an agent run
      *  that delegated to the image specialist). Doubles as the idempotency
      *  guard so a replayed settlement cannot double-count the image meter. */
@@ -34,6 +34,9 @@ const usageReservationSchema: Schema<IUsageReservation> = new Schema<IUsageReser
           scopeKey: { type: String, required: true },
           periodStart: { type: Date, required: true },
           periodEnd: { type: Date, required: true },
+          /** The scope's limit when reserved (credits scopes); warnings compare against it. */
+          limit: { type: Number, default: null },
+          window: { type: String, enum: ['month', 'week'], default: null },
         },
       ],
       default: [],

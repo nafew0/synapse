@@ -791,6 +791,9 @@ class BaseClient {
            *  image rather than per token. */
           endpoint: this.options.endpoint,
           model: this.modelOptions?.model ?? this.model,
+          /** Credit metering: the member's own package, and the model the request is priced at. */
+          memberPackage: this.options.req?.user?.usagePackage,
+          pricingContext: this.getQuotaPricingContext?.(),
           reservationKey: quotaReservationKey,
           estimatedInputTokens: promptTokens,
           requestedOutputTokens: resolveRequestedOutputTokens(
@@ -847,6 +850,7 @@ class BaseClient {
               tenantId,
               reservationKey: quotaReservationKey,
               usage: abortedUsage,
+              credits: this.getQuotaCredits?.(),
             });
           } else {
             await releaseUsage({ tenantId, reservationKey: quotaReservationKey });
@@ -975,6 +979,8 @@ class BaseClient {
          *  the agent client can report them: the reservation was made on the
          *  `agents` endpoint before any subagent chose a model. */
         images: this.getQuotaImageCount != null ? this.getQuotaImageCount() : 0,
+        /** Credit reservations settle at the run's actual cost, priced per call like `Transaction`. */
+        credits: this.getQuotaCredits?.(),
         usage: {
           inputTokens: Math.max(
             Number(
