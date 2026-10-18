@@ -6,6 +6,7 @@ const {
   usesCredits,
   matchModelName,
   estimateCredits,
+  imageCreditsEstimate,
   creditLimitCode,
   toBillingTokens,
   CREDITS_PER_USD,
@@ -567,6 +568,8 @@ async function readScopeRemaining(tenantId, scopes) {
 async function reserveCredits({
   tenantId,
   userId,
+  provider,
+  endpoint,
   reservationKey,
   canonical,
   institution,
@@ -628,16 +631,22 @@ async function reserveCredits({
     scopeRemaining.length > 0
       ? Math.min(...scopeRemaining.map((entry) => entry.remaining))
       : Number.POSITIVE_INFINITY;
-  const proposedOutputCap = Math.min(
-    requestedOutput,
-    outputTokensForCredits(smallestRemaining, inputCredits, rates.output),
-  );
+  /** An image cannot be trimmed: a request on an image endpoint is reserved for a whole image
+   *  and refused when the allowance cannot cover one, instead of having its output cut. */
+  const isImage = unitFor(endpoint ?? provider) === 'images';
+  const imageCredits = isImage ? imageCreditsEstimate(rates) : 0;
+  const proposedOutputCap = isImage
+    ? requestedOutput
+    : Math.min(
+        requestedOutput,
+        outputTokensForCredits(smallestRemaining, inputCredits, rates.output),
+      );
   const outputTokenCap = enforcing ? proposedOutputCap : requestedOutput;
+  const unaffordable = isImage
+    ? smallestRemaining < imageCredits
+    : smallestRemaining <= 0 || smallestRemaining < inputCredits || outputTokenCap < 1;
 
-  if (
-    enforcing &&
-    (smallestRemaining <= 0 || smallestRemaining < inputCredits || outputTokenCap < 1)
-  ) {
+  if (enforcing && unaffordable) {
     /** Ties resolve to the first scope, ordered institution before member and month before week. */
     const limitingScope = scopeRemaining.find(
       (entry) => entry.remaining === smallestRemaining,
@@ -656,7 +665,9 @@ async function reserveCredits({
     });
   }
 
-  const reservedCredits = estimateCredits({ inputTokens, outputTokens: outputTokenCap }, rates);
+  const reservedCredits = isImage
+    ? imageCredits
+    : estimateCredits({ inputTokens, outputTokens: outputTokenCap }, rates);
   const fullCredits = estimateCredits({ inputTokens, outputTokens: requestedOutput }, rates);
   const { result, concurrentReplay } = await persistReservation({
     tenantId,
@@ -708,9 +719,12 @@ async function reserveCredits({
     policy,
     range: ranges.month,
     canonical,
-    outputTokenCap: enforcing ? result.outputTokenCap : null,
-    outputCapped: enforcing && result.outputTokenCap < requestedOutput,
+    /** Images are never trimmed, so no cap is handed to the model. */
+    outputTokenCap: enforcing && !isImage ? result.outputTokenCap : null,
+    outputCapped: enforcing && !isImage && result.outputTokenCap < requestedOutput,
     proposedOutputCap,
+    /** Left after this reservation, while enforcing; lets the client drop work it cannot afford. */
+    remainingCredits: enforcing ? smallestRemaining - reservedCredits : null,
     idempotentReplay: concurrentReplay,
   };
 }

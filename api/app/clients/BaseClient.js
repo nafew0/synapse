@@ -829,6 +829,8 @@ class BaseClient {
         res.setHeader('X-Quota-Output-Cap', String(quota.outputTokenCap));
       }
     }
+    /** Before the run is built: lets the client drop work the remaining allowance cannot cover. */
+    this.applyQuotaToRun?.(quota);
 
     let completionResult;
     try {

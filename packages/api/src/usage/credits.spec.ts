@@ -14,7 +14,10 @@ import {
   estimateCredits,
   creditLimitCode,
   resolveCreditLimits,
+  withoutEdgeTargets,
+  imageCreditsEstimate,
   outputTokensForCredits,
+  unaffordableImageAgents,
 } from './credits';
 
 const { getMultiplier, getCacheMultiplier } = createTxMethods(mongoose, {
@@ -229,5 +232,37 @@ describe('createUsageCatalog', () => {
     });
     await expect(usageCatalog.load()).rejects.toThrow('down');
     await expect(usageCatalog.load()).resolves.toMatchObject({ packages: new Map() });
+  });
+});
+
+describe('image allowance', () => {
+  const liteImage = { input: 0.25, output: 30 };
+
+  it('prices one 1K image at the image model rates', () => {
+    expect(imageCreditsEstimate(liteImage)).toBe(500 * 0.25 + 1120 * 30);
+  });
+
+  it('finds image agents the remaining allowance cannot cover', () => {
+    const agents = new Map([
+      [
+        'agent_office_images',
+        { model: 'google/gemini-3.1-flash-lite-image', provider: 'OpenRouter Image' },
+      ],
+      ['agent_writer', { model: 'openai/gpt-5.6-luna', provider: 'OpenRouter' }],
+    ]);
+    const price = () => imageCreditsEstimate(liteImage);
+    expect([...unaffordableImageAgents(agents, 10_000, price)]).toEqual(['agent_office_images']);
+    expect(unaffordableImageAgents(agents, 50_000, price).size).toBe(0);
+  });
+
+  it('removes hand-offs to the dropped agents and drops empty edges', () => {
+    const edges = [
+      { from: 'main', to: 'agent_office_images', edgeType: 'handoff' },
+      { from: 'main', to: ['agent_writer', 'agent_office_images'], edgeType: 'handoff' },
+    ];
+    expect(withoutEdgeTargets(edges, new Set(['agent_office_images']))).toEqual([
+      { from: 'main', to: ['agent_writer'], edgeType: 'handoff' },
+    ]);
+    expect(withoutEdgeTargets(undefined, new Set(['x']))).toEqual([]);
   });
 });

@@ -254,6 +254,44 @@ describe('usageQuota credit metering (replica set)', () => {
     });
   });
 
+  describe('image requests', () => {
+    /** Gemini 3.1 Flash Lite Image: one 1K image ≈ 500 × 0.25 + 1,120 × 30 = 33,725 credits. */
+    const IMAGE = {
+      model: 'google/gemini-3.1-flash-lite-image',
+      endpoint: 'OpenRouter Image',
+      rates: { input: 0.25, output: 30 },
+    };
+    const reserveImage = () =>
+      reserve({ endpoint: 'OpenRouter Image', provider: 'openrouter', pricingContext: IMAGE });
+
+    beforeEach(async () => {
+      await createPackage('pool', 10_000_000);
+    });
+
+    it('reserves a whole image and never trims it', async () => {
+      await createPackage('member', 1_000_000);
+      const result = await reserveImage();
+      expect(result.reservation.reservedTokens).toBe(33_725);
+      expect(result.outputTokenCap).toBeNull();
+      expect(result.outputCapped).toBe(false);
+      expect(result.remainingCredits).toBe(350_000 - 33_725);
+    });
+
+    it('refuses an image the weekly allowance cannot cover, instead of cutting it short', async () => {
+      /** 35% of 90,000 = 31,500 a week: less than one image. */
+      await createPackage('member', 90_000);
+      await expect(reserveImage()).rejects.toMatchObject({
+        details: expect.objectContaining({ limitCode: 'WEEKLY_CAP' }),
+      });
+    });
+
+    it('reports what is left after a text reservation, for the image hand-off check', async () => {
+      await createPackage('member', 1_000_000);
+      const result = await reserve();
+      expect(result.remainingCredits).toBe(350_000 - result.reservation.reservedTokens);
+    });
+  });
+
   describe('calls outside a reservation (titles, activity labels)', () => {
     beforeEach(async () => {
       await createPackage('pool', 10_000_000);

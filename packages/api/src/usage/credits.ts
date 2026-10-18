@@ -9,6 +9,7 @@ import type { PricingFns } from '~/agents/transactions';
 import type { EndpointTokenConfig } from '~/types/tokens';
 import { computeUsageCostUSD } from '~/agents/usage';
 import { CREDITS_PER_USD, priceUsagePackage } from './packages';
+import { isImageModel, unitFor } from './weights';
 
 /** Credit scopes. Kept apart from the token scopes so a tenant's token buckets never mix with credits. */
 export type CreditScopeType = 'institution_credits' | 'member_credits';
@@ -179,4 +180,64 @@ export function creditLimitCode(scopeType: CreditScopeType, window: QuotaWindow)
     return window === 'week' ? 'WEEKLY_CAP' : 'MONTHLY_CAP';
   }
   return window === 'week' ? 'INSTITUTION_WEEKLY_CAP' : 'INSTITUTION_CAP';
+}
+
+/** Output tokens of one generated 1K image on the Gemini image models (measured; see librechat.yaml). */
+export const IMAGE_OUTPUT_TOKENS_ESTIMATE = 1120;
+/** A generous prompt for one image request. */
+const IMAGE_INPUT_TOKENS_ESTIMATE = 500;
+
+/** Credits one generated image costs at an image model's rates. */
+export function imageCreditsEstimate(rates: CreditRates): number {
+  return estimateCredits(
+    { inputTokens: IMAGE_INPUT_TOKENS_ESTIMATE, outputTokens: IMAGE_OUTPUT_TOKENS_ESTIMATE },
+    rates,
+  );
+}
+
+/** A graph edge, as far as routing to an agent goes. */
+export interface RoutableEdge {
+  from: string | string[];
+  to: string | string[];
+  [key: string]: unknown;
+}
+
+/** The edges with the given agents removed as destinations; an edge left with none is dropped. */
+export function withoutEdgeTargets<T extends RoutableEdge>(
+  edges: ReadonlyArray<T> | undefined,
+  removed: ReadonlySet<string>,
+): T[] {
+  return (edges ?? []).flatMap((edge) => {
+    const targets = (Array.isArray(edge.to) ? edge.to : [edge.to]).filter((id) => !removed.has(id));
+    if (targets.length === 0) {
+      return [];
+    }
+    return [{ ...edge, to: Array.isArray(edge.to) ? targets : targets[0] }];
+  });
+}
+
+/** The parts of an agent that say whether it generates images. */
+export interface ImageAgentLike {
+  model?: string | null;
+  provider?: string | null;
+  model_parameters?: { model?: string | null } | null;
+}
+
+/** Image agents whose single image would cost more than `remainingCredits`. */
+export function unaffordableImageAgents<A extends ImageAgentLike>(
+  agents: ReadonlyMap<string, A>,
+  remainingCredits: number,
+  imageCredits: (id: string, agent: A, model: string | undefined) => number,
+): Set<string> {
+  const unaffordable = new Set<string>();
+  for (const [id, agent] of agents) {
+    const model = agent?.model ?? agent?.model_parameters?.model ?? undefined;
+    if (!isImageModel(model) && unitFor(agent?.provider) !== 'images') {
+      continue;
+    }
+    if (imageCredits(id, agent, model) > remainingCredits) {
+      unaffordable.add(id);
+    }
+  }
+  return unaffordable;
 }

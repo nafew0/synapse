@@ -25,6 +25,9 @@ const {
   sendEvent,
   creditRates,
   creditsForUsage,
+  withoutEdgeTargets,
+  imageCreditsEstimate,
+  unaffordableImageAgents,
   computeUsageCostUSD,
   aggregateEmittedUsage,
   aggregateBillableUsage,
@@ -147,6 +150,10 @@ const db = require('~/models');
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
+
+/** Added to the assistant's instructions when its image hand-off is removed for lack of allowance. */
+const IMAGE_UNAVAILABLE_INSTRUCTION =
+  'Image generation is unavailable for this request: the usage allowance cannot cover an image until it resets. If the user asks for an image, say so briefly and offer a text alternative.';
 
 class AgentClient extends BaseClient {
   constructor(options = {}) {
@@ -2539,6 +2546,47 @@ class AgentClient extends BaseClient {
         pricing: { getMultiplier: db.getMultiplier },
       }),
     };
+  }
+
+  /**
+   * Removes image hand-offs the remaining allowance cannot cover, for this run only, and tells the
+   * assistant why. An image is charged after it is made, so without this a run could overshoot the
+   * allowance by one image; the text answer still goes through.
+   * @param {{ remainingCredits?: number | null }} [quota]
+   */
+  applyQuotaToRun(quota) {
+    const remaining = quota?.remainingCredits;
+    if (remaining == null || !Number.isFinite(remaining) || !(this.agentConfigs?.size > 0)) {
+      return;
+    }
+    const unaffordable = unaffordableImageAgents(this.agentConfigs, remaining, (id, agent, model) =>
+      imageCreditsEstimate(
+        creditRates({
+          model,
+          endpoint: agent?.provider,
+          endpointTokenConfig: this.options.endpointTokenConfigByAgentId?.get?.(id),
+          pricing: { getMultiplier: db.getMultiplier },
+        }),
+      ),
+    );
+    if (unaffordable.size === 0) {
+      return;
+    }
+    for (const id of unaffordable) {
+      this.agentConfigs.delete(id);
+    }
+    const agent = this.options.agent;
+    this.options.agent = {
+      ...agent,
+      edges: withoutEdgeTargets(agent.edges, unaffordable),
+      additional_instructions: [agent.additional_instructions, IMAGE_UNAVAILABLE_INSTRUCTION]
+        .filter(Boolean)
+        .join('\n\n'),
+    };
+    logger.info('[AgentClient] Image hand-off removed: the usage allowance cannot cover an image', {
+      agents: [...unaffordable],
+      remainingCredits: remaining,
+    });
   }
 
   /** Actual credits of this run: every call priced at its own model, as `Transaction` prices it. */
