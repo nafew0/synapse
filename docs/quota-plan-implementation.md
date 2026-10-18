@@ -45,10 +45,10 @@ phases 1 to 3 land, packages do not limit anyone.
 | 1 Rate table | Done. Also fixed Claude Haiku 4.5, which fell back to `claude-` (0.8/2.4, 100K context). | `b0bcbad3d` |
 | 2 Credit meter | Done, with the differences below | `2bc11a1f5` |
 | 3 Package limits, institution weekly cap, assignment API | Done | `2bc11a1f5` |
-| 4 Admin assignment screens | Institution and user pickers done (synapse-admin `fa0510b`; API field `4d68083af`). Invite dialogs and the institution quota panel still use the old packages and token limits. | `fa0510b` |
+| 4 Admin assignment screens | Institution and user pickers done (synapse-admin `fa0510b`; API field `4d68083af`). Institution usage panel shows the credit pool and members in taka (synapse-admin `1eac6fc`, API `4b22a624f`). Standalone invite dialog still picks a yaml credit package: waits on the individuals decision (phase 6). | `1eac6fc` |
 | 5 User display | Done: settings panel in taka with bars, Unlimited below 80%, institution pool shown only when used up | `5796aadfd` |
-| 6 Retire old systems | Not started | |
-| 7 Rollout | Not started | |
+| 6 Retire old systems | Blocked: needs a count of `institutionpackages` and of institutions with `packageAssignment` in production (safereach cannot query the database), and a decision on standalone users | |
+| 7 Rollout | Rebased onto bdren-prod on 2026-10-18 (`2365379dd`). Waits on `feat/single-agent-office`. | |
 
 **In-app test, 2026-10-18** (local backend + synapse-admin on the `SynapseQuotaTest` database, a
 member on a ৳0.50/month package): packages, pricing and assignments worked through both the API and the
@@ -58,23 +58,43 @@ with "You've used this week's allowance … Resets Mon, Oct 19, 6:00 AM"; a memb
 wall at once. Four bugs found and fixed (`c5052dcc0`, `1438f474a`): a header crash on trimmed
 requests (latent on bdren-prod), the output cap never reaching the model, the input estimate missing
 the instructions, and the live notice and saved refusal losing their details or thread.
-Still not metered: title generation (about 55 credits per new chat in the test).
+Titles and activity labels were metered afterwards (`2d974d433`).
+
+**Second in-app test, 2026-10-18** (`SynapseRunTest`, member on a ৳3/month package, ৳1.05 a week):
+an Image Generation request was refused before any provider call (no Transaction, no reservation);
+a text chat then went through and reply 204.8 + title 50 credits matched the member meter (255);
+the admin Usage & limits tab showed ৳0.03 of ৳350 / ৳1,000 for the pool and the member against
+৳1.05 / ৳3; the package picker showed `$0.0085/week` instead of `$0.00`; the message navigation
+labelled saved refusals "Image limit reached". Found and fixed:
+
+- Changing a usage policy answered 500 after saving it: the audit action
+  `institution.usage_policy_changed` was missing from the enum. **Also on bdren-prod** (`04b7ab881`).
+- An image the allowance could not cover was refused as "You've used this week's allowance"; it is
+  now `IMAGE_CREDITS_LOW`, "Not enough of your allowance is left for an image" (`f9a0d7588`).
+- Title and label charges counted as 100% underestimates in the shadow gate (19.6% overage after one
+  chat; the gate needs < 0.5%), so a credit tenant could never pass it (`f8075dc71`).
+- The message navigation used a generic title for every refusal (`f15c73917`).
+
+Note for rollout: once a tenant has any policy version, switching to `enforce` requires the shadow
+gate (`QUOTA_SHADOW_GATE_NOT_MET`, 409); only the very first policy (version 0 → 1) can be `enforce`
+directly.
 
 **Differences from this plan, as built:**
 
 - **Credits and tokens side by side.** A request is metered in credits only when its institution
   or member has a package (`usesCredits`). Tenants without one keep the token policy unchanged,
   so tenants move over as packages are assigned. Phase 6 removes the token path.
-- **No image pre-check yet.** The `canAffordImage` check before the image handoff (phase 2) is not
-  built. Settlement charges the image's real cost, so a run can exceed the allowance by at most
-  one image (about $0.03 to $0.07), and the next request is refused.
+- **Image pre-check** (`525ba4e71`). A request on the image endpoint is reserved as one whole image
+  (500 input + 1,120 output tokens at the image model's rates) and never trimmed; it is refused with
+  `IMAGE_CREDITS_LOW` when the allowance cannot cover it. On the Office Assistant, `applyQuotaToRun`
+  drops the image hand-off for that run when the remaining credits are below one image, and tells
+  the agent images are unavailable.
 - **Auth.** Assignment routes use `requirePlatformSuperadmin`, like every other `/api/platform`
   route, instead of a new `MANAGE_USAGE` capability. Institution admins cannot reach them.
 - **Rates come from the client.** `AgentClient.getQuotaPricingContext()` prices the agent's model
   with `getMultiplier` and passes `{ model, endpoint, rates }` to `reserveUsage`, so the quota
   engine does not load the data-layer methods.
-- **Not metered:** title generation and activity labels (unchanged from today), and Firecrawl
-  per-call fees.
+- **Not metered:** Firecrawl per-call fees (left out for now).
 - **DeepSeek V4 Flash** is priced at OpenRouter's listing on 2026-10-18 (0.10/0.30, cache read
   0.03), which changed during the day from 0.0075/1.28.
 
