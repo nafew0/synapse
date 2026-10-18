@@ -69,6 +69,7 @@ const { values: args } = parseArgs({
     rejudge: { type: 'boolean', default: false },
     strict: { type: 'boolean', default: false },
     remote: { type: 'string' },
+    sandbox: { type: 'string' },
     list: { type: 'boolean', default: false },
     help: { type: 'boolean', default: false },
   },
@@ -92,6 +93,8 @@ Stack (local mode)
   --keep-db              leave the database for inspection
 
 Remote mode
+  --sandbox URL          code sandbox to use (default: LIBRECHAT_CODE_BASEURL from the env file,
+                         which is the production sandbox)
   --remote URL           run against a deployed instance as EVAL_EMAIL / EVAL_PASSWORD;
                          variants are ignored and the deployed Office Assistant is tested
 
@@ -147,7 +150,13 @@ const stackOptions = {
   mongo: args.mongo,
   db: args.db,
   outDir,
+  sandbox: args.sandbox,
 };
+
+/** The sandbox the server will call; only the URL is read from the env file. */
+const sandboxUrl = remote
+  ? `${remote} (deployed)`
+  : (args.sandbox ?? readEnvFile(envFile).LIBRECHAT_CODE_BASEURL ?? 'not configured');
 
 interface Job {
   evalCase: EvalCase;
@@ -590,6 +599,7 @@ async function main(): Promise<number> {
   log(
     `app ${appRoot} (${git('rev-parse', '--abbrev-ref', 'HEAD')} @ ${git('rev-parse', '--short', 'HEAD')}), env ${envFile}`,
   );
+  log(`sandbox ${sandboxUrl}`);
 
   const done: RunResult[] = [];
   const { deployed, errors } = remote
@@ -613,6 +623,7 @@ async function main(): Promise<number> {
       root: appRoot,
       branch: git('rev-parse', '--abbrev-ref', 'HEAD'),
       commit: git('rev-parse', '--short', 'HEAD'),
+      sandbox: sandboxUrl,
     },
     options: {
       repeat: repeatOverride,

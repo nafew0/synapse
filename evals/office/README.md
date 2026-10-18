@@ -23,6 +23,15 @@ browser) and `report.json`. Each run's files, renders and raw messages are kept 
 - MongoDB on `127.0.0.1:27017` as a replica set (the repo's `chat-mongodb` container).
 - The real `.env` of the main checkout for secrets (`OPENROUTER_KEY`, JWT secrets, code sandbox).
   The harness never writes to it, and overrides the database, port, domains and Langfuse.
+
+### Code sandbox
+
+Code runs on the **production sandbox** (`LIBRECHAT_CODE_BASEURL` in the main `.env`,
+`https://interpreter.bdren.ai/v1`), so every run tests the sandbox's latest deployed code. Eval
+sessions and files are keyed by the `eval-office` tenant (sandbox session key
+`eval-office:user:<id>`), so they never mix with real users' files, but they share production's
+sandbox capacity: keep `--concurrency` low (default 2) during working hours. `--sandbox URL` points
+a run at another sandbox. The report header names the sandbox each run used.
 - [`uv`](https://docs.astral.sh/uv/) to inspect files: Python packages are fetched into uv's cache,
   nothing is installed globally.
 - Optional: LibreOffice (`brew install --cask libreoffice`, or set `SOFFICE`) to render

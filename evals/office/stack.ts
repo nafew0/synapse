@@ -20,6 +20,8 @@ export interface StackOptions {
   mongo: string;
   db: string;
   outDir: string;
+  /** Code sandbox base URL; overrides LIBRECHAT_CODE_BASEURL from the env file when set. */
+  sandbox?: string;
 }
 
 interface AgentDef {
@@ -73,6 +75,7 @@ function childEnv(options: StackOptions, extra: Record<string, string> = {}): No
     LANGFUSE_TRACING_ENABLED: 'false',
     ALLOW_UNVERIFIED_EMAIL_LOGIN: 'true',
     CONFIG_PATH: path.join(options.outDir, 'librechat.yaml'),
+    ...(options.sandbox ? { LIBRECHAT_CODE_BASEURL: options.sandbox } : {}),
     ...extra,
   };
 }

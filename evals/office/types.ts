@@ -255,7 +255,7 @@ export interface Report {
   runId: string;
   startedAt: string;
   finishedAt: string;
-  app: { root: string; branch: string; commit: string };
+  app: { root: string; branch: string; commit: string; sandbox?: string };
   options: { repeat?: number; concurrency: number; judge: string | null; mode: 'local' | 'remote' };
   variants: { id: string; label: string; agentId: string; models: string[]; skills: string }[];
   cases: { id: string; title: string; category: string; turns: number }[];

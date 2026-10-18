@@ -303,7 +303,7 @@ export function renderHtml(report: Report, outDir: string): string {
     report.runId,
   )}</title><style>${STYLE}</style></head><body><main>
 <h1>Office Assistant evaluation</h1>
-<p class="meta">Run ${esc(report.runId)} · ${esc(report.app.branch)} @ ${esc(report.app.commit)} · ${esc(report.options.mode)} · judge ${esc(report.options.judge ?? 'off')}</p>
+<p class="meta">Run ${esc(report.runId)} · ${esc(report.app.branch)} @ ${esc(report.app.commit)} · sandbox ${esc(report.app.sandbox ?? 'unknown')} · ${esc(report.options.mode)} · judge ${esc(report.options.judge ?? 'off')}</p>
 <div class="stats"><div class="stat"><b>${passed}/${report.runs.length}</b>runs passed</div><div class="stat"><b>${report.variants.length}</b>variants</div><div class="stat"><b>${report.cases.length}</b>cases</div><div class="stat"><b>${minutes} min</b>wall time</div><div class="stat"><b>${usd(
     totalCost,
   )}</b>model spend</div><div class="stat"><b>${usd(report.judgeCostUsd)}</b>judge spend</div></div>
