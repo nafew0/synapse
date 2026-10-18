@@ -45,8 +45,8 @@ phases 1 to 3 land, packages do not limit anyone.
 | 1 Rate table | Done. Also fixed Claude Haiku 4.5, which fell back to `claude-` (0.8/2.4, 100K context). | `b0bcbad3d` |
 | 2 Credit meter | Done, with the differences below | `2bc11a1f5` |
 | 3 Package limits, institution weekly cap, assignment API | Done | `2bc11a1f5` |
-| 4 Admin assignment screens | Not started | |
-| 5 User display | Not started (API returns credits and taka; the panel still shows tokens) | |
+| 4 Admin assignment screens | Institution and user pickers done (synapse-admin `fa0510b`; API field `4d68083af`). Invite dialogs and the institution quota panel still use the old packages and token limits. | `fa0510b` |
+| 5 User display | Done: settings panel in taka with bars, Unlimited below 80%, institution pool shown only when used up | `5796aadfd` |
 | 6 Retire old systems | Not started | |
 | 7 Rollout | Not started | |
 
