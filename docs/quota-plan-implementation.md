@@ -10,6 +10,18 @@ and a weekly cap. A request is refused when any of them runs out.
 Companion documents: `docs/usage-limits-implementation.md` (the September token-based plan this
 replaces in part) and `docs/synapse-ai-pricing-calculator.xlsx` (package sizing).
 
+**Assumes the single-model Office Assistant.** This plan is written for the Office Assistant on
+branch `feat/single-agent-office` (`5dafcde22`, kb `decisions/2026-10-07-single-agent-office-assistant.md`).
+`agent_office_assistant` runs one model, `openai/gpt-5.6-luna`, and chooses the docx, xlsx, pptx and
+pdf skills itself. Its only handoff is image generation to `agent_office_images` on the OpenRouter
+Image endpoint. The old Claude router and the four text specialists are gone. So:
+
+- An Office Assistant request is priced at one known model when it is reserved, like a direct chat.
+- The only cost not known at reserve time is an image from the image handoff (about $0.034 to
+  $0.067 each).
+- That branch ships **before** this one is enforced (phase 7), so the shadow week measures the
+  model setup that will actually be billed.
+
 ---
 
 ## 0. Where things stand
@@ -82,21 +94,34 @@ replaces it with the actual cost.
      instead of refusing it.
 3. **Engine (`usageQuota.js`, kept a thin caller):**
    - `reserveUsage` reserves `estimateCredits(input × safety factor, output cap)` against the
-     credit scopes. For the agents endpoint, price the estimate at the most expensive model
-     the agent can call. Its subagents are unknown at reserve time, and over-reserving is
-     released at settlement.
+     credit scopes, priced at the request's own model. For the Office Assistant, that is the
+     agent's model (`gpt-5.6-luna`), read from the agent record that `BaseClient` already has
+     (`this.options.agent.model`), not from the `agents` endpoint name.
+   - **Image handoff.** The image is not known at reserve time. Before the handoff runs, check
+     that the remaining allowance covers one image at the image model's price (new
+     `canAffordImage` check on the handoff path), and refuse the image with
+     `IMAGE_NEEDS_ALLOWANCE` if not, while the text answer still goes through. Settlement then
+     charges the image's real cost. This bounds the overshoot to zero for images.
+   - Skill and sandbox calls (`execute_code`) cost no tokens, and the sandbox is self-hosted, so
+     neither is metered. Firecrawl calls are an external per-call cost that `Transaction` does
+     not record. They are left unmetered here (see section 4).
    - `settleUsage` takes `credits` from the client (new `getQuotaCredits()` on `AgentClient`
      and `BaseClient`, beside `getQuotaUsage`) and writes it to the bucket.
    - Remove the weight (`weightFor`, `toBillingTokens`) and the separate image meter from the
      request path. Keep reading legacy token reservations, so ones in flight during deploy
      still settle.
-4. **Detached subagents.** `createDetachedSubagentUsageRecorder` records usage that can arrive
-   after settlement. Either settle that usage as a second, idempotent bucket increment keyed on
-   the run id, or accept and document the gap after measuring how often it happens in Langfuse.
+4. **Late usage.** With the single-model assistant, the image handoff is the only child run. If
+   its usage can be reported after the parent settles (`createDetachedSubagentUsageRecorder`),
+   settle it as a second, idempotent increment keyed on the reservation and the child run id.
+   Otherwise remove the code path from the quota flow. Check which one applies on
+   `feat/single-agent-office` before writing it.
 
 **Tests** (`api/server/services/usageQuota.integration.spec.js`, real replica set):
 - A request's settled credits equal the sum of the `Transaction.tokenValue` rows it wrote.
-- An agent run using Claude and GPT and producing an image settles each at its own price.
+- An Office Assistant run reserves at `gpt-5.6-luna` prices and settles its text at that price
+  and its image at the image model's price.
+- An Office Assistant run with too little allowance left for an image returns the text answer
+  and refuses only the image.
 - Reservation over-estimate is returned. A request cut short by the output cap never exceeds
   the remaining allowance by more than one call.
 - Legacy token reservations still settle after the change.
@@ -188,9 +213,11 @@ Only after phases 3 and 4 have shipped.
 
 ### Phase 7: Rollout
 
-1. Rebase `feature/quota-plan` onto `bdren-prod` (2 commits behind on 2026-10-18), rebuild and
-   boot (kb `issues/2026-09-19-merge-duplicate-declaration.md`). Merge synapse-admin
-   `feat/admin-redesign` first; the Packages page is built on it.
+1. Ship the single-model Office Assistant first: merge `feat/single-agent-office` to
+   `bdren-prod`, run `node config/sync-office-agents.js --apply`, and reload. Then rebase
+   `feature/quota-plan` onto `bdren-prod` (2 commits behind on 2026-10-18), rebuild and boot
+   (kb `issues/2026-09-19-merge-duplicate-declaration.md`). Merge synapse-admin
+   `feat/admin-redesign` too; the Packages page is built on it.
 2. Create the packages from `docs/synapse-ai-pricing-calculator.xlsx` and save the pricing
    (exchange rate, top-up fee). Assign packages to every institution and set a default member
    package.
@@ -208,21 +235,31 @@ Only after phases 3 and 4 have shipped.
 | Phase | Depends on | Effort |
 |---|---|---|
 | 1 Rate table | — | 0.5 day |
-| 2 Credit meter | 1 | 2 days |
+| 2 Credit meter | 1 | 1.5 days |
 | 3 Package limits and institution weekly cap | 2 | 2 days |
 | 4 Admin assignment screens | 3 | 1.5 days |
 | 5 User display | 3 | 1 day |
 | 6 Retire old systems | 3, 4 | 0.5 day |
 | 7 Rollout | all | 0.5 day + 1 week shadow |
-| **Total** | | **about 8 days + 1 week shadow** |
+| **Total** | | **about 7.5 days + 1 week shadow** |
 
-Phases 4 and 5 can run in parallel once phase 3 is merged.
+Phases 4 and 5 can run in parallel once phase 3 is merged. The credit meter is half a day
+shorter than it would be with the router, because a request is priced at one known model and
+only the image handoff needs special handling.
+
+**Pricing workbook.** `docs/synapse-ai-pricing-calculator.xlsx` still models the Office
+Assistant as Claude Haiku plus GPT specialists (Components sheet). Change those rows to
+`gpt-5.6-luna` only before sizing packages; it lowers the cost of document, spreadsheet and
+presentation tasks.
 
 ## 4. Risks
 
-1. **Agents reserve before they know their models.** An Office Assistant run can cost more than
-   its estimate. Mitigation: estimate at the most expensive model the agent can call, and cap
-   any one run's overshoot at one call. Measure the real overshoot during shadow week.
+1. **Order of releases.** This plan assumes the single-model Office Assistant. Enforcing credits
+   while the old router (Claude in front of GPT specialists) is still live would under-reserve
+   every Office Assistant request, because the reservation would be priced at the agent's model
+   only. Mitigation: ship `feat/single-agent-office` first (phase 7, step 1).
+1a. **Firecrawl and other per-call tool fees** are real costs outside the token meter. Measure
+   them during shadow week. If they matter, charge a fixed number of credits per call.
 2. **A wrong rate leaks free usage.** A model missing from the rate table falls back to a cheap
    family default. Mitigation: the phase 1 test fails when a served model has no exact rate.
 3. **Detached subagent usage** can arrive after settlement (phase 2, step 4).
