@@ -73,7 +73,7 @@ type TErrorProps = {
 const noticeErrorTypes = new Set<string>([ErrorTypes.TOKEN_QUOTA_EXCEEDED, 'TOKEN_QUOTA_EXCEEDED']);
 
 /** The quota envelope's display fields, or `undefined` when `text` is not a quota refusal. */
-function parseQuotaNotice(text: string): TQuotaExceeded | undefined {
+export function parseQuotaNotice(text: string): TQuotaExceeded | undefined {
   const jsonString = extractJson(text);
   if (!jsonString) {
     return undefined;

@@ -47,6 +47,12 @@ function knownLimitCode(limitCode?: string | null): QuotaLimitCode | undefined {
     : undefined;
 }
 
+/** The title of a refusal: the allowance that ran out, or generic copy for an unknown code. */
+export function quotaTitleKey(limitCode?: string | null) {
+  const code = knownLimitCode(limitCode);
+  return code ? quotaTitleKeys[code] : 'com_error_quota_title';
+}
+
 /** Absolute local date-time, not "in 2 days": the message stays in the
  *  conversation, so a relative phrase would go stale and start lying. */
 export function formatQuotaReset(resetAt?: string | null): string | null {
@@ -91,7 +97,7 @@ export default function QuotaNotice({
    *  unknown reset instant only hides the pill. Generic copy is reserved for an
    *  unrecognised limit code from a newer server. */
   const message = code ? localize(quotaMessageKeys[code]) : localize('com_error_quota_generic');
-  const title = localize(code ? quotaTitleKeys[code] : 'com_error_quota_title');
+  const title = localize(quotaTitleKey(json.limitCode));
 
   /* Sizes step up at `sm` and hold there: the source mockup was drawn at a
      narrow fixed width and reads undersized in a full chat column, while phones

@@ -1,12 +1,15 @@
 import { memo, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronUp, ChevronDown } from 'lucide-react';
-import { ContentTypes, ErrorTypes } from 'librechat-data-provider';
+import { ContentTypes } from 'librechat-data-provider';
 import type { TMessage, TMessageContentParts } from 'librechat-data-provider';
+import type { LocalizeFunction } from '~/common';
 import { useMessagesConversation, useMessagesSubmission } from '~/Providers';
+import { quotaTitleKey } from '~/components/Messages/Content/QuotaNotice';
+import { parseQuotaNotice } from '~/components/Messages/Content/Error';
 import { useGetMessagesByConvoId } from '~/data-provider';
+import { cn, getErrorMessage } from '~/utils';
 import { useLocalize } from '~/hooks';
-import { cn, getErrorInfo, getErrorMessage } from '~/utils';
 
 type MessageEntry = {
   id: string;
@@ -255,13 +258,16 @@ const chevronButtonClasses = cn(
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy',
 );
 
+/** A saved error in a few readable words: a refusal names the allowance that ran out. */
+export function describeSavedError(text: string, localize: LocalizeFunction): string {
+  const quota = parseQuotaNotice(text);
+  return quota ? localize(quotaTitleKey(quota.limitCode)) : getErrorMessage(text, localize);
+}
+
 function MessageNav({ scrollableRef }: { scrollableRef: React.RefObject<HTMLDivElement> }) {
   const localize = useLocalize();
   const describeError = useCallback<DescribeError>(
-    (text) =>
-      getErrorInfo(text).code === ErrorTypes.TOKEN_QUOTA_EXCEEDED
-        ? localize('com_error_quota_title')
-        : getErrorMessage(text, localize),
+    (text) => describeSavedError(text, localize),
     [localize],
   );
   const { conversationId } = useMessagesConversation();
