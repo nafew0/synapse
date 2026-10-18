@@ -40,3 +40,32 @@ describe('toErrorText', () => {
     expect(JSON.parse(CONNECTION_ERROR_TEXT)).toEqual({ type: 'connection_lost' });
   });
 });
+
+describe('toErrorText for usage-limit refusals', () => {
+  const envelope = JSON.stringify({
+    type: 'token_quota_exceeded',
+    limitCode: 'WEEKLY_CAP',
+    window: 'week',
+    meter: 'credits',
+    resetAt: '2026-10-19T00:00:00.000Z',
+    requestId: 'dc36ad9d-8942-4322-bb9f-c65bc15354ac',
+  });
+
+  it('keeps the wall and its reset from an SSE error event', () => {
+    expect(JSON.parse(toErrorText({ error: envelope }))).toEqual({
+      type: 'token_quota_exceeded',
+      limitCode: 'WEEKLY_CAP',
+      window: 'week',
+      meter: 'credits',
+      resetAt: '2026-10-19T00:00:00.000Z',
+      requestId: 'dc36ad9d-8942-4322-bb9f-c65bc15354ac',
+    });
+  });
+
+  it('keeps nothing else, and nothing extra for other errors', () => {
+    const leaky = JSON.stringify({ type: 'token_quota_exceeded', limit: 1422, used: 1432 });
+    expect(JSON.parse(toErrorText({ error: leaky }))).toEqual({ type: 'token_quota_exceeded' });
+    const other = JSON.stringify({ type: 'no_user_key', limitCode: 'WEEKLY_CAP' });
+    expect(JSON.parse(toErrorText({ error: other }))).toEqual({ type: 'no_user_key' });
+  });
+});

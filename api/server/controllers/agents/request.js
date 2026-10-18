@@ -128,7 +128,7 @@ async function attachConversationCreatedAt(req, conversationId, conversationAnch
  * Best-effort — a write failure here must never mask the original refusal, which
  * the client has already received over the stream.
  */
-async function persistQuotaRefusal({ req, error, job, text }) {
+async function persistQuotaRefusal({ req, error, job, text, userMessageId }) {
   /** Best-effort in the whole: this runs on the terminal error path, after the
    *  refusal has already been published to the client. Anything thrown here —
    *  including a missing dependency — would skip the cleanup that follows and
@@ -139,8 +139,14 @@ async function persistQuotaRefusal({ req, error, job, text }) {
     }
     const conversationId = job?.metadata?.conversationId ?? req.body?.conversationId;
     const responseMessageId = job?.metadata?.responseMessageId;
+    /** The saved user message's id comes from `onStart`. `job.metadata` is written
+     *  asynchronously and the request's `messageId` is not the id the server saved
+     *  under, so either fallback attached the refusal to a message that does not exist. */
     const parentMessageId =
-      job?.metadata?.userMessage?.messageId ?? req.body?.messageId ?? Constants.NO_PARENT;
+      userMessageId ??
+      job?.metadata?.userMessage?.messageId ??
+      req.body?.messageId ??
+      Constants.NO_PARENT;
     if (!conversationId || !responseMessageId) {
       return;
     }
@@ -1924,7 +1930,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           } finally {
             startupTelemetry?.end('error', error);
           }
-          await persistQuotaRefusal({ req, error, job, text: generationError });
+          await persistQuotaRefusal({
+            req,
+            error,
+            job,
+            text: generationError,
+            userMessageId: userMessage?.messageId,
+          });
         }
 
         try {
