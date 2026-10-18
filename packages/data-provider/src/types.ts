@@ -856,7 +856,8 @@ export type TUpdateFeedbackResponse = {
 };
 
 /** Which allowance a quota meter tracks. */
-export type TQuotaMeter = 'tokens' | 'images';
+/** `credits` is the member's own package allowance; `institution` is the pooled allowance, reported only as blocked or not. */
+export type TQuotaMeter = 'tokens' | 'images' | 'credits' | 'institution';
 
 /** The window a meter resets on. Fixed calendar windows anchored to UTC. */
 export type TQuotaWindow = 'week' | 'month';
@@ -864,8 +865,8 @@ export type TQuotaWindow = 'week' | 'month';
 export type TQuotaMeterState = {
   meter: TQuotaMeter;
   window: TQuotaWindow;
-  /** Weighted consumption — Claude used directly counts double. */
-  used: number;
+  /** Weighted tokens, images, or credits; `null` for the institution meter, whose size is not shown. */
+  used: number | null;
   /** `null` when the member has no ceiling (unlimited override or shadow mode). */
   limit: number | null;
   remaining: number | null;
@@ -873,11 +874,18 @@ export type TQuotaMeterState = {
   blocked: boolean;
   /** ISO instant the window reopens. */
   resetsAt: string;
+  /** Credit meters only: the same amounts in taka at the current pricing. */
+  usedBdt?: number | null;
+  limitBdt?: number | null;
+  remainingBdt?: number | null;
 };
 
 export type TQuotaResponse = {
   tenantId: string;
-  unit: 'billing_tokens';
+  /** `credits` once a usage package applies: amounts are USD × 1e6, with taka alongside. */
+  unit: 'billing_tokens' | 'credits';
+  /** The member's package, when metered in credits. */
+  package?: { key: string; name: string; unlimited: boolean } | null;
   /** False while the institution is still in shadow mode: usage is recorded but
    *  nothing is refused, so the UI must not present the meters as walls. */
   enforced: boolean;

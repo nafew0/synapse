@@ -91,3 +91,76 @@ describe('UsageQuotaItem', () => {
     expect(container).toBeEmptyDOMElement();
   });
 });
+
+describe('UsageQuotaItem with a usage package', () => {
+  const credit = (window: 'week' | 'month', used: number, limit: number) => ({
+    meter: 'credits' as const,
+    window,
+    used,
+    limit,
+    remaining: Math.max(limit - used, 0),
+    usedBdt: (used / 1e6) * 123,
+    limitBdt: (limit / 1e6) * 123,
+    remainingBdt: (Math.max(limit - used, 0) / 1e6) * 123,
+    unlimited: false,
+    blocked: used >= limit,
+    resetsAt: window === 'week' ? '2026-10-19T00:00:00.000Z' : '2026-11-01T00:00:00.000Z',
+  });
+  const institution = (window: 'week' | 'month', blocked: boolean) => ({
+    meter: 'institution' as const,
+    window,
+    used: null,
+    limit: null,
+    remaining: null,
+    unlimited: false,
+    blocked,
+    resetsAt: '2026-10-19T00:00:00.000Z',
+  });
+  const creditQuota = (
+    meters: TQuotaResponse['meters'],
+    pkg: TQuotaResponse['package'] = { key: 'standard', name: 'Standard', unlimited: false },
+  ) => ({ tenantId: 't', unit: 'credits', enforced: true, package: pkg, meters }) as TQuotaResponse;
+
+  it('shows the remaining allowance in taka, week first, under the package name', () => {
+    render(
+      <UsageQuotaItem
+        quota={creditQuota([
+          credit('month', 1_000_000, 4_878_048),
+          credit('week', 500_000, 1_707_317),
+        ])}
+      />,
+    );
+    expect(screen.getByText('com_ui_usage_allowance_package|Standard')).toBeInTheDocument();
+    const rows = screen.getAllByRole('note').map((node) => node.textContent);
+    expect(rows[0]).toBe('com_ui_usage_remaining|৳148.5|৳210');
+    expect(rows[1]).toBe('com_ui_usage_remaining|৳477|৳600');
+    expect(screen.getAllByRole('progressbar')).toHaveLength(2);
+  });
+
+  it('shows Unlimited below 80% used and the real amounts above it', () => {
+    const vip = { key: 'vip', name: 'Unlimited', unlimited: true };
+    const { rerender } = render(
+      <UsageQuotaItem quota={creditQuota([credit('month', 7_000_000, 56_910_569)], vip)} />,
+    );
+    expect(screen.getByRole('note')).toHaveTextContent('com_ui_usage_unlimited');
+    expect(screen.queryByRole('progressbar')).toBeNull();
+
+    rerender(
+      <UsageQuotaItem quota={creditQuota([credit('month', 50_000_000, 56_910_569)], vip)} />,
+    );
+    expect(screen.getByRole('note')).toHaveTextContent('com_ui_usage_remaining');
+    expect(screen.getByRole('progressbar')).toBeInTheDocument();
+  });
+
+  it("mentions the institution's pool only when it is used up", () => {
+    const { rerender } = render(
+      <UsageQuotaItem quota={creditQuota([credit('week', 0, 100), institution('week', false)])} />,
+    );
+    expect(screen.queryByRole('alert')).toBeNull();
+
+    rerender(
+      <UsageQuotaItem quota={creditQuota([credit('week', 0, 100), institution('week', true)])} />,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('com_ui_usage_institution_week_used');
+  });
+});
