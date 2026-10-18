@@ -654,7 +654,11 @@ async function reserveCredits({
     recordQuotaDenial(limitingScope.scopeType);
     throw new QuotaError({
       scope: limitingScope.scopeType,
-      limitCode: creditLimitCode(limitingScope.scopeType, limitingScope.window),
+      limitCode: creditLimitCode(
+        limitingScope.scopeType,
+        limitingScope.window,
+        isImage && smallestRemaining > 0,
+      ),
       window: limitingScope.window,
       meter: 'credits',
       limit: limitingScope.limit,

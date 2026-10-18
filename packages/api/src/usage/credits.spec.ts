@@ -193,6 +193,12 @@ describe('resolveCreditLimits', () => {
     expect(creditLimitCode('institution_credits', 'week')).toBe('INSTITUTION_WEEKLY_CAP');
     expect(creditLimitCode('institution_credits', 'month')).toBe('INSTITUTION_CAP');
   });
+
+  it('names an image refused while allowance remains separately from a spent allowance', () => {
+    expect(creditLimitCode('member_credits', 'week', true)).toBe('IMAGE_CREDITS_LOW');
+    expect(creditLimitCode('institution_credits', 'month', true)).toBe('IMAGE_CREDITS_LOW');
+    expect(creditLimitCode('member_credits', 'week', false)).toBe('WEEKLY_CAP');
+  });
 });
 
 describe('createUsageCatalog', () => {

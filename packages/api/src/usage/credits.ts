@@ -175,7 +175,18 @@ export function resolveCreditLimits({
 }
 
 /** The refusal code a credit scope reports, so the UI names which allowance ran out. */
-export function creditLimitCode(scopeType: CreditScopeType, window: QuotaWindow): string {
+/** Some allowance is left, but not enough for one whole image. */
+export const IMAGE_CREDITS_LOW = 'IMAGE_CREDITS_LOW';
+
+/** The limit code of a credit refusal; `imageShortfall` marks an image refused while allowance remains. */
+export function creditLimitCode(
+  scopeType: CreditScopeType,
+  window: QuotaWindow,
+  imageShortfall = false,
+): string {
+  if (imageShortfall) {
+    return IMAGE_CREDITS_LOW;
+  }
   if (scopeType === 'member_credits') {
     return window === 'week' ? 'WEEKLY_CAP' : 'MONTHLY_CAP';
   }

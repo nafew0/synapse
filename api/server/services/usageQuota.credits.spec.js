@@ -282,7 +282,11 @@ describe('usageQuota credit metering (replica set)', () => {
       /** 35% of 90,000 = 31,500 a week: less than one image. */
       await createPackage('member', 90_000);
       await expect(reserveImage()).rejects.toMatchObject({
-        details: expect.objectContaining({ limitCode: 'WEEKLY_CAP' }),
+        details: expect.objectContaining({
+          limitCode: 'IMAGE_CREDITS_LOW',
+          window: 'week',
+          remaining: 31_500,
+        }),
       });
     });
 

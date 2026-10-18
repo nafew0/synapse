@@ -439,6 +439,7 @@
   "com_error_quota_title_institution": "Institution limit reached",
   "com_error_quota_weekly": "You've used this week's allowance. Everything resumes automatically.",
   "com_error_quota_monthly": "You've used this month's allowance. Everything resumes automatically.",
+  "com_error_quota_image_credits_low": "Not enough of your allowance is left for an image. Text chats still work.",
   "com_error_quota_images_weekly": "You've used this week's image allowance. Everything else still works.",
   "com_error_quota_images_monthly": "You've used this month's image allowance. Everything else still works.",
   "com_error_quota_generic": "You've reached a usage limit on your plan. Please try again later.",

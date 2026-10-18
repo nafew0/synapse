@@ -88,6 +88,13 @@ describe('quota refusal message', () => {
     expect(screen.getByText('com_error_quota_images_weekly')).toBeInTheDocument();
   });
 
+  /** Allowance is left, just not enough for one image: text still works, so say so. */
+  it('says an image costs more than what is left, not that the allowance is spent', () => {
+    renderError({ type: 'token_quota_exceeded', limitCode: 'IMAGE_CREDITS_LOW', resetAt });
+    expect(screen.getByText('com_error_quota_title_images')).toBeInTheDocument();
+    expect(screen.getByText('com_error_quota_image_credits_low')).toBeInTheDocument();
+  });
+
   it('shows the reset as an absolute date in its own pill', () => {
     renderError({ type: 'token_quota_exceeded', limitCode: 'WEEKLY_CAP', resetAt });
     const pill = screen.getByText(/com_ui_usage_resets\|/);
