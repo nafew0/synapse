@@ -38,6 +38,36 @@ Nothing assigns a package to anyone, and the engine still meters **weighted toke
 (`weightFor` 2× for direct Claude, `usageQuota.js:475`) plus a separate image count. Until
 phases 1 to 3 land, packages do not limit anyone.
 
+## Progress
+
+| Phase | State | Commit |
+|---|---|---|
+| 1 Rate table | Done. Also fixed Claude Haiku 4.5, which fell back to `claude-` (0.8/2.4, 100K context). | `b0bcbad3d` |
+| 2 Credit meter | Done, with the differences below | `2bc11a1f5` |
+| 3 Package limits, institution weekly cap, assignment API | Done | `2bc11a1f5` |
+| 4 Admin assignment screens | Not started | |
+| 5 User display | Not started (API returns credits and taka; the panel still shows tokens) | |
+| 6 Retire old systems | Not started | |
+| 7 Rollout | Not started | |
+
+**Differences from this plan, as built:**
+
+- **Credits and tokens side by side.** A request is metered in credits only when its institution
+  or member has a package (`usesCredits`). Tenants without one keep the token policy unchanged,
+  so tenants move over as packages are assigned. Phase 6 removes the token path.
+- **No image pre-check yet.** The `canAffordImage` check before the image handoff (phase 2) is not
+  built. Settlement charges the image's real cost, so a run can exceed the allowance by at most
+  one image (about $0.03 to $0.07), and the next request is refused.
+- **Auth.** Assignment routes use `requirePlatformSuperadmin`, like every other `/api/platform`
+  route, instead of a new `MANAGE_USAGE` capability. Institution admins cannot reach them.
+- **Rates come from the client.** `AgentClient.getQuotaPricingContext()` prices the agent's model
+  with `getMultiplier` and passes `{ model, endpoint, rates }` to `reserveUsage`, so the quota
+  engine does not load the data-layer methods.
+- **Not metered:** title generation and activity labels (unchanged from today), and Firecrawl
+  per-call fees.
+- **DeepSeek V4 Flash** is priced at OpenRouter's listing on 2026-10-18 (0.10/0.30, cache read
+  0.03), which changed during the day from 0.0075/1.28.
+
 ## 1. Decisions
 
 Defaults chosen so work can start. Each can be changed before the phase that depends on it.
