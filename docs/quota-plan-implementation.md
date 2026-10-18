@@ -47,7 +47,8 @@ phases 1 to 3 land, packages do not limit anyone.
 | 3 Package limits, institution weekly cap, assignment API | Done | `2bc11a1f5` |
 | 4 Admin assignment screens | Institution and user pickers done (synapse-admin `fa0510b`; API field `4d68083af`). Institution usage panel shows the credit pool and members in taka (synapse-admin `1eac6fc`, API `4b22a624f`). Standalone invite dialog still picks a yaml credit package: waits on the individuals decision (phase 6). | `1eac6fc` |
 | 5 User display | Done: settings panel in taka with bars, Unlimited below 80%, institution pool shown only when used up | `5796aadfd` |
-| 6 Retire old systems | Blocked: needs a count of `institutionpackages` and of institutions with `packageAssignment` in production (safereach cannot query the database), and a decision on standalone users | |
+| 6 Retire old systems | Done. The production copy (2026-10-07) had 0 institution packages, 0 assignments, 0 credit grants. Removed `InstitutionPackage`, `packageAssignment`, yaml `creditPackages`, `CreditGrant` and the grant routes; invites carry a usage package. | `e8f486216`, `4b763c4c5` |
+| 6b Individuals | Done. Users outside any institution are metered under the `__individuals__` quota account (not an institution): a trial package by default, their own package when assigned, no shared pool, platform staff exempt. Admin page `/individuals`. Billing records are planned in `docs/billing-records-plan.md`. | `781cab2ba`, `0f77b3845`; admin `f622183`, `4f82df9` |
 | 7 Rollout | Rebased onto bdren-prod on 2026-10-18 (`2365379dd`). Waits on `feat/single-agent-office`. | |
 
 **In-app test, 2026-10-18** (local backend + synapse-admin on the `SynapseQuotaTest` database, a
