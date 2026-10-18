@@ -124,6 +124,12 @@ async function mapPlatformUser(user) {
     updatedAt: user.updatedAt?.toISOString?.() ?? user.updatedAt,
     suspendedAt: user.suspendedAt?.toISOString?.() ?? user.suspendedAt ?? null,
     removedAt: user.removedAt?.toISOString?.() ?? user.removedAt ?? null,
+    usagePackage: user.usagePackage
+      ? {
+          packageKey: user.usagePackage.packageKey,
+          expiresAt: user.usagePackage.expiresAt?.toISOString?.() ?? null,
+        }
+      : null,
   };
 }
 
