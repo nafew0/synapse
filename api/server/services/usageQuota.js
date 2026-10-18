@@ -1747,6 +1747,115 @@ function creditBucketLimit(bucket, creditRanges, limits) {
   return windows[window] ?? null;
 }
 
+/** Members shown in the institution credit view, busiest first. */
+const CREDIT_CONSOLE_MEMBER_LIMIT = 100;
+
+/**
+ * The institution's credit allowance for the platform console: its pooled allowance this week and
+ * month, and the busiest members against their own limits (their package, or the institution
+ * default). `null` for an institution still on the token policy.
+ */
+async function getCreditConsole({ tenantId, now = new Date() }) {
+  const { institution, policy } = await loadQuotaContext(tenantId);
+  if (!usesCredits(institution.usagePackage)) {
+    return null;
+  }
+  const ranges = getCreditRanges(now);
+  const catalog = await usageCatalog.load();
+  const bdtPerCredit = effectiveBdtPerUsd(catalog.pricing) / CREDITS_PER_USD;
+  const toBdt = (credits) =>
+    credits == null ? null : Math.round(credits * bdtPerCredit * 100) / 100;
+  const windowOf = (bucket) =>
+    new Date(bucket.periodStart).getTime() === ranges.week.start.getTime() ? 'week' : 'month';
+  const meter = (bucket, limit, window) => {
+    const used = (bucket?.usedTokens ?? 0) + (bucket?.reservedTokens ?? 0);
+    return {
+      used,
+      limit,
+      remaining: limit == null ? null : Math.max(limit - used, 0),
+      usedBdt: toBdt(used),
+      limitBdt: toBdt(limit),
+      blocked: limit != null && used >= limit,
+      resetsAt: ranges[window].end.toISOString(),
+    };
+  };
+
+  const buckets = await runAsSystem(() =>
+    models.UsageBucket.find({
+      tenantId,
+      scopeType: { $in: ['institution_credits', 'member_credits'] },
+      periodStart: { $in: [ranges.week.start, ranges.month.start] },
+    })
+      .lean()
+      .exec(),
+  );
+  const defaults = resolveCreditLimits({
+    institutionPackage: institution.usagePackage,
+    catalog,
+    now,
+  });
+  const institutionMeters = Object.fromEntries(
+    ['week', 'month'].map((window) => [
+      window,
+      meter(
+        buckets.find((b) => b.scopeType === 'institution_credits' && windowOf(b) === window),
+        defaults.institution[window],
+        window,
+      ),
+    ]),
+  );
+
+  const byMember = new Map();
+  for (const bucket of buckets) {
+    if (bucket.scopeType !== 'member_credits') {
+      continue;
+    }
+    const entry = byMember.get(bucket.scopeKey) ?? {};
+    entry[windowOf(bucket)] = bucket;
+    byMember.set(bucket.scopeKey, entry);
+  }
+  const busiest = [...byMember.entries()]
+    .sort(([, a], [, b]) => (b.month?.usedTokens ?? 0) - (a.month?.usedTokens ?? 0))
+    .slice(0, CREDIT_CONSOLE_MEMBER_LIMIT);
+  const users = await runAsSystem(() =>
+    models.User.find({ _id: { $in: busiest.map(([userId]) => userId) } })
+      .select('name email usagePackage')
+      .lean()
+      .exec(),
+  );
+  const usersById = new Map(users.map((user) => [String(user._id), user]));
+  const members = busiest.map(([userId, windows]) => {
+    const user = usersById.get(userId);
+    const limits = resolveCreditLimits({
+      institutionPackage: institution.usagePackage,
+      memberPackage: user?.usagePackage,
+      catalog,
+      now,
+    });
+    const pkg = limits.memberPackageKey ? catalog.packages.get(limits.memberPackageKey) : null;
+    return {
+      userId,
+      name: user?.name ?? null,
+      email: user?.email ?? null,
+      package: pkg ? { key: pkg.key, name: pkg.name, unlimited: pkg.unlimited === true } : null,
+      ownPackage: Boolean(
+        user?.usagePackage?.packageKey && limits.memberPackageKey === user.usagePackage.packageKey,
+      ),
+      week: meter(windows.week, limits.member.week, 'week'),
+      month: meter(windows.month, limits.member.month, 'month'),
+    };
+  });
+
+  const pkgOf = (key) => (key ? catalog.packages.get(key) : null);
+  return {
+    enforced: policy.mode === 'enforce',
+    institutionPackage: pkgOf(institution.usagePackage?.packageKey)?.name ?? null,
+    defaultMemberPackage: pkgOf(institution.usagePackage?.memberPackageKey)?.name ?? null,
+    institution: institutionMeters,
+    members,
+  };
+}
+
 async function getQuotaHealth({ tenantId, now = new Date() }) {
   const { institution, policy } = await loadQuotaContext(tenantId);
   const ranges = getPolicyRanges(policy, now);
@@ -2232,6 +2341,7 @@ module.exports = {
   assertEnforcementTopology,
   canonicalizeModel,
   getActivePolicy,
+  getCreditConsole,
   getCalendarMonthRange,
   getCalendarWeekRange,
   getMemberQuota,

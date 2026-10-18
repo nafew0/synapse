@@ -84,6 +84,7 @@ describe('usageQuota credit metering (replica set)', () => {
         'UsageWarning',
         'UsagePackage',
         'UsagePricing',
+        'User',
       ].map((name) => models[name].deleteMany({})),
     );
     await models.Institution.create({
@@ -354,6 +355,63 @@ describe('usageQuota credit metering (replica set)', () => {
         quota.getCalendarWeekRange(quota.QUOTA_RESET_TIMEZONE).start,
       );
       expect(week.usedTokens).toBe(56);
+    });
+  });
+
+  describe('getCreditConsole', () => {
+    it('shows the institution pool and each member against their own limits', async () => {
+      await createPackage('pool', 10_000_000, { name: 'Pool' });
+      await createPackage('member', 1_000_000, { name: 'Standard' });
+      await createPackage('vip', 5_000_000, { name: 'VIP' });
+      await models.User.create({
+        _id: userId,
+        email: 'member@quota.test',
+        name: 'Quota Member',
+        provider: 'local',
+        tenantId,
+        usagePackage: { packageKey: 'vip' },
+      });
+      const first = await reserve({ memberPackage: { packageKey: 'vip' } });
+      await quota.settleUsage({
+        tenantId,
+        reservationKey: first.reservation.reservationKey,
+        credits: 120_000,
+      });
+      const second = await reserve({ userId: otherUserId });
+      await quota.settleUsage({
+        tenantId,
+        reservationKey: second.reservation.reservationKey,
+        credits: 30_000,
+      });
+
+      const console = await quota.getCreditConsole({ tenantId });
+      expect(console).toMatchObject({
+        enforced: true,
+        institutionPackage: 'Pool',
+        defaultMemberPackage: 'Standard',
+        institution: { month: { used: 150_000, limit: 10_000_000 }, week: { used: 150_000 } },
+      });
+      expect(console.members.map((member) => member.userId)).toEqual([
+        String(userId),
+        String(otherUserId),
+      ]);
+      expect(console.members[0]).toMatchObject({
+        name: 'Quota Member',
+        package: { key: 'vip', name: 'VIP' },
+        ownPackage: true,
+        month: { used: 120_000, limit: 5_000_000, usedBdt: 14.76 },
+      });
+      expect(console.members[1]).toMatchObject({
+        name: null,
+        package: { key: 'member' },
+        ownPackage: false,
+        week: { used: 30_000, limit: 350_000 },
+      });
+    });
+
+    it('is null for an institution on the token policy', async () => {
+      await models.Institution.updateOne({ tenantId }, { $set: { usagePackage: null } });
+      expect(await quota.getCreditConsole({ tenantId })).toBeNull();
     });
   });
 

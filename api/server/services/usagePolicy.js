@@ -5,6 +5,7 @@ const models = require('~/db/models');
 const {
   canonicalizeModel,
   getActivePolicy,
+  getCreditConsole,
   getCalendarMonthRange,
   getQuotaHealth,
   getShadowReadiness,
@@ -290,17 +291,19 @@ async function listUsagePolicies({ tenantId, limit = 50, offset = 0 }) {
  * the engine's own keys.
  */
 async function getPolicyConsole({ tenantId }) {
-  const [policy, health, sources] = await Promise.all([
+  const [policy, health, sources, credits] = await Promise.all([
     getActivePolicy(tenantId),
     getQuotaHealth({ tenantId }),
     getQuotaModelSources(tenantId),
+    getCreditConsole({ tenantId }),
   ]);
   const models = buildQuotaModelRows({
     sources,
     buckets: health.buckets,
     limits: policy.limits?.modelTokens ?? [],
   });
-  return { policy, health, models };
+  /** `credits` is set once the institution is on usage packages; the token view stays for the rest. */
+  return { policy, health, models, credits };
 }
 
 module.exports = {
