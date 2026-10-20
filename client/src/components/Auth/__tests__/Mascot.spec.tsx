@@ -1,4 +1,4 @@
-import { withSecretFocus } from '../Mascot';
+import { entranceFor, withSecretFocus } from '../Mascot';
 import type { UseFormRegisterReturn } from 'react-hook-form';
 import type { FocusEvent } from 'react';
 import type { MascotController } from '../Mascot';
@@ -46,5 +46,17 @@ describe('withSecretFocus', () => {
     expect(wrapped.name).toBe('password');
     expect(wrapped.ref).toBe(registered.ref);
     expect(wrapped.onChange).toBe(registered.onChange);
+  });
+});
+
+describe('entranceFor', () => {
+  it('waits above the card while startup config loads, then plays', () => {
+    expect(entranceFor(false, true)).toBe('wait');
+    expect(entranceFor(false, false)).toBe('play');
+  });
+
+  it('starts in place once the entrance has played this visit', () => {
+    expect(entranceFor(true, true)).toBeUndefined();
+    expect(entranceFor(true, false)).toBeUndefined();
   });
 });

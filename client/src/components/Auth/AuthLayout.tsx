@@ -129,7 +129,7 @@ function AuthLayout({
             >
               <div className="lc-auth-brand-panel flex flex-col items-center justify-center border-b border-auth-border/40 px-6 py-9 lg:border-b-0 lg:border-r lg:px-12 lg:py-12">
                 <BlinkAnimation active={isFetching}>
-                  <AuthLockup appTitle={appTitle} />
+                  <AuthLockup appTitle={appTitle} loading={isFetching} />
                 </BlinkAnimation>
                 {/* <span className="mt-5 text-center text-3xl font-semibold leading-tight text-auth-text lg:text-5xl">
                 {appTitle}

@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useEffect, useMemo, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Mascot, useTheme, isDark } from '@librechat/client';
-import type { MascotInput, MascotInputSource } from '@librechat/client';
+import type { MascotInput, MascotInputSource, MascotEntrance } from '@librechat/client';
 import type { UseFormRegisterReturn } from 'react-hook-form';
 import type { ReactNode, FocusEvent } from 'react';
 import { useLocalize } from '~/hooks';
@@ -80,16 +80,55 @@ export function MascotProvider({ children }: { children: ReactNode }) {
 
 const MascotSourceContext = createContext<MascotInputSource | null>(null);
 
+const ENTERED_KEY = 'synapse:mascot-entered';
+
+/** Storage can be blocked or throw; without it the entrance simply plays again. */
+const hasEntered = (): boolean => {
+  try {
+    return window.sessionStorage.getItem(ENTERED_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+
+const markEntered = () => {
+  try {
+    window.sessionStorage.setItem(ENTERED_KEY, '1');
+  } catch {
+    /* A repeat entrance is the only cost. */
+  }
+};
+
+/**
+ * The entrance plays once per tab, so a logout redirect or a reload after a
+ * failed sign-in shows the mascot already in place. It waits above the card
+ * while startup config loads, so the drop is not hidden behind the loading blink.
+ */
+export const entranceFor = (entered: boolean, loading: boolean): MascotEntrance | undefined => {
+  if (entered) {
+    return undefined;
+  }
+  return loading ? 'wait' : 'play';
+};
+
 /**
  * The brand lockup: the rig, then the wordmark as its own element. The shipped
  * logo files bake both into one SVG, so the icon could not move without
  * dragging the wordmark with it.
  */
-export function AuthLockup({ appTitle }: { appTitle: string }) {
+export function AuthLockup({ appTitle, loading }: { appTitle: string; loading: boolean }) {
   const localize = useLocalize();
   const { theme } = useTheme();
   const dark = isDark(theme);
   const source = useContext(MascotSourceContext);
+  const [entered] = useState(hasEntered);
+  const entrance = entranceFor(entered, loading);
+
+  useEffect(() => {
+    if (entrance === 'play') {
+      markEntered();
+    }
+  }, [entrance]);
 
   if (!source) {
     return null;
@@ -100,6 +139,7 @@ export function AuthLockup({ appTitle }: { appTitle: string }) {
       <Mascot
         source={source}
         variant={dark ? 'white' : 'teal'}
+        entrance={entrance}
         className="h-32 w-32 lg:h-44 lg:w-44"
         title={localize('com_ui_logo', { 0: appTitle })}
       />
