@@ -71,13 +71,13 @@ const Registration: React.FC = () => {
 
   // only require captcha if we have a siteKey
   const requireCaptcha = Boolean(startupConfig?.turnstile?.siteKey);
+  /* The same field treatment as LoginForm, so sign-up sits in the shared auth card without floating-label chips. */
   const authInputClassName =
-    'webkit-dark-styles transition-color peer h-auto w-full rounded-2xl border border-border-light bg-surface-primary px-3.5 pb-2.5 pt-3 text-text-primary duration-200 hover:border-border-light focus:border-accent-primary focus:outline-none focus-visible:border-accent-primary';
+    'webkit-dark-styles h-12 w-full rounded-theme-control border border-auth-border/50 bg-auth-surface-alt/80 px-4 text-base text-auth-text transition-colors duration-theme-normal placeholder:text-auth-muted/70 hover:border-auth-border focus:border-accent-primary focus:outline-none focus-visible:border-accent-primary focus-visible:ring-2 focus-visible:ring-accent-primary/25';
   const authSecretInputClassName = `${authInputClassName} pr-12`;
-  const authLabelClassName =
-    'absolute start-3 top-1.5 z-10 origin-[0] -translate-y-4 scale-75 transform bg-surface-primary px-2 text-sm text-text-secondary-alt duration-200 peer-placeholder-shown:top-1/2 peer-placeholder-shown:-translate-y-1/2 peer-placeholder-shown:scale-100 peer-focus:top-1.5 peer-focus:-translate-y-4 peer-focus:scale-75 peer-focus:px-2 peer-focus:text-accent-primary rtl:peer-focus:left-auto rtl:peer-focus:translate-x-1/4';
+  const authLabelClassName = 'mb-2 block text-sm font-medium text-auth-muted';
   const authSecretButtonClassName =
-    'size-9 rounded-xl text-text-secondary-alt hover:bg-transparent hover:text-text-primary';
+    'size-9 rounded-theme-control text-auth-muted hover:bg-transparent hover:text-auth-text';
 
   const registerUser = useRegisterUserMutation({
     onMutate: () => {
@@ -125,6 +125,9 @@ const Registration: React.FC = () => {
 
     return (
       <div className="mb-4">
+        <label htmlFor={id} className={authLabelClassName}>
+          {fieldLabel}
+        </label>
         <div className="relative">
           {type === 'password' ? (
             <SecretInput
@@ -134,36 +137,29 @@ const Registration: React.FC = () => {
               {...field}
               aria-invalid={!!errors[id]}
               className={authSecretInputClassName}
-              placeholder=" "
+              placeholder={fieldLabel}
               data-testid={id}
-              label={fieldLabel}
-              labelClassName={authLabelClassName}
               controlsClassName="right-2"
               buttonClassName={authSecretButtonClassName}
             />
           ) : (
-            <>
-              <Input
-                id={id}
-                type={type}
-                autoComplete={id}
-                aria-label={fieldLabel}
-                {...field}
-                readOnly={readOnly}
-                aria-readonly={readOnly || undefined}
-                aria-invalid={!!errors[id]}
-                className={
-                  readOnly
-                    ? `${authInputClassName} cursor-not-allowed opacity-70`
-                    : authInputClassName
-                }
-                placeholder=" "
-                data-testid={id}
-              />
-              <label htmlFor={id} className={authLabelClassName}>
-                {fieldLabel}
-              </label>
-            </>
+            <Input
+              id={id}
+              type={type}
+              autoComplete={id}
+              aria-label={fieldLabel}
+              {...field}
+              readOnly={readOnly}
+              aria-readonly={readOnly || undefined}
+              aria-invalid={!!errors[id]}
+              className={
+                readOnly
+                  ? `${authInputClassName} cursor-not-allowed opacity-70`
+                  : authInputClassName
+              }
+              placeholder={fieldLabel}
+              data-testid={id}
+            />
           )}
         </div>
         {errors[id] && (
@@ -290,7 +286,7 @@ const Registration: React.FC = () => {
                 type="submit"
                 aria-label="Submit registration"
                 variant="submit"
-                className="h-12 w-full rounded-2xl"
+                className="lc-auth-submit h-14 w-full rounded-theme-control text-base"
               >
                 {isSubmitting ? <Spinner /> : localize('com_auth_continue')}
               </Button>

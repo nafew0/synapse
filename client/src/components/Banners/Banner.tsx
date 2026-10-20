@@ -11,7 +11,7 @@ import {
   useDismissBannerMutation,
   useMarkBannerSeenMutation,
 } from '~/data-provider';
-import { useAuthContext } from '~/hooks';
+import { useOptionalAuthContext } from '~/hooks';
 import store from '~/store';
 import Card from './Card';
 import Bar from './Bar';
@@ -67,8 +67,8 @@ function useBannerVisibility(banner: TBanner | null | undefined, userId?: string
 }
 
 export const Banner = ({ onHeightChange }: { onHeightChange?: (height: number) => void }) => {
-  const { user, isAuthenticated } = useAuthContext();
-  const userId = isAuthenticated ? user?.id : undefined;
+  const auth = useOptionalAuthContext();
+  const userId = auth?.isAuthenticated ? auth.user?.id : undefined;
   const { data: banner } = useGetBannerQuery(userId);
   const { isVisible, dismiss } = useBannerVisibility(banner, userId);
   const barRef = useRef<HTMLDivElement>(null);

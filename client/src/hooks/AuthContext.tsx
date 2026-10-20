@@ -309,4 +309,7 @@ const useAuthContext = () => {
   return context;
 };
 
-export { AuthContextProvider, useAuthContext, AuthContext };
+/** For components that also render on the public sign-up and reset pages, which sit outside the provider. */
+const useOptionalAuthContext = (): TAuthContext | undefined => useContext(AuthContext);
+
+export { AuthContextProvider, useOptionalAuthContext, useAuthContext, AuthContext };
