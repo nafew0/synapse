@@ -102,6 +102,9 @@ describe('targetsFor', () => {
   it('smiles on the password beat, eyes open and blinking quickly, looking down', () => {
     const targets = targetsFor('secret', 0, { x: 30, y: 0, lean: 4 });
     expect(targets.smile).toBe(true);
+    expect(targets.grin).toBe(false);
+    expect(targets.cheek).toBeGreaterThan(0);
+    expect(targets.blush).toBeGreaterThan(0);
     expect(targets.arch).toBe(false);
     expect(targets.lidHold).toBe(-1);
     expect(targets.blinkPace).toBe('quick');
@@ -109,11 +112,12 @@ describe('targetsFor', () => {
     expect(targets.gazeY).toBeGreaterThan(0);
   });
 
-  it('shows the resting arch while waking and on success, and smiles on success', () => {
+  it('shows the resting arch while waking, and grins with happy eyes on success', () => {
     expect(targetsFor('waking', 0, null).arch).toBe(true);
     const success = targetsFor('success', 0, null);
-    expect(success.arch).toBe(true);
-    expect(success.smile).toBe(true);
+    expect(success.grin).toBe(true);
+    expect(success.blush).toBe(1);
+    expect(success.arch).toBe(false);
   });
 
   it('hops on success: crouches, rises, lands, then stands still', () => {

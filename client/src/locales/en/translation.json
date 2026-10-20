@@ -220,6 +220,8 @@
   "com_auth_sign_in_continue": "Sign in to continue to {{0}}",
   "com_auth_wordmark": "Synapse",
   "com_auth_sign_up": "Sign up",
+  "com_auth_sign_up_card": "Sign up for BdREN Synapse",
+  "com_auth_sign_up_continue": "Create an account to start using {{0}}",
   "com_auth_submit_registration": "Submit registration",
   "com_auth_to_reset_your_password": "to reset your password.",
   "com_auth_to_try_again": "to try again.",

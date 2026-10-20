@@ -54,7 +54,9 @@ function AuthLayout({
   const { theme } = useTheme();
   const dark = isDark(theme);
   const hasStartupConfigError = startupConfigError !== null && startupConfigError !== undefined;
-  const isLoginPage = pathname.includes('login');
+  const isRegisterPage = pathname.includes('register');
+  /* Sign-up and login share the two-panel card with the mascot; sign-up is where new users meet it first. */
+  const immersive = isRegisterPage || pathname.includes('login');
   const appTitle = startupConfig?.appTitle || 'Synapse';
 
   const DisplayError = () => {
@@ -94,10 +96,10 @@ function AuthLayout({
   return (
     <div
       className={`lc-auth-login-page relative flex min-h-screen flex-col ${
-        isLoginPage ? 'bg-auth-background font-theme-ui' : 'bg-surface-primary'
+        immersive ? 'bg-auth-background font-theme-ui' : 'bg-surface-primary'
       }`}
     >
-      {isLoginPage ? (
+      {immersive ? (
         <img
           src="/assets/auth-network-background.png"
           className={`lc-auth-network-background pointer-events-none fixed inset-0 h-full w-full object-cover ${
@@ -121,15 +123,17 @@ function AuthLayout({
       </div>
 
       <main className="relative z-10 flex flex-grow items-center justify-center px-4 py-10 sm:px-6 lg:py-14">
-        {isLoginPage ? (
+        {immersive ? (
           <MascotProvider>
             <section
               className="lc-auth-login-card grid w-full max-w-6xl overflow-hidden rounded-theme-surface-lg border border-auth-border/50 bg-auth-surface/90 shadow-2xl backdrop-blur-xl lg:min-h-[44rem] lg:grid-cols-[minmax(0,0.94fr)_minmax(0,1.06fr)]"
-              aria-label={localize('com_auth_login_card')}
+              aria-label={localize(
+                isRegisterPage ? 'com_auth_sign_up_card' : 'com_auth_login_card',
+              )}
             >
               <div className="lc-auth-brand-panel flex flex-col items-center justify-center border-b border-auth-border/40 px-6 py-9 lg:border-b-0 lg:border-r lg:px-12 lg:py-12">
                 <BlinkAnimation active={isFetching}>
-                  <AuthLockup appTitle={appTitle} loading={isFetching} />
+                  <AuthLockup appTitle={appTitle} loading={isFetching} enter={isRegisterPage} />
                 </BlinkAnimation>
                 {/* <span className="mt-5 text-center text-3xl font-semibold leading-tight text-auth-text lg:text-5xl">
                 {appTitle}
@@ -155,7 +159,10 @@ function AuthLayout({
                       {header}
                     </h1>
                     <p className="mt-2 text-center text-base text-auth-muted lg:text-left">
-                      {localize('com_auth_sign_in_continue', { 0: appTitle })}
+                      {localize(
+                        isRegisterPage ? 'com_auth_sign_up_continue' : 'com_auth_sign_in_continue',
+                        { 0: appTitle },
+                      )}
                     </p>
                   </>
                 )}
@@ -199,7 +206,7 @@ function AuthLayout({
         )}
       </main>
       <div className="relative z-10">
-        <Footer startupConfig={startupConfig} immersive={isLoginPage} />
+        <Footer startupConfig={startupConfig} immersive={immersive} />
       </div>
     </div>
   );

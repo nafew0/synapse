@@ -44,7 +44,7 @@ describe('Mascot', () => {
 
   it('paints the white lockup with an inverted eye contrast', () => {
     const { container } = render(<Mascot source={sourceOf(input())} variant="white" />);
-    const [shell] = Array.from(container.querySelectorAll('path'));
+    const shell = container.querySelector('[data-part="rig"] > path');
     const lens = container.querySelector('[data-part="lid-left"] ellipse');
     expect(shell).toHaveAttribute('fill', '#FFFFFF');
     expect(lens).toHaveAttribute('fill', '#FFFFFF');
@@ -74,18 +74,39 @@ describe('Mascot', () => {
     }
     const part = (name: string) => container.querySelector(`[data-part="${name}"]`) as SVGElement;
     expect(part('rig').style.transform).toContain('translate(0px,0.00px) rotate(0.00deg)');
-    expect(Number(part('mouth').style.opacity)).toBeGreaterThan(0.9);
+    expect(Number(part('soft').style.opacity)).toBeGreaterThan(0.9);
+    expect(Number(part('blush').style.opacity)).toBeGreaterThan(0.2);
     expect(Number(part('lid-left').style.opacity)).toBeGreaterThan(0.9);
     raf.mockRestore();
     setMedia(() => false);
   });
 
-  it('starts an entrance above its resting place, switched off', () => {
+  it('waits for its entrance hidden below the ground line, with no shadow', () => {
     const { container } = render(<Mascot source={sourceOf(input())} entrance="wait" />);
     const part = (name: string) => container.querySelector(`[data-part="${name}"]`) as SVGElement;
-    expect(part('rig').style.transform).toMatch(/translate\(0px,-\d/);
-    expect(Number(part('shade').style.opacity)).toBeGreaterThan(0.8);
-    expect(Number(part('pill').style.opacity)).toBe(0);
+    expect(part('rig').style.transform).toMatch(/translate\(0px,7\d\d\.\d+px\)/);
+    expect(Number(part('ground').style.opacity)).toBe(0);
+    expect(part('rig').parentElement).toHaveAttribute(
+      'clip-path',
+      'url(#synapse-mascot-ground-line)',
+    );
+  });
+
+  it('grins with happy eyes on success, hiding the open lenses', () => {
+    const frames: FrameRequestCallback[] = [];
+    const raf = jest
+      .spyOn(window, 'requestAnimationFrame')
+      .mockImplementation((callback) => frames.push(callback));
+    const { container } = render(<Mascot source={sourceOf(input({ succeeded: true }))} />);
+    const start = performance.now();
+    for (let i = 1; i <= 60; i++) {
+      frames.shift()?.(start + i * 16);
+    }
+    const part = (name: string) => container.querySelector(`[data-part="${name}"]`) as SVGElement;
+    expect(Number(part('grin').style.opacity)).toBe(1);
+    expect(Number(part('happy').style.opacity)).toBeGreaterThan(0.9);
+    expect(Number(part('lid-left').style.opacity)).toBeLessThan(0.1);
+    raf.mockRestore();
   });
 
   it('skips the entrance when the password field already has focus', () => {

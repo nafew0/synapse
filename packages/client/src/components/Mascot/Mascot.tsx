@@ -27,12 +27,12 @@ import {
   BREATH,
   TIMING,
 } from './pose';
-import { entrancePose, dropHeightPx, ENTRANCE_WAITING } from './entrance';
+import { entrancePose, ENTRANCE_WAITING, ENTRANCE } from './entrance';
 
 /**
  * The shell, face plate and status pill are the unmodified geometry of
- * `icon_synapse_v1.svg`. The eyes, brows and smile are the additions: the mark
- * ships with the resting arch, which the rig treats as its closed pose.
+ * `icon_synapse_v1.svg`. The eyes, brows, cheeks and mouths are the additions:
+ * the mark ships with the resting arch, which the rig treats as its closed pose.
  */
 const BODY =
   'M.33,419.41,32.54,181.28S52.2,4.1,250.27,0C451.11,25.69,497.16,32.07,497.16,32.07s80.71,2.36,145.45,92.21c51,67.26,37,152.45,37,152.45q-1.41,10.36-2.83,20.73-2.53,10.23-5,20.46a115.78,115.78,0,0,1-6,15.5c-2.7,5.74-3.72,6.64-7.4,14.44s-4.84,11.53-5.53,15a35.07,35.07,0,0,0-.86,8.77c.2,5,1.56,9,2.88,12.88,1.1,3.24,1.46,3.5,3,7.89a52.25,52.25,0,0,1,2.25,7.57c.55,3.37.34,6.21-.07,11.87-.11,1.46-.23,2.67-.33,4.89-.15,3.11-.07,4.14-.53,8.23-.37,3.22-.94,8-1.71,13.84-4.32,32.22-6.95,82.43-26.26,116.88C616.47,581.93,567,689.25,414,680.69,288.2,668.21,167.54,646,167.54,646S-8.68,607.06.33,419.41Z';
@@ -40,12 +40,18 @@ const ARCH_LEFT =
   'M410.78,310.42l0,.12a6.62,6.62,0,0,1-10.23,4.58A63.36,63.36,0,0,0,347,307.78a6.62,6.62,0,0,1-8.63-7.17l0-.11c3.29-24,22.16-41.25,42.15-38.51S414.07,286.42,410.78,310.42Z';
 const ARCH_RIGHT =
   'M510.26,326.64l0,.1c-.6,4.42,2.89,7.79,6.46,6.33a41.31,41.31,0,0,1,40.81,5.6c3,2.36,7.31.05,7.92-4.36l0-.11c3-21.85-6.93-41.25-22.17-43.34S513.25,304.78,510.26,326.64Z';
-/** Sits under the gap between the eyes and follows their tilt, so it reads in the same three-quarter view. */
-const SMILE = 'M408,362 Q441,398 482,373';
+/** The mouths sit under the gap between the eyes and follow the eye line's tilt, so they read in the same three-quarter view. */
+const MOUTH_AT = 'translate(447 368) rotate(8.4)';
+const SOFT_SMILE = 'M-32,-4 Q0,26 32,-4';
+const GRIN = 'M-38,-6 C-20,-1 20,-1 38,-6 C34,20 16,32 0,32 C-16,32 -34,20 -38,-6 Z';
+/** Happy closed eyes, drawn in the mouth's line weight so the face reads as one expression. */
+const HAPPY_LEFT = 'M341,306 C350,270 399,270 408,306';
+const HAPPY_RIGHT = 'M514,326 C520,301 556,301 562,326';
+/** How far each cheek rises into its eye at full push; the right eye is smaller in the three-quarter view. */
+const CHEEK_PUSH = [25, 20] as const;
 
 /** 140 units of side room for the lean, 80 of headroom for the breath and hop. */
 const VIEW_BOX = '-140 -80 961.39 791.17';
-const VIEW_WIDTH = 961.39;
 const PUFF_COUNT = 6;
 const SCAN_HZ = 1.1;
 
@@ -61,7 +67,8 @@ interface LockupPaint {
   glintOpacity: number;
   arch: string;
   pill: string;
-  shade: string;
+  /** Happy eyes and mouths: dark on both faces, since white on the white lockup's grey face disappears. */
+  ink: string;
   ground: string;
   groundOpacity: number;
   puff: string;
@@ -79,7 +86,7 @@ const PAINT: Record<LockupVariant, LockupPaint> = {
     glintOpacity: 0.8,
     arch: '#186569',
     pill: '#F47948',
-    shade: '#1B2A2B',
+    ink: '#134F54',
     ground: '#134F54',
     groundOpacity: 0.24,
     puff: '#328A8A',
@@ -93,7 +100,7 @@ const PAINT: Record<LockupVariant, LockupPaint> = {
     glintOpacity: 0.75,
     arch: '#FFFFFF',
     pill: '#F47948',
-    shade: '#3D4A4B',
+    ink: '#2F3D3E',
     ground: '#000000',
     groundOpacity: 0.45,
     puff: '#FFFFFF',
@@ -106,9 +113,9 @@ export interface MascotProps {
   source: MascotInputSource;
   variant?: LockupVariant;
   /**
-   * `wait` holds the mark above the card, switched off; `play` drops it in and
-   * powers it on. Leave it out to start in place. Read every frame, so it can
-   * move from `wait` to `play` once the page has loaded.
+   * `wait` holds the mark out of sight behind the ground line; `play` runs the
+   * peekaboo entrance. Leave it out to start in place. Read every frame, so it
+   * can move from `wait` to `play` once the page has loaded.
    */
   entrance?: MascotEntrance;
   className?: string;
@@ -121,21 +128,24 @@ interface Frame {
   rotate: number;
   squash: number;
   stretch: number;
-  shade: number;
   gazeX: number;
   gazeY: number;
   eyeScale: number;
   lid: number;
-  lidWidth: number;
-  lens: number;
   arch: number;
   smile: number;
+  /** The open grin; it brings the happy closed eyes with it. */
+  grin: number;
+  cheek: number;
+  blush: number;
   brow: number;
   led: number;
   /** Phase of the LED scan, 0..1, or -1 when off. */
   scan: number;
   /** How far above the ground the body is, for the shadow. */
   airborne: number;
+  /** Shadow strength, 0 while the mark is hidden behind the ground line. */
+  shadow: number;
   /** Progress of the landing puff, or -1 when none is showing. */
   puff: number;
 }
@@ -148,6 +158,9 @@ interface RigState {
   eyeScale: number;
   arch: number;
   smile: number;
+  grin: number;
+  cheek: number;
+  blush: number;
   brow: number;
   led: number;
   lid: number;
@@ -164,13 +177,17 @@ type EntranceState = { phase: 'none' } | { phase: 'waiting' } | { phase: 'playin
 
 interface Parts {
   rig: SVGElement;
-  shade: SVGElement;
   gaze: SVGElement;
   lids: SVGElement[];
   glints: SVGElement[];
+  cheeks: SVGElement[];
   arch: SVGElement;
   brow: SVGElement;
+  blush: SVGElement;
+  happy: SVGElement;
   mouth: SVGElement;
+  soft: SVGElement;
+  grin: SVGElement;
   pill: SVGElement;
   scan: SVGElement;
   scanStops: SVGElement[];
@@ -208,13 +225,17 @@ const queryParts = (root: SVGSVGElement): Parts => {
     Array.from(root.querySelectorAll(`[data-part="${name}"]`)) as SVGElement[];
   return {
     rig: one('rig'),
-    shade: one('shade'),
     gaze: one('gaze'),
     lids: [one('lid-left'), one('lid-right')],
     glints: all('glint'),
+    cheeks: [one('cheek-left'), one('cheek-right')],
     arch: one('arch'),
     brow: one('brow'),
+    blush: one('blush'),
+    happy: one('happy'),
     mouth: one('mouth'),
+    soft: one('soft'),
+    grin: one('grin'),
     pill: one('pill'),
     scan: one('scan'),
     scanStops: all('scan-stop'),
@@ -244,11 +265,10 @@ const paint = (parts: Parts, frame: Frame, groundOpacity: number) => {
   parts.rig.style.transform =
     `translate(0px,${n2(frame.y)}px) rotate(${n2(frame.rotate)}deg) ` +
     `scale(${(1 + frame.squash * 0.7).toFixed(4)},${(1 - frame.squash + frame.stretch).toFixed(4)})`;
-  parts.shade.style.opacity = (frame.shade * 0.85).toFixed(3);
   parts.gaze.style.transform = `translate(${n2(frame.gazeX)}px,${n2(frame.gazeY)}px) scale(${frame.eyeScale.toFixed(3)})`;
 
-  const lens = (frame.lens * (1 - frame.arch)).toFixed(3);
-  const lid = `scale(${Math.max(0.02, frame.lidWidth).toFixed(3)},${Math.max(0.02, frame.lid).toFixed(3)})`;
+  const lens = (1 - Math.max(frame.arch, frame.grin)).toFixed(3);
+  const lid = `scaleY(${Math.max(0.02, frame.lid).toFixed(3)})`;
   for (const part of parts.lids) {
     part.style.transform = lid;
     part.style.opacity = lens;
@@ -257,14 +277,21 @@ const paint = (parts: Parts, frame: Frame, groundOpacity: number) => {
   for (const part of parts.glints) {
     part.style.transform = glint;
   }
+  parts.cheeks.forEach((cheek, i) => {
+    cheek.style.transform = `translateY(${n2(-CHEEK_PUSH[i] * frame.cheek)}px)`;
+  });
+  parts.blush.style.opacity = (0.5 * frame.blush).toFixed(3);
+  parts.happy.style.opacity = frame.grin.toFixed(3);
+  parts.happy.style.transform = `translateY(${n2((1 - frame.grin) * 6)}px)`;
 
   parts.arch.style.opacity = frame.arch.toFixed(3);
   parts.brow.style.opacity = frame.brow.toFixed(3);
   parts.brow.style.transform = `translateY(${n2((1 - frame.brow) * -16)}px)`;
-  parts.mouth.style.opacity = frame.smile.toFixed(3);
-  parts.mouth.style.transform =
-    `translate(${n2(frame.gazeX * 0.35)}px,${n2(frame.gazeY * 0.35)}px) ` +
-    `scaleY(${(0.2 + 0.8 * frame.smile).toFixed(3)})`;
+  parts.mouth.style.transform = `translate(${n2(frame.gazeX * 0.35)}px,${n2(frame.gazeY * 0.35)}px)`;
+  parts.soft.style.opacity = (frame.smile * (1 - Math.min(1, frame.grin * 3))).toFixed(3);
+  parts.soft.style.transform = `scaleY(${(0.3 + 0.7 * frame.smile).toFixed(3)})`;
+  parts.grin.style.opacity = Math.min(1, frame.grin * 2.5).toFixed(3);
+  parts.grin.style.transform = `scaleY(${(0.15 + 0.85 * frame.grin).toFixed(3)})`;
   parts.pill.style.opacity = frame.led.toFixed(3);
 
   if (frame.scan < 0) {
@@ -279,59 +306,78 @@ const paint = (parts: Parts, frame: Frame, groundOpacity: number) => {
 
   const lifted = Math.min(1, frame.airborne / 1300);
   parts.ground.style.transform = `scale(${((1 - lifted * 0.65) * (1 + frame.squash * 0.7)).toFixed(3)},${(1 - lifted * 0.5).toFixed(3)})`;
-  parts.ground.style.opacity = (groundOpacity * (1 - lifted * 0.85)).toFixed(3);
+  parts.ground.style.opacity = (groundOpacity * frame.shadow * (1 - lifted * 0.85)).toFixed(3);
   paintPuffs(parts.puffs, frame.puff);
 };
 
-const STILL: Omit<Frame, 'arch' | 'smile' | 'brow' | 'led'> = {
+type Expression = 'arch' | 'smile' | 'grin' | 'cheek' | 'blush' | 'brow' | 'led';
+
+const STILL: Omit<Frame, Expression> = {
   y: 0,
   rotate: 0,
   squash: 0,
   stretch: 0,
-  shade: 0,
   gazeX: 0,
   gazeY: 4,
   eyeScale: 1,
   lid: 1,
-  lidWidth: 1,
-  lens: 1,
   scan: -1,
   airborne: 0,
+  shadow: 1,
   puff: -1,
 };
 
-const entranceFrame = (pose: EntrancePose, rig: RigState, dt: number, dropUnits: number): Frame => {
+const entranceFrame = (pose: EntrancePose, rig: RigState, dt: number): Frame => {
   rig.gazeX = stepSpring(rig.gazeX, pose.gazeX, SPRINGS.eye, dt);
   rig.gazeY = stepSpring(rig.gazeY, pose.gazeY, SPRINGS.eye, dt);
   rig.lid = pose.lid;
-  rig.led = pose.led;
   rig.arch = 0;
+  rig.grin = pose.grin;
+  rig.blush = pose.grin;
   return {
     ...STILL,
-    y: -pose.height * dropUnits,
+    y: pose.drop,
+    rotate: pose.rotate,
     squash: pose.squash,
-    shade: pose.shade,
     gazeX: rig.gazeX.x,
     gazeY: rig.gazeY.x,
+    eyeScale: pose.eyeScale,
     lid: pose.lid,
-    lidWidth: pose.lidWidth,
-    lens: pose.lens,
     arch: 0,
     smile: 0,
+    grin: pose.grin,
+    cheek: 0,
+    blush: pose.grin,
     brow: 0,
-    led: pose.led,
-    airborne: pose.height * dropUnits,
+    led: 1,
+    airborne: Math.max(0, -pose.drop),
+    shadow: pose.shadow,
     puff: pose.puff,
   };
 };
 
 /** Reduced motion: nothing moves, but every state still reads by crossfade. */
 const stillFrame = (beat: MascotBeat, rig: RigState, dt: number): Frame => {
-  rig.arch = approach(rig.arch, beat === 'waking' || beat === 'success' ? 1 : 0, dt * 6);
-  rig.smile = approach(rig.smile, beat === 'secret' || beat === 'success' ? 1 : 0, dt * 6);
-  rig.brow = approach(rig.brow, beat === 'failed' ? 1 : 0, dt * 6);
-  rig.led = approach(rig.led, beat === 'busy' ? 0.45 : 1, dt * 6);
-  return { ...STILL, arch: rig.arch, smile: rig.smile, brow: rig.brow, led: rig.led };
+  const rate = dt * 6;
+  const secret = beat === 'secret';
+  const success = beat === 'success';
+  rig.arch = approach(rig.arch, beat === 'waking' ? 1 : 0, rate);
+  rig.smile = approach(rig.smile, secret ? 1 : 0, rate);
+  rig.grin = approach(rig.grin, success ? 1 : 0, rate);
+  rig.cheek = approach(rig.cheek, secret ? 0.6 : 0, rate);
+  rig.blush = approach(rig.blush, Math.max(success ? 1 : 0, secret ? 0.55 : 0), rate);
+  rig.brow = approach(rig.brow, beat === 'failed' ? 1 : 0, rate);
+  rig.led = approach(rig.led, beat === 'busy' ? 0.45 : 1, rate);
+  return {
+    ...STILL,
+    arch: rig.arch,
+    smile: rig.smile,
+    grin: rig.grin,
+    cheek: rig.cheek,
+    blush: rig.blush,
+    brow: rig.brow,
+    led: rig.led,
+  };
 };
 
 const startBlink = (rig: RigState, now: number, pace: BlinkPace) => {
@@ -394,12 +440,16 @@ const ladderFrame = (
   rig.eyeScale = approach(rig.eyeScale, targets.eyeScale, dt * 4.5);
   rig.arch = approach(rig.arch, targets.arch ? 1 : 0, dt * 10);
   rig.smile = approach(rig.smile, targets.smile ? 1 : 0, dt * 8);
+  rig.grin = approach(rig.grin, targets.grin ? 1 : 0, dt * 10);
+  rig.cheek = approach(rig.cheek, targets.cheek, dt * 8);
+  rig.blush = approach(rig.blush, targets.blush, dt * 8);
   rig.brow = approach(rig.brow, targets.brow ? 1 : 0, dt * 8);
   rig.led = approach(rig.led, targets.led, dt * 6);
 
-  const lid = targets.arch
-    ? 1
-    : stepLids(rig, now, dt, beat, signals, targets.lidHold, targets.blinkPace);
+  const lid =
+    targets.arch || targets.grin
+      ? 1
+      : stepLids(rig, now, dt, beat, signals, targets.lidHold, targets.blinkPace);
   const breath = targets.breathe ? breathAt(now / 1000) : 0;
 
   return {
@@ -407,19 +457,20 @@ const ladderFrame = (
     rotate: rig.lean.x + targets.shake,
     squash: targets.squash,
     stretch: (breath / BREATH.amp) * BREATH.stretch,
-    shade: 0,
     gazeX: rig.gazeX.x,
     gazeY: rig.gazeY.x,
     eyeScale: rig.eyeScale,
     lid,
-    lidWidth: 1,
-    lens: 1,
     arch: rig.arch,
     smile: rig.smile,
+    grin: rig.grin,
+    cheek: rig.cheek,
+    blush: rig.blush,
     brow: rig.brow,
     led: rig.led,
     scan: targets.scan ? ((now / 1000) * SCAN_HZ) % 1 : -1,
     airborne: Math.max(0, targets.lift + breath),
+    shadow: 1,
     puff: -1,
   };
 };
@@ -446,6 +497,9 @@ const freshRig = (now: number): RigState => ({
   eyeScale: 1,
   arch: 1,
   smile: 0,
+  grin: 0,
+  cheek: 0,
+  blush: 0,
   brow: 0,
   led: 1,
   lid: 1,
@@ -474,7 +528,7 @@ function Mascot({
   entranceRef.current = entrance;
   paintRef.current = PAINT[variant];
 
-  /* A layout effect, so a mark that enters from above is never painted in place first. */
+  /* A layout effect, so a mark that enters from behind the ground line is never painted in place first. */
   useLayoutEffect(() => {
     const root = rootRef.current;
     if (!root) {
@@ -487,14 +541,8 @@ function Mascot({
     const rig = freshRig(started);
 
     let state = initialEntrance(reduced ? undefined : entranceRef.current, started);
-    /* With an entrance the eyes boot open, so there is no waking beat after it. */
+    /* With an entrance the eyes are already open when it lands, so there is no waking beat after it. */
     const mountedAt = state.phase === 'none' ? started : -Infinity;
-
-    const measureDrop = (): number => {
-      const box = root.getBoundingClientRect();
-      return (dropHeightPx(box.bottom) * VIEW_WIDTH) / Math.max(1, box.width);
-    };
-    let dropUnits = measureDrop();
     let frame = 0;
     let last = started;
     let pointer: PointerSample | null = null;
@@ -514,7 +562,6 @@ function Mascot({
 
       if (state.phase === 'waiting' && entranceRef.current === 'play') {
         state = { phase: 'playing', at: now };
-        dropUnits = measureDrop();
       }
       /* Password focus outranks the entrance, as it outranks everything below success. */
       if (state.phase !== 'none' && input.secretFocused) {
@@ -534,7 +581,7 @@ function Mascot({
       };
       let next: Frame;
       if (entering) {
-        next = entranceFrame(entering, rig, dt, dropUnits);
+        next = entranceFrame(entering, rig, dt);
       } else if (reduced) {
         next = stillFrame(resolveBeat(signals, now), rig, dt);
       } else {
@@ -610,6 +657,13 @@ function Mascot({
           <stop data-part="scan-stop" offset="0.5" stopColor={paintSet.scan} stopOpacity="0.85" />
           <stop data-part="scan-stop" offset="1" stopColor={paintSet.scan} stopOpacity="0" />
         </linearGradient>
+        {/* Hides whatever sinks below the feet, so the entrance can rise from behind the wordmark. */}
+        <clipPath id="synapse-mascot-ground-line">
+          <rect x="-5000" y="-5000" width="10000" height={5000 + ENTRANCE.groundY} />
+        </clipPath>
+        <clipPath id="synapse-mascot-grin">
+          <path d={GRIN} />
+        </clipPath>
       </defs>
       <ellipse
         data-part="ground"
@@ -635,122 +689,174 @@ function Mascot({
           />
         ))}
       </g>
-      <g data-part="rig" style={{ transformBox: 'fill-box', transformOrigin: '50% 100%' }}>
-        <path d={BODY} fill={paintSet.shell} />
-        <rect
-          x="177.54"
-          y="105.74"
-          width="426.15"
-          height="464"
-          rx="145.07"
-          transform="translate(47.6 -48.25) rotate(7.53)"
-          fill={paintSet.face}
-        />
-        <rect
-          x="48.25"
-          y="146.92"
-          width="102.54"
-          height="215.8"
-          rx="51.27"
-          transform="translate(40.18 -12.23) rotate(8.81)"
-          fill={paintSet.face}
-        />
-        <path data-part="shade" d={BODY} fill={paintSet.shade} opacity="0" />
-        <rect
-          data-part="pill"
-          x="62.7"
-          y="171.07"
-          width="73.67"
-          height="167.36"
-          rx="36.83"
-          transform="translate(40.17 -12.24) rotate(8.81)"
-          fill={paintSet.pill}
-        />
-        <rect
-          data-part="scan"
-          x="62.7"
-          y="171.07"
-          width="73.67"
-          height="167.36"
-          rx="36.83"
-          transform="translate(40.17 -12.24) rotate(8.81)"
-          fill="url(#synapse-mascot-scan)"
-          opacity="0"
-        />
-        <g data-part="gaze" style={{ transformBox: 'fill-box', transformOrigin: '50% 50%' }}>
-          <g
-            data-part="lid-left"
-            opacity="0"
-            style={{ transformBox: 'fill-box', transformOrigin: '50% 50%' }}
-          >
-            <ellipse cx="374.8" cy="292" rx="36" ry="38" fill={paintSet.lens} />
-            <g data-part="glint">
-              <ellipse
-                cx="361"
-                cy="276"
-                rx="10.5"
-                ry="8"
-                fill={paintSet.glint}
-                opacity={paintSet.glintOpacity}
-                transform="rotate(-20 361 276)"
-              />
-            </g>
-          </g>
-          <g
-            data-part="lid-right"
-            opacity="0"
-            style={{ transformBox: 'fill-box', transformOrigin: '50% 50%' }}
-          >
-            <ellipse cx="538" cy="316" rx="28" ry="30" fill={paintSet.lens} />
-            <g data-part="glint">
-              <ellipse
-                cx="527.5"
-                cy="303"
-                rx="8"
-                ry="6.2"
-                fill={paintSet.glint}
-                opacity={paintSet.glintOpacity}
-                transform="rotate(-20 527.5 303)"
-              />
-            </g>
-          </g>
-          <g data-part="arch" opacity="1">
-            <path d={ARCH_LEFT} fill={paintSet.arch} />
-            <path d={ARCH_RIGHT} fill={paintSet.arch} />
-          </g>
-          <g data-part="brow" opacity="0">
-            <rect
-              x="343.8"
-              y="225.5"
-              width="62"
-              height="13"
-              rx="6.5"
-              fill={paintSet.arch}
-              transform="rotate(-17 374.8 232)"
-            />
-            <rect
-              x="514"
-              y="252.5"
-              width="48"
-              height="11"
-              rx="5.5"
-              fill={paintSet.arch}
-              transform="rotate(17 538 258)"
-            />
-          </g>
-        </g>
-        <g
-          data-part="mouth"
-          opacity="0"
-          style={{ transformBox: 'fill-box', transformOrigin: '50% 0%' }}
-        >
-          <path
-            d={SMILE}
-            fill="none"
-            stroke={paintSet.arch}
-            strokeWidth="12"
-            strokeLinecap="round"
+      <g clipPath="url(#synapse-mascot-ground-line)">
+        <g data-part="rig" style={{ transformBox: 'fill-box', transformOrigin: '50% 100%' }}>
+          <path d={BODY} fill={paintSet.shell} />
+          <rect
+            x="177.54"
+            y="105.74"
+            width="426.15"
+            height="464"
+            rx="145.07"
+            transform="translate(47.6 -48.25) rotate(7.53)"
+            fill={paintSet.face}
           />
+          <rect
+            x="48.25"
+            y="146.92"
+            width="102.54"
+            height="215.8"
+            rx="51.27"
+            transform="translate(40.18 -12.23) rotate(8.81)"
+            fill={paintSet.face}
+          />
+          <rect
+            data-part="pill"
+            x="62.7"
+            y="171.07"
+            width="73.67"
+            height="167.36"
+            rx="36.83"
+            transform="translate(40.17 -12.24) rotate(8.81)"
+            fill={paintSet.pill}
+          />
+          <rect
+            data-part="scan"
+            x="62.7"
+            y="171.07"
+            width="73.67"
+            height="167.36"
+            rx="36.83"
+            transform="translate(40.17 -12.24) rotate(8.81)"
+            fill="url(#synapse-mascot-scan)"
+            opacity="0"
+          />
+          <g data-part="gaze" style={{ transformBox: 'fill-box', transformOrigin: '50% 50%' }}>
+            <g
+              data-part="lid-left"
+              opacity="0"
+              style={{ transformBox: 'fill-box', transformOrigin: '50% 50%' }}
+            >
+              <ellipse cx="374.8" cy="292" rx="36" ry="38" fill={paintSet.lens} />
+              <g data-part="glint">
+                <ellipse
+                  cx="361"
+                  cy="276"
+                  rx="10.5"
+                  ry="8"
+                  fill={paintSet.glint}
+                  opacity={paintSet.glintOpacity}
+                  transform="rotate(-20 361 276)"
+                />
+              </g>
+            </g>
+            <g
+              data-part="lid-right"
+              opacity="0"
+              style={{ transformBox: 'fill-box', transformOrigin: '50% 50%' }}
+            >
+              <ellipse cx="538" cy="316" rx="28" ry="30" fill={paintSet.lens} />
+              <g data-part="glint">
+                <ellipse
+                  cx="527.5"
+                  cy="303"
+                  rx="8"
+                  ry="6.2"
+                  fill={paintSet.glint}
+                  opacity={paintSet.glintOpacity}
+                  transform="rotate(-20 527.5 303)"
+                />
+              </g>
+            </g>
+            {/* Face-coloured cheeks below each eye; pushing them up into the lens is what makes open eyes smile. */}
+            <ellipse
+              data-part="cheek-left"
+              cx="374.8"
+              cy="364"
+              rx="50"
+              ry="34"
+              fill={paintSet.face}
+            />
+            <ellipse
+              data-part="cheek-right"
+              cx="538"
+              cy="373"
+              rx="34"
+              ry="27"
+              fill={paintSet.face}
+            />
+            <g data-part="arch" opacity="1">
+              <path d={ARCH_LEFT} fill={paintSet.arch} />
+              <path d={ARCH_RIGHT} fill={paintSet.arch} />
+            </g>
+            <g data-part="brow" opacity="0">
+              <rect
+                x="343.8"
+                y="225.5"
+                width="62"
+                height="13"
+                rx="6.5"
+                fill={paintSet.arch}
+                transform="rotate(-17 374.8 232)"
+              />
+              <rect
+                x="514"
+                y="252.5"
+                width="48"
+                height="11"
+                rx="5.5"
+                fill={paintSet.arch}
+                transform="rotate(17 538 258)"
+              />
+            </g>
+            <g data-part="blush" opacity="0" fill={paintSet.pill}>
+              <ellipse cx="346" cy="354" rx="25" ry="12" />
+              <ellipse cx="566" cy="372" rx="15" ry="10" />
+            </g>
+            <g
+              data-part="happy"
+              opacity="0"
+              fill="none"
+              stroke={paintSet.ink}
+              strokeWidth="15"
+              strokeLinecap="round"
+            >
+              <path d={HAPPY_LEFT} />
+              <path d={HAPPY_RIGHT} />
+            </g>
+          </g>
+          <g data-part="mouth">
+            <g transform={MOUTH_AT}>
+              <g
+                data-part="soft"
+                opacity="0"
+                style={{ transformBox: 'fill-box', transformOrigin: '50% 0%' }}
+              >
+                <path
+                  d={SOFT_SMILE}
+                  fill="none"
+                  stroke={paintSet.ink}
+                  strokeWidth="12"
+                  strokeLinecap="round"
+                />
+              </g>
+              <g
+                data-part="grin"
+                opacity="0"
+                style={{ transformBox: 'fill-box', transformOrigin: '50% 0%' }}
+              >
+                <path d={GRIN} fill={paintSet.ink} />
+                <ellipse
+                  cx="2"
+                  cy="31"
+                  rx="17"
+                  ry="12"
+                  fill={paintSet.pill}
+                  clipPath="url(#synapse-mascot-grin)"
+                />
+              </g>
+            </g>
+          </g>
         </g>
       </g>
     </svg>

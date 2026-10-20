@@ -116,13 +116,22 @@ export const entranceFor = (entered: boolean, loading: boolean): MascotEntrance 
  * logo files bake both into one SVG, so the icon could not move without
  * dragging the wordmark with it.
  */
-export function AuthLockup({ appTitle, loading }: { appTitle: string; loading: boolean }) {
+export function AuthLockup({
+  appTitle,
+  loading,
+  enter,
+}: {
+  appTitle: string;
+  loading: boolean;
+  /** Plays the peekaboo entrance. Only sign-up asks for it: that is where new users meet the mascot. */
+  enter: boolean;
+}) {
   const localize = useLocalize();
   const { theme } = useTheme();
   const dark = isDark(theme);
   const source = useContext(MascotSourceContext);
   const [entered] = useState(hasEntered);
-  const entrance = entranceFor(entered, loading);
+  const entrance = enter ? entranceFor(entered, loading) : undefined;
 
   useEffect(() => {
     if (entrance === 'play') {

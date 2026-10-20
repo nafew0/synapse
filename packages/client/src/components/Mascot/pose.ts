@@ -73,7 +73,13 @@ export interface MascotTargets {
   /** -1 lets the lids blink freely; 0..1 holds them at that opening. */
   lidHold: number;
   arch: boolean;
+  /** The closed, gentle smile of the password beat. */
   smile: boolean;
+  /** The open grin with happy closed eyes, for a landing or a success. */
+  grin: boolean;
+  /** How far the cheeks push up into the open eyes, 0..1; it is what makes open eyes read as smiling. */
+  cheek: number;
+  blush: number;
   brow: boolean;
   blinkPace: BlinkPace;
   breathe: boolean;
@@ -187,6 +193,9 @@ const RESTING: MascotTargets = {
   lidHold: -1,
   arch: false,
   smile: false,
+  grin: false,
+  cheek: 0,
+  blush: 0,
   brow: false,
   blinkPace: 'idle',
   breathe: true,
@@ -279,7 +288,15 @@ export const targetsFor = (
   glance: Glance = CENTER_GLANCE,
 ): MascotTargets => {
   if (beat === 'secret') {
-    return { ...RESTING, smile: true, gazeY: 10, lean: 3, blinkPace: 'quick' };
+    return {
+      ...RESTING,
+      smile: true,
+      cheek: 0.6,
+      blush: 0.55,
+      gazeY: 10,
+      lean: 3,
+      blinkPace: 'quick',
+    };
   }
 
   if (beat === 'failed') {
@@ -299,7 +316,7 @@ export const targetsFor = (
   }
 
   if (beat === 'success') {
-    return { ...RESTING, ...hopAt(elapsed), arch: true, smile: true, gazeY: -2, breathe: false };
+    return { ...RESTING, ...hopAt(elapsed), grin: true, blush: 1, gazeY: -2, breathe: false };
   }
 
   if (beat === 'waking') {
