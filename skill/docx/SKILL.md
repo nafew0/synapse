@@ -52,6 +52,15 @@ ls /mnt/data/qa/page-*.jpg   # then Read the images
 
 `pdftoppm` zero-pads page numbers to the width of the page count (`page-01.jpg`…`page-12.jpg`).
 
+### Keep the check to one round, two at most
+
+Every tool call spends part of a fixed step budget for the whole request. A run that keeps polishing hits that limit, stops with an error, and the user receives no file — even a finished one. So:
+
+- **Build, validate and render in one call:** `node /mnt/data/qa/build.js.txt && python3 /mnt/data/skills/docx/scripts/office/validate.py <docx> && python3 /mnt/data/skills/docx/scripts/office/soffice.py … && pdftoppm …`.
+- **Read the pages once and list every problem you see before changing anything.** Then fix them all in a single `edit_file` call (it accepts several edits at once) and rebuild and re-render in one command. Do not fix one cosmetic detail per round.
+- **Re-render once to confirm.** If only something minor remains (spacing, a footer word, a line break), deliver the file and mention it rather than starting another round.
+- **Do not load this skill again** after the conversation is summarized. Its rules still apply, and your build script is still at `/mnt/data/qa/build.js.txt`.
+
 ## Editing existing documents
 
 Legacy `.doc` files must be converted first: `python scripts/office/soffice.py --headless --convert-to docx file.doc`.

@@ -14,6 +14,7 @@ import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { ChatContext, useMessageContext } from '~/Providers';
 import { ReportButton } from '~/components/Report';
 import { useGetAddedConvo } from '~/hooks/Chat';
+import Deliverables from './Deliverables';
 
 /** Code stored on a response that stopped before it finished (see `UnfinishedMessage`). */
 export const UNFINISHED_ERROR_CODE = 'response_incomplete';
@@ -118,6 +119,7 @@ const Error = ({ text, messageId, conversationId }: TErrorProps) => {
   return (
     <>
       <p>{message}</p>
+      <Deliverables attachments={messageContext.attachments} />
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {chat && targetMessageId ? <RetryButton chat={chat} messageId={targetMessageId} /> : null}
         <ReportButton

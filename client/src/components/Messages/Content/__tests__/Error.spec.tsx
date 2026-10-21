@@ -5,7 +5,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import type { ContextType } from 'react';
 import translation from '~/locales/en/translation.json';
 import { clearRecentErrors, getRecentErrors } from '~/utils/errors';
-import { ChatContext } from '~/Providers';
+import { ChatContext, MessageContext } from '~/Providers';
 import Error from '../Error';
 
 /**
@@ -21,6 +21,16 @@ jest.mock('~/hooks', () => ({
       const value = catalog[key] ?? key;
       return options?.[0] != null ? value.replace('{{0}}', options[0]) : value;
     },
+}));
+
+jest.mock('~/components/Chat/Messages/Content/Parts/Attachment', () => ({
+  AttachmentGroup: ({ attachments }: { attachments: Array<{ filename: string }> }) => (
+    <ul data-testid="deliverables">
+      {attachments.map((file) => (
+        <li key={file.filename}>{file.filename}</li>
+      ))}
+    </ul>
+  ),
 }));
 
 jest.mock('~/components/Report', () => ({
@@ -152,5 +162,41 @@ describe('Error', () => {
       getMessages: () => [],
     });
     expect(screen.queryByText(catalog.com_ui_try_again)).not.toBeInTheDocument();
+  });
+
+  describe('files produced before the error', () => {
+    const attachments = [
+      { file_id: 'f1', filename: 'Guide.docx', filepath: '/files/f1-v1', toolCallId: 't1' },
+      { file_id: 'f2', filename: 'Guide.docx', filepath: '/files/f1-v2', toolCallId: 't9' },
+    ];
+
+    const renderWithFiles = (text: string, files: object[]) =>
+      render(
+        <RecoilRoot>
+          <MessageContext.Provider
+            value={{ messageId: 'msg-1', isExpanded: true, attachments: files as never }}
+          >
+            <Error text={text} />
+          </MessageContext.Provider>
+        </RecoilRoot>,
+      );
+
+    it('explains a step-limit stop and lists the latest version of each file', () => {
+      renderWithFiles(
+        JSON.stringify({ type: PublicErrorCodes.STEP_LIMIT, requestId }),
+        attachments,
+      );
+
+      expect(screen.getByText(catalog.com_error_step_limit)).toBeInTheDocument();
+      expect(screen.getByText(catalog.com_error_files_kept)).toBeInTheDocument();
+      const items = screen.getAllByRole('listitem');
+      expect(items).toHaveLength(1);
+      expect(items[0]).toHaveTextContent('Guide.docx');
+    });
+
+    it('shows no file list when the run produced nothing', () => {
+      renderWithFiles(JSON.stringify({ type: PublicErrorCodes.STEP_LIMIT }), []);
+      expect(screen.queryByTestId('deliverables')).toBeNull();
+    });
   });
 });

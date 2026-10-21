@@ -2,6 +2,8 @@ import { ErrorTypes, ViolationTypes, PublicErrorCodes } from 'librechat-data-pro
 
 export type TErrorLike = {
   name?: string;
+  /** LangChain/LangGraph error code, e.g. `GRAPH_RECURSION_LIMIT`. */
+  lc_error_code?: string;
   message?: string;
   code?: string | number;
   status?: number;
@@ -87,6 +89,21 @@ function getStatus(like: TErrorLike, message: string): number | undefined {
   return match ? Number(match[1]) : undefined;
 }
 
+const STEP_LIMIT_PATTERN = /recursion limit of \d+ reached/i;
+
+/** LangGraph's `GraphRecursionError`: the run used its whole step budget before a stop condition. */
+export function isStepLimitError(error: unknown): boolean {
+  const like = asErrorLike(error);
+  if (!like) {
+    return false;
+  }
+  return (
+    like.name === 'GraphRecursionError' ||
+    like.lc_error_code === 'GRAPH_RECURSION_LIMIT' ||
+    STEP_LIMIT_PATTERN.test(like.message ?? '')
+  );
+}
+
 export function isAbortError(error: unknown): boolean {
   const like = asErrorLike(error);
   if (!like) {
@@ -155,6 +172,9 @@ export function classifyError(error: unknown): PublicErrorCodes {
 
   if (isAbortError(error)) {
     return PublicErrorCodes.CONNECTION_LOST;
+  }
+  if (isStepLimitError(error)) {
+    return PublicErrorCodes.STEP_LIMIT;
   }
   if (code && TOOLS_UNAVAILABLE_CODES.has(code)) {
     return PublicErrorCodes.TOOLS_UNAVAILABLE;

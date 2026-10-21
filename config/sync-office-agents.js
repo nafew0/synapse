@@ -186,6 +186,7 @@ async function createOrUpdateAgent(agentDef, author, dryRun) {
             subagents: config.subagents,
             skills_enabled: config.skills_enabled ?? false,
             skills: config.skills,
+            recursion_limit: config.recursion_limit,
           },
         },
         { new: true },
@@ -222,6 +223,7 @@ async function createOrUpdateAgent(agentDef, author, dryRun) {
       subagents: config.subagents,
       skills_enabled: config.skills_enabled ?? false,
       skills: config.skills,
+      recursion_limit: config.recursion_limit,
       author: author._id,
     }),
   );
