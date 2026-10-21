@@ -116,6 +116,10 @@ master:
   tools: [ask_user_question]
   subagents: { enabled: true, allowSelf: false }
   orchestrationOnly: false
+  # A handed-off run shares this budget: the specialist's build, render and fix
+  # cycles (about two steps per tool call, plus context summaries) count against
+  # the master's limit. 50 ran out mid-document (trace 656bfd8c…, 2026-10-20).
+  recursion_limit: 120
 
 specialists:
   - id: agent_office_mail
@@ -229,6 +233,7 @@ specialists:
     tools: [ask_user_question, execute_code, file_search, firecrawl_search, firecrawl_scrape]
     orchestrationOnly: true
     skills_enabled: true
+    recursion_limit: 120
 
   - id: agent_office_spreadsheets
     name: Spreadsheet Assistant
@@ -317,6 +322,7 @@ specialists:
     tools: [ask_user_question, execute_code, file_search]
     orchestrationOnly: true
     skills_enabled: true
+    recursion_limit: 120
 
   - id: agent_office_presentations
     name: Presentation Assistant
@@ -413,6 +419,7 @@ specialists:
     tools: [ask_user_question, execute_code, file_search, firecrawl_search, firecrawl_scrape]
     orchestrationOnly: true
     skills_enabled: true
+    recursion_limit: 120
 
   - id: agent_office_images
     name: Image Assistant

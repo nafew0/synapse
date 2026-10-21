@@ -275,6 +275,8 @@ Choose colors that match your topic — don't default to generic blue. Use these
 
 Your first render usually has a few real issues — overlaps, overflow, misalignment. Find and fix those, re-render only the slides you changed, and stop.
 
+**Keep it to one fix round, two at most.** Every tool call spends part of a fixed step budget for the whole request; a run that keeps polishing hits that limit, stops with an error, and the user receives no deck — even a finished one. Run the file, layout and render checks in one command; read the results once and list every defect before changing anything; fix them all in one edit and rebuild; re-check once. Layout-gate defects must be fixed, but if only minor visual polish remains after that, deliver and mention it. Do not load this skill again after the conversation is summarized — its rules still apply and your generator script is still in `/mnt/data/qa/`.
+
 ### Content QA
 
 ```bash
