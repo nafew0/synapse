@@ -138,7 +138,7 @@ specialists:
       Adjust formality, tone, and structure to match the user's request.
       Support both English and Bangla. Produce clear drafts; never claim to send or deliver.
     provider: OpenRouter
-    model: openai/gpt-5.6-luna
+    model: openai/gpt-6-luna
     model_parameters: { useResponsesApi: true }
     orchestrationOnly: true
 
@@ -228,7 +228,7 @@ specialists:
       with no relationships that nothing can open. Zip from inside the directory with no
       exclude pattern.
     provider: OpenRouter
-    model: openai/gpt-5.6-luna
+    model: openai/gpt-6-luna
     model_parameters: { useResponsesApi: true }
     tools: [ask_user_question, execute_code, file_search, firecrawl_search, firecrawl_scrape]
     orchestrationOnly: true
@@ -317,7 +317,7 @@ specialists:
       with no relationships that nothing can open. Zip from inside the directory with no
       exclude pattern.
     provider: OpenRouter
-    model: openai/gpt-5.6-luna
+    model: openai/gpt-6-luna
     model_parameters: { useResponsesApi: true }
     tools: [ask_user_question, execute_code, file_search]
     orchestrationOnly: true
@@ -414,7 +414,7 @@ specialists:
       with no relationships that nothing can open. Zip from inside the directory with no
       exclude pattern.
     provider: OpenRouter
-    model: openai/gpt-5.6-luna
+    model: openai/gpt-6-luna
     model_parameters: { useResponsesApi: true }
     tools: [ask_user_question, execute_code, file_search, firecrawl_search, firecrawl_scrape]
     orchestrationOnly: true
