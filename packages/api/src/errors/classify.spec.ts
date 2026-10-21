@@ -2,8 +2,9 @@ import OpenAI from 'openai';
 import mongoose from 'mongoose';
 import axios, { AxiosError } from 'axios';
 import Anthropic from '@anthropic-ai/sdk';
+import { GraphRecursionError } from '@langchain/langgraph';
 import { ErrorTypes, ViolationTypes, PublicErrorCodes } from 'librechat-data-provider';
-import { classifyError, isAbortError, extractTypedError } from './classify';
+import { classifyError, isAbortError, isStepLimitError, extractTypedError } from './classify';
 
 const PROVIDER_MESSAGE = 'Rate limit reached for gpt-x in organization org-abc on tokens per min';
 
@@ -140,6 +141,19 @@ describe('classifyError', () => {
       cause: networkError('connect ECONNREFUSED 10.0.0.5:8000', 'ECONNREFUSED'),
     });
     expect(classifyError(error)).toBe(PublicErrorCodes.SERVICE_UNAVAILABLE);
+  });
+
+  it('maps a LangGraph recursion limit to step_limit', () => {
+    const error = new GraphRecursionError(
+      'Recursion limit of 58 reached without hitting a stop condition. You can increase the limit by setting the "recursionLimit" config key.',
+      { lc_error_code: 'GRAPH_RECURSION_LIMIT' },
+    );
+    expect(isStepLimitError(error)).toBe(true);
+    expect(classifyError(error)).toBe(PublicErrorCodes.STEP_LIMIT);
+    expect(classifyError(new Error('GraphRecursionError: Recursion limit of 50 reached'))).toBe(
+      PublicErrorCodes.STEP_LIMIT,
+    );
+    expect(isStepLimitError(new Error('boom'))).toBe(false);
   });
 
   it.each([undefined, null, 42, 'boom', new Error('boom'), {}])(

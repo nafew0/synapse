@@ -57,6 +57,7 @@ export const publicErrorKeys: Record<PublicErrorCodes, TranslationKeys> = {
   [PublicErrorCodes.MODEL_UNAVAILABLE]: 'com_error_model_unavailable',
   [PublicErrorCodes.TOOLS_UNAVAILABLE]: 'com_error_tools_unavailable',
   [PublicErrorCodes.CONNECTION_LOST]: 'com_error_connection_lost',
+  [PublicErrorCodes.STEP_LIMIT]: 'com_error_step_limit',
   [PublicErrorCodes.NOT_FOUND]: 'com_error_not_found',
   [PublicErrorCodes.FORBIDDEN]: 'com_error_forbidden',
   [PublicErrorCodes.REQUEST_FAILED]: 'com_error_request_failed',
