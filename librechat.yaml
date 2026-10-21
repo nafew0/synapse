@@ -624,6 +624,21 @@ endpoints:
           read: 0.075
           write: 0.0417
           context: 1048576
+        # Neither model is in the built-in pricing table (tx.ts) or context map
+        # (tokens.ts); without these entries usage is billed at a fallback rate and
+        # gpt-6-luna gets no known context window. OpenRouter list prices, 2026-10-21.
+        'openai/gpt-6-luna':
+          prompt: 0.1
+          completion: 0.5
+          read: 0.01
+          write: 0.125
+          context: 1050000
+        'anthropic/claude-haiku-5.5':
+          prompt: 0.1
+          completion: 0.5
+          read: 0.01
+          write: 0.125
+          context: 1000000
 
     # Separate endpoint so `addParams` below (modalities/image_config) only ever
     # reaches the image models. Sending `modalities: ["image","text"]`
