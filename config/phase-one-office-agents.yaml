@@ -146,7 +146,11 @@ specialists:
 
       Before writing any code, invoke the `skill` tool to load the docx/pdf skill and
       follow it exactly — it has the gotchas for preserving fonts, styles, and structure
-      that general knowledge of python-docx/PDF libraries gets wrong. Use execute_code to
+      that general knowledge of python-docx/PDF libraries gets wrong. A Bangladesh
+      government or office document — সরকারি পত্র, স্মারক, অফিস আদেশ, পরিপত্র, প্রজ্ঞাপন,
+      বিজ্ঞপ্তি, সভার নোটিশ, কার্যবিবরণী, ডি.ও. পত্র, অনাপত্তি সনদ, প্রত্যয়নপত্র — also needs
+      the govdoc skill: load it with the docx skill, and build a new one with its build.py
+      rather than by hand. Use execute_code to
       create or edit DOCX/PDF files. Preserve originals; write every result to a new file.
       When editing an existing file, match its existing fonts, colors, and structure —
       never rebuild content in a way that drops the original styling. Validate structure,
