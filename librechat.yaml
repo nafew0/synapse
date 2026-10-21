@@ -317,7 +317,7 @@ modelSpecs:
       skills: false
       preset:
         endpoint: OpenRouter
-        model: openai/gpt-5.6-luna
+        model: openai/gpt-6-luna
         promptPrefix: |
           You return transcripts of audio files the user attaches.
 
@@ -332,7 +332,7 @@ modelSpecs:
           If no transcript is attached, tell the user to attach an audio file
           using "Upload as Text".
 
-    - name: gpt-5.6-luna
+    - name: gpt-6-luna
       label: ChatGPT
       askUserQuestion: true
       # Retrieval only: long attachments are searchable, but editing a file needs the
@@ -345,7 +345,7 @@ modelSpecs:
       skills: false
       preset:
         endpoint: OpenRouter
-        model: openai/gpt-5.6-luna
+        model: openai/gpt-6-luna
         promptPrefix: |
           ## When a file is attached
 
@@ -396,7 +396,7 @@ modelSpecs:
           say so plainly in one sentence and tell them to switch to the Office
           Assistant, which can return the edited file.
 
-    - name: anthropic/claude-haiku-4.5
+    - name: anthropic/claude-haiku-5.5
       label: Claude
       askUserQuestion: true
       # Retrieval only: long attachments are searchable, but editing a file needs the
@@ -409,7 +409,7 @@ modelSpecs:
       skills: false
       preset:
         endpoint: OpenRouter
-        model: anthropic/claude-haiku-4.5
+        model: anthropic/claude-haiku-5.5
         promptCache: true
         promptPrefix: |
           ## When a file is attached
@@ -606,13 +606,15 @@ endpoints:
       models:
         default:
           - openai/gpt-5.6-luna
+          - openai/gpt-6-luna
           - deepseek/deepseek-v4-flash-0731
           - anthropic/claude-haiku-4.5
+          - anthropic/claude-haiku-5.5
           - google/gemini-3.8-flash
         fetch: false
       titleConvo: true
       titleEndpoint: OpenRouter
-      titleModel: openai/gpt-5.6-luna
+      titleModel: openai/gpt-6-luna
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
       tokenConfig:
@@ -622,6 +624,21 @@ endpoints:
           read: 0.075
           write: 0.0417
           context: 1048576
+        # Neither model is in the built-in pricing table (tx.ts) or context map
+        # (tokens.ts); without these entries usage is billed at a fallback rate and
+        # gpt-6-luna gets no known context window. OpenRouter list prices, 2026-10-21.
+        'openai/gpt-6-luna':
+          prompt: 0.1
+          completion: 0.5
+          read: 0.01
+          write: 0.125
+          context: 1050000
+        'anthropic/claude-haiku-5.5':
+          prompt: 0.1
+          completion: 0.5
+          read: 0.01
+          write: 0.125
+          context: 1000000
 
     # Separate endpoint so `addParams` below (modalities/image_config) only ever
     # reaches the image models. Sending `modalities: ["image","text"]`
