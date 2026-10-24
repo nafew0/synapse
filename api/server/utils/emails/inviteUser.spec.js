@@ -48,6 +48,8 @@ describe('inviteUser email template', () => {
     expect(html).toContain('ACCOUNT');
     expect(html).toContain('ORGANIZATION');
     expect(html).toContain('OPEN BEFORE');
+    expect(html).toContain('SENT TO');
+    expect(html).toContain('FOR QUERIES');
     expect(html).toContain('You are invited to join Synapse.');
     expect(html).toContain('University of Dhaka');
     expect(html).toContain('nafisa.rahman@du.ac.bd');
@@ -76,6 +78,16 @@ describe('inviteUser email template', () => {
     expect(orgOnly).not.toContain('ACCOUNT');
     expect(expiryOnly).toContain('OPEN BEFORE');
     expect(expiryOnly).not.toContain('ACCOUNT');
+  });
+
+  it('always tells a wrongly addressed reader what to do', () => {
+    const note = 'If you were not expecting this, ignore it. No account exists until the link is opened.';
+
+    [fullPayload, basePayload].forEach((payload) => {
+      expect(text(payload)).toContain('NOT EXPECTING THIS?');
+      expect(text(payload)).toContain(note);
+    });
+    expect(text(basePayload)).not.toContain('SENT TO');
   });
 
   it('keeps dashes out of the copy', () => {

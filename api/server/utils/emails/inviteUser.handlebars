@@ -188,14 +188,16 @@
             <div class="muted" style="padding-top: 24px; font-size: 11px; line-height: 16px; letter-spacing: 1.4px; color: #6A6458;">BUTTON NOT WORKING?</div>
             <div style="padding-top: 4px; font-size: 13px; line-height: 20px; color: #45504C;"><a class="link" href="{{inviteLink}}" target="_blank" style="color: #0E4B4A; text-decoration: underline; word-break: break-all;">{{inviteLink}}</a></div>
 
-            <div class="muted" style="padding-top: 20px; font-size: 11px; line-height: 16px; letter-spacing: 1.4px; color: #6A6458;">{{#if email}}SENT TO{{else}}NOT EXPECTING THIS?{{/if}}</div>
 {{#if email}}
+            <div class="muted" style="padding-top: 20px; font-size: 11px; line-height: 16px; letter-spacing: 1.4px; color: #6A6458;">SENT TO</div>
             <div class="strong" style="padding-top: 4px; font-size: 13px; line-height: 20px; font-weight: bold; color: #1B2A28; overflow-wrap: break-word;">{{email}}</div>
 {{/if}}
-            <div class="body" style="padding-top: 2px; font-size: 13px; line-height: 20px; color: #45504C;">If you were not expecting this, ignore it. No account exists until the link is opened.</div>
+
+            <div class="muted" style="padding-top: 20px; font-size: 11px; line-height: 16px; letter-spacing: 1.4px; color: #6A6458;">NOT EXPECTING THIS?</div>
+            <div class="body" style="padding-top: 4px; font-size: 13px; line-height: 20px; color: #45504C;">If you were not expecting this, ignore it. No account exists until the link is opened.</div>
 {{#if supportEmail}}
 
-            <div class="muted" style="padding-top: 20px; font-size: 11px; line-height: 16px; letter-spacing: 1.4px; color: #6A6458;">QUESTIONS</div>
+            <div class="muted" style="padding-top: 20px; font-size: 11px; line-height: 16px; letter-spacing: 1.4px; color: #6A6458;">FOR QUERIES</div>
             <div style="padding-top: 4px; font-size: 13px; line-height: 20px; color: #45504C;"><a class="link" href="mailto:{{supportEmail}}" style="color: #0E4B4A; text-decoration: underline;">{{supportEmail}}</a></div>
 {{/if}}
 

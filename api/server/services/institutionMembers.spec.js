@@ -300,6 +300,54 @@ describe('createInstitutionInvite seat enforcement', () => {
   });
 });
 
+describe('invitation email support address', () => {
+  const { checkEmailConfig } = require('@librechat/api');
+  const { sendEmail } = require('~/server/utils');
+
+  const sentPayload = async () => {
+    mockModels.Institution.findOne.mockReturnValue(
+      mockExec({ tenantId: 'tenant-a', stats: { activeMembers: 0 }, limits: { maxActiveMembers: null } }),
+    );
+    mockModels.InstitutionInvite.countDocuments.mockResolvedValue(0);
+    mockModels.InstitutionInvite.findOne.mockReturnValue(mockExec(null));
+    mockModels.User.findOne.mockReturnValue({
+      select: () => ({ lean: () => ({ exec: jest.fn().mockResolvedValue(null) }) }),
+    });
+    mockModels.InstitutionInvite.create.mockResolvedValue({ _id: 'invite-3', email: 'new@inst.test' });
+
+    await createInstitutionInvite({
+      tenantId: 'tenant-a',
+      email: 'new@inst.test',
+      requestedRole: 'USER',
+      invitedBy: { id: 'admin-a' },
+    });
+
+    return sendEmail.mock.calls[0][0].payload;
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    isPlatformAdminEmail.mockResolvedValue(false);
+    checkEmailConfig.mockReturnValue(true);
+    delete process.env.SUPPORT_EMAIL;
+  });
+
+  afterEach(() => {
+    checkEmailConfig.mockReturnValue(false);
+    delete process.env.SUPPORT_EMAIL;
+  });
+
+  it('points readers with questions at info@bdren.net.bd by default', async () => {
+    expect((await sentPayload()).supportEmail).toBe('info@bdren.net.bd');
+  });
+
+  it('lets SUPPORT_EMAIL override the default', async () => {
+    process.env.SUPPORT_EMAIL = 'help@inst.test';
+
+    expect((await sentPayload()).supportEmail).toBe('help@inst.test');
+  });
+});
+
 describe('institutionMembers standalone MongoDB activation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
