@@ -769,6 +769,8 @@ function formatInviteExpiry(expiresAt) {
   }
 }
 
+const DEFAULT_SUPPORT_EMAIL = 'info@bdren.net.bd';
+
 async function sendInstitutionInviteEmail({ email, token, appName, name, tenantId, expiresAt }) {
   /** DOMAIN_CLIENT is where a browser reaches the app, which in local dev is the
    *  Vite server, not the API. */
@@ -794,7 +796,7 @@ async function sendInstitutionInviteEmail({ email, token, appName, name, tenantI
         email,
         institutionName,
         expiresOn: formatInviteExpiry(expiresAt),
-        supportEmail: process.env.SUPPORT_EMAIL || '',
+        supportEmail: process.env.SUPPORT_EMAIL || DEFAULT_SUPPORT_EMAIL,
         ...resolveOrgWebsite(),
         year: new Date().getFullYear(),
         name: String(name || '').trim(),
