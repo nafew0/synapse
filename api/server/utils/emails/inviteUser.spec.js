@@ -46,27 +46,34 @@ describe('inviteUser email template', () => {
 
     expect(html).not.toContain('Invitation \u00b7');
     expect(html).toContain('ACCOUNT');
+    expect(html).toContain('ORGANIZATION');
     expect(html).toContain('OPEN BEFORE');
-    expect(html).toContain('University of Dhaka has invited you to join Synapse.');
+    expect(html).toContain('You are invited to join Synapse.');
+    expect(html).toContain('University of Dhaka');
     expect(html).toContain('nafisa.rahman@du.ac.bd');
     expect(html).toContain('25 September 2026');
     expect(html).toContain('info@bdren.ai');
     expect(html).toContain(fullPayload.inviteLink);
   });
 
-  it('names the organization once in the letter, not again in the details', () => {
+  it('keeps the headline generic and names the organization in the details', () => {
     const html = text(fullPayload);
 
-    expect(html).not.toContain('ORGANIZATION');
-    expect(html.match(/University of Dhaka has invited you/g)).toHaveLength(1);
+    expect(html).not.toContain('University of Dhaka has invited you');
+    expect(html).toContain('ORGANIZATION</div> <div');
+    expect(html).toContain('>University of Dhaka</div>');
   });
 
   it('shows only the detail cells it has a value for', () => {
     const emailOnly = text({ ...basePayload, email: fullPayload.email });
+    const orgOnly = text({ ...basePayload, institutionName: fullPayload.institutionName });
     const expiryOnly = text({ ...basePayload, expiresOn: fullPayload.expiresOn });
 
     expect(emailOnly).toContain('ACCOUNT');
     expect(emailOnly).not.toContain('OPEN BEFORE');
+    expect(emailOnly).not.toContain('ORGANIZATION');
+    expect(orgOnly).toContain('ORGANIZATION');
+    expect(orgOnly).not.toContain('ACCOUNT');
     expect(expiryOnly).toContain('OPEN BEFORE');
     expect(expiryOnly).not.toContain('ACCOUNT');
   });
@@ -78,11 +85,12 @@ describe('inviteUser email template', () => {
     expect(html).toContain('@media (prefers-color-scheme: dark)');
   });
 
-  it('signs off with Synapse alone, whatever the app title says', () => {
+  it('calls the product Synapse and credits BdREN as its developer, whatever the app title says', () => {
     const html = text({ ...fullPayload, appName: 'BdREN Synapse' });
 
     expect(html).toContain('See you on Synapse,<br>BdREN Innovation Team');
-    expect(html).not.toContain('See you on BdREN');
+    expect(html).toContain('Synapse is an AI workspace built by the');
+    expect(html).not.toContain('BdREN Synapse');
   });
 
   it('links the team name and the footer to the organisation website', () => {
@@ -106,7 +114,7 @@ describe('inviteUser email template', () => {
   it('drops the optional rows for a standalone invitation', () => {
     const html = text(basePayload);
 
-    expect(html).toContain('You have been invited to join Synapse.');
+    expect(html).toContain('You are invited to join Synapse.');
     expect(html).not.toContain('ORGANIZATION');
     expect(html).not.toContain('OPEN BEFORE');
     expect(html).not.toContain('ACCOUNT');
