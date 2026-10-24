@@ -45,12 +45,37 @@ describe('inviteUser email template', () => {
     const html = text(fullPayload);
 
     expect(html).not.toContain('Invitation \u00b7');
-    expect(html).toContain('ORGANIZATION');
+    expect(html).toContain('ACCOUNT');
+    expect(html).toContain('OPEN BEFORE');
     expect(html).toContain('University of Dhaka has invited you to join Synapse.');
     expect(html).toContain('nafisa.rahman@du.ac.bd');
     expect(html).toContain('25 September 2026');
     expect(html).toContain('info@bdren.ai');
     expect(html).toContain(fullPayload.inviteLink);
+  });
+
+  it('names the organization once in the letter, not again in the details', () => {
+    const html = text(fullPayload);
+
+    expect(html).not.toContain('ORGANIZATION');
+    expect(html.match(/University of Dhaka has invited you/g)).toHaveLength(1);
+  });
+
+  it('shows only the detail cells it has a value for', () => {
+    const emailOnly = text({ ...basePayload, email: fullPayload.email });
+    const expiryOnly = text({ ...basePayload, expiresOn: fullPayload.expiresOn });
+
+    expect(emailOnly).toContain('ACCOUNT');
+    expect(emailOnly).not.toContain('OPEN BEFORE');
+    expect(expiryOnly).toContain('OPEN BEFORE');
+    expect(expiryOnly).not.toContain('ACCOUNT');
+  });
+
+  it('declares and styles a dark scheme', () => {
+    const html = render(fullPayload);
+
+    expect(html).toContain('<meta name="color-scheme" content="light dark">');
+    expect(html).toContain('@media (prefers-color-scheme: dark)');
   });
 
   it('signs off with Synapse alone, whatever the app title says', () => {

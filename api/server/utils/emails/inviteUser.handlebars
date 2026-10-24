@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="x-apple-disable-message-reformatting">
-<meta name="color-scheme" content="light">
-<meta name="supported-color-schemes" content="light">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
 <title>{{appName}}</title>
 <!--[if mso]>
 <xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml>
@@ -17,25 +17,42 @@
   img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
   body { margin: 0 !important; padding: 0 !important; width: 100% !important; }
   a { color: #0E4B4A; }
+  ::selection { background: #0E4B4A; color: #FCF9F4; }
 
   /* Phones */
   @media only screen and (max-width: 620px) {
     .sheet { width: 100% !important; }
     .pad { padding-left: 24px !important; padding-right: 24px !important; }
     .stack { display: block !important; width: 100% !important; text-align: left !important; }
-    .stack-team { padding: 14px 0 0 0 !important; border-left: 0 !important; text-align: left !important; }
+    .stack-team { padding: 12px 0 0 0 !important; text-align: left !important; }
     .h1 { font-size: 31px !important; line-height: 38px !important; }
     .lede { font-size: 15px !important; line-height: 25px !important; }
     .btn-table { width: 100% !important; }
-    .btn-wrap { display: block !important; width: 100% !important; }
-    .btn-a { display: block !important; text-align: center !important; }
-    .btn-note { display: block !important; padding: 12px 0 0 0 !important; text-align: center !important; }
-    .label-col { display: block !important; width: 100% !important; padding-bottom: 3px !important; }
-    .value-col { display: block !important; width: 100% !important; }
+    .btn-wrap, .btn-a { display: block !important; width: 100% !important; box-sizing: border-box; }
+    .btn-a { text-align: center !important; }
+    .btn-note { display: block !important; width: 100% !important; padding: 12px 0 0 0 !important; text-align: center !important; }
+    .col { display: block !important; width: 100% !important; box-sizing: border-box; border-left: 0 !important; }
+    .col-next { border-top: 1px solid #E1D6C4 !important; }
+  }
+
+  /* Dark mode: the teal masthead keeps its colour, everything else inverts */
+  @media (prefers-color-scheme: dark) {
+    .bg { background-color: #0B1413 !important; }
+    .sheet { background-color: #13201F !important; border-color: #233634 !important; }
+    .body { color: #C5D2CE !important; }
+    .strong { color: #EAF1EE !important; }
+    .muted { color: #9DB0AB !important; }
+    .rule { background-color: #233634 !important; }
+    .link { color: #8FD6CE !important; }
+    .btn { background-color: #8FD6CE !important; }
+    .btn-a { color: #0B1413 !important; }
+    .tint { background-color: #192928 !important; border-color: #2C4543 !important; }
+    .col-next { border-color: #2C4543 !important; }
+    .dot { background-color: #8FD6CE !important; }
   }
 </style>
 </head>
-<body style="margin: 0; padding: 0; background-color: #EFE7DA;">
+<body class="bg" style="margin: 0; padding: 0; background-color: #EFE7DA;">
 
 <!-- Preheader: shown in the inbox preview, hidden in the email -->
 <div style="display: none; max-height: 0; overflow: hidden; mso-hide: all; font-size: 1px; line-height: 1px; color: #EFE7DA;">
@@ -43,90 +60,67 @@
   &#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;
 </div>
 
-<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #EFE7DA;">
+<table role="presentation" class="bg" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #EFE7DA;">
   <tr>
     <td align="center" style="padding: 40px 12px;">
 
       <table role="presentation" class="sheet" cellpadding="0" cellspacing="0" border="0" width="600" style="width: 600px; max-width: 600px; background-color: #FCF9F4; border: 1px solid #E1D6C4;">
 
-        <!-- Accent band -->
+        <!-- Masthead and greeting on the teal band -->
         <tr>
-          <td style="height: 5px; line-height: 5px; font-size: 0; background-color: #0E4B4A;">&nbsp;</td>
-        </tr>
-
-        <!-- Masthead -->
-        <tr>
-          <td class="pad" style="padding: 30px 44px 24px 44px;">
+          <td class="pad" bgcolor="#0E4B4A" style="background-color: #0E4B4A; padding: 30px 44px 40px 44px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
               <tr>
                 <td class="stack" valign="middle">
                   <table role="presentation" cellpadding="0" cellspacing="0" border="0">
                     <tr>
                       <td width="44" valign="middle" style="width: 44px; padding-right: 14px;">
-                        <a href="{{appUrl}}" target="_blank" style="text-decoration: none;"><img src="{{appUrl}}/assets/synapse-email-icon.png" width="44" height="44" alt="{{appName}}" style="display: block; width: 44px; height: 44px; border: 0;"></a>
+                        <a href="{{appUrl}}" target="_blank" style="text-decoration: none;"><img src="{{appUrl}}/assets/synapse-email-icon-white.png" width="44" height="44" alt="{{appName}}" style="display: block; width: 44px; height: 44px; border: 0;"></a>
                       </td>
-                      <td valign="middle" style="font-family: Georgia, 'Times New Roman', serif; font-size: 23px; line-height: 27px; font-weight: bold; letter-spacing: 3px; text-transform: uppercase; color: #12302E;">
+                      <td valign="middle" style="font-family: Georgia, 'Times New Roman', serif; font-size: 21px; line-height: 25px; font-weight: bold; letter-spacing: 3px; text-transform: uppercase; color: #FCF9F4;">
                         {{appName}}
-                        <div style="padding-top: 4px; font-family: Helvetica, Arial, sans-serif; font-size: 10px; line-height: 15px; font-weight: normal; letter-spacing: 1.4px; text-transform: uppercase; color: #6A6458;">Smarter work with affordable AI</div>
+                        <div style="padding-top: 4px; font-family: Helvetica, Arial, sans-serif; font-size: 10px; line-height: 15px; font-weight: normal; letter-spacing: 1.4px; text-transform: uppercase; color: #BBD3CF;">Smarter work with affordable AI</div>
                       </td>
                     </tr>
                   </table>
                 </td>
-                <td class="stack stack-team" valign="middle" align="right" style="border-left: 1px solid #E1D6C4; padding-left: 16px; font-family: Helvetica, Arial, sans-serif; font-size: 10px; line-height: 16px; letter-spacing: 1px; color: #6A6458; text-align: right;">
-                  DEVELOPED BY THE<br>BdREN INNOVATION TEAM
+                <td class="stack stack-team" valign="middle" align="right" style="font-family: Helvetica, Arial, sans-serif; font-size: 10px; line-height: 16px; letter-spacing: 1px; color: #BBD3CF; text-align: right; text-transform: uppercase;">
+                  Developed by the<br>BdREN Innovation Team
                 </td>
               </tr>
             </table>
+
+            <div style="height: 44px; line-height: 44px; font-size: 0;">&nbsp;</div>
+            <div style="font-family: Georgia, 'Times New Roman', serif; font-size: 19px; line-height: 26px; color: #CFE2DE;">Hi{{#if name}} {{name}}{{/if}},</div>
+            <h1 class="h1" style="margin: 10px 0 0 0; font-family: Georgia, 'Times New Roman', serif; font-size: 40px; line-height: 47px; font-weight: normal; color: #FCF9F4;">{{#if institutionName}}{{institutionName}} has invited you to join {{appName}}.{{else}}You have been invited to join {{appName}}.{{/if}}</h1>
           </td>
-        </tr>
-        <tr>
-          <td style="height: 1px; line-height: 1px; font-size: 0; background-color: #E8DECD;">&nbsp;</td>
         </tr>
 
         <!-- Letter -->
         <tr>
-          <td class="pad" style="padding: 40px 44px 0 44px; font-family: Helvetica, Arial, sans-serif;">
-            {{#if institutionName}}<div style="font-size: 11px; line-height: 16px; letter-spacing: 1.6px; text-transform: uppercase; color: #A04A28;">{{institutionName}}</div>{{/if}}
-            <div style="padding-top: 20px; font-family: Georgia, 'Times New Roman', serif; font-size: 19px; line-height: 26px; color: #2F3A37;">Hi{{#if name}} {{name}}{{/if}},</div>
-            <h1 class="h1" style="margin: 10px 0 0 0; font-family: Georgia, 'Times New Roman', serif; font-size: 38px; line-height: 46px; font-weight: normal; color: #12302E;">{{#if institutionName}}{{institutionName}} has invited you to join {{appName}}.{{else}}You have been invited to join {{appName}}.{{/if}}</h1>
-            <p class="lede" style="margin: 22px 0 0 0; font-size: 16px; line-height: 27px; color: #45504C;">{{appName}} is an AI workspace built by the {{#if orgUrl}}<a href="{{orgUrl}}" target="_blank" style="color: #0E4B4A; text-decoration: underline;">BdREN Innovation Team</a>{{else}}BdREN Innovation Team{{/if}} for universities across Bangladesh. Set a password and the account below is yours, nothing to install, nothing to pay for.</p>
+          <td class="pad" style="padding: 32px 44px 0 44px; font-family: Helvetica, Arial, sans-serif;">
+            <p class="lede body" style="margin: 0; font-size: 16px; line-height: 27px; color: #45504C;">{{appName}} is an AI workspace built by the {{#if orgUrl}}<a class="link" href="{{orgUrl}}" target="_blank" style="color: #0E4B4A; text-decoration: underline;">BdREN Innovation Team</a>{{else}}BdREN Innovation Team{{/if}} for universities across Bangladesh. Set a password and the account below is yours, nothing to install, nothing to pay for.</p>
           </td>
         </tr>
 
-        <!-- Invitation details -->
+        <!-- Invitation details: only the cells that have a value -->
         <tr>
-          <td class="pad" style="padding: 34px 44px 0 44px; font-family: Helvetica, Arial, sans-serif;">
+          <td class="pad" style="padding: 28px 44px 0 44px; font-family: Helvetica, Arial, sans-serif;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
               <tr>
-                <td width="118" valign="middle" style="font-size: 11px; line-height: 16px; letter-spacing: 1.6px; color: #6A6458; white-space: nowrap;">YOUR INVITATION</td>
-                <td valign="middle" style="padding-left: 14px;">
-                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="height: 1px; line-height: 1px; font-size: 0; background-color: #E8DECD;">&nbsp;</td></tr></table>
-                </td>
-              </tr>
-            </table>
-
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top: 6px;">
 {{#if email}}
-              <tr>
-                <td class="label-col" width="122" valign="top" style="padding: 15px 16px 15px 0; font-size: 11px; line-height: 20px; letter-spacing: 1.3px; color: #6A6458;">ACCOUNT</td>
-                <td class="value-col" valign="top" style="padding: 15px 0; font-size: 16px; line-height: 22px; font-weight: bold; color: #1B2A28; word-break: break-all;">{{email}}</td>
-              </tr>
-              <tr><td colspan="2" style="height: 1px; line-height: 1px; font-size: 0; background-color: #EDE4D5;">&nbsp;</td></tr>
-{{/if}}
-{{#if institutionName}}
-              <tr>
-                <td class="label-col" width="122" valign="top" style="padding: 15px 16px 15px 0; font-size: 11px; line-height: 20px; letter-spacing: 1.3px; color: #6A6458;">ORGANIZATION</td>
-                <td class="value-col" valign="top" style="padding: 15px 0; font-size: 16px; line-height: 22px; font-weight: bold; color: #1B2A28;">{{institutionName}}</td>
-              </tr>
-              <tr><td colspan="2" style="height: 1px; line-height: 1px; font-size: 0; background-color: #EDE4D5;">&nbsp;</td></tr>
+                <td class="col tint" valign="top" style="padding: 16px 18px; background-color: #F4EEE3; border: 1px solid #E1D6C4;">
+                  <div class="muted" style="font-size: 11px; line-height: 16px; letter-spacing: 1.3px; color: #6A6458;">ACCOUNT</div>
+                  <div class="strong" style="padding-top: 6px; font-size: 15px; line-height: 21px; font-weight: bold; color: #1B2A28; word-break: break-all;">{{email}}</div>
+                </td>
 {{/if}}
 {{#if expiresOn}}
-              <tr>
-                <td class="label-col" width="122" valign="top" style="padding: 15px 16px 15px 0; font-size: 11px; line-height: 20px; letter-spacing: 1.3px; color: #6A6458;">OPEN BEFORE</td>
-                <td class="value-col" valign="top" style="padding: 15px 0; font-size: 16px; line-height: 22px; font-weight: bold; color: #1B2A28;">{{expiresOn}}<span style="font-weight: normal; color: #6A6458;">, after which the link expires</span></td>
-              </tr>
-              <tr><td colspan="2" style="height: 1px; line-height: 1px; font-size: 0; background-color: #EDE4D5;">&nbsp;</td></tr>
+                <td class="col col-next tint" valign="top" style="padding: 16px 18px; background-color: #F4EEE3; border: 1px solid #E1D6C4;{{#if email}} border-left: 0;{{/if}}">
+                  <div class="muted" style="font-size: 11px; line-height: 16px; letter-spacing: 1.3px; color: #6A6458;">OPEN BEFORE</div>
+                  <div class="strong" style="padding-top: 6px; font-size: 15px; line-height: 21px; font-weight: bold; color: #1B2A28;">{{expiresOn}}</div>
+                </td>
 {{/if}}
+              </tr>
             </table>
           </td>
         </tr>
@@ -136,12 +130,12 @@
           <td class="pad" style="padding: 28px 44px 0 44px; font-family: Helvetica, Arial, sans-serif;">
             <table role="presentation" class="btn-table" cellpadding="0" cellspacing="0" border="0">
               <tr>
-                <td class="btn-wrap" bgcolor="#0E4B4A" style="background-color: #0E4B4A; border-radius: 4px;">
+                <td class="btn btn-wrap" bgcolor="#0E4B4A" style="background-color: #0E4B4A; border-radius: 4px;">
                   <!--[if mso]><v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{inviteLink}}" style="height:56px;v-text-anchor:middle;width:212px;" arcsize="7%" stroke="f" fillcolor="#0E4B4A"><w:anchorlock/><center style="color:#FCF9F4;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;"><![endif]-->
                   <a class="btn-a" href="{{inviteLink}}" target="_blank" style="display: inline-block; padding: 17px 32px; font-family: Helvetica, Arial, sans-serif; font-size: 16px; line-height: 22px; font-weight: bold; color: #FCF9F4; text-decoration: none; border-radius: 4px;">Set your password</a>
                   <!--[if mso]></center></v:roundrect><![endif]-->
                 </td>
-                <td class="btn-note" valign="middle" style="padding-left: 20px; font-size: 13px; line-height: 20px; color: #6A6458;">Takes under a minute.<br>The link works once.</td>
+                <td class="btn-note muted" valign="middle" style="padding-left: 20px; font-size: 13px; line-height: 20px; color: #6A6458;">Takes under a minute.<br>The link works once.</td>
               </tr>
             </table>
           </td>
@@ -149,50 +143,43 @@
 
         <!-- What you can do -->
         <tr>
-          <td class="pad" style="padding: 42px 44px 0 44px; font-family: Helvetica, Arial, sans-serif;">
+          <td class="pad" style="padding: 40px 44px 0 44px; font-family: Helvetica, Arial, sans-serif;">
+            <div class="muted" style="padding-bottom: 6px; font-size: 11px; line-height: 16px; letter-spacing: 1.6px; color: #6A6458;">WHAT YOU CAN DO WITH IT</div>
+
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
               <tr>
-                <td width="176" valign="middle" style="font-size: 11px; line-height: 16px; letter-spacing: 1.6px; color: #6A6458; white-space: nowrap;">WHAT YOU CAN DO WITH IT</td>
-                <td valign="middle" style="padding-left: 14px;">
-                  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="height: 1px; line-height: 1px; font-size: 0; background-color: #E8DECD;">&nbsp;</td></tr></table>
-                </td>
+                <td width="18" valign="top" style="padding: 11px 0 0 0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td class="dot" width="6" height="6" style="width: 6px; height: 6px; line-height: 6px; font-size: 0; background-color: #0E4B4A; border-radius: 3px;">&nbsp;</td></tr></table></td>
+                <td class="body" valign="top" style="padding: 4px 0; font-size: 15px; line-height: 22px; color: #35403D;">Draft, edit and mark up documents</td>
+              </tr>
+              <tr>
+                <td width="18" valign="top" style="padding: 11px 0 0 0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td class="dot" width="6" height="6" style="width: 6px; height: 6px; line-height: 6px; font-size: 0; background-color: #0E4B4A; border-radius: 3px;">&nbsp;</td></tr></table></td>
+                <td class="body" valign="top" style="padding: 4px 0; font-size: 15px; line-height: 22px; color: #35403D;">Build spreadsheets and work through the numbers</td>
+              </tr>
+              <tr>
+                <td width="18" valign="top" style="padding: 11px 0 0 0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td class="dot" width="6" height="6" style="width: 6px; height: 6px; line-height: 6px; font-size: 0; background-color: #0E4B4A; border-radius: 3px;">&nbsp;</td></tr></table></td>
+                <td class="body" valign="top" style="padding: 4px 0; font-size: 15px; line-height: 22px; color: #35403D;">Put a presentation together from your notes</td>
+              </tr>
+              <tr>
+                <td width="18" valign="top" style="padding: 11px 0 0 0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td class="dot" width="6" height="6" style="width: 6px; height: 6px; line-height: 6px; font-size: 0; background-color: #0E4B4A; border-radius: 3px;">&nbsp;</td></tr></table></td>
+                <td class="body" valign="top" style="padding: 4px 0; font-size: 15px; line-height: 22px; color: #35403D;">Read, search and fill in PDF files</td>
+              </tr>
+              <tr>
+                <td width="18" valign="top" style="padding: 11px 0 0 0;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td class="dot" width="6" height="6" style="width: 6px; height: 6px; line-height: 6px; font-size: 0; background-color: #0E4B4A; border-radius: 3px;">&nbsp;</td></tr></table></td>
+                <td class="body" valign="top" style="padding: 4px 0; font-size: 15px; line-height: 22px; color: #35403D;">Generate images for your slides and papers</td>
               </tr>
             </table>
 
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top: 14px;">
-              <tr>
-                <td width="26" valign="top" style="padding: 6px 12px 6px 0; font-family: Georgia, 'Times New Roman', serif; font-size: 13px; line-height: 22px; color: #A04A28;">01</td>
-                <td valign="top" style="padding: 6px 0; font-size: 15px; line-height: 22px; color: #35403D;">Draft, edit and mark up documents</td>
-              </tr>
-              <tr>
-                <td width="26" valign="top" style="padding: 6px 12px 6px 0; font-family: Georgia, 'Times New Roman', serif; font-size: 13px; line-height: 22px; color: #A04A28;">02</td>
-                <td valign="top" style="padding: 6px 0; font-size: 15px; line-height: 22px; color: #35403D;">Build spreadsheets and work through the numbers</td>
-              </tr>
-              <tr>
-                <td width="26" valign="top" style="padding: 6px 12px 6px 0; font-family: Georgia, 'Times New Roman', serif; font-size: 13px; line-height: 22px; color: #A04A28;">03</td>
-                <td valign="top" style="padding: 6px 0; font-size: 15px; line-height: 22px; color: #35403D;">Put a presentation together from your notes</td>
-              </tr>
-              <tr>
-                <td width="26" valign="top" style="padding: 6px 12px 6px 0; font-family: Georgia, 'Times New Roman', serif; font-size: 13px; line-height: 22px; color: #A04A28;">04</td>
-                <td valign="top" style="padding: 6px 0; font-size: 15px; line-height: 22px; color: #35403D;">Read, search and fill in PDF files</td>
-              </tr>
-              <tr>
-                <td width="26" valign="top" style="padding: 6px 12px 6px 0; font-family: Georgia, 'Times New Roman', serif; font-size: 13px; line-height: 22px; color: #A04A28;">05</td>
-                <td valign="top" style="padding: 6px 0; font-size: 15px; line-height: 22px; color: #35403D;">Generate images for your slides and papers</td>
-              </tr>
-            </table>
-
-            <p style="margin: 30px 0 0 0; font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-size: 17px; line-height: 26px; color: #2F3A37;">See you on Synapse,<br>BdREN Innovation Team</p>
+            <p class="strong" style="margin: 32px 0 0 0; font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-size: 17px; line-height: 26px; color: #2F3A37;">See you on Synapse,<br>BdREN Innovation Team</p>
           </td>
         </tr>
 
         <!-- Fine print -->
         <tr>
           <td class="pad" style="padding: 32px 44px 36px 44px; font-family: Helvetica, Arial, sans-serif;">
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td style="height: 1px; line-height: 1px; font-size: 0; background-color: #E8DECD;">&nbsp;</td></tr></table>
-            <p style="margin: 20px 0 0 0; font-size: 12px; line-height: 19px; color: #6A6458;">Button not working? Open <a href="{{inviteLink}}" target="_blank" style="color: #0E4B4A; text-decoration: underline; word-break: break-all;">{{inviteLink}}</a></p>
-            <p style="margin: 7px 0 0 0; font-size: 12px; line-height: 19px; color: #6A6458;">{{#if email}}Sent to {{email}}. {{/if}}If you were not expecting this, ignore it &mdash; no account exists until the link is opened.{{#if supportEmail}} Questions go to <a href="mailto:{{supportEmail}}" style="color: #0E4B4A; text-decoration: underline;">{{supportEmail}}</a>.{{/if}}</p>
-            <p style="margin: 7px 0 0 0; font-size: 12px; line-height: 19px; color: #6A6458;">{{appName}} is operated by BdREN, Bangladesh Research and Education Network{{#if orgUrl}} &mdash; <a href="{{orgUrl}}" target="_blank" style="color: #0E4B4A; text-decoration: underline;">{{orgLabel}}</a>{{/if}}</p>
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td class="rule" style="height: 1px; line-height: 1px; font-size: 0; background-color: #E8DECD;">&nbsp;</td></tr></table>
+            <p class="muted" style="margin: 20px 0 0 0; font-size: 12px; line-height: 19px; color: #6A6458;">Button not working? Open <a class="link" href="{{inviteLink}}" target="_blank" style="color: #0E4B4A; text-decoration: underline; word-break: break-all;">{{inviteLink}}</a></p>
+            <p class="muted" style="margin: 7px 0 0 0; font-size: 12px; line-height: 19px; color: #6A6458;">{{#if email}}Sent to {{email}}. {{/if}}If you were not expecting this, ignore it &mdash; no account exists until the link is opened.{{#if supportEmail}} Questions go to <a class="link" href="mailto:{{supportEmail}}" style="color: #0E4B4A; text-decoration: underline;">{{supportEmail}}</a>.{{/if}}</p>
+            <p class="muted" style="margin: 7px 0 0 0; font-size: 12px; line-height: 19px; color: #6A6458;">{{appName}} is operated by BdREN, Bangladesh Research and Education Network{{#if orgUrl}} &mdash; <a class="link" href="{{orgUrl}}" target="_blank" style="color: #0E4B4A; text-decoration: underline;">{{orgLabel}}</a>{{/if}}</p>
           </td>
         </tr>
 
