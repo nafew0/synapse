@@ -90,6 +90,13 @@ describe('inviteUser email template', () => {
     expect(text(basePayload)).not.toContain('FOR QUERIES');
   });
 
+  it('spells BdREN in its own case in the header credit', () => {
+    const html = text(fullPayload);
+
+    expect(html).toContain('DEVELOPED BY THE<br>BdREN INNOVATION TEAM');
+    expect(html).not.toContain('BDREN');
+  });
+
   it('keeps dashes out of the copy', () => {
     const visible = (payload) =>
       text(payload)
