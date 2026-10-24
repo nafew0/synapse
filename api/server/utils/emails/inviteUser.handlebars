@@ -35,7 +35,7 @@
     .col-next { border-top: 1px solid #E1D6C4 !important; }
   }
 
-  /* Dark mode: the teal masthead keeps its colour, everything else inverts */
+  /* Dark mode: paper, text, links and the button invert */
   @media (prefers-color-scheme: dark) {
     .bg { background-color: #0B1413 !important; }
     .sheet { background-color: #13201F !important; border-color: #233634 !important; }
@@ -66,33 +66,34 @@
 
       <table role="presentation" class="sheet" cellpadding="0" cellspacing="0" border="0" width="600" style="width: 600px; max-width: 600px; background-color: #FCF9F4; border: 1px solid #E1D6C4;">
 
-        <!-- Masthead and greeting on the teal band -->
+        <!-- Masthead and greeting -->
         <tr>
-          <td class="pad" bgcolor="#0E4B4A" style="background-color: #0E4B4A; padding: 30px 44px 40px 44px;">
+          <td class="pad" style="padding: 32px 44px 0 44px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
               <tr>
                 <td class="stack" valign="middle">
                   <table role="presentation" cellpadding="0" cellspacing="0" border="0">
                     <tr>
                       <td width="44" valign="middle" style="width: 44px; padding-right: 14px;">
-                        <a href="{{appUrl}}" target="_blank" style="text-decoration: none;"><img src="{{appUrl}}/assets/synapse-email-icon-white.png" width="44" height="44" alt="Synapse" style="display: block; width: 44px; height: 44px; border: 0;"></a>
+                        <a href="{{appUrl}}" target="_blank" style="text-decoration: none;"><img src="{{appUrl}}/assets/synapse-email-icon.png" width="44" height="44" alt="Synapse" style="display: block; width: 44px; height: 44px; border: 0;"></a>
                       </td>
-                      <td valign="middle" style="font-family: Georgia, 'Times New Roman', serif; font-size: 21px; line-height: 25px; font-weight: bold; letter-spacing: 3px; text-transform: uppercase; color: #FCF9F4;">
+                      <td class="strong" valign="middle" style="font-family: Georgia, 'Times New Roman', serif; font-size: 21px; line-height: 25px; font-weight: bold; letter-spacing: 3px; text-transform: uppercase; color: #12302E;">
                         Synapse
-                        <div style="padding-top: 4px; font-family: Helvetica, Arial, sans-serif; font-size: 10px; line-height: 15px; font-weight: normal; letter-spacing: 1.4px; text-transform: uppercase; color: #BBD3CF;">Smarter work with affordable AI</div>
+                        <div class="muted" style="padding-top: 4px; font-family: Helvetica, Arial, sans-serif; font-size: 10px; line-height: 15px; font-weight: normal; letter-spacing: 1.4px; text-transform: uppercase; color: #6A6458;">Smarter work with affordable AI</div>
                       </td>
                     </tr>
                   </table>
                 </td>
-                <td class="stack stack-team" valign="middle" align="right" style="font-family: Helvetica, Arial, sans-serif; font-size: 10px; line-height: 16px; letter-spacing: 1px; color: #BBD3CF; text-align: right; text-transform: uppercase;">
+                <td class="stack stack-team muted" valign="middle" align="right" style="font-family: Helvetica, Arial, sans-serif; font-size: 10px; line-height: 16px; letter-spacing: 1px; color: #6A6458; text-align: right; text-transform: uppercase;">
                   Developed by the<br>BdREN Innovation Team
                 </td>
               </tr>
             </table>
 
-            <div style="height: 44px; line-height: 44px; font-size: 0;">&nbsp;</div>
-            <div style="font-family: Georgia, 'Times New Roman', serif; font-size: 19px; line-height: 26px; color: #CFE2DE;">Hi{{#if name}} {{name}}{{/if}},</div>
-            <h1 class="h1" style="margin: 10px 0 0 0; font-family: Georgia, 'Times New Roman', serif; font-size: 40px; line-height: 47px; font-weight: normal; color: #FCF9F4;">You are invited to join Synapse.</h1>
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top: 28px;"><tr><td class="rule" style="height: 1px; line-height: 1px; font-size: 0; background-color: #E8DECD;">&nbsp;</td></tr></table>
+
+            <div class="strong" style="padding-top: 36px; font-family: Georgia, 'Times New Roman', serif; font-size: 19px; line-height: 26px; color: #2F3A37;">Hi{{#if name}} {{name}}{{/if}},</div>
+            <h1 class="h1 strong" style="margin: 10px 0 0 0; font-family: Georgia, 'Times New Roman', serif; font-size: 40px; line-height: 47px; font-weight: normal; color: #12302E;">You are invited to join Synapse.</h1>
           </td>
         </tr>
 
