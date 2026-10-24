@@ -78,6 +78,16 @@ describe('inviteUser email template', () => {
     expect(expiryOnly).not.toContain('ACCOUNT');
   });
 
+  it('keeps dashes out of the copy', () => {
+    const visible = (payload) =>
+      text(payload)
+        .replace(/<style[\s\S]*?<\/style>|<!--[\s\S]*?-->|<[^>]*>/g, ' ')
+        .replace(/https?:\/\/\S+|mailto:\S+/g, '');
+
+    expect(visible(fullPayload)).not.toMatch(/[–—]|\s-\s/);
+    expect(visible(basePayload)).not.toMatch(/[–—]|\s-\s/);
+  });
+
   it('declares and styles a dark scheme', () => {
     const html = render(fullPayload);
 
