@@ -44,13 +44,20 @@ describe('inviteUser email template', () => {
   it('renders every invitation detail it was given', () => {
     const html = text(fullPayload);
 
-    expect(html).toContain('Invitation \u00b7 University of Dhaka');
+    expect(html).not.toContain('Invitation \u00b7');
     expect(html).toContain('ORGANIZATION');
     expect(html).toContain('University of Dhaka has invited you to join Synapse.');
     expect(html).toContain('nafisa.rahman@du.ac.bd');
     expect(html).toContain('25 September 2026');
     expect(html).toContain('info@bdren.ai');
     expect(html).toContain(fullPayload.inviteLink);
+  });
+
+  it('signs off with Synapse alone, whatever the app title says', () => {
+    const html = text({ ...fullPayload, appName: 'BdREN Synapse' });
+
+    expect(html).toContain('See you on Synapse,<br>BdREN Innovation Team');
+    expect(html).not.toContain('See you on BdREN');
   });
 
   it('links the team name and the footer to the organisation website', () => {
