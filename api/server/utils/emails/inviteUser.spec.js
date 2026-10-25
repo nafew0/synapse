@@ -96,7 +96,7 @@ describe('inviteUser email template', () => {
     const html = text(fullPayload);
 
     expect(html).toMatch(
-      /BUTTON NOT WORKING\?[\s\S]{0,200}?<a [^>]*font-weight: bold[^>]*>https:\/\/synapse\.example\.net\/register\?token=abc123<\/a>/,
+      /Button not working\? Use the following link[\s\S]{0,200}?<a [^>]*font-weight: bold[^>]*>https:\/\/synapse\.example\.net\/register\?token=abc123<\/a>/,
     );
     expect(html).not.toContain('callout');
     expect(html).not.toContain('border: 2px');
