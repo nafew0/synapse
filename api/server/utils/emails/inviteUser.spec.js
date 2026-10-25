@@ -205,6 +205,15 @@ describe('inviteUser email template', () => {
     });
   });
 
+  it('centres the logo and drops the tagline', () => {
+    const html = text(fullPayload);
+
+    expect(html).toMatch(/<td align="center" valign="middle"> <a [^>]*> <img class="logo-light"/);
+    expect(html).toContain('margin: 0 auto');
+    expect(html).not.toContain('Smarter work with affordable AI');
+    expect(html).not.toMatch(/smarter work/i);
+  });
+
   it('puts the Synapse lockup logo in the header, with a light wordmark for dark mode', () => {
     const html = render(fullPayload);
 
