@@ -36,6 +36,7 @@ const text = (payload) =>
     .replace(/&nbsp;/g, ' ')
     .replace(/&mdash;/g, '\u2014')
     .replace(/&middot;/g, '\u00b7')
+    .replace(/&copy;/g, '\u00a9')
     .replace(/&rarr;/g, '\u2192')
     .replace(/&amp;/g, '&')
     .replace(/\s+/g, ' ');
@@ -45,55 +46,86 @@ describe('inviteUser email template', () => {
     const html = text(fullPayload);
 
     expect(html).not.toContain('Invitation \u00b7');
-    expect(html).toContain('ACCOUNT');
-    expect(html).toContain('ORGANIZATION');
-    expect(html).toContain('OPEN BEFORE');
-    expect(html).not.toContain('SENT TO');
-    expect(html).toMatch(/FOR QUERIES<\/span><a [^>]*>info@bdren\.ai<\/a>/);
     expect(html).toContain('You are invited to join Synapse.');
-    expect(html).toContain('University of Dhaka');
-    expect(html).toContain('nafisa.rahman@du.ac.bd');
-    expect(html).toContain('25 September 2026');
-    expect(html).toContain('info@bdren.ai');
+    expect(html).toContain('Invitation expires 25 September 2026.');
     expect(html).toContain(fullPayload.inviteLink);
   });
 
-  it('keeps the headline generic and names the organization in the details', () => {
+  it('shows the expiry as plain text and no details table', () => {
     const html = text(fullPayload);
 
+    expect(html).not.toContain('ACCOUNT');
+    expect(html).not.toContain('ORGANIZATION');
+    expect(html).not.toContain('INVITATION EXPIRES');
     expect(html).not.toContain('University of Dhaka has invited you');
-    expect(html).toContain('ORGANIZATION</div> <div');
-    expect(html).toContain('>University of Dhaka</div>');
+    expect(html).toMatch(/<p class="body"[^>]*>Invitation expires 25 September 2026\.<\/p>/);
   });
 
-  it('shows only the detail cells it has a value for', () => {
-    const emailOnly = text({ ...basePayload, email: fullPayload.email });
-    const orgOnly = text({ ...basePayload, institutionName: fullPayload.institutionName });
-    const expiryOnly = text({ ...basePayload, expiresOn: fullPayload.expiresOn });
-
-    expect(emailOnly).toContain('ACCOUNT');
-    expect(emailOnly).not.toContain('OPEN BEFORE');
-    expect(emailOnly).not.toContain('ORGANIZATION');
-    expect(orgOnly).toContain('ORGANIZATION');
-    expect(orgOnly).not.toContain('ACCOUNT');
-    expect(expiryOnly).toContain('OPEN BEFORE');
-    expect(expiryOnly).not.toContain('ACCOUNT');
+  it('leaves the expiry line out when there is no deadline', () => {
+    expect(text(basePayload)).not.toContain('Invitation expires');
   });
 
-  it('always tells a wrongly addressed reader what to do', () => {
-    const note = 'If you were not expecting this, ignore it. No account exists until the link is opened.';
-
+  it('stops at the invitation: no feature list, sign-off, ignore note or contact line', () => {
     [fullPayload, basePayload].forEach((payload) => {
-      expect(text(payload)).toContain('NOT EXPECTING THIS?');
-      expect(text(payload)).toContain(note);
+      const html = text(payload);
+
+      expect(html).not.toContain('WHAT YOU CAN DO WITH IT');
+      expect(html).not.toContain('Draft, edit and mark up documents');
+      expect(html).not.toContain('See you on');
+      expect(html).not.toContain('NOT EXPECTING THIS?');
+      expect(html).not.toContain('If you were not expecting this');
+      expect(html).not.toContain('FOR QUERIES');
+      expect(html).not.toContain('info@bdren.ai');
+      expect(html).not.toContain('SENT TO');
+      expect(html).not.toContain('Set a password and the account below');
+      expect(html).not.toContain('nothing to pay for');
+      expect(html).not.toContain('Takes under a minute');
+      expect(html).not.toContain('The link works once');
+      expect(html).not.toContain('is operated by');
     });
-    expect(text(basePayload)).not.toContain('FOR QUERIES');
   });
 
-  it('spells BdREN in its own case in the header credit', () => {
+  it('states the invitation in plain text, not as a heading', () => {
+    const html = render(fullPayload);
+
+    expect(html).not.toMatch(/<h1/i);
+    expect(text(fullPayload)).toMatch(/<p [^>]*>You are invited to join Synapse\.<\/p>/);
+  });
+
+  it('shows the fallback link bold and unboxed', () => {
     const html = text(fullPayload);
 
-    expect(html).toContain('DEVELOPED BY THE<br>BdREN INNOVATION TEAM');
+    expect(html).toMatch(
+      /Button not working\? Use the following link[\s\S]{0,200}?<a [^>]*font-weight: bold[^>]*>https:\/\/synapse\.example\.net\/register\?token=abc123<\/a>/,
+    );
+    expect(html).not.toContain('callout');
+    expect(html).not.toContain('border: 2px');
+  });
+
+  it('asks the reader to accept the invitation', () => {
+    const html = text(fullPayload);
+
+    expect(html).toContain('>Accept invitation</a>');
+    expect(html).not.toContain('>Set your password</a>');
+  });
+
+  it('centres the accept button and the copyright line', () => {
+    const html = text(fullPayload);
+
+    expect(html).toMatch(/<table [^>]*class="btn-table" align="center"/);
+    expect(html).toMatch(/text-align: center;">Copyright/);
+  });
+
+  it('closes with the copyright line for the year it is sent in', () => {
+    expect(text(fullPayload)).toContain('Copyright © 2026 BdREN. All rights reserved.');
+    expect(text({ ...fullPayload, year: 2031 })).toContain('Copyright © 2031 BdREN.');
+  });
+
+  it('keeps the developer credit out of the header', () => {
+    const html = text(fullPayload);
+
+    expect(html).not.toContain('DEVELOPED BY THE');
+    expect(html).not.toContain('Developed by the');
     expect(html).not.toContain('BDREN');
   });
 
@@ -117,25 +149,21 @@ describe('inviteUser email template', () => {
   it('calls the product Synapse and credits BdREN as its developer, whatever the app title says', () => {
     const html = text({ ...fullPayload, appName: 'BdREN Synapse' });
 
-    expect(html).toContain('See you on Synapse,<br>BdREN Innovation Team');
     expect(html).toContain('Synapse is an AI workspace built by the');
     expect(html).not.toContain('BdREN Synapse');
   });
 
-  it('links the team name and the footer to the organisation website', () => {
+  it('links the team name to the organisation website', () => {
     const html = text(fullPayload);
 
     expect(html).toContain('BdREN Innovation Team</a>');
-    expect(html).toContain('Synapse is operated by BdREN');
     expect(html).toContain('href="https://bdren.net.bd"');
-    expect(html).toContain('>bdren.net.bd</a>');
   });
 
   it('still reads as a sentence when no organisation website is configured', () => {
     const html = text({ ...fullPayload, orgUrl: '', orgLabel: '' });
 
     expect(html).toContain('built by the BdREN Innovation Team for universities');
-    expect(html).toContain('operated by BdREN, Bangladesh Research and Education Network');
     expect(html).not.toContain('bdren.net.bd');
     expect(html).not.toMatch(/href="\s*"/);
   });
@@ -144,9 +172,7 @@ describe('inviteUser email template', () => {
     const html = text(basePayload);
 
     expect(html).toContain('You are invited to join Synapse.');
-    expect(html).not.toContain('ORGANIZATION');
-    expect(html).not.toContain('OPEN BEFORE');
-    expect(html).not.toContain('ACCOUNT');
+    expect(html).not.toContain('Invitation expires');
     expect(html).not.toContain('undefined');
   });
 
@@ -169,11 +195,31 @@ describe('inviteUser email template', () => {
     }
   });
 
-  it('ships a transparent logo, so no white box shows on a tinted header', () => {
-    const png = fs.readFileSync(path.join(ASSETS_DIR, 'synapse-email-icon.png'));
-    /** IHDR colour-type byte: 6 is RGBA, 4 is grey+alpha, 3 is palette (may carry tRNS). */
-    const colourType = png[25];
+  it('ships transparent logos, so no white box shows on the cream or the dark paper', () => {
+    ['synapse-email-logo-v3.png', 'synapse-email-logo-v3-dark.png'].forEach((name) => {
+      const png = fs.readFileSync(path.join(ASSETS_DIR, name));
+      /** IHDR colour-type byte: 6 is RGBA, 4 is grey+alpha, 3 is palette (may carry tRNS). */
+      const colourType = png[25];
 
-    expect([4, 6]).toContain(colourType);
+      expect([4, 6]).toContain(colourType);
+    });
+  });
+
+  it('centres the logo and drops the tagline', () => {
+    const html = text(fullPayload);
+
+    expect(html).toMatch(/<td align="center" valign="middle"> <a [^>]*> <img class="logo-light"/);
+    expect(html).toContain('margin: 0 auto');
+    expect(html).not.toContain('Smarter work with affordable AI');
+    expect(html).not.toMatch(/smarter work/i);
+  });
+
+  it('puts the Synapse lockup logo in the header, with a light wordmark for dark mode', () => {
+    const html = render(fullPayload);
+
+    expect(html).toContain('/assets/synapse-email-logo-v3.png');
+    expect(html).toContain('/assets/synapse-email-logo-v3-dark.png');
+    expect(html).not.toContain('synapse-email-icon');
+    expect(html).toContain('.logo-light { display: none !important; }');
   });
 });
