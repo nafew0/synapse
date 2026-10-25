@@ -36,6 +36,7 @@ const text = (payload) =>
     .replace(/&nbsp;/g, ' ')
     .replace(/&mdash;/g, '\u2014')
     .replace(/&middot;/g, '\u00b7')
+    .replace(/&copy;/g, '\u00a9')
     .replace(/&rarr;/g, '\u2192')
     .replace(/&amp;/g, '&')
     .replace(/\s+/g, ' ');
@@ -48,13 +49,10 @@ describe('inviteUser email template', () => {
     expect(html).toContain('ACCOUNT');
     expect(html).toContain('ORGANIZATION');
     expect(html).toContain('OPEN BEFORE');
-    expect(html).not.toContain('SENT TO');
-    expect(html).toMatch(/FOR QUERIES<\/span><a [^>]*>info@bdren\.ai<\/a>/);
     expect(html).toContain('You are invited to join Synapse.');
     expect(html).toContain('University of Dhaka');
     expect(html).toContain('nafisa.rahman@du.ac.bd');
     expect(html).toContain('25 September 2026');
-    expect(html).toContain('info@bdren.ai');
     expect(html).toContain(fullPayload.inviteLink);
   });
 
@@ -80,14 +78,31 @@ describe('inviteUser email template', () => {
     expect(expiryOnly).not.toContain('ACCOUNT');
   });
 
-  it('always tells a wrongly addressed reader what to do', () => {
-    const note = 'If you were not expecting this, ignore it. No account exists until the link is opened.';
-
+  it('stops at the invitation: no feature list, sign-off, ignore note or contact line', () => {
     [fullPayload, basePayload].forEach((payload) => {
-      expect(text(payload)).toContain('NOT EXPECTING THIS?');
-      expect(text(payload)).toContain(note);
+      const html = text(payload);
+
+      expect(html).not.toContain('WHAT YOU CAN DO WITH IT');
+      expect(html).not.toContain('Draft, edit and mark up documents');
+      expect(html).not.toContain('See you on');
+      expect(html).not.toContain('NOT EXPECTING THIS?');
+      expect(html).not.toContain('If you were not expecting this');
+      expect(html).not.toContain('FOR QUERIES');
+      expect(html).not.toContain('info@bdren.ai');
+      expect(html).not.toContain('SENT TO');
     });
-    expect(text(basePayload)).not.toContain('FOR QUERIES');
+  });
+
+  it('asks the reader to accept the invitation', () => {
+    const html = text(fullPayload);
+
+    expect(html).toContain('>Accept invitation</a>');
+    expect(html).not.toContain('>Set your password</a>');
+  });
+
+  it('closes with the copyright line for the year it is sent in', () => {
+    expect(text(fullPayload)).toContain('Copyright © 2026 BdREN. All rights reserved.');
+    expect(text({ ...fullPayload, year: 2031 })).toContain('Copyright © 2031 BdREN.');
   });
 
   it('spells BdREN in its own case in the header credit', () => {
@@ -117,7 +132,6 @@ describe('inviteUser email template', () => {
   it('calls the product Synapse and credits BdREN as its developer, whatever the app title says', () => {
     const html = text({ ...fullPayload, appName: 'BdREN Synapse' });
 
-    expect(html).toContain('See you on Synapse,<br>BdREN Innovation Team');
     expect(html).toContain('Synapse is an AI workspace built by the');
     expect(html).not.toContain('BdREN Synapse');
   });
