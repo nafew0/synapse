@@ -121,10 +121,11 @@ describe('inviteUser email template', () => {
     expect(text({ ...fullPayload, year: 2031 })).toContain('Copyright © 2031 BdREN.');
   });
 
-  it('spells BdREN in its own case in the header credit', () => {
+  it('keeps the developer credit out of the header', () => {
     const html = text(fullPayload);
 
-    expect(html).toContain('DEVELOPED BY THE<br>BdREN INNOVATION TEAM');
+    expect(html).not.toContain('DEVELOPED BY THE');
+    expect(html).not.toContain('Developed by the');
     expect(html).not.toContain('BDREN');
   });
 
@@ -194,11 +195,31 @@ describe('inviteUser email template', () => {
     }
   });
 
-  it('ships a transparent logo, so no white box shows on a tinted header', () => {
-    const png = fs.readFileSync(path.join(ASSETS_DIR, 'synapse-email-icon.png'));
-    /** IHDR colour-type byte: 6 is RGBA, 4 is grey+alpha, 3 is palette (may carry tRNS). */
-    const colourType = png[25];
+  it('ships transparent logos, so no white box shows on the cream or the dark paper', () => {
+    ['synapse-email-logo-v3.png', 'synapse-email-logo-v3-dark.png'].forEach((name) => {
+      const png = fs.readFileSync(path.join(ASSETS_DIR, name));
+      /** IHDR colour-type byte: 6 is RGBA, 4 is grey+alpha, 3 is palette (may carry tRNS). */
+      const colourType = png[25];
 
-    expect([4, 6]).toContain(colourType);
+      expect([4, 6]).toContain(colourType);
+    });
+  });
+
+  it('centres the logo and drops the tagline', () => {
+    const html = text(fullPayload);
+
+    expect(html).toMatch(/<td align="center" valign="middle"> <a [^>]*> <img class="logo-light"/);
+    expect(html).toContain('margin: 0 auto');
+    expect(html).not.toContain('Smarter work with affordable AI');
+    expect(html).not.toMatch(/smarter work/i);
+  });
+
+  it('puts the Synapse lockup logo in the header, with a light wordmark for dark mode', () => {
+    const html = render(fullPayload);
+
+    expect(html).toContain('/assets/synapse-email-logo-v3.png');
+    expect(html).toContain('/assets/synapse-email-logo-v3-dark.png');
+    expect(html).not.toContain('synapse-email-icon');
+    expect(html).toContain('.logo-light { display: none !important; }');
   });
 });

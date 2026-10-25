@@ -23,8 +23,6 @@
   @media only screen and (max-width: 620px) {
     .sheet { width: 100% !important; }
     .pad { padding-left: 24px !important; padding-right: 24px !important; }
-    .stack { display: block !important; width: 100% !important; text-align: left !important; }
-    .stack-team { padding: 12px 0 0 0 !important; text-align: left !important; }
     .lede { font-size: 15px !important; line-height: 25px !important; }
     .btn-table { width: 100% !important; }
     .btn-wrap, .btn-a { display: block !important; width: 100% !important; box-sizing: border-box; }
@@ -35,6 +33,8 @@
   @media (prefers-color-scheme: dark) {
     .bg { background-color: #0B1413 !important; }
     .sheet { background-color: #13201F !important; border-color: #233634 !important; }
+    .logo-light { display: none !important; }
+    .logo-dark { display: block !important; max-height: none !important; overflow: visible !important; }
     .body { color: #C5D2CE !important; }
     .strong { color: #EAF1EE !important; }
     .muted { color: #9DB0AB !important; }
@@ -64,21 +64,11 @@
           <td class="pad" style="padding: 32px 44px 0 44px;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
               <tr>
-                <td class="stack" valign="middle">
-                  <table role="presentation" cellpadding="0" cellspacing="0" border="0">
-                    <tr>
-                      <td width="44" valign="middle" style="width: 44px; padding-right: 14px;">
-                        <a href="{{appUrl}}" target="_blank" style="text-decoration: none;"><img src="{{appUrl}}/assets/synapse-email-icon.png" width="44" height="44" alt="Synapse" style="display: block; width: 44px; height: 44px; border: 0;"></a>
-                      </td>
-                      <td class="strong" valign="middle" style="font-family: Georgia, 'Times New Roman', serif; font-size: 21px; line-height: 25px; font-weight: bold; letter-spacing: 3px; text-transform: uppercase; color: #12302E;">
-                        Synapse
-                        <div class="muted" style="padding-top: 4px; font-family: Helvetica, Arial, sans-serif; font-size: 10px; line-height: 15px; font-weight: normal; letter-spacing: 1.4px; text-transform: uppercase; color: #6A6458;">Smarter work with affordable AI</div>
-                      </td>
-                    </tr>
-                  </table>
-                </td>
-                <td class="stack stack-team muted" valign="middle" align="right" style="font-family: Helvetica, Arial, sans-serif; font-size: 10px; line-height: 16px; letter-spacing: 1px; color: #6A6458; text-align: right;">
-                  DEVELOPED BY THE<br>BdREN INNOVATION TEAM
+                <td align="center" valign="middle">
+                  <a href="{{appUrl}}" target="_blank" style="text-decoration: none;">
+                    <img class="logo-light" src="{{appUrl}}/assets/synapse-email-logo-v3.png" width="96" height="105" alt="Synapse" style="display: block; margin: 0 auto; width: 96px; height: auto; border: 0;">
+                    <img class="logo-dark" src="{{appUrl}}/assets/synapse-email-logo-v3-dark.png" width="96" height="105" alt="Synapse" style="display: none; margin: 0 auto; width: 96px; height: auto; max-height: 0; overflow: hidden; mso-hide: all; border: 0;">
+                  </a>
                 </td>
               </tr>
             </table>
