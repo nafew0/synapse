@@ -195,11 +195,22 @@ describe('inviteUser email template', () => {
     }
   });
 
-  it('ships a transparent logo, so no white box shows on a tinted header', () => {
-    const png = fs.readFileSync(path.join(ASSETS_DIR, 'synapse-email-icon.png'));
-    /** IHDR colour-type byte: 6 is RGBA, 4 is grey+alpha, 3 is palette (may carry tRNS). */
-    const colourType = png[25];
+  it('ships transparent logos, so no white box shows on the cream or the dark paper', () => {
+    ['synapse-email-logo-v3.png', 'synapse-email-logo-v3-dark.png'].forEach((name) => {
+      const png = fs.readFileSync(path.join(ASSETS_DIR, name));
+      /** IHDR colour-type byte: 6 is RGBA, 4 is grey+alpha, 3 is palette (may carry tRNS). */
+      const colourType = png[25];
 
-    expect([4, 6]).toContain(colourType);
+      expect([4, 6]).toContain(colourType);
+    });
+  });
+
+  it('puts the Synapse lockup logo in the header, with a light wordmark for dark mode', () => {
+    const html = render(fullPayload);
+
+    expect(html).toContain('/assets/synapse-email-logo-v3.png');
+    expect(html).toContain('/assets/synapse-email-logo-v3-dark.png');
+    expect(html).not.toContain('synapse-email-icon');
+    expect(html).toContain('.logo-light { display: none !important; }');
   });
 });
