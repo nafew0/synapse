@@ -4,6 +4,7 @@ const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { requireJwtAuth } = require('~/server/middleware');
 const {
   HttpError,
+  exportMemberUsageCsv,
   exportUsageCsv,
   getUsageSummary,
   getUsageTimeseries,
@@ -115,8 +116,13 @@ router.get('/export.csv', async (req, res) => {
     return;
   }
 
+  /** Superadmins keep the full transaction ledger; institution admins get one row per member. */
+  const isPlatformSuperadmin = req.isPlatformSuperadmin === true;
+  const exportCsv = isPlatformSuperadmin ? exportUsageCsv : exportMemberUsageCsv;
+  const prefix = isPlatformSuperadmin ? 'usage' : 'member-usage';
+
   try {
-    const { csv } = await exportUsageCsv({
+    const { csv } = await exportCsv({
       tenantId,
       start: req.query.start,
       end: req.query.end,
@@ -124,7 +130,7 @@ router.get('/export.csv', async (req, res) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="usage-${new Date().toISOString().slice(0, 10)}.csv"`,
+      `attachment; filename="${prefix}-${new Date().toISOString().slice(0, 10)}.csv"`,
     );
     res.status(200).send(csv);
   } catch (error) {

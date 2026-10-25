@@ -3,6 +3,8 @@ const { resolveModelLabel } = require('@librechat/api');
 const { runAsSystem, tenantStorage } = require('@librechat/data-schemas');
 const { getCalendarMonthRange, zonedDateTimeToUtc } = require('./usageQuota');
 const models = require('~/db/models');
+const { resolveMemberRole } = require('./accountRoles');
+const { visibleMembershipFilter } = require('./institutionMembers');
 
 class HttpError extends Error {
   constructor(statusCode, message) {
@@ -635,6 +637,90 @@ async function exportUsageCsv({ tenantId, start, end }) {
   };
 }
 
+/**
+ * A spreadsheet cell, quoted for CSV and defused for spreadsheet apps: a value
+ * opening with = + - @ (or a tab/CR) is read as a formula by Excel and Sheets,
+ * and member names are user-supplied.
+ */
+function sheetCell(value) {
+  if (value == null) {
+    return '';
+  }
+  const text = String(value);
+  return csvCell(/^[=+\-@\t\r]/.test(text) ? `'${text}` : text);
+}
+
+function formatLocalDateTime(value, timeZone) {
+  if (!value) {
+    return '';
+  }
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+      .formatToParts(new Date(value))
+      .map((part) => [part.type, part.value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
+const MEMBER_USAGE_HEADER = ['User ID', 'Name', 'Role', 'Total tokens', 'Account created at'];
+
+/**
+ * The institution admin's usage export: one row per member who can sign in
+ * (active or suspended, as the members list shows them), with their total
+ * tokens in the range — zero for members who used nothing. Busiest first.
+ * Account creation is shown in the institution's own timezone.
+ */
+async function exportMemberUsageCsv({ tenantId, start, end }) {
+  const range = await resolveRange(tenantId, { start, end });
+  const Transaction = getTransactionModel();
+
+  const [users, totals] = await tenantStorage.run({ tenantId }, () =>
+    Promise.all([
+      models.User.find({ tenantId, ...visibleMembershipFilter() })
+        .select('_id name email role tenantId accountScope createdAt')
+        .lean()
+        .exec(),
+      Transaction.aggregate([
+        { $match: getBaseMatch(range) },
+        {
+          $group: {
+            _id: '$user',
+            totalTokens: { $sum: { $abs: { $ifNull: ['$rawAmount', 0] } } },
+          },
+        },
+      ]),
+    ]),
+  );
+
+  const tokensByUser = new Map(totals.map((row) => [String(row._id), row.totalTokens]));
+  const rows = users
+    .map((user) => ({
+      userId: String(user._id),
+      name: user.name || user.email || '',
+      role: resolveMemberRole(user) === 'INSTITUTION_ADMIN' ? 'Institution admin' : 'Member',
+      totalTokens: tokensByUser.get(String(user._id)) ?? 0,
+      createdAt: formatLocalDateTime(user.createdAt, range.timezone),
+    }))
+    .sort((a, b) => b.totalTokens - a.totalTokens || a.name.localeCompare(b.name));
+
+  const lines = [
+    MEMBER_USAGE_HEADER.map(sheetCell).join(','),
+    ...rows.map((row) =>
+      [row.userId, row.name, row.role, row.totalTokens, row.createdAt].map(sheetCell).join(','),
+    ),
+  ];
+
+  return { range, csv: `${lines.join('\n')}\n` };
+}
+
 async function getMemberUsageSummary({ tenantId, userId, start, end, labels }) {
   const range = await resolveRange(tenantId, { start, end });
   const Transaction = getTransactionModel();
@@ -740,6 +826,7 @@ async function getMemberUsageSummary({ tenantId, userId, start, end, labels }) {
 
 module.exports = {
   HttpError,
+  exportMemberUsageCsv,
   exportUsageCsv,
   getMemberUsageSummary,
   getUsageSummary,

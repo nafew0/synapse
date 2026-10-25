@@ -8,7 +8,12 @@ class mockHttpError extends Error {
 const mockGetUsageSummary = jest.fn();
 const mockListUsageByMember = jest.fn();
 const mockExportUsageCsv = jest.fn();
-const mockLabels = { index: { labelBySpecName: new Map(), labelByModelId: new Map(), modelIds: [] }, restrictToLabeled: true };
+const mockExportMemberUsageCsv = jest.fn();
+const mockEnsurePlatformSuperadmin = jest.fn().mockResolvedValue({ isPlatformSuperadmin: false });
+const mockLabels = {
+  index: { labelBySpecName: new Map(), labelByModelId: new Map(), modelIds: [] },
+  restrictToLabeled: true,
+};
 const mockResolveUsageLabels = jest.fn().mockResolvedValue(mockLabels);
 
 jest.mock('~/server/middleware', () => ({
@@ -19,6 +24,10 @@ jest.mock('~/server/middleware/roles/capabilities', () => ({
   requireCapability: () => (_req, _res, next) => next(),
 }));
 
+jest.mock('~/server/services/platformAdmin', () => ({
+  ensurePlatformSuperadminForUser: (...args) => mockEnsurePlatformSuperadmin(...args),
+}));
+
 jest.mock('~/server/services/usageLabels', () => ({
   resolveUsageLabels: (...args) => mockResolveUsageLabels(...args),
 }));
@@ -26,6 +35,7 @@ jest.mock('~/server/services/usageLabels', () => ({
 jest.mock('~/server/services/institutionUsage', () => ({
   HttpError: mockHttpError,
   exportUsageCsv: (...args) => mockExportUsageCsv(...args),
+  exportMemberUsageCsv: (...args) => mockExportMemberUsageCsv(...args),
   getUsageSummary: (...args) => mockGetUsageSummary(...args),
   getUsageTimeseries: jest.fn(),
   listUsageByMember: (...args) => mockListUsageByMember(...args),
@@ -168,17 +178,38 @@ describe('admin usage route', () => {
     expect(res.body.total).toBe(1);
   });
 
-  it('streams CSV exports', async () => {
+  it('gives an institution admin the per-member export', async () => {
+    mockExportMemberUsageCsv.mockResolvedValue({
+      csv: 'User ID,Name,Role,Total tokens,Account created at\nu1,Ada,Member,100,2026-02-12 14:30\n',
+    });
+
+    const res = await invokeRoute({ path: '/export.csv', method: 'get' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['Content-Type']).toMatch(/text\/csv/);
+    expect(res.headers['Content-Disposition']).toMatch(/filename="member-usage-/);
+    expect(res.body).toContain('User ID,Name,Role,Total tokens,Account created at');
+    expect(mockExportMemberUsageCsv).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-a' }),
+    );
+    expect(mockExportUsageCsv).not.toHaveBeenCalled();
+  });
+
+  it('keeps the full transaction ledger for a platform superadmin', async () => {
+    mockEnsurePlatformSuperadmin.mockResolvedValueOnce({ isPlatformSuperadmin: true });
     mockExportUsageCsv.mockResolvedValue({ csv: 'createdAt,totalTokens\n2026-07-01,100\n' });
 
     const res = await invokeRoute({
       path: '/export.csv',
       method: 'get',
+      user: { id: 'root', email: 'root@example.com' },
+      query: { tenantId: 'tenant-a' },
     });
 
     expect(res.statusCode).toBe(200);
-    expect(res.headers['Content-Type']).toMatch(/text\/csv/);
+    expect(res.headers['Content-Disposition']).toMatch(/filename="usage-/);
     expect(res.body).toContain('createdAt,totalTokens');
+    expect(mockExportMemberUsageCsv).not.toHaveBeenCalled();
   });
 
   it('rejects callers without tenant context', async () => {
