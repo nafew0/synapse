@@ -90,7 +90,26 @@ describe('inviteUser email template', () => {
       expect(html).not.toContain('FOR QUERIES');
       expect(html).not.toContain('info@bdren.ai');
       expect(html).not.toContain('SENT TO');
+      expect(html).not.toContain('Takes under a minute');
+      expect(html).not.toContain('The link works once');
+      expect(html).not.toContain('is operated by');
     });
+  });
+
+  it('states the invitation in plain text, not as a heading', () => {
+    const html = render(fullPayload);
+
+    expect(html).not.toMatch(/<h1/i);
+    expect(text(fullPayload)).toMatch(/<p [^>]*>You are invited to join Synapse\.<\/p>/);
+  });
+
+  it('highlights the fallback link in its own panel', () => {
+    const html = text(fullPayload);
+
+    expect(html).toMatch(
+      /BUTTON NOT WORKING\?<\/div> <div[^>]*><a [^>]*>https:\/\/synapse\.example\.net\/register\?token=abc123<\/a>/,
+    );
+    expect(html).toMatch(/class="strong"[^>]*>BUTTON NOT WORKING\?/);
   });
 
   it('asks the reader to accept the invitation', () => {
@@ -136,20 +155,17 @@ describe('inviteUser email template', () => {
     expect(html).not.toContain('BdREN Synapse');
   });
 
-  it('links the team name and the footer to the organisation website', () => {
+  it('links the team name to the organisation website', () => {
     const html = text(fullPayload);
 
     expect(html).toContain('BdREN Innovation Team</a>');
-    expect(html).toContain('Synapse is operated by BdREN');
     expect(html).toContain('href="https://bdren.net.bd"');
-    expect(html).toContain('>bdren.net.bd</a>');
   });
 
   it('still reads as a sentence when no organisation website is configured', () => {
     const html = text({ ...fullPayload, orgUrl: '', orgLabel: '' });
 
     expect(html).toContain('built by the BdREN Innovation Team for universities');
-    expect(html).toContain('operated by BdREN, Bangladesh Research and Education Network');
     expect(html).not.toContain('bdren.net.bd');
     expect(html).not.toMatch(/href="\s*"/);
   });
