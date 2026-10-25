@@ -121,10 +121,11 @@ describe('inviteUser email template', () => {
     expect(text({ ...fullPayload, year: 2031 })).toContain('Copyright © 2031 BdREN.');
   });
 
-  it('spells BdREN in its own case in the header credit', () => {
+  it('keeps the developer credit out of the header', () => {
     const html = text(fullPayload);
 
-    expect(html).toContain('DEVELOPED BY THE<br>BdREN INNOVATION TEAM');
+    expect(html).not.toContain('DEVELOPED BY THE');
+    expect(html).not.toContain('Developed by the');
     expect(html).not.toContain('BDREN');
   });
 
