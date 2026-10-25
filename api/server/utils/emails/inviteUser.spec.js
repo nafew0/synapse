@@ -109,6 +109,13 @@ describe('inviteUser email template', () => {
     expect(html).not.toContain('>Set your password</a>');
   });
 
+  it('centres the accept button and the copyright line', () => {
+    const html = text(fullPayload);
+
+    expect(html).toMatch(/<table [^>]*class="btn-table" align="center"/);
+    expect(html).toMatch(/text-align: center;">Copyright/);
+  });
+
   it('closes with the copyright line for the year it is sent in', () => {
     expect(text(fullPayload)).toContain('Copyright © 2026 BdREN. All rights reserved.');
     expect(text({ ...fullPayload, year: 2031 })).toContain('Copyright © 2031 BdREN.');
