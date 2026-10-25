@@ -46,36 +46,23 @@ describe('inviteUser email template', () => {
     const html = text(fullPayload);
 
     expect(html).not.toContain('Invitation \u00b7');
-    expect(html).toContain('ACCOUNT');
-    expect(html).toContain('ORGANIZATION');
-    expect(html).toContain('INVITATION EXPIRES');
     expect(html).toContain('You are invited to join Synapse.');
-    expect(html).toContain('University of Dhaka');
-    expect(html).toContain('nafisa.rahman@du.ac.bd');
-    expect(html).toContain('25 September 2026');
+    expect(html).toContain('Invitation expires 25 September 2026.');
     expect(html).toContain(fullPayload.inviteLink);
   });
 
-  it('keeps the headline generic and names the organization in the details', () => {
+  it('shows the expiry as plain text and no details table', () => {
     const html = text(fullPayload);
 
+    expect(html).not.toContain('ACCOUNT');
+    expect(html).not.toContain('ORGANIZATION');
+    expect(html).not.toContain('INVITATION EXPIRES');
     expect(html).not.toContain('University of Dhaka has invited you');
-    expect(html).toContain('ORGANIZATION</div> <div');
-    expect(html).toContain('>University of Dhaka</div>');
+    expect(html).toMatch(/<p class="body"[^>]*>Invitation expires 25 September 2026\.<\/p>/);
   });
 
-  it('shows only the detail cells it has a value for', () => {
-    const emailOnly = text({ ...basePayload, email: fullPayload.email });
-    const orgOnly = text({ ...basePayload, institutionName: fullPayload.institutionName });
-    const expiryOnly = text({ ...basePayload, expiresOn: fullPayload.expiresOn });
-
-    expect(emailOnly).toContain('ACCOUNT');
-    expect(emailOnly).not.toContain('INVITATION EXPIRES');
-    expect(emailOnly).not.toContain('ORGANIZATION');
-    expect(orgOnly).toContain('ORGANIZATION');
-    expect(orgOnly).not.toContain('ACCOUNT');
-    expect(expiryOnly).toContain('INVITATION EXPIRES');
-    expect(expiryOnly).not.toContain('ACCOUNT');
+  it('leaves the expiry line out when there is no deadline', () => {
+    expect(text(basePayload)).not.toContain('Invitation expires');
   });
 
   it('stops at the invitation: no feature list, sign-off, ignore note or contact line', () => {
@@ -105,14 +92,14 @@ describe('inviteUser email template', () => {
     expect(text(fullPayload)).toMatch(/<p [^>]*>You are invited to join Synapse\.<\/p>/);
   });
 
-  it('highlights the fallback link in its own panel', () => {
+  it('shows the fallback link bold and unboxed', () => {
     const html = text(fullPayload);
 
     expect(html).toMatch(
-      /BUTTON NOT WORKING\?[\s\S]{0,200}?<a [^>]*>https:\/\/synapse\.example\.net\/register\?token=abc123<\/a>/,
+      /BUTTON NOT WORKING\?[\s\S]{0,200}?<a [^>]*font-weight: bold[^>]*>https:\/\/synapse\.example\.net\/register\?token=abc123<\/a>/,
     );
-    expect(html).toContain('class="callout-bar"');
-    expect(html).toContain('border: 2px solid #0E4B4A');
+    expect(html).not.toContain('callout');
+    expect(html).not.toContain('border: 2px');
   });
 
   it('asks the reader to accept the invitation', () => {
@@ -177,9 +164,7 @@ describe('inviteUser email template', () => {
     const html = text(basePayload);
 
     expect(html).toContain('You are invited to join Synapse.');
-    expect(html).not.toContain('ORGANIZATION');
-    expect(html).not.toContain('INVITATION EXPIRES');
-    expect(html).not.toContain('ACCOUNT');
+    expect(html).not.toContain('Invitation expires');
     expect(html).not.toContain('undefined');
   });
 
