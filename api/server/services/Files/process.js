@@ -38,6 +38,7 @@ const {
   sanitizeFilename,
   processAudioFile,
   sendUploadSuccess,
+  getStorageSource,
   getStorageMetadata,
   shouldEscalateToOcr,
   processTextWithTokenLimit,
@@ -259,7 +260,7 @@ const processDeleteRequest = async ({ req, files }) => {
   const agentFiles = [];
 
   for (const file of files) {
-    const source = file.source ?? FileSources.local;
+    const source = getStorageSource(file);
     if (req.body.agent_id && req.body.tool_resource) {
       agentFiles.push({
         tool_resource: req.body.tool_resource,
@@ -1077,6 +1078,33 @@ const registerSandboxResource = async ({
 };
 
 /**
+ * Copies the uploaded original out of the multer temp directory into the configured file
+ * storage. The temp copy is deleted once the upload request ends, so anything that must read the
+ * original later (re-uploading an expired sandbox copy, downloading it) needs this one.
+ *
+ * @returns {Promise<{ source: string, storageResult: object, storageMetadata: object }>}
+ */
+const storeOriginal = async ({ req, file, file_id, entity_id }) => {
+  const source = getFileStrategy(req.config, { isImage: false });
+  const { handleFileUpload } = getStrategyFunctions(source);
+  const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
+  const storageResult = await sanitizedUploadFn({
+    req,
+    file,
+    file_id,
+    basePath: 'uploads',
+    entity_id,
+  });
+  const storageMetadata = getStorageMetadata({
+    filepath: storageResult.filepath,
+    source,
+    storageKey: storageResult.storageKey,
+    storageRegion: storageResult.storageRegion,
+  });
+  return { source, storageResult, storageMetadata };
+};
+
+/**
  * Stores the original bytes and creates the record for a prepared file that keeps its own format:
  * a searchable document or a spreadsheet in the sandbox. One record can hold several roles at
  * once — a sandbox reference for editing, the vector-store flag for search, and a short preview
@@ -1098,24 +1126,12 @@ const persistPreparedFile = async ({
   sandboxRef,
   preparation,
 }) => {
-  const appConfig = req.config;
   const { file_id, temp_file_id = null, conversationId } = metadata;
-  const source = getFileStrategy(appConfig, { isImage: false });
-  const { handleFileUpload } = getStrategyFunctions(source);
-  const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
-  const storageResult = await sanitizedUploadFn({
+  const { source, storageResult, storageMetadata } = await storeOriginal({
     req,
     file,
     file_id,
-    basePath: 'uploads',
     entity_id,
-  });
-
-  const storageMetadata = getStorageMetadata({
-    filepath: storageResult.filepath,
-    source,
-    storageKey: storageResult.storageKey,
-    storageRegion: storageResult.storageRegion,
   });
 
   /* The upload's own name, never the one the vector store reports back. Search embeds the
@@ -1417,6 +1433,10 @@ const prepareUploadAutomatically = async ({ req, res, metadata, sseStream }) => 
   };
 
   if (plan.delivery === DeliveryMethod.full_text) {
+    /** The sandbox copy expires; re-creating it needs the original, not the deleted temp file. */
+    const original = sandboxRef
+      ? await storeOriginal({ req, file, file_id: metadata.file_id, entity_id })
+      : undefined;
     const result = await persistExtractedText({
       req,
       file,
@@ -1426,10 +1446,12 @@ const prepareUploadAutomatically = async ({ req, res, metadata, sseStream }) => 
       agent_id,
       text: extracted.text,
       bytes: extracted.bytes,
-      filepath: extracted.filepath,
+      filepath: original?.storageResult.filepath ?? extracted.filepath,
+      storageMetadata: original?.storageMetadata,
       type: extracted.type,
       fileMetadata: {
         ...sandboxRef,
+        storageSource: original?.source,
         preparation: { ...preparation, contextText: true, contextTokens: textTokens },
       },
     });

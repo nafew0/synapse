@@ -16,6 +16,7 @@ const {
   codeServerHttpsAgent,
   extractCodeArtifactText,
   getExtractedTextFormat,
+  getStorageSource,
   getStorageMetadata,
   getCodeExecutionBaseUrl,
   dedupeInjectedFiles,
@@ -1055,7 +1056,7 @@ const primeFiles = async (options) => {
 
     const reuploadFile = async () => {
       try {
-        const { getDownloadStream } = getStrategyFunctions(file.source);
+        const { getDownloadStream } = getStrategyFunctions(getStorageSource(file));
         const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(
           FileSources.execute_code,
         );

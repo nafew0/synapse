@@ -208,6 +208,7 @@ export type TFile = {
     codeEnvRef?: CodeEnvRef;
     codeEnvRefs?: CodeEnvRefMap;
     preparation?: FilePreparationMetadata;
+    storageSource?: string;
   };
   createdAt?: string | Date;
   updatedAt?: string | Date;

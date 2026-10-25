@@ -77,6 +77,7 @@ jest.mock('@librechat/api', () => {
       res.status(200).json({ message, ...result });
     }),
     getStorageMetadata: jest.fn(() => ({})),
+    getStorageSource: (...args) => real().getStorageSource(...args),
     getRetentionExpiry,
     getAgentFileRetentionExpiry: jest.fn(({ req, messageAttachment, toolResource }) => {
       const interfaceConfig = req?.config?.interfaceConfig;
@@ -1113,6 +1114,40 @@ describe('processAgentFileUpload', () => {
       );
     });
 
+    test('stores the original of a full-text document it copies to the sandbox', async () => {
+      /**
+       * The record used to keep multer's temp path, deleted when the upload request ends. Once
+       * the sandbox copy expired, re-uploading it read that path and failed with ENOENT, and
+       * every later turn in the conversation stopped on `resource_recovery_required`.
+       */
+      const storage = {
+        handleFileUpload: jest.fn().mockResolvedValue({
+          bytes: 42,
+          filepath: '/uploads/user-123/file-uuid-123__report.docx',
+        }),
+      };
+      routeStrategies({ storage });
+      const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null, path: uploadPath });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: autoMetadata() });
+
+      expect(storage.handleFileUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ file_id: 'file-uuid-123', basePath: 'uploads' }),
+      );
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: FileSources.text,
+          filepath: '/uploads/user-123/file-uuid-123__report.docx',
+          metadata: expect.objectContaining({
+            storageSource: FileSources.local,
+            codeEnvRef: expect.objectContaining({ file_id: 'code-file-1' }),
+            preparation: expect.objectContaining({ delivery: 'full_text' }),
+          }),
+        }),
+        true,
+      );
+    });
+
     test('searches a document whose text exceeds the per-file ceiling', async () => {
       routeStrategies({
         parser: {
@@ -1832,6 +1867,44 @@ describe('processFileURL', () => {
 describe('processDeleteRequest', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  const deleteReq = { body: {}, config: {}, user: { id: 'user-123', tenantId: 'tenant-a' } };
+  const textRecord = {
+    file_id: 'text-file',
+    filepath: '/uploads/user-123/text-file__deck.pptx',
+    source: FileSources.text,
+    metadata: {
+      codeEnvRef: { kind: 'user', id: 'user-123', storage_session_id: 's', file_id: 'f' },
+    },
+  };
+
+  it('deletes the stored original and sandbox copy of a full-text document', async () => {
+    const deleteFile = jest.fn().mockResolvedValue(undefined);
+    getStrategyFunctions.mockReturnValue({ deleteFile });
+    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+    const file = {
+      ...textRecord,
+      metadata: { ...textRecord.metadata, storageSource: FileSources.local },
+    };
+
+    const result = await processDeleteRequest({ req: deleteReq, files: [file] });
+
+    expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.local);
+    expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.execute_code);
+    expect(deleteFile).toHaveBeenCalledWith(deleteReq, file, undefined);
+    expect(result).toEqual({ deletedFileIds: ['text-file'], failedFileIds: [] });
+  });
+
+  it('removes only the record of a text file that kept no original', async () => {
+    const deleteFile = jest.fn();
+    getStrategyFunctions.mockReturnValue({ deleteFile });
+    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+
+    const result = await processDeleteRequest({ req: deleteReq, files: [textRecord] });
+
+    expect(deleteFile).not.toHaveBeenCalled();
+    expect(result).toEqual({ deletedFileIds: ['text-file'], failedFileIds: [] });
   });
 
   it('removes metadata when backing storage is already missing', async () => {
