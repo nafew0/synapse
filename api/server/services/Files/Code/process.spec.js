@@ -95,6 +95,8 @@ jest.mock('@librechat/api', () => {
      * if a case needs to assert the 'html' value. */
     getExtractedTextFormat: (...args) => mockGetExtractedTextFormat(...args),
     getStorageMetadata: jest.fn(() => ({})),
+    /** Mirrors `packages/api/src/files/storage.ts`, covered by its own `storage.spec.ts`. */
+    getStorageSource: (file) => file.metadata?.storageSource ?? file.source ?? 'local',
     /* Identity helpers mirror codeapi's validator. The real impl
      * lives in `packages/api/src/files/code/identity.ts` with its
      * own dedicated `identity.spec.ts`; here we just stub the
@@ -2258,6 +2260,46 @@ describe('Code Process', () => {
       expect(uploadArgs.kind).toBe('skill');
       expect(uploadArgs.id).toBe('skill-99');
       expect(uploadArgs.version).toBe(4);
+    });
+
+    /**
+     * Regression: a document read in full is a `text` record, and `text` maps to the local
+     * strategy. Its original lives wherever uploads are stored, so the reupload has to read it
+     * from there, not from the multer temp path the record used to keep.
+     */
+    it('reuploads a full-text document from the storage holding its original', async () => {
+      const dbFile = {
+        file_id: 'deck-file-id',
+        filename: 'deck.pptx',
+        filepath: 'https://bucket.s3.amazonaws.com/uploads/user-123/deck-file-id__deck.pptx',
+        source: 'text',
+        metadata: {
+          storageSource: 's3',
+          codeEnvRef: {
+            kind: 'user',
+            id: 'user-123',
+            storage_session_id: 'OLD_SESSION',
+            file_id: 'OLD_ID',
+          },
+        },
+      };
+      getFiles.mockResolvedValue([dbFile]);
+
+      const { handleFileUpload, getDownloadStream } = setupReuploadMocks({
+        storage_session_id: 'NEW_SESSION',
+        file_id: 'NEW_ID',
+      });
+
+      await primeFiles({
+        req: { user: { id: 'user-123', role: 'USER' } },
+        tool_resources: { execute_code: { file_ids: ['deck-file-id'], files: [] } },
+        agentId: 'agent-id',
+      });
+
+      expect(getStrategyFunctions).toHaveBeenCalledWith('s3');
+      expect(getStrategyFunctions).not.toHaveBeenCalledWith('text');
+      expect(getDownloadStream).toHaveBeenCalledWith(expect.anything(), dbFile.filepath);
+      expect(handleFileUpload).toHaveBeenCalledTimes(1);
     });
 
     it('reuploads instead of reusing a ref from the other execution profile', async () => {
