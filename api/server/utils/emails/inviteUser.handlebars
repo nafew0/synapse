@@ -46,6 +46,9 @@
     .btn-a { color: #0B1413 !important; }
     .tint { background-color: #192928 !important; border-color: #2C4543 !important; }
     .col-next { border-color: #2C4543 !important; }
+    .callout { border-color: #8FD6CE !important; }
+    .callout-bar { background-color: #8FD6CE !important; }
+    .callout-label { color: #0B1413 !important; }
   }
 </style>
 </head>
@@ -97,7 +100,7 @@
         <!-- Letter -->
         <tr>
           <td class="pad" style="padding: 32px 44px 0 44px; font-family: Helvetica, Arial, sans-serif;">
-            <p class="lede body" style="margin: 0; font-size: 16px; line-height: 27px; color: #45504C;">Synapse is an AI workspace built by the {{#if orgUrl}}<a class="link" href="{{orgUrl}}" target="_blank" style="color: #0E4B4A; text-decoration: underline;">BdREN Innovation Team</a>{{else}}BdREN Innovation Team{{/if}} for universities across Bangladesh. Set a password and the account below is yours, nothing to install, nothing to pay for.</p>
+            <p class="lede body" style="margin: 0; font-size: 16px; line-height: 27px; color: #45504C;">Synapse is an AI workspace built by the {{#if orgUrl}}<a class="link" href="{{orgUrl}}" target="_blank" style="color: #0E4B4A; text-decoration: underline;">BdREN Innovation Team</a>{{else}}BdREN Innovation Team{{/if}} for universities across Bangladesh.</p>
           </td>
         </tr>
 
@@ -120,7 +123,7 @@
 {{/if}}
 {{#if expiresOn}}
                 <td class="col col-next tint" valign="top" style="padding: 16px 18px; background-color: #F4EEE3; border: 1px solid #E1D6C4;{{#if email}} border-left: 0;{{else}}{{#if institutionName}} border-left: 0;{{/if}}{{/if}}">
-                  <div class="muted" style="font-size: 11px; line-height: 16px; letter-spacing: 1.3px; color: #6A6458;">OPEN BEFORE</div>
+                  <div class="muted" style="font-size: 11px; line-height: 16px; letter-spacing: 1.3px; color: #6A6458;">INVITATION EXPIRES</div>
                   <div class="strong" style="padding-top: 6px; font-size: 15px; line-height: 21px; font-weight: bold; color: #1B2A28;">{{expiresOn}}</div>
                 </td>
 {{/if}}
@@ -144,14 +147,18 @@
           </td>
         </tr>
 
-        <!-- Fallback link, highlighted -->
+        <!-- Fallback link, highlighted so it is easy to find when the button fails -->
         <tr>
           <td class="pad" style="padding: 36px 44px 0 44px; font-family: Helvetica, Arial, sans-serif;">
-            <table role="presentation" class="tint" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #F4EEE3; border: 1px solid #E1D6C4;">
+            <table role="presentation" class="tint callout" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #F4EEE3; border: 2px solid #0E4B4A;">
+              <tr>
+                <td class="callout-bar" bgcolor="#0E4B4A" style="padding: 10px 20px; background-color: #0E4B4A;">
+                  <div class="callout-label" style="font-size: 12px; line-height: 16px; letter-spacing: 1.6px; font-weight: bold; color: #FCF9F4;">BUTTON NOT WORKING?</div>
+                </td>
+              </tr>
               <tr>
                 <td style="padding: 18px 20px;">
-                  <div class="strong" style="font-size: 11px; line-height: 16px; letter-spacing: 1.4px; font-weight: bold; color: #1B2A28;">BUTTON NOT WORKING?</div>
-                  <div style="padding-top: 6px; font-size: 14px; line-height: 21px;"><a class="link" href="{{inviteLink}}" target="_blank" style="color: #0E4B4A; text-decoration: underline; word-break: break-all;">{{inviteLink}}</a></div>
+                  <a class="link" href="{{inviteLink}}" target="_blank" style="font-size: 15px; line-height: 22px; font-weight: bold; color: #0E4B4A; text-decoration: underline; word-break: break-all;">{{inviteLink}}</a>
                 </td>
               </tr>
             </table>

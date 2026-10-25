@@ -48,7 +48,7 @@ describe('inviteUser email template', () => {
     expect(html).not.toContain('Invitation \u00b7');
     expect(html).toContain('ACCOUNT');
     expect(html).toContain('ORGANIZATION');
-    expect(html).toContain('OPEN BEFORE');
+    expect(html).toContain('INVITATION EXPIRES');
     expect(html).toContain('You are invited to join Synapse.');
     expect(html).toContain('University of Dhaka');
     expect(html).toContain('nafisa.rahman@du.ac.bd');
@@ -70,11 +70,11 @@ describe('inviteUser email template', () => {
     const expiryOnly = text({ ...basePayload, expiresOn: fullPayload.expiresOn });
 
     expect(emailOnly).toContain('ACCOUNT');
-    expect(emailOnly).not.toContain('OPEN BEFORE');
+    expect(emailOnly).not.toContain('INVITATION EXPIRES');
     expect(emailOnly).not.toContain('ORGANIZATION');
     expect(orgOnly).toContain('ORGANIZATION');
     expect(orgOnly).not.toContain('ACCOUNT');
-    expect(expiryOnly).toContain('OPEN BEFORE');
+    expect(expiryOnly).toContain('INVITATION EXPIRES');
     expect(expiryOnly).not.toContain('ACCOUNT');
   });
 
@@ -90,6 +90,8 @@ describe('inviteUser email template', () => {
       expect(html).not.toContain('FOR QUERIES');
       expect(html).not.toContain('info@bdren.ai');
       expect(html).not.toContain('SENT TO');
+      expect(html).not.toContain('Set a password and the account below');
+      expect(html).not.toContain('nothing to pay for');
       expect(html).not.toContain('Takes under a minute');
       expect(html).not.toContain('The link works once');
       expect(html).not.toContain('is operated by');
@@ -107,9 +109,10 @@ describe('inviteUser email template', () => {
     const html = text(fullPayload);
 
     expect(html).toMatch(
-      /BUTTON NOT WORKING\?<\/div> <div[^>]*><a [^>]*>https:\/\/synapse\.example\.net\/register\?token=abc123<\/a>/,
+      /BUTTON NOT WORKING\?[\s\S]{0,200}?<a [^>]*>https:\/\/synapse\.example\.net\/register\?token=abc123<\/a>/,
     );
-    expect(html).toMatch(/class="strong"[^>]*>BUTTON NOT WORKING\?/);
+    expect(html).toContain('class="callout-bar"');
+    expect(html).toContain('border: 2px solid #0E4B4A');
   });
 
   it('asks the reader to accept the invitation', () => {
@@ -175,7 +178,7 @@ describe('inviteUser email template', () => {
 
     expect(html).toContain('You are invited to join Synapse.');
     expect(html).not.toContain('ORGANIZATION');
-    expect(html).not.toContain('OPEN BEFORE');
+    expect(html).not.toContain('INVITATION EXPIRES');
     expect(html).not.toContain('ACCOUNT');
     expect(html).not.toContain('undefined');
   });
