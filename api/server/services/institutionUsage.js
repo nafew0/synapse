@@ -670,7 +670,26 @@ function formatLocalDateTime(value, timeZone) {
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
-const MEMBER_USAGE_HEADER = ['User ID', 'Name', 'Role', 'Total tokens', 'Account created at'];
+const MEMBER_USAGE_HEADER = ['User ID', 'Account created at', 'Name', 'Role', 'Total Used Tokens'];
+
+function trimDecimals(value, digits) {
+  return Number(value.toFixed(digits)).toString();
+}
+
+/**
+ * Token totals as an admin reads them: 1M, 1.25M from a million up, 100K,
+ * 412.4K below that, and the plain count under a thousand.
+ */
+function formatTokenCount(tokens) {
+  const thousands = Number((tokens / 1_000).toFixed(1));
+  if (thousands >= 1_000) {
+    return `${trimDecimals(tokens / 1_000_000, 2)}M`;
+  }
+  if (tokens >= 1_000) {
+    return `${trimDecimals(thousands, 1)}K`;
+  }
+  return String(Math.round(tokens));
+}
 
 /**
  * The institution admin's usage export: one row per member who can sign in
@@ -714,7 +733,9 @@ async function exportMemberUsageCsv({ tenantId, start, end }) {
   const lines = [
     MEMBER_USAGE_HEADER.map(sheetCell).join(','),
     ...rows.map((row) =>
-      [row.userId, row.name, row.role, row.totalTokens, row.createdAt].map(sheetCell).join(','),
+      [row.userId, row.createdAt, row.name, row.role, formatTokenCount(row.totalTokens)]
+        .map(sheetCell)
+        .join(','),
     ),
   ];
 

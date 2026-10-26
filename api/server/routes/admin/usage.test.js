@@ -180,7 +180,7 @@ describe('admin usage route', () => {
 
   it('gives an institution admin the per-member export', async () => {
     mockExportMemberUsageCsv.mockResolvedValue({
-      csv: 'User ID,Name,Role,Total tokens,Account created at\nu1,Ada,Member,100,2026-02-12 14:30\n',
+      csv: 'User ID,Account created at,Name,Role,Total Used Tokens\nu1,2026-02-12 14:30,Ada,Member,100\n',
     });
 
     const res = await invokeRoute({ path: '/export.csv', method: 'get' });
@@ -188,7 +188,7 @@ describe('admin usage route', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['Content-Type']).toMatch(/text\/csv/);
     expect(res.headers['Content-Disposition']).toMatch(/filename="member-usage-/);
-    expect(res.body).toContain('User ID,Name,Role,Total tokens,Account created at');
+    expect(res.body).toContain('User ID,Account created at,Name,Role,Total Used Tokens');
     expect(mockExportMemberUsageCsv).toHaveBeenCalledWith(
       expect.objectContaining({ tenantId: 'tenant-a' }),
     );

@@ -17,6 +17,9 @@ const IDLE = new mongoose.Types.ObjectId();
 const SUSPENDED = new mongoose.Types.ObjectId();
 const REMOVED = new mongoose.Types.ObjectId();
 const OUTSIDER = new mongoose.Types.ObjectId();
+const BIG = new mongoose.Types.ObjectId();
+const MID = new mongoose.Types.ObjectId();
+const EDGE = new mongoose.Types.ObjectId();
 
 function user(_id, fields) {
   return {
@@ -81,6 +84,9 @@ describe('exportMemberUsageCsv', () => {
       user(ADMIN, { name: 'Ada Admin', email: 'ada@a.edu', role: 'INSTITUTION_ADMIN' }),
       user(HEAVY, { name: '=HYPERLINK("http://x","Bob")', email: 'bob@a.edu' }),
       user(IDLE, { name: 'Cara Idle', email: 'cara@a.edu' }),
+      user(BIG, { name: 'Faria Big', email: 'faria@a.edu' }),
+      user(MID, { name: 'Gias Mid', email: 'gias@a.edu' }),
+      user(EDGE, { name: 'Hasan Edge', email: 'hasan@a.edu' }),
       user(SUSPENDED, {
         name: 'Dan Suspended',
         email: 'dan@a.edu',
@@ -97,6 +103,9 @@ describe('exportMemberUsageCsv', () => {
         usage(HEAVY, 600),
         usage(ADMIN, 250),
         usage(SUSPENDED, 50),
+        usage(BIG, 1_250_000),
+        usage(MID, 412_380),
+        usage(EDGE, 999_990),
         usage(HEAVY, 9999, { at: '2026-08-20T10:00:00.000Z' }),
         usage(OUTSIDER, 777, { tenantId: 'tenant-b' }),
       ]);
@@ -111,8 +120,11 @@ describe('exportMemberUsageCsv', () => {
     const { csv } = await exportMemberUsageCsv({ tenantId: TENANT });
     const [header, ...rows] = parse(csv);
 
-    expect(header).toEqual(['User ID', 'Name', 'Role', 'Total tokens', 'Account created at']);
+    expect(header).toEqual(['User ID', 'Account created at', 'Name', 'Role', 'Total Used Tokens']);
     expect(rows.map((row) => row[0])).toEqual([
+      String(BIG),
+      String(EDGE),
+      String(MID),
       String(HEAVY),
       String(ADMIN),
       String(SUSPENDED),
@@ -120,15 +132,18 @@ describe('exportMemberUsageCsv', () => {
     ]);
   });
 
-  it('totals prompt and completion tokens in the range, with zero for idle members', async () => {
+  it('totals tokens in the range as M above a million, K above a thousand', async () => {
     const { csv } = await exportMemberUsageCsv({ tenantId: TENANT });
     const totals = Object.fromEntries(
       parse(csv)
         .slice(1)
-        .map((row) => [row[0], row[3]]),
+        .map((row) => [row[0], row[4]]),
     );
 
-    expect(totals[String(HEAVY)]).toBe('1000');
+    expect(totals[String(BIG)]).toBe('1.25M');
+    expect(totals[String(EDGE)]).toBe('1M');
+    expect(totals[String(MID)]).toBe('412.4K');
+    expect(totals[String(HEAVY)]).toBe('1K');
     expect(totals[String(ADMIN)]).toBe('250');
     expect(totals[String(IDLE)]).toBe('0');
   });
@@ -137,8 +152,9 @@ describe('exportMemberUsageCsv', () => {
     const { csv } = await exportMemberUsageCsv({ tenantId: TENANT });
     const admin = parse(csv).find((row) => row[0] === String(ADMIN));
 
-    expect(admin[2]).toBe('Institution admin');
-    expect(admin[4]).toBe('2026-02-12 14:30');
+    expect(admin[1]).toBe('2026-02-12 14:30');
+    expect(admin[2]).toBe('Ada Admin');
+    expect(admin[3]).toBe('Institution admin');
   });
 
   it('leaves out removed members and other tenants', async () => {
