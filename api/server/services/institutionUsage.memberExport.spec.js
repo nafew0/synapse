@@ -20,6 +20,7 @@ const OUTSIDER = new mongoose.Types.ObjectId();
 const BIG = new mongoose.Types.ObjectId();
 const MID = new mongoose.Types.ObjectId();
 const EDGE = new mongoose.Types.ObjectId();
+const SMALL = new mongoose.Types.ObjectId();
 
 function user(_id, fields) {
   return {
@@ -87,6 +88,7 @@ describe('exportMemberUsageCsv', () => {
       user(BIG, { name: 'Faria Big', email: 'faria@a.edu' }),
       user(MID, { name: 'Gias Mid', email: 'gias@a.edu' }),
       user(EDGE, { name: 'Hasan Edge', email: 'hasan@a.edu' }),
+      user(SMALL, { name: 'Iqbal Small', email: 'iqbal@a.edu' }),
       user(SUSPENDED, {
         name: 'Dan Suspended',
         email: 'dan@a.edu',
@@ -105,7 +107,8 @@ describe('exportMemberUsageCsv', () => {
         usage(SUSPENDED, 50),
         usage(BIG, 1_250_000),
         usage(MID, 412_380),
-        usage(EDGE, 999_990),
+        usage(EDGE, 99_990),
+        usage(SMALL, 99_500),
         usage(HEAVY, 9999, { at: '2026-08-20T10:00:00.000Z' }),
         usage(OUTSIDER, 777, { tenantId: 'tenant-b' }),
       ]);
@@ -123,8 +126,9 @@ describe('exportMemberUsageCsv', () => {
     expect(header).toEqual(['User ID', 'Account created at', 'Name', 'Role', 'Total Used Tokens']);
     expect(rows.map((row) => row[0])).toEqual([
       String(BIG),
-      String(EDGE),
       String(MID),
+      String(EDGE),
+      String(SMALL),
       String(HEAVY),
       String(ADMIN),
       String(SUSPENDED),
@@ -132,7 +136,7 @@ describe('exportMemberUsageCsv', () => {
     ]);
   });
 
-  it('totals tokens in the range as M above a million, K above a thousand', async () => {
+  it('totals tokens in the range as M from 0.1M up, K from 1K up', async () => {
     const { csv } = await exportMemberUsageCsv({ tenantId: TENANT });
     const totals = Object.fromEntries(
       parse(csv)
@@ -141,8 +145,9 @@ describe('exportMemberUsageCsv', () => {
     );
 
     expect(totals[String(BIG)]).toBe('1.25M');
-    expect(totals[String(EDGE)]).toBe('1M');
-    expect(totals[String(MID)]).toBe('412.4K');
+    expect(totals[String(MID)]).toBe('0.41M');
+    expect(totals[String(EDGE)]).toBe('0.1M');
+    expect(totals[String(SMALL)]).toBe('99.5K');
     expect(totals[String(HEAVY)]).toBe('1K');
     expect(totals[String(ADMIN)]).toBe('250');
     expect(totals[String(IDLE)]).toBe('0');

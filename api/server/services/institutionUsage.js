@@ -677,12 +677,13 @@ function trimDecimals(value, digits) {
 }
 
 /**
- * Token totals as an admin reads them: 1M, 1.25M from a million up, 100K,
- * 412.4K below that, and the plain count under a thousand.
+ * Token totals as an admin reads them: millions from 0.1M up (0.1M, 0.41M,
+ * 1.25M), thousands from 1K up to that (1K, 99.5K), the plain count below.
+ * A value that rounds to 100K is shown as 0.1M rather than "100K".
  */
 function formatTokenCount(tokens) {
   const thousands = Number((tokens / 1_000).toFixed(1));
-  if (thousands >= 1_000) {
+  if (thousands >= 100) {
     return `${trimDecimals(tokens / 1_000_000, 2)}M`;
   }
   if (tokens >= 1_000) {
