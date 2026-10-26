@@ -627,10 +627,7 @@ function mapInviteMember(invite) {
       tenantId: invite.tenantId,
       accountScope,
     }),
-    status:
-      invite.status === InstitutionInviteStatuses.EXPIRED
-        ? InstitutionInviteStatuses.EXPIRED
-        : 'invited',
+    status: isInviteLapsed(invite) ? InstitutionInviteStatuses.EXPIRED : 'invited',
     inviteStatus: invite.status,
     inviteSource: invite.source,
     createdAt: formatDate(invite.createdAt),
@@ -659,17 +656,32 @@ function platformUserStatusFilter(status) {
   return {};
 }
 
-function platformInviteStatusFilter(status) {
+/**
+ * Whether an invitation can no longer be accepted. Decided by `expiresAt`, not the
+ * stored status alone: `EXPIRED` is only written when an invitee opens a dead link,
+ * so one that simply timed out unnoticed still reads as PENDING.
+ */
+function isInviteLapsed(invite, now = new Date()) {
+  if (invite.status === InstitutionInviteStatuses.EXPIRED) {
+    return true;
+  }
+  return (
+    invite.status === InstitutionInviteStatuses.PENDING &&
+    invite.expiresAt != null &&
+    new Date(invite.expiresAt).getTime() < now.getTime()
+  );
+}
+
+/** The invitation clause for a roster status filter, or `null` when no invitation can match. */
+function platformInviteStatusFilter(status, now = new Date()) {
   if (status === InstitutionInviteStatuses.EXPIRED) {
-    return InstitutionInviteStatuses.EXPIRED;
+    return buildInviteAudienceFilter(InviteAudiences.EXPIRED, now);
   }
   if (status === 'invited') {
-    return InstitutionInviteStatuses.PENDING;
+    return buildInviteAudienceFilter(InviteAudiences.PENDING, now);
   }
   if (!status) {
-    return {
-      $in: [InstitutionInviteStatuses.PENDING, InstitutionInviteStatuses.EXPIRED],
-    };
+    return buildInviteAudienceFilter(InviteAudiences.ALL, now);
   }
   return null;
 }
@@ -1507,9 +1519,11 @@ async function buildPlatformMemberFilters({ tenantId, accountScope, query, statu
         ],
       },
       inviteFilter: {
-        accountScope: InstitutionInviteAccountScopes.STANDALONE,
-        ...(inviteStatus ? { status: inviteStatus } : { _id: null }),
-        ...searchFilter,
+        $and: [
+          { accountScope: InstitutionInviteAccountScopes.STANDALONE },
+          inviteStatus ?? { _id: null },
+          searchFilter,
+        ],
       },
       standalone: true,
     };
@@ -1530,10 +1544,12 @@ async function buildPlatformMemberFilters({ tenantId, accountScope, query, statu
       ],
     },
     inviteFilter: {
-      ...tenantFilter,
-      ...(inviteStatus ? { status: inviteStatus } : { _id: null }),
-      ...searchFilter,
-      ...(storedRole ? { requestedRole: storedRole } : null),
+      $and: [
+        tenantFilter,
+        inviteStatus ?? { _id: null },
+        searchFilter,
+        ...(storedRole ? [{ requestedRole: storedRole }] : []),
+      ],
     },
     standalone: false,
   };
@@ -1647,7 +1663,13 @@ async function listPlatformInstitutionMembers({
     };
     const statusFilter = platformUserStatusFilter(status);
     const userFilter = { $and: [tenantlessFilter, { email: { $nin: adminEmails } }, visibleMembershipFilter(), searchFilter, statusFilter, ...(status === 'invited' || status === InstitutionInviteStatuses.EXPIRED ? [{ _id: null }] : [])] };
-    const inviteFilter = { accountScope: InstitutionInviteAccountScopes.STANDALONE, ...(platformInviteStatusFilter(status) ? { status: platformInviteStatusFilter(status) } : { _id: null }), ...searchFilter };
+    const inviteFilter = {
+      $and: [
+        { accountScope: InstitutionInviteAccountScopes.STANDALONE },
+        platformInviteStatusFilter(status) ?? { _id: null },
+        searchFilter,
+      ],
+    };
     const fetchLimit = offset + limit;
     const [users, invites, userTotal, inviteTotal] = await runAsSystem(() => Promise.all([
       models.User.find(userFilter).select('_id name username email emailVerified role provider membershipStatus createdAt updatedAt suspendedAt removedAt').sort({ createdAt: -1 }).limit(fetchLimit).lean().exec(),
@@ -1686,10 +1708,12 @@ async function listPlatformInstitutionMembers({
   };
   const inviteStatus = platformInviteStatusFilter(status);
   const inviteFilter = {
-    ...tenantFilter,
-    ...(inviteStatus ? { status: inviteStatus } : { _id: null }),
-    ...searchFilter,
-    ...(storedRole ? { requestedRole: storedRole } : null),
+    $and: [
+      tenantFilter,
+      inviteStatus ?? { _id: null },
+      searchFilter,
+      ...(storedRole ? [{ requestedRole: storedRole }] : []),
+    ],
   };
   const fetchLimit = offset + limit;
 
