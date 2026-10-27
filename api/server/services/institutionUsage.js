@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { resolveModelLabel } = require('@librechat/api');
+const { resolveModelLabel, bareModelId } = require('@librechat/api');
 const { runAsSystem, tenantStorage } = require('@librechat/data-schemas');
 const { getCalendarMonthRange, zonedDateTimeToUtc } = require('./usageQuota');
 const models = require('~/db/models');
@@ -174,27 +174,43 @@ function conversationSpecLookup() {
   };
 }
 
+/** The single row superadmins see for every model no longer in `librechat.yaml`. */
+const RETIRED_MODELS = { key: 'retired', label: 'Retired models' };
+
+/** Grouping for one ledger row: its UI label, all retired models together, or (with
+ *  no label index at all) the model id without its provider prefix. */
+function modelGroup(row, index) {
+  if (!index) {
+    return { key: bareModelId(row.modelKey) || 'unknown', displayName: undefined, retired: false };
+  }
+  const displayName = resolveModelLabel(index, { specName: row.spec, modelId: row.modelKey });
+  if (displayName) {
+    return { key: displayName, displayName, retired: false };
+  }
+  return { key: RETIRED_MODELS.key, displayName: RETIRED_MODELS.label, retired: true };
+}
+
 function mergeModelUsageRows(rows, { index, restrictToLabeled } = {}) {
   const merged = new Map();
 
   for (const row of rows) {
-    const displayName = index
-      ? resolveModelLabel(index, { specName: row.spec, modelId: row.modelKey })
-      : undefined;
+    const { key, displayName, retired } = modelGroup(row, index);
 
-    if (restrictToLabeled && !displayName) {
+    if (restrictToLabeled && retired) {
       continue;
     }
 
-    const key = displayName ?? `${row.providerKey ?? 'unknown'}:${row.modelKey}`;
     const existing = merged.get(key);
 
     if (!existing) {
       merged.set(key, {
         displayName,
-        providerKey: row.providerKey,
-        modelKey: row.modelKey,
-        providerModelId: row.modelKey,
+        ...(retired
+          ? { retired: true, retiredModelIds: new Set([bareModelId(row.modelKey)]) }
+          : {}),
+        providerKey: retired ? undefined : row.providerKey,
+        modelKey: retired ? RETIRED_MODELS.key : row.modelKey,
+        providerModelId: retired ? undefined : row.modelKey,
         promptTokens: row.promptTokens,
         completionTokens: row.completionTokens,
         totalTokens: row.promptTokens + row.completionTokens,
@@ -217,10 +233,15 @@ function mergeModelUsageRows(rows, { index, restrictToLabeled } = {}) {
     for (const memberId of row.memberIds) {
       existing.memberIds.add(memberId);
     }
+    existing.retiredModelIds?.add(bareModelId(row.modelKey));
   }
 
   return Array.from(merged.values())
-    .map(({ memberIds, ...row }) => ({ ...row, memberCount: memberIds.size }))
+    .map(({ memberIds, retiredModelIds, ...row }) => ({
+      ...row,
+      ...(retiredModelIds ? { retiredModelIds: Array.from(retiredModelIds).sort() } : {}),
+      memberCount: memberIds.size,
+    }))
     .sort((a, b) => b.totalTokens - a.totalTokens || String(a.modelKey).localeCompare(b.modelKey));
 }
 
@@ -262,8 +283,8 @@ async function getUsageSummary({ tenantId, start, end, labels }) {
   const Transaction = getTransactionModel();
   const restrictToLabeled = labels?.restrictToLabeled === true;
 
-  /** "Models used" counts the same rows the model table shows, so the card and
-   *  the table can never disagree for either audience. */
+  /** "Models used" counts the models members can pick today: the table's rows,
+   *  less the one row superadmins see for retired models. */
   const [[summary], models] = await Promise.all([
     tenantStorage.run({ tenantId }, async () =>
       Transaction.aggregate([
@@ -299,7 +320,7 @@ async function getUsageSummary({ tenantId, start, end, labels }) {
     eventCount: 0,
     memberCount: 0,
     ...(summary ?? {}),
-    modelCount: models.length,
+    modelCount: models.filter((row) => !row.retired).length,
   };
 
   return { range, summary: stripRestrictedFields(resolved, restrictToLabeled) };
@@ -470,7 +491,8 @@ async function listUsageByModel({ tenantId, start, end, limit, offset, query, la
         (row) =>
           regex.test(row.displayName ?? '') ||
           regex.test(row.modelKey ?? '') ||
-          regex.test(row.providerKey ?? ''),
+          regex.test(row.providerKey ?? '') ||
+          (row.retiredModelIds ?? []).some((id) => regex.test(id)),
       )
     : merged;
 
