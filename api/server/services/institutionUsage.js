@@ -660,6 +660,92 @@ async function exportUsageCsv({ tenantId, start, end }) {
   };
 }
 
+/**
+ * A spreadsheet cell, quoted for CSV and defused for spreadsheet apps: a value
+ * opening with = + - @ (or a tab/CR) is read as a formula by Excel and Sheets,
+ * and member names are user-supplied.
+ */
+function sheetCell(value) {
+  if (value == null) {
+    return '';
+  }
+  const text = String(value);
+  return csvCell(/^[=+\-@\t\r]/.test(text) ? `'${text}` : text);
+}
+
+const MEMBER_USAGE_HEADER = ['User ID', 'Account created at', 'Name', 'Role', 'Total Used Tokens'];
+
+function trimDecimals(value, digits) {
+  return Number(value.toFixed(digits)).toString();
+}
+
+/**
+ * Token totals as an admin reads them: millions from 0.1M up (0.1M, 0.41M,
+ * 1.25M), thousands from 1K up to that (1K, 99.5K), the plain count below.
+ * A value that rounds to 100K is shown as 0.1M rather than "100K".
+ */
+function formatTokenCount(tokens) {
+  const thousands = Number((tokens / 1_000).toFixed(1));
+  if (thousands >= 100) {
+    return `${trimDecimals(tokens / 1_000_000, 2)}M`;
+  }
+  if (tokens >= 1_000) {
+    return `${trimDecimals(thousands, 1)}K`;
+  }
+  return String(Math.round(tokens));
+}
+
+/**
+ * The institution admin's usage export: one row per member who can sign in
+ * (active or suspended, as the members list shows them), with their total
+ * tokens in the range — zero for members who used nothing. Busiest first.
+ * Account creation is shown in the institution's own timezone.
+ */
+async function exportMemberUsageCsv({ tenantId, start, end }) {
+  const range = await resolveRange(tenantId, { start, end });
+  const Transaction = getTransactionModel();
+
+  const [users, totals] = await tenantStorage.run({ tenantId }, () =>
+    Promise.all([
+      models.User.find({ tenantId, ...visibleMembershipFilter() })
+        .select('_id name email role tenantId accountScope createdAt')
+        .lean()
+        .exec(),
+      Transaction.aggregate([
+        { $match: getBaseMatch(range) },
+        {
+          $group: {
+            _id: '$user',
+            totalTokens: { $sum: { $abs: { $ifNull: ['$rawAmount', 0] } } },
+          },
+        },
+      ]),
+    ]),
+  );
+
+  const tokensByUser = new Map(totals.map((row) => [String(row._id), row.totalTokens]));
+  const rows = users
+    .map((user) => ({
+      userId: String(user._id),
+      name: user.name || user.email || '',
+      role: resolveMemberRole(user) === 'INSTITUTION_ADMIN' ? 'Institution admin' : 'Member',
+      totalTokens: tokensByUser.get(String(user._id)) ?? 0,
+      createdAt: formatLocalDateTime(user.createdAt, range.timezone),
+    }))
+    .sort((a, b) => b.totalTokens - a.totalTokens || a.name.localeCompare(b.name));
+
+  const lines = [
+    MEMBER_USAGE_HEADER.map(sheetCell).join(','),
+    ...rows.map((row) =>
+      [row.userId, row.createdAt, row.name, row.role, formatTokenCount(row.totalTokens)]
+        .map(sheetCell)
+        .join(','),
+    ),
+  ];
+
+  return { range, csv: `${lines.join('\n')}\n` };
+}
+
 /** Tokens display as 0.28M from 100K up, 78.0K from 1K up, plain below; the cell keeps the exact count. */
 const TOKEN_FORMAT = '[>=99950]0.0#,,"M";[>=1000]0.0,"K";0';
 const RETIRED_COLUMN = 'Other (retired models)';
@@ -978,6 +1064,7 @@ module.exports = {
   HttpError,
   exportUsageCsv,
   exportMemberUsageWorkbook,
+  exportMemberUsageCsv,
   getMemberUsageSummary,
   getUsageSummary,
   getUsageTimeseries,

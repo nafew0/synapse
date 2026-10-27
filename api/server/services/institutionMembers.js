@@ -2487,6 +2487,7 @@ async function getInstitutionImportJob({ tenantId, jobId }) {
 module.exports = {
   visibleMembershipFilter,
   HttpError,
+  visibleMembershipFilter,
   assertSeatLimitChangeAllowed,
   assertSeatsAvailable,
   completeInviteAcceptance,

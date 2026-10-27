@@ -4,7 +4,7 @@ const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { requireJwtAuth } = require('~/server/middleware');
 const {
   HttpError,
-  exportUsageCsv,
+  exportMemberUsageCsv,
   exportMemberUsageWorkbook,
   getUsageSummary,
   getUsageTimeseries,
@@ -118,6 +118,7 @@ router.get('/export.csv', async (req, res) => {
     return;
   }
 
+  /** Superadmins get the per-member workbook; institution admins the per-member summary CSV. */
   try {
     const stamp = new Date().toISOString().slice(0, 10);
     if (req.isPlatformSuperadmin === true) {
@@ -132,13 +133,13 @@ router.get('/export.csv', async (req, res) => {
       return res.status(200).send(buffer);
     }
 
-    const { csv } = await exportUsageCsv({
+    const { csv } = await exportMemberUsageCsv({
       tenantId,
       start: req.query.start,
       end: req.query.end,
     });
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="usage-${stamp}.csv"`);
+    res.setHeader('Content-Disposition', `attachment; filename="member-usage-${stamp}.csv"`);
     res.status(200).send(csv);
   } catch (error) {
     return handleError(res, error, 'Failed to export usage CSV');

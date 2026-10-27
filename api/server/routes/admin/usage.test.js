@@ -7,8 +7,8 @@ class mockHttpError extends Error {
 
 const mockGetUsageSummary = jest.fn();
 const mockListUsageByMember = jest.fn();
-const mockExportUsageCsv = jest.fn();
 const mockExportMemberUsageWorkbook = jest.fn();
+const mockExportMemberUsageCsv = jest.fn();
 const mockEnsurePlatformSuperadmin = jest.fn().mockResolvedValue({ isPlatformSuperadmin: false });
 const mockLabels = {
   index: { labelBySpecName: new Map(), labelByModelId: new Map(), modelIds: [] },
@@ -34,8 +34,8 @@ jest.mock('~/server/services/usageLabels', () => ({
 
 jest.mock('~/server/services/institutionUsage', () => ({
   HttpError: mockHttpError,
-  exportUsageCsv: (...args) => mockExportUsageCsv(...args),
   exportMemberUsageWorkbook: (...args) => mockExportMemberUsageWorkbook(...args),
+  exportMemberUsageCsv: (...args) => mockExportMemberUsageCsv(...args),
   getUsageSummary: (...args) => mockGetUsageSummary(...args),
   getUsageTimeseries: jest.fn(),
   listUsageByMember: (...args) => mockListUsageByMember(...args),
@@ -178,17 +178,20 @@ describe('admin usage route', () => {
     expect(res.body.total).toBe(1);
   });
 
-  it('streams CSV exports', async () => {
-    mockExportUsageCsv.mockResolvedValue({ csv: 'createdAt,totalTokens\n2026-07-01,100\n' });
-
-    const res = await invokeRoute({
-      path: '/export.csv',
-      method: 'get',
+  it('gives an institution admin the per-member export', async () => {
+    mockExportMemberUsageCsv.mockResolvedValue({
+      csv: 'User ID,Account created at,Name,Role,Total Used Tokens\nu1,2026-02-12 14:30,Ada,Member,100\n',
     });
+
+    const res = await invokeRoute({ path: '/export.csv', method: 'get' });
 
     expect(res.statusCode).toBe(200);
     expect(res.headers['Content-Type']).toMatch(/text\/csv/);
-    expect(res.body).toContain('createdAt,totalTokens');
+    expect(res.headers['Content-Disposition']).toMatch(/filename="member-usage-/);
+    expect(res.body).toContain('User ID,Account created at,Name,Role,Total Used Tokens');
+    expect(mockExportMemberUsageCsv).toHaveBeenCalledWith(
+      expect.objectContaining({ tenantId: 'tenant-a' }),
+    );
     expect(mockExportMemberUsageWorkbook).not.toHaveBeenCalled();
   });
 
@@ -218,7 +221,7 @@ describe('admin usage route', () => {
       end: '2026-09-30',
       labels: mockLabels,
     });
-    expect(mockExportUsageCsv).not.toHaveBeenCalled();
+    expect(mockExportMemberUsageCsv).not.toHaveBeenCalled();
   });
 
   it('rejects callers without tenant context', async () => {
