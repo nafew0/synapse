@@ -203,6 +203,42 @@ test('shows validation error messages', async () => {
   expect(alerts[5]).toHaveTextContent(/Passwords do not match/i);
 });
 
+const MISMATCH = /Passwords do not match/i;
+
+test('flags a mismatch while the confirmation is typed and clears it once it matches', async () => {
+  const { getByTestId, queryByText } = setup();
+  await userEvent.type(getByTestId('password'), 'password123');
+  await userEvent.type(getByTestId('confirm_password'), 'password12');
+  expect(queryByText(MISMATCH)).toBeInTheDocument();
+  await userEvent.type(getByTestId('confirm_password'), '3');
+  expect(queryByText(MISMATCH)).not.toBeInTheDocument();
+});
+
+test('rechecks the confirmation when the password is edited after it', async () => {
+  const { getByTestId, queryByText } = setup();
+  await userEvent.type(getByTestId('password'), 'password123');
+  await userEvent.type(getByTestId('confirm_password'), 'password123');
+  expect(queryByText(MISMATCH)).not.toBeInTheDocument();
+  await userEvent.type(getByTestId('password'), '4');
+  expect(queryByText(MISMATCH)).toBeInTheDocument();
+  await userEvent.type(getByTestId('confirm_password'), '4');
+  expect(queryByText(MISMATCH)).not.toBeInTheDocument();
+});
+
+test('checks a confirmation typed before the password', async () => {
+  const { getByTestId, queryByText } = setup();
+  await userEvent.type(getByTestId('confirm_password'), 'password123');
+  expect(queryByText(MISMATCH)).toBeInTheDocument();
+  await userEvent.type(getByTestId('password'), 'password123');
+  expect(queryByText(MISMATCH)).not.toBeInTheDocument();
+});
+
+test('does not flag an untouched confirmation while the password is typed', async () => {
+  const { getByTestId, queryByText } = setup();
+  await userEvent.type(getByTestId('password'), 'password123');
+  expect(queryByText(MISMATCH)).not.toBeInTheDocument();
+});
+
 test('shows only a localized message when registration fails', async () => {
   const { mockUseRegisterUserMutation } = setup();
   const options = mockUseRegisterUserMutation.mock.calls[0][0] as {
