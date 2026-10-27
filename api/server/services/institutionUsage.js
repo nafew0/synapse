@@ -2,7 +2,10 @@ const mongoose = require('mongoose');
 const { resolveModelLabel, bareModelId } = require('@librechat/api');
 const { runAsSystem, tenantStorage } = require('@librechat/data-schemas');
 const { getCalendarMonthRange, zonedDateTimeToUtc } = require('./usageQuota');
+const XLSX = require('xlsx');
 const models = require('~/db/models');
+const { resolveMemberRole } = require('./accountRoles');
+const { visibleMembershipFilter } = require('./institutionMembers');
 
 class HttpError extends Error {
   constructor(statusCode, message) {
@@ -657,6 +660,217 @@ async function exportUsageCsv({ tenantId, start, end }) {
   };
 }
 
+/** Tokens display as 0.28M from 100K up, 78.0K from 1K up, plain below; the cell keeps the exact count. */
+const TOKEN_FORMAT = '[>=99950]0.0#,,"M";[>=1000]0.0,"K";0';
+const RETIRED_COLUMN = 'Other (retired models)';
+const MEMBER_COLUMNS = ['User ID', 'Account created at', 'Name', 'Email', 'Role'];
+/** The member table starts below the summary block; its header is this sheet row (1-based). */
+const MEMBER_HEADER_ROW = 9;
+
+function localParts(value, timeZone) {
+  return Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+      .formatToParts(new Date(value))
+      .map((part) => [part.type, part.value]),
+  );
+}
+
+function formatLocalDate(value, timeZone) {
+  const parts = localParts(value, timeZone);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function formatLocalDateTime(value, timeZone) {
+  if (!value) {
+    return '';
+  }
+  const parts = localParts(value, timeZone);
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
+/** Each member's tokens per model label, plus the model columns ordered by overall use. */
+async function aggregateMemberModelTokens({ tenantId, range, labels }) {
+  const Transaction = getTransactionModel();
+  const rows = await tenantStorage.run({ tenantId }, async () =>
+    Transaction.aggregate(
+      [
+        { $match: getBaseMatch(range) },
+        {
+          $group: {
+            _id: { user: '$user', conversationId: '$conversationId', modelKey: modelIdExpr() },
+            tokens: { $sum: { $abs: { $ifNull: ['$rawAmount', 0] } } },
+          },
+        },
+        conversationSpecLookup(),
+        {
+          $project: {
+            _id: 0,
+            user: '$_id.user',
+            modelKey: '$_id.modelKey',
+            spec: { $first: '$conversation.spec' },
+            tokens: 1,
+          },
+        },
+      ],
+      { allowDiskUse: true },
+    ),
+  );
+
+  const byMember = new Map();
+  const byModel = new Map();
+  for (const row of rows) {
+    const label =
+      (labels?.index &&
+        resolveModelLabel(labels.index, { specName: row.spec, modelId: row.modelKey })) ||
+      RETIRED_COLUMN;
+    const memberId = String(row.user);
+    const tokens = byMember.get(memberId) ?? new Map();
+    tokens.set(label, (tokens.get(label) ?? 0) + row.tokens);
+    byMember.set(memberId, tokens);
+    byModel.set(label, (byModel.get(label) ?? 0) + row.tokens);
+  }
+
+  const columns = [...byModel.keys()]
+    .filter((label) => label !== RETIRED_COLUMN)
+    .sort((a, b) => byModel.get(b) - byModel.get(a));
+  if (byModel.has(RETIRED_COLUMN)) {
+    columns.push(RETIRED_COLUMN);
+  }
+  return { byMember, byModel, columns };
+}
+
+/**
+ * The superadmin's usage export for one institution, as a workbook: a summary
+ * block (institution, period, member counts, total tokens) above one row per
+ * member who can sign in, with their tokens per model and a total. Totals and
+ * counts are Excel formulas over the rows, so they follow any edit; token cells
+ * hold exact counts and only display as K/M.
+ */
+async function exportMemberUsageWorkbook({ tenantId, start, end, labels, now = new Date() }) {
+  const range = await resolveRange(tenantId, { start, end });
+  const [institution, users, usage] = await Promise.all([
+    runAsSystem(() => models.Institution.findOne({ tenantId }).select('name').lean().exec()),
+    tenantStorage.run({ tenantId }, () =>
+      models.User.find({ tenantId, ...visibleMembershipFilter() })
+        .select('_id name email role tenantId accountScope createdAt')
+        .lean()
+        .exec(),
+    ),
+    aggregateMemberModelTokens({ tenantId, range, labels }),
+  ]);
+
+  const { byMember } = usage;
+  const members = users
+    .map((user) => {
+      const tokens = byMember.get(String(user._id)) ?? new Map();
+      let total = 0;
+      for (const value of tokens.values()) {
+        total += value;
+      }
+      return { user, tokens, total, name: user.name || user.email || '' };
+    })
+    .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  /** Only models a listed member used: usage by removed members leaves no empty column. */
+  const columns = usage.columns.filter((label) =>
+    members.some((member) => member.tokens.has(label)),
+  );
+
+  const first = MEMBER_HEADER_ROW + 1;
+  const last = Math.max(MEMBER_HEADER_ROW + members.length, first);
+  const totalCol = MEMBER_COLUMNS.length + columns.length;
+  const col = (index) => XLSX.utils.encode_col(index);
+  const totalRange = `${col(totalCol)}${first}:${col(totalCol)}${last}`;
+  const grandTotal = members.reduce((sum, member) => sum + member.total, 0);
+  /** Column totals over the listed members only, matching the SUM formulas below them. */
+  const columnTotal = (label) =>
+    members.reduce((sum, member) => sum + (member.tokens.get(label) ?? 0), 0);
+  const lastDay = new Date(range.end.getTime() - 1);
+
+  const sheet = XLSX.utils.aoa_to_sheet([
+    ['Member usage report'],
+    ['Institution', institution?.name ?? tenantId],
+    [
+      'Period',
+      `${formatLocalDate(range.start, range.timezone)} to ${formatLocalDate(lastDay, range.timezone)} (${range.timezone})`,
+    ],
+    ['Total members'],
+    ['Active members'],
+    ['Total used tokens'],
+    ['Exported at', formatLocalDateTime(now, range.timezone)],
+    [],
+    [...MEMBER_COLUMNS, ...columns, 'Total Used Tokens'],
+  ]);
+  sheet.B4 = { t: 'n', f: `COUNTA(C${first}:C${last})`, v: members.length };
+  sheet.B5 = {
+    t: 'n',
+    f: `COUNTIF(${totalRange},">0")`,
+    v: members.filter((member) => member.total > 0).length,
+  };
+  sheet.B6 = { t: 'n', f: `SUM(${totalRange})`, v: grandTotal, z: TOKEN_FORMAT };
+
+  members.forEach((member, index) => {
+    const row = first + index;
+    const cells = [
+      String(member.user._id),
+      formatLocalDateTime(member.user.createdAt, range.timezone),
+      member.name,
+      member.user.email ?? '',
+      resolveMemberRole(member.user) === 'INSTITUTION_ADMIN' ? 'Institution admin' : 'Member',
+    ];
+    cells.forEach((value, c) => {
+      sheet[`${col(c)}${row}`] = { t: 's', v: value };
+    });
+    columns.forEach((label, c) => {
+      const value = member.tokens.get(label) ?? 0;
+      sheet[`${col(MEMBER_COLUMNS.length + c)}${row}`] = { t: 'n', v: value, z: TOKEN_FORMAT };
+    });
+    sheet[`${col(totalCol)}${row}`] = {
+      t: 'n',
+      f: columns.length
+        ? `SUM(${col(MEMBER_COLUMNS.length)}${row}:${col(totalCol - 1)}${row})`
+        : '0',
+      v: member.total,
+      z: TOKEN_FORMAT,
+    };
+  });
+
+  const sumRow = MEMBER_HEADER_ROW + members.length + 1;
+  sheet[`A${sumRow}`] = { t: 's', v: 'Total' };
+  for (let c = MEMBER_COLUMNS.length; c <= totalCol; c += 1) {
+    const letter = col(c);
+    sheet[`${letter}${sumRow}`] = {
+      t: 'n',
+      f: `SUM(${letter}${first}:${letter}${last})`,
+      v: c === totalCol ? grandTotal : columnTotal(columns[c - MEMBER_COLUMNS.length]),
+      z: TOKEN_FORMAT,
+    };
+  }
+
+  sheet['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: sumRow - 1, c: totalCol } });
+  sheet['!cols'] = [
+    { wch: 26 },
+    { wch: 18 },
+    { wch: 22 },
+    { wch: 30 },
+    { wch: 17 },
+    ...columns.map((label) => ({ wch: Math.max(12, label.length + 2) })),
+    { wch: 18 },
+  ];
+  sheet['!autofilter'] = { ref: `A${MEMBER_HEADER_ROW}:${col(totalCol)}${last}` };
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, sheet, 'Member usage');
+  return { range, buffer: XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }) };
+}
+
 async function getMemberUsageSummary({ tenantId, userId, start, end, labels }) {
   const range = await resolveRange(tenantId, { start, end });
   const Transaction = getTransactionModel();
@@ -763,6 +977,7 @@ async function getMemberUsageSummary({ tenantId, userId, start, end, labels }) {
 module.exports = {
   HttpError,
   exportUsageCsv,
+  exportMemberUsageWorkbook,
   getMemberUsageSummary,
   getUsageSummary,
   getUsageTimeseries,

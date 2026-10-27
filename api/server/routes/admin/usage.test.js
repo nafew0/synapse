@@ -8,7 +8,12 @@ class mockHttpError extends Error {
 const mockGetUsageSummary = jest.fn();
 const mockListUsageByMember = jest.fn();
 const mockExportUsageCsv = jest.fn();
-const mockLabels = { index: { labelBySpecName: new Map(), labelByModelId: new Map(), modelIds: [] }, restrictToLabeled: true };
+const mockExportMemberUsageWorkbook = jest.fn();
+const mockEnsurePlatformSuperadmin = jest.fn().mockResolvedValue({ isPlatformSuperadmin: false });
+const mockLabels = {
+  index: { labelBySpecName: new Map(), labelByModelId: new Map(), modelIds: [] },
+  restrictToLabeled: true,
+};
 const mockResolveUsageLabels = jest.fn().mockResolvedValue(mockLabels);
 
 jest.mock('~/server/middleware', () => ({
@@ -19,6 +24,10 @@ jest.mock('~/server/middleware/roles/capabilities', () => ({
   requireCapability: () => (_req, _res, next) => next(),
 }));
 
+jest.mock('~/server/services/platformAdmin', () => ({
+  ensurePlatformSuperadminForUser: (...args) => mockEnsurePlatformSuperadmin(...args),
+}));
+
 jest.mock('~/server/services/usageLabels', () => ({
   resolveUsageLabels: (...args) => mockResolveUsageLabels(...args),
 }));
@@ -26,6 +35,7 @@ jest.mock('~/server/services/usageLabels', () => ({
 jest.mock('~/server/services/institutionUsage', () => ({
   HttpError: mockHttpError,
   exportUsageCsv: (...args) => mockExportUsageCsv(...args),
+  exportMemberUsageWorkbook: (...args) => mockExportMemberUsageWorkbook(...args),
   getUsageSummary: (...args) => mockGetUsageSummary(...args),
   getUsageTimeseries: jest.fn(),
   listUsageByMember: (...args) => mockListUsageByMember(...args),
@@ -179,6 +189,36 @@ describe('admin usage route', () => {
     expect(res.statusCode).toBe(200);
     expect(res.headers['Content-Type']).toMatch(/text\/csv/);
     expect(res.body).toContain('createdAt,totalTokens');
+    expect(mockExportMemberUsageWorkbook).not.toHaveBeenCalled();
+  });
+
+  it('sends a superadmin the member usage workbook for the chosen institution', async () => {
+    mockEnsurePlatformSuperadmin.mockResolvedValueOnce({ isPlatformSuperadmin: true });
+    const buffer = Buffer.from('xlsx-bytes');
+    mockExportMemberUsageWorkbook.mockResolvedValue({ buffer });
+
+    const res = await invokeRoute({
+      path: '/export.csv',
+      method: 'get',
+      user: { id: 'root-1', email: 'root@example.com' },
+      query: { tenantId: 'tenant-b', start: '2026-09-01', end: '2026-09-30' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toBe(buffer);
+    expect(res.headers['Content-Type']).toBe(
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    expect(res.headers['Content-Disposition']).toMatch(
+      /filename="member-usage-\d{4}-\d{2}-\d{2}\.xlsx"/,
+    );
+    expect(mockExportMemberUsageWorkbook).toHaveBeenCalledWith({
+      tenantId: 'tenant-b',
+      start: '2026-09-01',
+      end: '2026-09-30',
+      labels: mockLabels,
+    });
+    expect(mockExportUsageCsv).not.toHaveBeenCalled();
   });
 
   it('rejects callers without tenant context', async () => {
