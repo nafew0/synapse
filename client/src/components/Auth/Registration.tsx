@@ -42,12 +42,22 @@ const Registration: React.FC = () => {
 
   const {
     watch,
+    trigger,
     register,
     setValue,
+    getValues,
     handleSubmit,
     formState: { errors },
   } = useForm<TRegisterUser>({ mode: 'onChange' });
   const password = watch('password');
+
+  /** The confirmation only revalidates on its own change, so recheck it when the password moves. */
+  useEffect(() => {
+    if (!getValues('confirm_password')) {
+      return;
+    }
+    trigger('confirm_password');
+  }, [getValues, password, trigger]);
   const [invitedEmail, setInvitedEmail] = useState<string | null>(null);
 
   const [errorMessage, setErrorMessage] = useState<string>('');
