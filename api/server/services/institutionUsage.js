@@ -277,8 +277,48 @@ function getTokenProjection() {
       $sum: { $abs: { $ifNull: ['$tokenValue', 0] } },
     },
     lastUsedAt: { $max: '$createdAt' },
-    eventCount: { $sum: 1 },
   };
+}
+
+/** Ledger contexts written for a member's chat turn: the reply, or what was
+ *  spent before it was stopped or failed. All carry the reply's messageId. */
+const REQUEST_CONTEXTS = ['message', 'abort', 'incomplete', 'error'];
+
+/** The chat turn a ledger row belongs to; null for side calls such as titles,
+ *  summaries, sub-agents and tools, which are not requests of their own. */
+function requestIdExpr() {
+  return {
+    $cond: [{ $in: ['$context', REQUEST_CONTEXTS] }, { $ifNull: ['$messageId', null] }, null],
+  };
+}
+
+/**
+ * Rolls ledger rows up by `dims` with `eventCount` as the number of requests:
+ * each message a member sends counts once, however many model calls, tool
+ * steps or prompt/completion rows its reply took. Grouping per request first,
+ * rather than collecting message ids, keeps every group small for any range.
+ */
+function requestRollupStages(dims = {}) {
+  const keys = Object.keys(dims);
+  return [
+    {
+      $group: {
+        _id: { ...dims, user: '$user', request: requestIdExpr() },
+        ...getTokenProjection(),
+      },
+    },
+    {
+      $group: {
+        _id: keys.length ? Object.fromEntries(keys.map((key) => [key, `$_id.${key}`])) : null,
+        promptTokens: { $sum: '$promptTokens' },
+        completionTokens: { $sum: '$completionTokens' },
+        totalCost: { $sum: '$totalCost' },
+        lastUsedAt: { $max: '$lastUsedAt' },
+        eventCount: { $sum: { $cond: [{ $eq: ['$_id.request', null] }, 0, 1] } },
+        memberIds: { $addToSet: '$_id.user' },
+      },
+    },
+  ];
 }
 
 async function getUsageSummary({ tenantId, start, end, labels }) {
@@ -292,13 +332,7 @@ async function getUsageSummary({ tenantId, start, end, labels }) {
     tenantStorage.run({ tenantId }, async () =>
       Transaction.aggregate([
         { $match: getBaseMatch(range) },
-        {
-          $group: {
-            _id: null,
-            ...getTokenProjection(),
-            members: { $addToSet: '$user' },
-          },
-        },
+        ...requestRollupStages(),
         {
           $project: {
             _id: 0,
@@ -307,7 +341,7 @@ async function getUsageSummary({ tenantId, start, end, labels }) {
             totalTokens: { $add: ['$promptTokens', '$completionTokens'] },
             totalCost: 1,
             eventCount: 1,
-            memberCount: { $size: '$members' },
+            memberCount: { $size: '$memberIds' },
           },
         },
       ]),
@@ -339,12 +373,8 @@ async function listUsageByMember({ tenantId, start, end, limit, offset, query, l
   const [result] = await tenantStorage.run({ tenantId }, async () =>
     Transaction.aggregate([
       { $match: getBaseMatch(range) },
-      {
-        $group: {
-          _id: '$user',
-          ...getTokenProjection(),
-        },
-      },
+      ...requestRollupStages({ user: '$user' }),
+      { $set: { _id: '$_id.user' } },
       {
         $lookup: {
           from: 'users',
@@ -423,17 +453,11 @@ async function aggregateModelUsage({ tenantId, range, labels }) {
     Transaction.aggregate(
       [
         { $match: getBaseMatch(range) },
-        {
-          $group: {
-            _id: {
-              conversationId: '$conversationId',
-              modelKey: modelIdExpr(),
-              providerKey: providerKeyExpr(),
-            },
-            ...getTokenProjection(),
-            memberIds: { $addToSet: '$user' },
-          },
-        },
+        ...requestRollupStages({
+          conversationId: '$conversationId',
+          modelKey: modelIdExpr(),
+          providerKey: providerKeyExpr(),
+        }),
         conversationSpecLookup(),
         {
           $group: {
@@ -519,20 +543,15 @@ async function getUsageTimeseries({ tenantId, start, end }) {
   const points = await tenantStorage.run({ tenantId }, async () =>
     Transaction.aggregate([
       { $match: getBaseMatch(range) },
-      {
-        $group: {
-          _id: {
-            day: {
-              $dateToString: {
-                format: '%Y-%m-%d',
-                date: '$createdAt',
-                timezone: range.timezone,
-              },
-            },
+      ...requestRollupStages({
+        day: {
+          $dateToString: {
+            format: '%Y-%m-%d',
+            date: '$createdAt',
+            timezone: range.timezone,
           },
-          ...getTokenProjection(),
         },
-      },
+      }),
       {
         $project: {
           _id: 0,
@@ -968,7 +987,7 @@ async function getMemberUsageSummary({ tenantId, userId, start, end, labels }) {
     Promise.all([
       Transaction.aggregate([
         { $match: memberMatch },
-        { $group: { _id: null, ...getTokenProjection() } },
+        ...requestRollupStages(),
         {
           $project: {
             _id: 0,
@@ -986,17 +1005,11 @@ async function getMemberUsageSummary({ tenantId, userId, start, end, labels }) {
       Transaction.aggregate(
         [
           { $match: memberMatch },
-          {
-            $group: {
-              _id: {
-                conversationId: '$conversationId',
-                modelKey: modelIdExpr(),
-                providerKey: providerKeyExpr(),
-              },
-              ...getTokenProjection(),
-              memberIds: { $addToSet: '$user' },
-            },
-          },
+          ...requestRollupStages({
+            conversationId: '$conversationId',
+            modelKey: modelIdExpr(),
+            providerKey: providerKeyExpr(),
+          }),
           conversationSpecLookup(),
           {
             $group: {

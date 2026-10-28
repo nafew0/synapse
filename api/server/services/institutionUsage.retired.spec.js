@@ -37,11 +37,17 @@ const labelIndex = buildModelLabelIndex({
 const TENANT = 'tenant-retired';
 const MEMBER = new mongoose.Types.ObjectId();
 
+let turn = 0;
+
+/** One chat turn's reply; each counts as one request. */
 function transaction({ conversationId, model, providerKey, amount = 100 }) {
+  turn += 1;
   return {
     user: MEMBER,
     tenantId: TENANT,
     conversationId,
+    context: 'message',
+    messageId: `reply-${turn}`,
     tokenType: 'completion',
     model,
     providerModelId: model,
