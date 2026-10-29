@@ -1,0 +1,30 @@
+{
+  "kind": "questionnaire",
+  "title": "Survey on the Use of ICT Facilities in the University Library",
+  "header": {"institution": "[Institution name]", "department": "Library and Information Services"},
+  "intro": [
+    "This questionnaire is part of a study on how students use the ICT facilities in the university library. Participation is voluntary and your answers will be kept confidential.",
+    "The questionnaire takes about ten minutes to complete."
+  ],
+  "scale": ["Strongly disagree", "Disagree", "Neither agree nor disagree", "Agree", "Strongly agree"],
+  "sections": [
+    {"title": "Section A: About you", "type": "demographic", "items": [
+      {"text": "Faculty", "options": ["Arts", "Science", "Management", "Engineering", "Medicine"], "other": "Other (please specify)"},
+      {"text": "Year of study", "options": ["First", "Second", "Third", "Fourth"]},
+      {"text": "How often do you visit the library?", "options": ["Daily", "Weekly", "Monthly", "Rarely"]}
+    ]},
+    {"title": "Section B: Access to ICT facilities", "type": "likert", "items": [
+      "There are enough computers in the library for students.",
+      "The library Wi-Fi is reliable.",
+      "I can find a free computer when I need one."
+    ]},
+    {"title": "Section C: Satisfaction", "type": "likert", "items": [
+      "Library staff help me when I have a technical problem.",
+      "The electronic databases meet my study needs."
+    ]},
+    {"title": "Section D: Your suggestions", "type": "open", "items": [
+      {"text": "What would most improve the ICT facilities in the library?", "lines": 4}
+    ]}
+  ],
+  "closing": "Thank you for taking part in this survey."
+}

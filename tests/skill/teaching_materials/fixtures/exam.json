@@ -1,0 +1,55 @@
+{
+  "kind": "exam",
+  "bloom": true,
+  "header": {
+    "institution": "Faculty of Computing, Example University",
+    "department": "Department of Information Systems",
+    "exam": "Second Semester Examination – 2026",
+    "course_code": "IS 2104",
+    "course_title": "Database Systems",
+    "duration": "Two (2) hours",
+    "total_marks": 50,
+    "index_number": true,
+    "instructions": [
+      "This paper has three sections. Answer ALL questions in Sections A and B, and any ONE question in Section C.",
+      "Write your answers in the answer booklet provided.",
+      "Calculators are not permitted."
+    ]
+  },
+  "sections": [
+    {
+      "title": "Section A",
+      "instructions": "Answer ALL questions. Circle the correct option.",
+      "marks_each": 2,
+      "questions": [
+        {"text": "Which SQL clause filters groups after aggregation?", "options": ["WHERE", "HAVING", "ORDER BY", "LIMIT"], "answer": "b", "bloom": "remember", "explanation": "HAVING is applied after GROUP BY; WHERE filters rows before grouping."},
+        {"text": "Which normal form removes transitive dependencies?", "options": ["1NF", "2NF", "3NF", "BCNF"], "answer": "c", "bloom": "understand"},
+        {"text": "A primary key must be unique and…", "options": ["nullable", "not null", "indexed by hand", "a string"], "answer": "b", "bloom": "remember"}
+      ]
+    },
+    {
+      "title": "Section B",
+      "instructions": "Answer ALL questions.",
+      "questions": [
+        {
+          "text": "A university keeps records of students, courses and lecturers.",
+          "points": ["A student enrols in one or more courses.", "Each course is taught by exactly one lecturer.", "A lecturer may teach several courses."],
+          "bloom": "apply",
+          "parts": [
+            {"text": "Draw an ER diagram that captures the constraints above.", "marks": 8, "marking": [{"point": "Correct entities with keys", "marks": 3}, {"point": "Many-to-many enrolment relationship", "marks": 3}, {"point": "Cardinality and participation shown", "marks": 2}]},
+            {"text": "Map your ER diagram to relational schemas, showing primary and foreign keys.", "marks": 6, "model_answer": "Student(student_id, name); Course(course_id, title, lecturer_id FK); Lecturer(lecturer_id, name); Enrolment(student_id FK, course_id FK) with a composite primary key.", "bloom": "analyse"}
+          ]
+        },
+        {"text": "Explain why a deadlock can occur under two-phase locking, giving an example schedule.", "marks": 10, "bloom": "understand", "model_answer": "Two transactions each hold a lock the other needs and wait forever for it to be released."}
+      ]
+    },
+    {
+      "title": "Section C",
+      "choose": 1,
+      "questions": [
+        {"text": "Evaluate the trade-offs between normalisation and denormalisation for a reporting database.", "marks": 20, "bloom": "evaluate"},
+        {"text": "Design an indexing strategy for a library loans table and justify each index.", "marks": 20, "bloom": "create"}
+      ]
+    }
+  ]
+}
