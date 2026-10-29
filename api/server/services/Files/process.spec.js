@@ -68,6 +68,9 @@ jest.mock('@librechat/api', () => {
      *  filename disagrees with it hands the model a path that does not exist. */
     sanitizeFilename: (...args) => real().sanitizeFilename(...args),
     parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
+    /** Real: reads the multer temp file byte for byte. */
+    parseTextNative: (...args) => real().parseTextNative(...args),
+    isTextType: (...args) => real().isTextType(...args),
     processAudioFile: jest.fn(),
     sendUploadSuccess: jest.fn((res, sseStream, message, result) => {
       if (sseStream) {
@@ -981,6 +984,20 @@ describe('processAgentFileUpload', () => {
         }),
         true,
       );
+    });
+
+    test('reads a code file byte for byte instead of through the RAG extractor', async () => {
+      const { parseText } = require('@librechat/api');
+      const source = 'def scan():\n    return 1\n';
+      const codePath = nodePath.join(uploadDir, 'scan.py');
+      nodeFs.writeFileSync(codePath, source);
+      const req = makeReq({ mimetype: 'text/x-python', ocrConfig: null, path: codePath });
+      req.file.size = Buffer.byteLength(source);
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: autoMetadata() });
+
+      expect(parseText).not.toHaveBeenCalled();
+      expect(db.createFile).toHaveBeenCalledWith(expect.objectContaining({ text: source }), true);
     });
 
     test('stores the sanitized filename, the one the sandbox copy is mounted under', async () => {

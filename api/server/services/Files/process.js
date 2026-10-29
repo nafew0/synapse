@@ -29,6 +29,8 @@ const {
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   parseText,
+  isTextType,
+  parseTextNative,
   UploadStage,
   countTokens,
   DeliveryMethod,
@@ -1237,7 +1239,11 @@ const extractPreparedText = async ({
   }
 
   try {
-    const { text, bytes } = await parseText({ req, file, file_id: metadata.file_id });
+    /** Plain text and code are read byte for byte: the file tools edit this exact text, and a
+     * round trip through the RAG API's extractor can change whitespace such as the final newline. */
+    const { text, bytes } = isTextType(file.mimetype)
+      ? await parseTextNative(file)
+      : await parseText({ req, file, file_id: metadata.file_id });
     return text?.trim() ? { text, bytes, type: file.mimetype, ocrApplied: false } : undefined;
   } catch (err) {
     logger.warn(

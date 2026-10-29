@@ -12,6 +12,7 @@ const {
   getToolkitKey,
   getUserMCPAuthMap,
   firecrawlToolNames,
+  fileAuthoringToolNames: chatFileToolNames,
   isFirecrawlTool,
   isFirecrawlConfigured,
   loadToolDefinitions,
@@ -533,6 +534,7 @@ const nativeTools = new Set([
   Tools.web_search,
   Tools.memory,
   ...firecrawlToolNames,
+  ...chatFileToolNames,
 ]);
 
 const mcpServerPinPrefix = `${Constants.mcp_server}${Constants.mcp_delimiter}`;
