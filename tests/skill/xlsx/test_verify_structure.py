@@ -610,3 +610,47 @@ def test_a_copied_tab_still_passes_after_libreoffice_recalculates_it(original, t
     assert json.loads(recalc.stdout).get('status') == 'success', recalc.stdout + recalc.stderr
 
     assert run(original, output, COPY_RANGES, [f'{COPY}:{SHEET}'])['status'] == 'success'
+
+
+def test_a_border_side_libreoffice_saved_as_none_counts_as_no_border(tmp_path):
+    """A recalculated workbook crashed the gate with AttributeError: 'NoneType' has no attribute 'style'."""
+    ws = Workbook().active
+    ws['A1'].border = Border(left=None, right=None, top=None, bottom=Side(style='thin'))
+
+    sides = verify_structure.style_key(ws['A1'])[2]
+
+    assert sides == ((None, None), (None, None), (None, None), ('thin', None))
+
+
+def test_widths_of_a_grouped_column_range_apply_to_every_column():
+    """LibreOffice saves equal neighbours as one <col min max>; C and D are not unset."""
+    ws = Workbook().active
+    ws.column_dimensions['B'].width = 12
+    ws.column_dimensions['B'].min, ws.column_dimensions['B'].max = 2, 4
+
+    assert verify_structure.column_widths(ws) == {'B': 12, 'C': 12, 'D': 12}
+
+
+def rewrite_sheet_xml(path, change):
+    """Edit the first worksheet's XML in place, the way LibreOffice's re-save would."""
+    with zipfile.ZipFile(path) as archive:
+        parts = {name: archive.read(name) for name in archive.namelist()}
+    sheet = next(name for name in parts if name.startswith('xl/worksheets/sheet'))
+    parts[sheet] = change(parts[sheet].decode('utf-8')).encode('utf-8')
+    with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as archive:
+        for name, data in parts.items():
+            archive.writestr(name, data)
+
+
+def test_an_auto_fitted_row_height_is_not_a_change(original, tmp_path):
+    output = edit(original, tmp_path, fill_items)
+    rewrite_sheet_xml(output, lambda xml: xml.replace('<row r="4"', '<row r="4" ht="17.35" customHeight="false"', 1))
+
+    assert run(original, output, ITEM_RANGES)['status'] == 'success'
+
+
+def test_a_custom_row_height_is_still_a_change(original, tmp_path):
+    output = edit(original, tmp_path, fill_items)
+    rewrite_sheet_xml(output, lambda xml: xml.replace('<row r="4"', '<row r="4" ht="40" customHeight="1"', 1))
+
+    assert 'dimension' in kinds(run(original, output, ITEM_RANGES))

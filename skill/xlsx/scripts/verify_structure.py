@@ -34,7 +34,7 @@ import zipfile
 from pathlib import Path
 
 from openpyxl import load_workbook
-from openpyxl.utils.cell import column_index_from_string, coordinate_from_string
+from openpyxl.utils.cell import column_index_from_string, coordinate_from_string, get_column_letter
 from openpyxl.utils.exceptions import CellCoordinatesException
 
 from fit import base_font_size, fit_problems
@@ -121,8 +121,9 @@ def style_key(cell):
     return (
         (font.name, float(font.sz or 0), bool(font.b), bool(font.i), font.u, bool(font.strike), color_key(font.color)),
         fill_key,
+        # A side LibreOffice saved without a style comes back as None: the same as no border.
         tuple(
-            (side.style, color_key(side.color) if side.style else None)
+            (side.style, color_key(side.color)) if side is not None and side.style else (None, None)
             for side in (border.left, border.right, border.top, border.bottom)
         ),
         # An unset alignment and Excel's defaults render the same; LibreOffice writes the defaults out.
@@ -162,7 +163,53 @@ def dimension_changes(kind, original, output, default, tolerance):
     return changes
 
 
-def compare_sheet(name, before, after, allowed, report):
+def column_widths(sheet):
+    """Width per column letter. One `<col min max>` element can cover a range, and LibreOffice
+    groups equal neighbours that way on save, so expand it or C and D read as unset."""
+    widths = {}
+    for key, dim in sheet.column_dimensions.items():
+        if not dim.width:
+            continue
+        first = dim.min or column_index_from_string(key)
+        last = dim.max or first
+        for index in range(first, last + 1):
+            widths[get_column_letter(index)] = dim.width
+    return widths
+
+
+ROW_TAG = re.compile(r'<row\b[^>]*>')
+SHEET_TAG = re.compile(r'<sheet\b[^>]*?name="([^"]*)"[^>]*?r:id="([^"]*)"')
+REL_TAG = re.compile(r'<Relationship\b[^>]*?Id="([^"]*)"[^>]*?Target="([^"]*)"|<Relationship\b[^>]*?Target="([^"]*)"[^>]*?Id="([^"]*)"')
+
+
+def auto_height_rows(path):
+    """Rows per sheet whose stored height is an auto-fit, not one someone set. openpyxl reports
+    every stored height as custom, but LibreOffice writes the auto-fitted height of each row it
+    lays out (17.35pt for a 14pt title) with customHeight="false", and Excel recomputes those."""
+    with zipfile.ZipFile(path) as archive:
+        targets = {}
+        for match in REL_TAG.finditer(archive.read('xl/_rels/workbook.xml.rels').decode('utf-8')):
+            rel_id, target = (match.group(1), match.group(2)) if match.group(1) else (match.group(4), match.group(3))
+            targets[rel_id] = 'xl/' + target.lstrip('/').removeprefix('xl/')
+        auto = {}
+        for name, rel_id in SHEET_TAG.findall(archive.read('xl/workbook.xml').decode('utf-8')):
+            part = targets.get(rel_id)
+            if not part or part not in archive.namelist():
+                continue
+            rows = set()
+            for tag in ROW_TAG.findall(archive.read(part).decode('utf-8')):
+                if ' ht="' in tag and not re.search(r'customHeight="(1|true)"', tag):
+                    rows.add(int(re.search(r' r="(\d+)"', tag).group(1)))
+            auto[name.replace('&amp;', '&')] = rows
+        return auto
+
+
+def row_heights(sheet, auto_rows):
+    """Heights someone set; auto-fitted heights are left to the application."""
+    return {k: v.height for k, v in sheet.row_dimensions.items() if v.height and k not in auto_rows}
+
+
+def compare_sheet(name, before, after, allowed, report, before_auto=frozenset(), after_auto=frozenset()):
     """Compare `after` (reported as `name`) against `before`, skipping cells `allowed` covers."""
     before_merges = {str(r) for r in before.merged_cells.ranges}
     after_merges = {str(r) for r in after.merged_cells.ranges}
@@ -173,15 +220,15 @@ def compare_sheet(name, before, after, allowed, report):
 
     widths = dimension_changes(
         'column',
-        {k: v.width for k, v in before.column_dimensions.items() if v.width},
-        {k: v.width for k, v in after.column_dimensions.items() if v.width},
+        column_widths(before),
+        column_widths(after),
         DEFAULT_COLUMN_WIDTH,
         COLUMN_WIDTH_TOLERANCE,
     )
     heights = dimension_changes(
         'row',
-        {k: v.height for k, v in before.row_dimensions.items() if v.height},
-        {k: v.height for k, v in after.row_dimensions.items() if v.height},
+        row_heights(before, before_auto),
+        row_heights(after, after_auto),
         before.sheet_format.defaultRowHeight or DEFAULT_ROW_HEIGHT,
         ROW_HEIGHT_TOLERANCE,
     )
@@ -281,11 +328,20 @@ def verify(original, output, allowed, new_sheets=None):
     pairs = [(name, name) for name in before_wb.sheetnames] + [
         (name, template) for name, template in new_sheets.items() if template
     ]
+    before_auto, after_auto = auto_height_rows(original), auto_height_rows(output)
     cells_checked = allowed_changes = merges_checked = 0
     for name, source in pairs:
         if name not in after_wb.sheetnames:
             continue
-        checked, changed, merges = compare_sheet(name, before_wb[source], after_wb[name], allowed, report)
+        checked, changed, merges = compare_sheet(
+            name,
+            before_wb[source],
+            after_wb[name],
+            allowed,
+            report,
+            before_auto.get(source, frozenset()),
+            after_auto.get(name, frozenset()),
+        )
         cells_checked += checked
         allowed_changes += changed
         merges_checked += merges

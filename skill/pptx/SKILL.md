@@ -13,7 +13,7 @@ A `.pptx` is a ZIP archive of XML files. Choose your approach by task:
 |---|---|
 | **Create** a new deck | Write a `pptxgenjs` script — see gotchas below. Never author in `python-pptx`: the idioms here are pptxgenjs, and transliterating them invents methods that do not exist (python-pptx has no `Slide.add_notes`; notes live at `slide.notes_slide.notes_text_frame.text`). python-pptx is for the read and validate scripts |
 | **Edit** an existing deck, or build from a template | unzip → edit `ppt/slides/slideN.xml` → zip |
-| **Read** content | `markitdown deck.pptx` (one block per slide under `<!-- Slide number: N -->` markers); visual grid: `python scripts/thumbnail.py deck.pptx` |
+| **Read** content | `markitdown deck.pptx` (one block per slide under `<!-- Slide number: N -->` markers); visual grid: `python scripts/thumbnail.py deck.pptx`; build and check: `python scripts/check.py deck.pptx` |
 
 ## Where working files go
 
@@ -62,6 +62,7 @@ costs a round trip per script. Everything else is plain Python, `node`, or shell
 
 | Script | What it does |
 |---|---|
+| `scripts/check.py deck.pptx [--build qa/build.js.txt] [--original src.pptx]` | **The QA step.** Builds, fixes content types, validates, runs the layout gate and placeholder scan, and draws the slide grid, in one call with one short report. |
 | `scripts/thumbnail.py deck.pptx [prefix]` | Labeled contact sheet of every slide — the visual-QA grid, and how you pick template layouts. `.pptx` only. Writes to `/mnt/data/qa/thumbnails.jpg` and prints the path. Pass `prefix` when two decks are in flight at once, or the second overwrites the first's grid |
 | `scripts/add_slide.py unpacked/ slide2.xml [--after slideN.xml]` | Duplicate a slide (or a `slideLayoutN.xml`) with all the package bookkeeping. Also takes a `.pptx` directly with `-o out.pptx` |
 | `scripts/fix_content_types.py deck.pptx` | Removes `[Content_Types].xml` overrides naming parts the package does not contain. **Run on every pptxgenjs deck right after `writeFile()`** — pptxgenjs declares one slideMaster per *slide*, so an N-slide deck claims N masters and writes one. Idempotent |
@@ -115,75 +116,9 @@ either side, and is immediately visible as wrong.
 - `check_layout.py` reports a deck whose slides are not 16:9, and reports a redesign whose
   canvas differs from the original when you pass `--original`.
 
-## Redesigning a deck the user gave you
+## Editing, redesigning or using a template
 
-A redesign changes how the deck looks. It does not change what it says.
-
-- **Move the words, never rewrite them.** Copy each string from the source deck verbatim —
-  titles, body copy, captions, footers, the lot. Shortening "A bounded assistant for a small
-  pilot cohort — useful on approved content" into "Useful on approved content" drops the
-  subject and leaves a sentence fragment on the slide; the user notices, and it reads as
-  careless in a document going to their stakeholders. `markitdown deck.pptx` gives you the
-  text to copy from.
-- **If something genuinely will not fit, say so rather than paraphrasing.** Give the slide
-  more room, use a smaller size, or split the content across two slides. Trimming a sentence
-  to make a box work is a last resort, and the final response must name every line you changed.
-- **Keep the slide count and order** unless the user asked for a different structure.
-- **Ask first when the request is ambiguous.** "Redesign this" can mean restyle these exact
-  slides, or build something new from the same material. Use `ask_user_question` — the two
-  produce very different decks.
-- **Match the source's canvas** exactly — see [Slide size](#slide-size).
-
-## Editing existing decks and templates
-
-Pick layouts first: `python scripts/thumbnail.py template.pptx template-thumbs` writes a labeled grid of every slide and prints the file(s) it created — `template-thumbs.jpg`, split into `template-thumbs-N.jpg` past 12 slides. **Always pass that second argument, named after the deck.** It defaults to `thumbnails`, so two decks thumbnailed in one directory silently overwrite each other's grids — the first deck's are simply gone (template analysis only — visual QA needs the full-resolution renders from [Converting to Images](#converting-to-images); it only accepts `.pptx`, so copy a `.potx` to a `.pptx` name first). Use it with `markitdown` to map each content section onto a template slide, and vary the layouts — don't put every section on the same title-and-bullets slide.
-
-**Unpack, edit and repack must be ONE `bash_tool` call.** Not one call to unpack and another
-to edit: `/tmp` is wiped between calls, so the second call finds an empty directory and the
-`mv` that produces the deliverable never runs. Chain the whole thing with `&&` in a single
-command:
-
-```bash
-cd /tmp && rm -rf unpacked && unzip -q /mnt/data/deck.pptx -d unpacked && \
-python3 - <<'XML_EDIT' && \
-from defusedxml.minidom import parse
-doc = parse('unpacked/ppt/slides/slide1.xml')
-# ... your edits ...
-open('unpacked/ppt/slides/slide1.xml', 'w').write(doc.toxml())
-XML_EDIT
-(cd unpacked && rm -f ../out.pptx && zip -Xrq ../out.pptx .) && \
-mv /tmp/out.pptx /mnt/data/deck.pptx
-```
-
-Verify in the NEXT call, against `/mnt/data/deck.pptx` — that is the copy that persists. If a
-check fails, re-run the whole command above; it always starts from the delivered file.
-
-The individual steps:
-
-```bash
-cd /tmp && rm -rf unpacked && python3 -c "import sys,zipfile; zipfile.ZipFile(sys.argv[1]).extractall('unpacked')" /mnt/data/deck.pptx
-python scripts/add_slide.py unpacked/ slide2.xml --after slide2.xml   # duplicate a slide (or slideLayoutN.xml); prints the new slide's path
-# reorder / delete slides = edit <p:sldIdLst> in ppt/presentation.xml
-python scripts/clean.py unpacked/                                     # after deletions: removes orphaned slides, media, rels
-# edit slide content in ppt/slides/slideN.xml
-(cd unpacked && rm -f ../out.pptx && zip -Xrq ../out.pptx .)          # from INSIDE the dir, no exclusions; rm first or deleted parts survive
-mv /tmp/out.pptx /mnt/data/deck.pptx                                  # replace the deliverable, same call
-python scripts/office/validate.py out.pptx --original deck.pptx
-```
-
-- **Do all structural work — add, delete, reorder — before editing any slide's content.** `add_slide.py` copies a slide file verbatim, so duplicating after you edit clones the edited content; and `clean.py` deletes any slide missing from `<p:sldIdLst>`, including one you just wrote.
-- **Never copy a slide file by hand** — `add_slide.py` does every registration a new slide needs and reports what it made (`Created ppt/slides/slide17.xml from slide2.xml`). It also works directly on a file: `add_slide.py deck.pptx slide2.xml -o out.pptx` — **pass `-o`, or it rewrites the input deck in place.** A duplicated slide still *references* its source's chart/SmartArt/embedded-object parts rather than cloning them, so editing one slide's chart changes the other's.
-- **If you use `python-pptx`**, three things it won't do: duplicate a slide (its only entry point is `add_slide(layout)`), preserve formatting through `text_frame.text = "..."` (that collapses the paragraph to a single unstyled run — assign `run.text` instead), or read the SVG/EMF most template art uses (`add_picture` raises `UnidentifiedImageError`).
-- Legacy `.ppt` must be converted first: `python scripts/office/soffice.py --headless --convert-to pptx file.ppt`. `.potx` templates unpack and pack identically — keep the `.potx` extension on the output.
-- To reuse a template icon or image, duplicate a slide or layout that already contains it.
-
-When filling in a template:
-
-- If you script an XML transform, parse with `defusedxml.minidom` — round-tripping OOXML through `xml.etree.ElementTree` rewrites namespace prefixes and corrupts the deck.
-- **Template slots ≠ source items.** If the template shows 4 team members and you have 3, delete the 4th member's entire group (image + text boxes), not just its text — then check for orphaned visuals in QA.
-- One `<a:p>` per list item — never concatenate items into a single paragraph. Copy the sibling `<a:pPr>` to preserve spacing, and put `b="1"` on the `<a:rPr>` of titles, section headers, and inline labels (`Status:`, `Owner:`).
-- Let bullets inherit from the layout; only add `<a:buChar>`, `<a:buAutoNum>` (numbered), or `<a:buNone>` to override — never a literal `•` in the text.
-- Text with leading or trailing spaces needs `xml:space="preserve"` on its `<a:t>`.
+When the task starts from a deck or template the user gave you, read `references/editing.md` (`read_file /mnt/data/skills/pptx/references/editing.md`) before changing anything, and pass `--original <their deck>` to `check.py`.
 
 ## Design Ideas
 
@@ -273,137 +208,21 @@ Choose colors that match your topic — don't default to generic blue. Use these
 
 ## QA (Required)
 
-Your first render usually has a few real issues — overlaps, overflow, misalignment. Find and fix those, re-render only the slides you changed, and stop.
-
-**Keep it to one fix round, two at most.** Every tool call spends part of a fixed step budget for the whole request; a run that keeps polishing hits that limit, stops with an error, and the user receives no deck — even a finished one. Run the file, layout and render checks in one command; read the results once and list every defect before changing anything; fix them all in one edit and rebuild; re-check once. Layout-gate defects must be fixed, but if only minor visual polish remains after that, deliver and mention it. Do not load this skill again after the conversation is summarized — its rules still apply and your generator script is still in `/mnt/data/qa/`.
-
-### Content QA
+One command builds the deck and runs every check:
 
 ```bash
-markitdown output.pptx
+python3 /mnt/data/skills/pptx/scripts/check.py /mnt/data/<deck>.pptx --build /mnt/data/qa/build.js.txt
+# for an edit or a template: add --original /mnt/data/<their deck>.pptx and drop --build
 ```
 
-Check for missing content, typos, wrong order.
+It runs the generator, `fix_content_types.py`, `validate.py`, the layout gate (`check_layout.py`), a scan for leftover placeholder text, and draws one labelled grid of every slide. The report ends with the grid's path. Exit 0 means every check passed; 2 means something to fix, named by slide and shape.
 
-**When using templates, check for leftover placeholder text:**
+1. **Read the report, then read the grid image once.** One image shows every slide. Do not render or read slides one by one: several slide images in one turn are dropped before they reach you.
+2. **List every defect before changing anything:** what the report names, plus what the grid shows (text running out of a box or off the slide, overlapping shapes, low contrast, uneven gaps, cramped margins, leftover placeholder text).
+3. **Fix them all in one `edit_file` call** on the generator, then rerun the same `check.py` line. Never patch the generator with `sed` or a Python replace.
+4. **Two rounds at most.** Every call spends part of a fixed step budget, and a run that reaches it delivers nothing. Layout-gate defects must be fixed; if only minor visual polish remains, deliver and mention it.
 
-```bash
-markitdown output.pptx | grep -iE "\bx{3,}\b|lorem|ipsum|\bTODO|\[insert|this.*(page|slide).*layout"
-```
-
-If grep returns results, fix them before declaring success.
-
-### File QA (required)
-
-```bash
-python3 /mnt/data/skills/pptx/scripts/fix_content_types.py output.pptx                    # pptxgenjs decks: always
-python3 /mnt/data/skills/pptx/scripts/office/validate.py output.pptx                      # built from scratch
-python3 /mnt/data/skills/pptx/scripts/office/validate.py output.pptx --original src.pptx  # built from a template
-```
-
-**Run `fix_content_types.py` first on anything pptxgenjs wrote.** It declares a slideMaster
-per slide and writes one, so a four-slide deck claims `slideMaster1..4` and ships
-`slideMaster1`. PowerPoint and LibreOffice ignore the strays; a reader that walks the
-overrides does not — the artifact preview dereferences each one and a single missing part
-leaves it with zero slides, so the user sees an empty deck. `validate.py` reports the same
-fault, but this is the only thing that fixes it: the bug is in the library, not your code.
-
-**If the deck came from a template, always pass `--original`.** A template may itself
-contain parts the XSD rejects, so a bare run can report failures you never caused — and
-a genuine regression can hide among them. `--original` baselines
-the schema and slide checks against the template, suppressing errors it already had.
-The structural checks — relationships, content types, charts — ignore `--original` and
-report template-inherited problems either way, so read those on their own merits.
-
-pptxgenjs emits chart XML PowerPoint refuses to open, and every other tool
-accepts: python-pptx opens those decks, LibreOffice renders them, the XSD
-passes them. Every failure names its fix. Fix it in the generator and rebuild.
-
-### Mandatory layout gate
-
-`validate.py` proves the file opens; it says nothing about whether the slides read correctly.
-Run the layout check on every deck before you hand it over:
-
-```bash
-python3 /mnt/data/skills/pptx/scripts/check_layout.py out.pptx                        # new deck
-python3 /mnt/data/skills/pptx/scripts/check_layout.py out.pptx --original deck.pptx   # edit or redesign; add --json for parsing
-```
-
-It reports four things a reader sees immediately, measured with the deck's real font metrics:
-slides that are not 16:9 (and, with `--original`, a canvas that no longer matches the source),
-text that outgrows its box (flagged when the overshoot is large, or when the overflow lands on
-other text), text a later shape covers, and shapes off the canvas. It exits 0 when clean and 2
-when it finds defects, each named by slide and shape.
-
-- **Do not deliver a deck while the check reports defects.** Fix the generator — widen the box,
-  shorten the line, move the shape — and rerun. "It looks fine in my head" is exactly the
-  failure this catches.
-- A defect it reports is a defect regardless of what the render looks like, because a renderer
-  may substitute a narrower font than PowerPoint will use.
-- It is a floor, not a ceiling: it cannot see contrast, alignment or crowding. Do the visual
-  pass below as well.
-- If the check cannot run at all, say so plainly in your final response rather than implying
-  the deck was verified.
-
-### Visual QA
-
-**Use the bundled grid — do not hand-roll a montage.** One command renders every slide and
-stitches a labelled contact sheet, into the scratch directory, and prints the path to read back:
-
-```bash
-python3 /mnt/data/skills/pptx/scripts/thumbnail.py out.pptx
-# Created 1 grid(s):
-#   /mnt/data/qa/thumbnails.jpg
-```
-
-Read that path and look at it. For a slide the grid makes you suspicious of, read its full-size
-render — `/mnt/data/qa/slide-N.jpg`, produced by
-[Converting to Images](#converting-to-images) — rather than squinting at the thumbnail.
-
-Writing your own PIL montage is the one thing to avoid here: every hand-rolled one so far has been
-saved to `/mnt/data/montage.png` and shipped to the user alongside the deck. Deleting it afterwards
-does not help — an output is collected at the end of the call that wrote it, and nothing retracts
-it later.
-
-Inspect every slide. After staring at the generating code you tend to see what you expect rather
-than what rendered, so look at the images fresh (a subagent works well for this if you have one).
-User-visible defects to look for:
-
-- **Text overflow or text cut off at a box or slide boundary — check this first.** It is the most common defect and always user-visible. (For a font the previewer renders unreliably per Typography, the preview is approximate: trust the ~10% slack you left, not its apparent fit.)
-- Overlapping elements (text through shapes, lines through words, stacked elements)
-- Source citations or footers colliding with content above
-- Elements too close (< 0.3" gaps) or cards/sections nearly touching
-- Uneven gaps (large empty area in one place, cramped in another)
-- Insufficient margin from slide edges (< 0.5")
-- Columns or similar elements not aligned consistently
-- Low-contrast text (e.g., light gray text on cream-colored background)
-- Template decoration mispositioned after text replacement — e.g., a title underline positioned for one line, but the replaced title wrapped to two
-- Low-contrast icons (e.g., dark icons on dark backgrounds without a contrasting circle)
-- Text boxes too narrow causing excessive wrapping
-- Leftover placeholder content
-
-**Finding a defect is half the job.** Fix it in the generator, rebuild, and re-render the slides
-you changed before delivering — a deck shipped with overlapping text after you looked at it is
-worse than one never checked, because the user reasonably assumes you looked. Say in the final
-response which slides you checked and what you fixed.
-
-## Converting to Images
-
-Convert presentations to individual slide images for visual inspection:
-
-```bash
-mkdir -p /mnt/data/qa
-python3 /mnt/data/skills/pptx/scripts/office/soffice.py --headless --convert-to pdf --outdir /mnt/data/qa output.pptx
-rm -f /mnt/data/qa/slide-*.jpg
-pdftoppm -jpeg -r 150 /mnt/data/qa/output.pdf /mnt/data/qa/slide
-ls -1 /mnt/data/qa/slide-*.jpg
-```
-
-**Render into the directory `/mnt/data/qa/`, never into `/mnt/data` itself.** Everything written directly to `/mnt/data` is delivered to the user as a result, so a nine-slide deck checked there arrives as nine images and a stray PDF alongside the file they asked for. A file in a subdirectory is not delivered and survives between calls, so the renders can be read on the next call. `qa` is a directory, not a name prefix — `/mnt/data/qa_slides.pdf` is a top-level file and would be delivered. Do not use a dot-prefixed directory: it is wiped between calls. The same applies to any intermediate PDF, thumbnail grid or cropped image: if the user did not ask for it, it belongs under `/mnt/data/qa/`.
-
-**Pass the absolute paths printed above directly to the view tool.** The `rm` clears stale images from prior runs. `pdftoppm` zero-pads based on page count: `slide-1.jpg` for decks under 10 pages, `slide-01.jpg` for 10-99, `slide-001.jpg` for 100+.
-
-**After fixes, rerun all four commands above** — the PDF must be regenerated from the edited `.pptx` before `pdftoppm` can reflect your changes.
+Do not deliver while the layout gate reports defects: a defect it reports is real even if the render looks fine, because the renderer may draw a narrower font than PowerPoint. If a check cannot run, say so rather than implying the deck was verified. `references/qa.md` explains each check in detail.
 
 ## Dependencies
 

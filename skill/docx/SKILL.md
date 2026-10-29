@@ -39,26 +39,24 @@ Write the build script to `/mnt/data/qa/build.js.txt` and run it in the same cal
 
 ## Verify the output
 
-After writing a `.docx`, render it and look at it:
+One command builds, validates and renders, and draws every page into one grid:
 
 ```bash
-mkdir -p /mnt/data/qa && \
-python3 /mnt/data/skills/docx/scripts/office/soffice.py --headless --convert-to pdf --outdir /mnt/data/qa /mnt/data/output.docx && \
-pdftoppm -jpeg -r 100 /mnt/data/qa/output.pdf /mnt/data/qa/page && \
-ls /mnt/data/qa/page-*.jpg   # then Read the images
+python3 /mnt/data/skills/docx/scripts/check.py /mnt/data/output.docx --build /mnt/data/qa/build.js.txt
+# for an edit of the user's file: python3 .../check.py /mnt/data/<name>-edited.docx --original /mnt/data/<name>.docx
 ```
+
+Read the report, then read the grid image once. Do not read the pages one by one: several page images in one turn are dropped before they reach you.
 
 **Render into `/mnt/data/qa`, never into `/mnt/data` itself.** A file at the top of `/mnt/data` is delivered to the user, so a checked document would arrive with a page image per page and a stray PDF beside it. A file in a subdirectory is not delivered, and it survives between calls, so the images can still be read on the next call.
 
 **Do not use a dot-prefixed directory such as `.render/`.** It is hidden from the user, but it is also wiped between calls, so a render written there cannot be read back at all.
 
-`pdftoppm` zero-pads page numbers to the width of the page count (`page-01.jpg`…`page-12.jpg`).
-
 ### Keep the check to one round, two at most
 
 Every tool call spends part of a fixed step budget for the whole request. A run that keeps polishing hits that limit, stops with an error, and the user receives no file — even a finished one. So:
 
-- **Build, validate and render in one call:** `node /mnt/data/qa/build.js.txt && python3 /mnt/data/skills/docx/scripts/office/validate.py <docx> && python3 /mnt/data/skills/docx/scripts/office/soffice.py … && pdftoppm …`.
+- **Build, validate and render in one call:** `scripts/check.py` with `--build` (above).
 - **Read the pages once and list every problem you see before changing anything.** Then fix them all in a single `edit_file` call (it accepts several edits at once) and rebuild and re-render in one command. Do not fix one cosmetic detail per round. Never patch the build script with `sed` or a Python `.replace()`: they fail silently and have deleted whole blocks.
 - **Read an image in a call of its own, never in the same call as the command that writes it.** Calls in one turn run together, so the read happens before the file exists.
 - **Re-render once to confirm.** If only something minor remains (spacing, a footer word, a line break), deliver the file and mention it rather than starting another round.
