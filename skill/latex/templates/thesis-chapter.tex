@@ -1,0 +1,60 @@
+% Chapter file for a thesis: the main file loads it with \include{thesis-chapter}.
+% The main file's preamble needs amsmath, graphicx, booktabs, hyperref and cleveref.
+
+\chapter{Methodology}
+\label{ch:methodology}
+
+This chapter describes the study design, the data and the analysis.
+\Cref{sec:design} sets out the design, \cref{sec:data} the data and
+\cref{sec:analysis} the model.
+
+\section{Study design}
+\label{sec:design}
+
+Describe the design and justify it with the literature~\cite{surname2023keyword}.
+
+\section{Data}
+\label{sec:data}
+
+\Cref{tab:sample} summarises the sample.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Sample by faculty (example values: replace them)}
+  \label{tab:sample}
+  \begin{tabular}{@{}lrr@{}}
+    \toprule
+    Faculty     & Respondents & Share (\%) \\
+    \midrule
+    Science     & 120         & 40.0 \\
+    Engineering & 105         & 35.0 \\
+    Arts        & 75          & 25.0 \\
+    \midrule
+    Total       & 300         & 100.0 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Analysis}
+\label{sec:analysis}
+
+The outcome is modelled with logistic regression:
+\begin{equation}
+  \log \frac{p_i}{1 - p_i} = \beta_0 + \sum_{j=1}^{k} \beta_j x_{ij},
+  \label{eq:logit}
+\end{equation}
+where $p_i$ is the probability of the outcome for respondent~$i$.
+The coefficients in~\eqref{eq:logit} are estimated by maximum likelihood~\cite{author2020book}.
+\Cref{fig:framework} shows the conceptual framework.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.8\linewidth]{example-image}% TODO: replace with the real figure file
+  \caption{Conceptual framework of the study.}
+  \label{fig:framework}
+\end{figure}
+
+\section{Summary}
+\label{sec:summary}
+
+Summarise the chapter in one paragraph and link it to the next chapter.

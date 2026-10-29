@@ -1,0 +1,86 @@
+\documentclass[aspectratio=169]{beamer}
+
+\usetheme{Madrid}
+\usecolortheme{default}
+\setbeamertemplate{navigation symbols}{}
+
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{booktabs}
+\usepackage{listings}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\bfseries,
+  columns=fullflexible,
+  frame=single,
+}
+
+\title{Presentation Title}% TODO: title
+\subtitle{Course or Conference}% TODO: subtitle
+\author{Presenter Name}% TODO: presenter
+\institute{Department, University}% TODO: institution
+\date{\today}
+
+\begin{document}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}{Outline}
+  \tableofcontents
+\end{frame}
+
+\section{Background}
+
+\begin{frame}{Problem}
+  \begin{itemize}
+    \item State the problem in one line.
+    \item Say why it matters.
+    \pause
+    \item Show the key idea last.
+  \end{itemize}
+\end{frame}
+
+\section{Method}
+
+\begin{frame}{Gauss--Legendre quadrature}
+  With two nodes,
+  \begin{equation}
+    \int_{-1}^{1} f(x)\,dx \approx f\!\left(-\frac{1}{\sqrt{3}}\right)
+                                 + f\!\left(\frac{1}{\sqrt{3}}\right),
+    \label{eq:gauss}
+  \end{equation}
+  which is exact for polynomials of degree at most~3.
+\end{frame}
+
+% Any frame with lstlisting, verbatim or \verb needs [fragile].
+\begin{frame}[fragile]{Code}
+  \begin{lstlisting}[language=Python]
+def trapezoid(f, a, b, n):
+    h = (b - a) / n
+    s = (f(a) + f(b)) / 2 + sum(f(a + i*h) for i in range(1, n))
+    return h * s
+  \end{lstlisting}
+\end{frame}
+
+\begin{frame}{Results}
+  \centering
+  \begin{tabular}{@{}lr@{}}
+    \toprule
+    Method & Error \\
+    \midrule
+    Trapezoid ($n = 4$) & $2.6 \times 10^{-2}$ \\
+    Gauss ($2$ nodes)   & $1.2 \times 10^{-3}$ \\
+    \bottomrule
+  \end{tabular}
+\end{frame}
+
+\begin{frame}{Summary}
+  \begin{block}{Take-home message}
+    One sentence the audience should remember.
+  \end{block}
+\end{frame}
+
+\end{document}
