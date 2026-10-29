@@ -133,7 +133,7 @@ export function getExtractedTextFormat(
  * and emoji-heavy content). Accepts an optional pre-built buffer to avoid
  * re-encoding when the caller already has one.
  */
-const truncate = (text: string, originalBuffer?: Buffer): string => {
+export const truncateCachedText = (text: string, originalBuffer?: Buffer): string => {
   const buffer = originalBuffer ?? Buffer.from(text, 'utf-8');
   if (buffer.length <= MAX_TEXT_CACHE_BYTES) {
     return text;
@@ -154,7 +154,7 @@ const extractUtf8 = (buffer: Buffer): string | null => {
   if (buffer.length <= MAX_TEXT_CACHE_BYTES) {
     return buffer.toString('utf-8');
   }
-  return truncate(buffer.toString('utf-8'), buffer);
+  return truncateCachedText(buffer.toString('utf-8'), buffer);
 };
 
 /**
@@ -206,7 +206,7 @@ const extractDocument = async (
     if (!result?.text) {
       return null;
     }
-    return truncate(result.text);
+    return truncateCachedText(result.text);
   } finally {
     fs.unlink(tempPath).catch(() => {});
   }

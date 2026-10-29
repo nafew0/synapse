@@ -4,6 +4,7 @@ import { Types } from 'mongoose';
 import type { FilterQuery } from 'mongoose';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { AuthoringFile, FileAuthoringDeps } from './tools';
+import { truncateCachedText } from '../code/extract';
 
 /** Where a stored copy lives, as returned by the deployment's storage strategy. */
 export type StoredCopy = Partial<IMongoFile> & { filepath: string; source: string };
@@ -107,6 +108,7 @@ export function createFileAuthoringDeps(context: FileAuthoringContext): FileAuth
       type,
       bytes: buffer.length,
       text: content,
+      textFormat: 'text',
       context: FileContext.file_authoring,
       usage: 0,
     };
@@ -114,8 +116,8 @@ export function createFileAuthoringDeps(context: FileAuthoringContext): FileAuth
     if (!created) {
       throw new Error(`File record for "${filename}" was not created`);
     }
-    const { text: _text, ...attachment } = created;
-    return { ...attachment, hasCompleteText: true };
+    /** The attachment carries the preview text, capped like sandbox outputs; the record keeps it all. */
+    return { ...created, text: truncateCachedText(content), hasCompleteText: true };
   };
 
   return { listFiles, readContent, saveFile };

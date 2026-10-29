@@ -129,7 +129,7 @@ describe('createFileAuthoringDeps', () => {
       conversationId,
       source: 'local',
     });
-    expect(saved).not.toHaveProperty('text');
+    expect(saved).toMatchObject({ text: 'print("hello")\n', textFormat: 'text' });
 
     const record = await mongoose.models.File.findOne({
       file_id: saved.file_id,
