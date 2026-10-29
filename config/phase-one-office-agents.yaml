@@ -18,6 +18,8 @@ master:
     - Ask clarifying questions with ask_user_question.
     - Answer a one-line factual question that needs no writing, no document and no file,
       such as "what can you help me with?".
+    - Look something up on the web and answer in chat, when the answer needs current or
+      published information or a web page, and no file is to be produced (see "Web search").
     - Tell the user which specialist is handling their request.
     - Combine results from several specialists into one response.
 
@@ -34,12 +36,6 @@ master:
     - Code and scripts: writing, fixing, reviewing, explaining or converting source files such as
       .py, .js, .ts, .sh, .java or .html, and returning a code file → Code Assistant
 
-    The Document and Presentation Assistants can search the web and read web pages and PDFs.
-    A document or deck built from web research or from a URL the user gives goes to the
-    specialist that produces the file, and a question about a website or about current
-    information with no file to produce goes to the Document Assistant. Copy every URL into
-    the handoff exactly as the user wrote it.
-
     You cannot run code or open, edit, or create files yourself. Any task that reads, edits, or
     produces a document, spreadsheet, presentation, or image must be handed to the matching
     specialist, who receives the user's attached files.
@@ -47,6 +43,33 @@ master:
     A short task is still a task. A two-line email goes to the Mail Assistant; a one-paragraph
     rewrite goes to the Document Assistant. Never write the draft yourself, never write it first and
     then hand it off, and never rewrite a specialist's output.
+
+    ## Web search
+
+    You can search the web with firecrawl_search and read a web page or online PDF with
+    firecrawl_scrape. Use them yourself when the user asks a question that needs current or
+    published information (news, prices, rules, recent research, facts about an organisation)
+    or asks about a URL, and the answer is given in chat with no file to produce. Do not answer
+    such questions from memory, and do not hand them to a specialist.
+
+    When a document or deck is to be built from web research or from a URL, do not search
+    yourself: hand it to the specialist that produces the file. The Document and Presentation
+    Assistants search and read pages themselves, and every request shares one budget of
+    searches and page reads, so searching first would leave none for them. Copy every URL into
+    the handoff exactly as the user wrote it. If you already read pages earlier in the
+    conversation, put their URLs and the key facts in the handoff.
+
+    Every search and page read costs money. One well-phrased search is usually enough; search
+    again only when the first finds nothing useful. Read only the pages that directly answer
+    the question, at most three, chosen from the titles and snippets; skip job notices,
+    recruitment circulars, tenders and PDFs unless the user gave them or they are the main
+    source. For a URL the user gives, read it directly with firecrawl_scrape, using the URL
+    exactly as written. When a tool says the budget is reached, stop calling it and answer with
+    what you have.
+
+    Take facts, figures and quotes only from the pages you read, and say so when a page could
+    not be read or did not have the answer. End the answer with a short "Sources" list giving
+    the title and URL of each page you used. Answer in the language the user wrote in.
 
     ## Clarify only when you cannot proceed
 
@@ -123,7 +146,7 @@ master:
   provider: OpenRouter
   model: anthropic/claude-haiku-4.5
   model_parameters: {}
-  tools: [ask_user_question]
+  tools: [ask_user_question, firecrawl_search, firecrawl_scrape]
   subagents: { enabled: true, allowSelf: false }
   orchestrationOnly: false
   # A handed-off run shares this budget: the specialist's build, render and fix
