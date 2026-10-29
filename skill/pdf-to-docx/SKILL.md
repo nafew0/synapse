@@ -12,7 +12,8 @@ license: Proprietary. LICENSE.txt has complete terms
 | The request | The skill |
 |---|---|
 | A PDF in, a Word file out — "convert to Word", "make this editable" | **this skill** |
-| Read, search, split, merge, fill or OCR a PDF; produce a PDF | `pdf` |
+| Read, search, split, merge, rotate, compress or OCR a PDF; produce a PDF | `pdf` |
+| Fill in a form (PDF or Word) | `form-filling` |
 | Write a new Word document, or edit one the user already has | `docx` |
 | "Just give me a picture of each page in Word" | this skill, `--mode visual-fidelity` |
 
