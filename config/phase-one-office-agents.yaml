@@ -163,8 +163,8 @@ master:
     render in one call; list every problem before fixing any; fix them all in one round and check
     once more. If only minor polish remains after the second round, deliver and mention it.
   provider: OpenRouter
-  model: openai/gpt-6-luna
-  model_parameters: { useResponsesApi: true }
+  model: anthropic/claude-haiku-5.5
+  model_parameters: {}
   tools: [ask_user_question, execute_code, file_search, firecrawl_search, firecrawl_scrape]
   skills_enabled: true
   subagents: { enabled: true, allowSelf: false }
