@@ -16,6 +16,7 @@ import type { StructuredToolInterface } from '@librechat/agents/langchain/tools'
 import type { ValidationIssue } from '@librechat/data-schemas';
 import type { CodeEnvRef } from 'librechat-data-provider';
 import { dedupeInjectedFiles } from './injectedFiles';
+import { fitImageForModel } from './vision';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
 import type { CodeExecutionContext } from './execution';
 import type { ServerRequest } from '~/types';
@@ -1483,19 +1484,33 @@ function isCompleteImage(buffer: Buffer, mime: string): boolean {
  * callback saves the same data URL as a viewable attachment. Shared by the
  * skill-file and sandbox read paths so both surface images identically.
  */
-function buildImageArtifactResult(
+async function buildImageArtifactResult(
   toolCallId: string,
   displayPath: string,
   mimeType: string,
-  bytes: number,
-  base64: string,
-): ToolExecuteResult {
+  buffer: Buffer,
+): Promise<ToolExecuteResult> {
+  const image = await fitImageForModel(buffer, mimeType).catch((error: unknown) => {
+    logger.warn(`[handleReadFileCall] Could not prepare "${displayPath}" for the model:`, error);
+    return null;
+  });
+  if (!image) {
+    return {
+      toolCallId,
+      status: 'success',
+      content: `Image "${displayPath}" (${buffer.length} bytes) is too large to show. Use \`bash_tool\` to make a smaller copy (e.g. \`convert ${displayPath} -resize 1200x1200 /mnt/data/qa/small.jpg\`) and read that.`,
+    };
+  }
+  const resized =
+    image.bytes === buffer.length ? '' : `, shown as a ${image.bytes}-byte ${image.mimeType}`;
   return {
     toolCallId,
     status: 'success',
-    content: `Image: ${displayPath} (${bytes} bytes, ${mimeType})`,
+    content: `Image: ${displayPath} (${buffer.length} bytes, ${mimeType}${resized})`,
     artifact: {
-      content: [{ type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } }],
+      content: [
+        { type: 'image_url', image_url: { url: `data:${image.mimeType};base64,${image.base64}` } },
+      ],
     },
   };
 }
@@ -1600,7 +1615,7 @@ async function handleSandboxImageRead(
     return binaryHint();
   }
   onSuccess?.();
-  return buildImageArtifactResult(tc.id, filePath, mimeType, buffer.length, read.base64);
+  return await buildImageArtifactResult(tc.id, filePath, mimeType, buffer);
 }
 
 /**
@@ -3507,13 +3522,7 @@ async function handleReadFileCall(
 
       // Return images/PDFs as artifacts
       if (IMAGE_MIMES.has(file.mimeType) && buffer.length <= MAX_BINARY_BYTES) {
-        return buildImageArtifactResult(
-          tc.id,
-          args.path,
-          file.mimeType,
-          buffer.length,
-          buffer.toString('base64'),
-        );
+        return await buildImageArtifactResult(tc.id, args.path, file.mimeType, buffer);
       }
 
       // TODO: PDF artifact support requires a document content block path

@@ -66,7 +66,9 @@ Every tool call spends part of a fixed step budget for the whole request. A run 
 
 "Convert this to Word", "type this up", or "a new one in exactly this layout" with a picture of an office order, letter or notice. The user wants their page back as an editable file that looks like the picture. A centred list of paragraphs with the text swapped for `[placeholders]` is the failure this section exists to prevent.
 
-First run `ls /mnt/data` to see whether the picture is there. An image attached with **Upload Image** is shown to you in the conversation but is not copied into the sandbox: then transcribe from what you see, skip the OCR, cropping and side-by-side steps below, and tell the user that the logo and signatures were left as marked spaces because the picture was not available as a file.
+First run `ls /mnt/data`: an attached picture is normally there under its own name, and `read_file` on it (or on any crop or render you make) shows it to you. If it is missing, transcribe from what you see in the conversation, skip the OCR, cropping and side-by-side steps below, and tell the user the logo and signatures were left as marked spaces because the picture was not available as a file.
+
+"Convert" means the user's own document: keep every name, number and signature. Only "a new one like this" with new details from the user replaces them.
 
 **Copy every word.** Look at the image and transcribe it in full: letterhead, memo number, both dates, title, body, signature block, addressee, the second memo line, and every copy-list entry with its own numbering (`২-১২।` stays one entry). Keep Bangla digits as Bangla digits. Small print in a low-resolution scan is hard to read, so take a second reading for anything you are unsure of: `tesseract <image> - -l ben+eng --psm 6` on a copy upscaled with `convert <image> -resize 300% /mnt/data/qa/up.png`. Mark a word you still cannot read as `[?]`, never a guess. A "new order in this layout" with no new content still keeps the sample's text, so the user edits from a full draft. Use a placeholder only for a field the user says will change and did not supply.
 
