@@ -187,71 +187,85 @@ interface:
 # without the user choosing a mode: short documents are read in full, long ones are searched,
 # spreadsheets and data files go to the code sandbox. Thresholds are in tokens.
 fileConfig:
-  # Uploads are limited to what this deployment can actually do something with. Anything not
-  # listed is refused by the attach menu, by client validation and by the server's upload filter.
-  # Types left out on purpose:
-  #   video/*            nothing reads it — no ffmpeg in the sandbox, no vision model takes it
-  #   audio/* on agents  the sandbox has no speech-to-text; audio belongs to the Transcriber
-  #   aac audio          untested; m4a, mp4 and webm were verified 2026-09-23
-  #   archives on single models — nothing can open them without the code sandbox
+  # Uploads are limited to the file types ChatGPT or Claude document as supported (checked
+  # 2026-10-29; docs/chat-file-editing-plan.md), and only where this deployment can do something
+  # with them. Two exceptions neither documents but users rely on: .heic/.heif photos (the iPhone
+  # default) and .ogg/.webm/.flac audio for the Transcriber (verified with the STT model).
+  #
+  # supportedExtensions is the gate: the attach menu, client validation and the server's upload
+  # filter all refuse a name whose extension is not listed. Many extensions share text/plain, so
+  # the MIME patterns below cannot tell .txt from .conf; they stay broad enough for the types
+  # browsers report for the listed extensions and are used to route a file (parser, OCR, vision,
+  # sandbox).
+  #
+  # Left out on purpose: .pkl (opening a pickle runs code in it); archives on single models
+  # (nothing opens them without the sandbox); video (nothing reads it).
   endpoints:
     # Office Assistant: the code sandbox, LibreOffice and the document skills.
     agents:
+      supportedExtensions: [pdf, doc, docx, odt, rtf, epub, pptx,
+                            txt, md, html, htm, tex,
+                            csv, tsv, xls, xlsx, json, xml,
+                            c, cpp, cs, java, php, py, rb, js, ts, sh, css, go,
+                            jpg, jpeg, png, gif, webp, heic, heif,
+                            zip, tar]
       supportedMimeTypes:
-        # Vision for the model; Pillow, OpenCV and cairosvg in the sandbox
-        - '^image/(jpeg|png|gif|webp|heic|heif|svg\+xml)$'
-        # pdfplumber, pypdf, qpdf, poppler, and the pdf-to-docx skill
+        - '^image/(jpeg|png|gif|webp|heic|heif)$'
         - '^application/pdf$'
-        # Word, Excel and PowerPoint — legacy and OOXML, via the docx/xlsx/pptx skills
-        - '^application/(msword|vnd\.ms-excel|vnd\.ms-powerpoint)$'
-        - '^application/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.(presentation|template))$'
-        # OpenDocument — LibreOffice Writer, Calc and Impress are installed
-        - '^application/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)$'
-        - '^application/(epub\+zip|rtf)$'
-        # Text, markup and tabular data — pandas, pyarrow, chdb
-        - '^text/(plain|markdown|csv|tab-separated-values|html|xml|css|calendar|vtt)$'
-        - '^application/(json|xml|yaml|sql|csv)$'
-        - '^application/(x-parquet|vnd\.apache\.parquet)$'
-        # Source files the sandbox can read or run
-        - '^text/(javascript|x-c|x-c\+\+|x-h|x-csharp|x-java|x-php|x-python|x-script\.python|x-ruby|x-tex)$'
-        - '^application/(typescript|x-sh|vnd\.coffeescript)$'
-        # Archives and mail, opened with code
+        - '^application/(msword|vnd\.ms-excel|rtf|epub\+zip)$'
+        - '^application/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation)$'
+        - '^application/vnd\.oasis\.opendocument\.text$'
+        # Text, markup, data and source files: browsers name these many ways (text/x-c++src,
+        # text/x-go, application/x-tex), and the extension list already decides what is allowed.
+        - '^text/[\w.+-]+$'
+        - '^application/(json|xml|csv|javascript|x-javascript|typescript|x-sh|x-tex)$'
+        # Archives, opened with code in the sandbox
         - '^application/(zip|x-zip-compressed|x-tar)$'
-        - '^message/rfc822$'
 
-    # Single models read files, they cannot edit them: only what the parser or the RAG API can
-    # turn into text, plus images for vision.
-    custom: &readOnlyUploads
+    # Single models: no sandbox. They read what the parser or the RAG API can turn into text,
+    # plus images for vision.
+    custom: &chatUploads
+      supportedExtensions: [pdf, doc, docx, odt, rtf, epub, pptx,
+                            txt, md, html, htm, tex,
+                            csv, tsv, xls, xlsx, json, xml,
+                            c, cpp, cs, java, php, py, rb, js, ts, sh, css, go,
+                            jpg, jpeg, png, gif, webp, heic, heif]
       supportedMimeTypes:
         - '^image/(jpeg|png|gif|webp|heic|heif)$'
         - '^application/pdf$'
-        - '^application/(msword|vnd\.ms-excel|vnd\.ms-powerpoint)$'
+        - '^application/(msword|vnd\.ms-excel|rtf|epub\+zip)$'
         - '^application/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation)$'
-        - '^application/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation)$'
-        - '^application/epub\+zip$'
-        - '^text/(plain|markdown|csv|tab-separated-values|html|xml)$'
-        - '^application/(json|xml|csv)$'
+        - '^application/vnd\.oasis\.opendocument\.text$'
+        - '^text/[\w.+-]+$'
+        - '^application/(json|xml|csv|javascript|x-javascript|typescript|x-sh|x-tex)$'
 
-    # Same as above, plus the audio formats verified with the STT model, for the Transcriber.
+    # The single models and the Transcriber share this endpoint, so it takes the single-model
+    # types plus the audio formats verified with the STT model.
     OpenRouter:
+      supportedExtensions: [pdf, doc, docx, odt, rtf, epub, pptx,
+                            txt, md, html, htm, tex,
+                            csv, tsv, xls, xlsx, json, xml,
+                            c, cpp, cs, java, php, py, rb, js, ts, sh, css, go,
+                            jpg, jpeg, png, gif, webp, heic, heif,
+                            mp3, wav, m4a, ogg, webm, flac]
       supportedMimeTypes:
         - '^image/(jpeg|png|gif|webp|heic|heif)$'
         - '^application/pdf$'
-        - '^application/(msword|vnd\.ms-excel|vnd\.ms-powerpoint)$'
+        - '^application/(msword|vnd\.ms-excel|rtf|epub\+zip)$'
         - '^application/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation)$'
-        - '^application/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation)$'
-        - '^application/epub\+zip$'
-        - '^text/(plain|markdown|csv|tab-separated-values|html|xml)$'
-        - '^application/(json|xml|csv)$'
-        - '^audio/(mpeg|mp3|wav|wave|x-wav|ogg|vorbis|flac|x-flac|mp4|x-m4a|m4a|webm)$'
+        - '^application/vnd\.oasis\.opendocument\.text$'
+        - '^text/[\w.+-]+$'
+        - '^application/(json|xml|csv|javascript|x-javascript|typescript|x-sh|x-tex)$'
+        - '^audio/(mpeg|mp3|wav|wave|x-wav|ogg|vorbis|flac|x-flac|x-m4a|m4a|mp4|webm)$'
 
     # Image generation takes pictures and nothing else.
     OpenRouter Image:
+      supportedExtensions: [jpg, jpeg, png, gif, webp, heic, heif]
       supportedMimeTypes:
         - '^image/(jpeg|png|gif|webp|heic|heif)$'
 
     # Any endpoint without its own entry falls here rather than to the sandbox list.
-    default: *readOnlyUploads
+    default: *chatUploads
 
   autoPreparation:
     # Per-file ceiling for reading a document's text straight into the conversation.

@@ -403,6 +403,7 @@
   "com_error_files_process": "An error occurred while processing the file.",
   "com_error_files_total_too_large": "The selected files are too large together. The total size must be under {{0}} MB.",
   "com_error_files_unsupported": "This file type can't be attached here.",
+  "com_error_files_unsupported_type": "\"{{0}}\" can't be attached here. Supported files are documents, spreadsheets, presentations, text, code and images.",
   "com_error_files_upload": "An error occurred while uploading the file.",
   "com_error_files_upload_canceled": "The file upload request was canceled. Note: the file upload may still be processing and will need to be manually deleted.",
   "com_error_files_upload_too_large": "The file is too large.  Please upload a file smaller than {{0}} MB",
