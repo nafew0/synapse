@@ -14,7 +14,8 @@ A `.docx` is a ZIP archive of XML files. Choose your approach by task:
 | **Create** a new document | Write a `docx` (npm) script — see gotchas below |
 | **Edit** an existing document | `unzip` → edit `word/document.xml` → `zip` (docx-js cannot open existing files) |
 | **Read** content | `pandoc -t markdown file.docx` |
-| **Recreate** a scanned or photographed page (`.jpg`, `.png`) as Word | docx-js, following **From a scan or photo of a page** below |
+| **Office letter, order or notice** (letterhead, memo and date row, signature blocks, copy list) | `scripts/letter.py` with a JSON spec — see `references/scan.md` for the spec; it builds, fits the page, validates and renders in one call |
+| **Recreate** a scanned or photographed page (`.jpg`, `.png`) as Word | `references/scan.md` |
 
 > Script paths below are relative to this skill's directory.
 
@@ -58,32 +59,14 @@ ls /mnt/data/qa/page-*.jpg   # then Read the images
 Every tool call spends part of a fixed step budget for the whole request. A run that keeps polishing hits that limit, stops with an error, and the user receives no file — even a finished one. So:
 
 - **Build, validate and render in one call:** `node /mnt/data/qa/build.js.txt && python3 /mnt/data/skills/docx/scripts/office/validate.py <docx> && python3 /mnt/data/skills/docx/scripts/office/soffice.py … && pdftoppm …`.
-- **Read the pages once and list every problem you see before changing anything.** Then fix them all in a single `edit_file` call (it accepts several edits at once) and rebuild and re-render in one command. Do not fix one cosmetic detail per round.
+- **Read the pages once and list every problem you see before changing anything.** Then fix them all in a single `edit_file` call (it accepts several edits at once) and rebuild and re-render in one command. Do not fix one cosmetic detail per round. Never patch the build script with `sed` or a Python `.replace()`: they fail silently and have deleted whole blocks.
+- **Read an image in a call of its own, never in the same call as the command that writes it.** Calls in one turn run together, so the read happens before the file exists.
 - **Re-render once to confirm.** If only something minor remains (spacing, a footer word, a line break), deliver the file and mention it rather than starting another round.
 - **Do not load this skill again** after the conversation is summarized. Its rules still apply, and your build script is still at `/mnt/data/qa/build.js.txt`.
 
 ## From a scan or photo of a page
 
-"Convert this to Word", "type this up", or "a new one in exactly this layout" with a picture of an office order, letter or notice. The user wants their page back as an editable file that looks like the picture. A centred list of paragraphs with the text swapped for `[placeholders]` is the failure this section exists to prevent.
-
-First run `ls /mnt/data`: an attached picture is normally there under its own name, and `read_file` on it (or on any crop or render you make) shows it to you. If it is missing, transcribe from what you see in the conversation, skip the OCR, cropping and side-by-side steps below, and tell the user the logo and signatures were left as marked spaces because the picture was not available as a file.
-
-"Convert" means the user's own document: keep every name, number and signature. Only "a new one like this" with new details from the user replaces them.
-
-**Copy every word.** Look at the image and transcribe it in full: letterhead, memo number, both dates, title, body, signature block, addressee, the second memo line, and every copy-list entry with its own numbering (`২-১২।` stays one entry). Keep Bangla digits as Bangla digits. Small print in a low-resolution scan is hard to read, so take a second reading for anything you are unsure of: `tesseract <image> - -l ben+eng --psm 6` on a copy upscaled with `convert <image> -resize 300% /mnt/data/qa/up.png`. Mark a word you still cannot read as `[?]`, never a guess. A "new order in this layout" with no new content still keeps the sample's text, so the user edits from a full draft. Use a placeholder only for a field the user says will change and did not supply.
-
-**Carry the pictures over, cropped from the scan.** Cut the logo, the signatures and any seal out of the image with Pillow and place them with `ImageRun` at the size they occupy on the page. A signature is the cropped image only: never also type the handwriting out as text beside it. Handwritten margin notes, "Received" stamps and initials added after printing are not part of the document: leave them out and say so in one line.
-
-**Rebuild the layout, not just the reading order:**
-
-- Things side by side on the page go in a borderless table with explicit DXA widths: logo beside the letterhead, memo number on the left with the date on the right, a signature on the right. A date given in two calendars (`০১ আশ্বিন ১৪৩৩` over `১৬ সেপ্টেম্বর ২০২৬`) is two lines in one cell, keeping the line between them if the page draws one.
-- A right-hand signature block is right-aligned or indented as a block, never pushed across with spaces.
-- Numbered copy lists use a hanging indent so wrapped lines align under the text, not under the number.
-- Keep what the page emphasises: the underlined title, the bold heading, the rule under the letterhead, justified body text.
-- Bangla text needs a Bangla font in the complex-script slot: `font: { ascii: "Times New Roman", hAnsi: "Times New Roman", cs: "Nikosh" }`. Set `size` and the run's `sizeComplexScript` together.
-- Page: A4, with margins that put the text where the scan has it.
-
-**Then compare, side by side.** Always render the `.docx` (see **Verify the output**) and check it fits on as many pages as the scan. When the picture is in `/mnt/data`, put the source and the render in one image: `convert /mnt/data/<scan> /mnt/data/qa/page-1.jpg -resize x1100 +append /mnt/data/qa/compare.jpg`. Read it, list every block that sits in a different place or is missing, and fix them all in one round. Do not deliver a page whose blocks are arranged differently from the scan.
+A picture of an office order, letter or notice to be turned into Word: read `references/scan.md` (`read_file /mnt/data/skills/docx/references/scan.md`) and follow it. It is about five tool calls with `scripts/crop.py` and `scripts/letter.py`; do not hand-write a docx-js script for it.
 
 ## Editing existing documents
 

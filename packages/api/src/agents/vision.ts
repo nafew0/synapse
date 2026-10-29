@@ -1,17 +1,21 @@
 import sharp from 'sharp';
 import { HARD_MAX_TOOL_RESULT_CHARS } from '@librechat/agents';
 
-/** Room left in the tool block for the `data:` prefix and the text line beside the image. */
-const MAX_IMAGE_BASE64_CHARS = HARD_MAX_TOOL_RESULT_CHARS - 20_000;
+/**
+ * Every tool result of one model turn shares a single {@link HARD_MAX_TOOL_RESULT_CHARS} budget,
+ * and the SDK drops all of them when the total is over. A quarter of it lets a turn read three
+ * images (a scan and two crops) with room for their text lines.
+ */
+const MAX_IMAGE_BASE64_CHARS = Math.floor(HARD_MAX_TOOL_RESULT_CHARS / 4);
 
 /** Vision providers downsample past this edge, so larger renders buy no detail. */
 const MAX_IMAGE_EDGE = 1568;
 
 const JPEG_STEPS: ReadonlyArray<{ edge: number; quality: number }> = [
-  { edge: MAX_IMAGE_EDGE, quality: 85 },
-  { edge: MAX_IMAGE_EDGE, quality: 70 },
+  { edge: MAX_IMAGE_EDGE, quality: 80 },
   { edge: 1200, quality: 70 },
-  { edge: 900, quality: 65 },
+  { edge: 1000, quality: 60 },
+  { edge: 800, quality: 55 },
 ];
 
 export interface ModelImage {
@@ -21,11 +25,12 @@ export interface ModelImage {
 }
 
 /**
- * Returns an image small enough for the model to see. The agents SDK drops any tool-result
- * block over {@link HARD_MAX_TOOL_RESULT_CHARS}, so a 435 KB scan (580K base64 chars) reached
- * the model as "[omitted 1 oversized atomic tool-content block: image_url]". Images already
- * under the limit pass through untouched; larger ones are re-encoded as JPEG on white, shrinking
- * until they fit. Returns null when even the smallest step is too large.
+ * Returns an image small enough for the model to see. The agents SDK drops tool results over
+ * {@link HARD_MAX_TOOL_RESULT_CHARS}, so a 435 KB scan (580K base64 chars) reached the model as
+ * "[omitted 1 oversized atomic tool-content block: image_url]", and so did three 200% crops read
+ * in one turn. Images under the per-image budget pass through untouched; larger ones are
+ * re-encoded as JPEG on white, shrinking until they fit. Returns null when even the smallest step
+ * is too large.
  */
 export async function fitImageForModel(
   buffer: Buffer,
