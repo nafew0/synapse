@@ -38,11 +38,15 @@ jest.mock('@librechat/api', () => ({
   },
   recordCollectedUsage: mockRecordCollectedUsage,
   sanitizeMessageForTransmit: jest.fn((msg) => msg),
+  classifyError: jest.fn(() => 'unknown'),
+  toPublicError: jest.fn((_error, ctx) => ({ code: 'service_busy', requestId: ctx.requestId })),
+  toChatErrorText: jest.fn(({ code, requestId }) => JSON.stringify({ type: code, requestId })),
 }));
 
 jest.mock('librechat-data-provider', () => ({
   isAssistantsEndpoint: jest.fn().mockReturnValue(false),
   ErrorTypes: { INVALID_REQUEST: 'INVALID_REQUEST', NO_SYSTEM_MESSAGES: 'NO_SYSTEM_MESSAGES' },
+  PublicErrorCodes: { CONNECTION_LOST: 'connection_lost' },
 }));
 
 jest.mock('~/app/clients/prompts', () => ({
@@ -74,10 +78,12 @@ jest.mock('./abortRun', () => ({
 }));
 
 const { logger } = require('@librechat/data-schemas');
+const { toPublicError } = require('@librechat/api');
 const { sendError } = require('~/server/middleware/error');
 const { handleAbortError, spendCollectedUsage } = require('./abortMiddleware');
 
 const buildAbortRequest = () => ({
+  requestId: 'req-abort-1',
   body: {
     model: 'gpt-4',
   },
@@ -289,10 +295,14 @@ describe('abortMiddleware - handleAbortError', () => {
       message: error.message,
     });
     expect(sendError).toHaveBeenCalledTimes(1);
+    expect(toPublicError).not.toHaveBeenCalled();
+    expect(sendError.mock.calls[0][2].text).toBe(
+      JSON.stringify({ type: 'connection_lost', requestId: 'req-abort-1' }),
+    );
   });
 
-  it('keeps unexpected generation errors classified as errors', async () => {
-    const error = new Error('Provider failed');
+  it('logs unexpected generation errors once and sends only a public code', async () => {
+    const error = new Error('429 Rate limit reached for gpt-x in organization org-abc');
 
     await handleAbortError({}, buildAbortRequest(), error, {
       sender: 'AI',
@@ -302,11 +312,19 @@ describe('abortMiddleware - handleAbortError', () => {
       userMessageId: 'user-message-123',
     });
 
-    expect(logger.error).toHaveBeenCalledWith(
-      '[handleAbortError] AI response error; aborting request:',
-      error,
-    );
+    expect(toPublicError).toHaveBeenCalledTimes(1);
+    expect(toPublicError).toHaveBeenCalledWith(error, {
+      route: 'handleAbortError',
+      requestId: 'req-abort-1',
+      userId: 'user-123',
+      conversationId: 'convo-123',
+      agentId: undefined,
+    });
     expect(logger.debug).not.toHaveBeenCalled();
     expect(sendError).toHaveBeenCalledTimes(1);
+    const { text } = sendError.mock.calls[0][2];
+    expect(JSON.parse(text)).toEqual({ type: 'service_busy', requestId: 'req-abort-1' });
+    expect(text).not.toContain('gpt-x');
+    expect(text).not.toContain('org-abc');
   });
 });

@@ -1,6 +1,7 @@
 const path = require('path');
 const mongoose = require('mongoose');
-const { User } = require('@librechat/data-schemas').createModels(mongoose);
+const { createModels, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
+const { Institution, User } = createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const { registerUser } = require('~/server/services/AuthService');
 const { askQuestion, silentExit } = require('./helpers');
@@ -14,20 +15,28 @@ const connect = require('./connect');
   console.purple('--------------------------');
 
   if (process.argv.length < 5) {
-    console.orange('Usage: npm run create-user -- <email> <name> <username> [--email-verified=false]');
+    console.orange(
+      'Usage: npm run create-user -- <email> <name> <username> [--email-verified=false] [--tenant=<id>]',
+    );
     console.orange('Note: if you do not pass in the arguments, you will be prompted for them.');
     console.orange(
       'If you really need to pass in the password, you can do so as the 4th argument (not recommended for security).',
     );
     console.orange('Use --email-verified=false to set emailVerified to false. Default is true.');
+    console.orange('Use --tenant=<id> to create the user as a member of that institution.');
     console.purple('--------------------------');
   }
 
   // Parse command line arguments
-  let email, password, name, username, emailVerified, provider;
+  let email, password, name, username, emailVerified, provider, tenantId;
   for (let i = 2; i < process.argv.length; i++) {
     if (process.argv[i].startsWith('--email-verified=')) {
       emailVerified = process.argv[i].split('=')[1].toLowerCase() !== 'false';
+      continue;
+    }
+
+    if (process.argv[i].startsWith('--tenant=')) {
+      tenantId = process.argv[i].split('=')[1].trim();
       continue;
     }
 
@@ -97,17 +106,34 @@ or the user will need to attempt logging in to have a verification link sent to 
     }
   }
 
-  const userExists = await User.findOne({ $or: [{ email }, { username }] });
+  if (tenantId !== undefined) {
+    const institution = await runAsSystem(() => Institution.findOne({ tenantId }).lean());
+    if (!institution) {
+      console.red(`Error: No institution with tenant id "${tenantId}"!`);
+      silentExit(1);
+    }
+    if (institution.status !== 'active') {
+      console.red(`Error: Institution "${tenantId}" is ${institution.status}, not active!`);
+      silentExit(1);
+    }
+  }
+
+  const userExists = await runAsSystem(() => User.findOne({ $or: [{ email }, { username }] }));
   if (userExists) {
     console.red('Error: A user with that email or username already exists!');
     silentExit(1);
   }
 
   const user = { email, password, name, username, confirm_password: password };
-  const additionalData = { emailVerified, ...(provider !== undefined ? { provider } : {}) };
+  const additionalData = {
+    emailVerified,
+    ...(provider !== undefined ? { provider } : {}),
+    ...(tenantId !== undefined ? { tenantId } : {}),
+  };
+  const register = () => registerUser(user, additionalData);
   let result;
   try {
-    result = await registerUser(user, additionalData);
+    result = await (tenantId !== undefined ? tenantStorage.run({ tenantId }, register) : register());
   } catch (error) {
     console.red('Error: ' + error.message);
     silentExit(1);
@@ -118,10 +144,11 @@ or the user will need to attempt logging in to have a verification link sent to 
     silentExit(1);
   }
 
-  const userCreated = await User.findOne({ $or: [{ email }, { username }] });
+  const userCreated = await runAsSystem(() => User.findOne({ $or: [{ email }, { username }] }));
   if (userCreated) {
     console.green('User created successfully!');
     console.green(`Email verified: ${userCreated.emailVerified}`);
+    console.green(`Institution: ${userCreated.tenantId ?? 'none (platform account)'}`);
     silentExit(0);
   }
 })();

@@ -357,8 +357,9 @@ export function applyModelSpecEphemeralAgent({
 
   // For existing conversations, layer per-conversation localStorage overrides
   // on top of spec defaults so user modifications persist across navigation.
-  // If localStorage is empty (e.g., cleared), spec values stand alone.
-  if (key !== Constants.NEW_CONVO) {
+  // If localStorage is empty (e.g., cleared), spec values stand alone. A spec that hides the
+  // badge row offers no toggles, so a stored value can only be stale and is ignored.
+  if (key !== Constants.NEW_CONVO && modelSpec.hideBadgeRow !== true) {
     const toolStorageMap: Array<[keyof t.TEphemeralAgent, string]> = [
       ['execute_code', LocalStorageKeys.LAST_CODE_TOGGLE_],
       ['web_search', LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_],

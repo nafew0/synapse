@@ -126,9 +126,10 @@ const mockCleanupMCPRequestContextForReq = jest.fn(async (req) => {
   }
 });
 
-jest.mock('@librechat/data-schemas', () => ({
-  logger: mockLogger,
-}));
+jest.mock('@librechat/data-schemas', () => {
+  const { tenantStorage, redactMessage } = jest.requireActual('@librechat/data-schemas');
+  return { logger: mockLogger, tenantStorage, redactMessage };
+});
 
 jest.mock('@librechat/api', () => ({
   sendEvent: jest.fn(),
@@ -150,6 +151,9 @@ jest.mock('@librechat/api', () => ({
   buildMessageFiles: jest.fn(() => []),
   resolveTitleTiming: jest.fn(() => 'immediate'),
   resolveConversationAnchor: jest.requireActual('@librechat/api').resolveConversationAnchor,
+  toChatError: jest.requireActual('@librechat/api').toChatError,
+  toPublicError: jest.requireActual('@librechat/api').toPublicError,
+  toChatErrorText: jest.requireActual('@librechat/api').toChatErrorText,
   GenerationJobManager: mockGenerationJobManager,
   getReferencedQuotes: jest.fn((quotes) => {
     if (!Array.isArray(quotes)) {
@@ -239,6 +243,11 @@ function createResumableResponse() {
 
 function nextTick() {
   return new Promise((resolve) => setImmediate(resolve));
+}
+
+/** Matches the user-safe chat error text `{"type":<code>,"requestId":<id>}` stored on the job. */
+function publicErrorText(type) {
+  return expect.stringMatching(new RegExp(`^\\{"type":"${type}","requestId":"[^"]+"\\}$`));
 }
 
 describe('ResumableAgentController resume metadata', () => {
@@ -660,18 +669,14 @@ describe('ResumableAgentController resume metadata', () => {
     expect(res.json).toHaveBeenCalledWith({
       status: 409,
       code: 'ACCOUNT_DELETION_IN_PROGRESS',
-      error: 'Account deletion is in progress',
+      requestId: expect.any(String),
       generationProtocolVersion: 1,
     });
     expect(initializeClient).not.toHaveBeenCalled();
     expect(mockAcceptAgentStartupTelemetry).not.toHaveBeenCalled();
     expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
       'conversation-123',
-      JSON.stringify({
-        status: 409,
-        code: 'ACCOUNT_DELETION_IN_PROGRESS',
-        error: 'Account deletion is in progress',
-      }),
+      publicErrorText('request_failed'),
       1000,
     );
     expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith(
@@ -707,7 +712,7 @@ describe('ResumableAgentController resume metadata', () => {
     expect(initializeClient).not.toHaveBeenCalled();
     expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
       'conversation-123',
-      expect.stringContaining('Generation stopped before provider startup'),
+      publicErrorText('request_failed'),
       1000,
     );
     expect(mockGenerationJobManager.markProviderExecutionDrained).toHaveBeenCalledWith(
@@ -1832,7 +1837,9 @@ describe('ResumableAgentController resume metadata', () => {
 
     expect(res.status).toHaveBeenCalledWith(500);
     expect(res.json).toHaveBeenCalledWith({
-      error: 'create failed before return',
+      status: 500,
+      code: 'unknown',
+      requestId: expect.any(String),
       generationProtocolVersion: 1,
     });
     expect(mockGenerationJobManager.emitError).not.toHaveBeenCalled();
@@ -1869,7 +1876,7 @@ describe('ResumableAgentController resume metadata', () => {
     expect(res.json).toHaveBeenCalledWith({
       status: 409,
       code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
-      error: 'Attached resources could not be restored',
+      requestId: expect.any(String),
       generationProtocolVersion: 1,
     });
     expect(mockGenerationJobManager.completeJob).not.toHaveBeenCalled();
@@ -1904,11 +1911,7 @@ describe('ResumableAgentController resume metadata', () => {
     });
     expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
       'conversation-123',
-      JSON.stringify({
-        status: 409,
-        code: ErrorTypes.RESOURCE_RECOVERY_REQUIRED,
-        error: 'Attached resources could not be restored',
-      }),
+      publicErrorText(ErrorTypes.RESOURCE_RECOVERY_REQUIRED),
       1000,
     );
   });
@@ -1941,11 +1944,7 @@ describe('ResumableAgentController resume metadata', () => {
     expect(res.status).toHaveBeenCalledWith(200);
     expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
       'conversation-123',
-      JSON.stringify({
-        status: 403,
-        code: ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED,
-        error: 'Stateful code environment is not allowed by this deployment: conversation',
-      }),
+      publicErrorText(ErrorTypes.STATEFUL_CODE_ENVIRONMENT_NOT_ALLOWED),
       1000,
     );
   });
@@ -2135,7 +2134,7 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.steering.consumeRecovered).not.toHaveBeenCalled();
     expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
       'conversation-123',
-      'provider init failed',
+      publicErrorText('unknown'),
       1000,
     );
   });
@@ -2171,7 +2170,7 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockGenerationJobManager.steering.consumeRecovered).not.toHaveBeenCalled();
     expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
       'conversation-123',
-      'Recovered steer cannot skip user message persistence',
+      publicErrorText('unknown'),
       1000,
     );
   });
@@ -2731,7 +2730,7 @@ describe('ResumableAgentController resume metadata', () => {
 
     expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
       'conversation-123',
-      'init boom after res.json',
+      publicErrorText('unknown'),
       1000,
     );
     expect(mockGenerationJobManager.releaseGeneration).toHaveBeenCalledWith(
@@ -2802,6 +2801,47 @@ describe('ResumableAgentController resume metadata', () => {
     expect(mockStartupTelemetry.end).toHaveBeenCalledWith('aborted');
   });
 
+  it('never stores provider error text, model or org ids in the completeJob payload', async () => {
+    const providerError = Object.assign(
+      new Error('429 Rate limit reached for gpt-x in organization org-abc'),
+      { status: 429 },
+    );
+    let signalCompletion;
+    const completed = new Promise((resolve) => {
+      signalCompletion = resolve;
+    });
+    mockGenerationJobManager.completeJob.mockImplementation(async () => {
+      signalCompletion();
+      return true;
+    });
+    const client = {
+      options: {},
+      sendMessage: jest.fn().mockRejectedValue(providerError),
+    };
+    const initializeClient = jest.fn().mockResolvedValue({ client });
+    const req = {
+      user: { id: 'user-123' },
+      requestId: 'req-provider-429',
+      body: {
+        text: 'Hit the provider rate limit.',
+        messageId: 'user-msg',
+        conversationId: 'conversation-123',
+        endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-x' } },
+      },
+      config: {},
+    };
+    const res = createResumableResponse();
+
+    await AgentController(req, res, jest.fn(), initializeClient, null);
+    await completed;
+
+    const [, payload] = mockGenerationJobManager.completeJob.mock.calls[0];
+    expect(JSON.parse(payload)).toEqual({ type: 'service_busy', requestId: 'req-provider-429' });
+    for (const secret of ['gpt-x', 'org-abc', 'Rate limit']) {
+      expect(payload).not.toContain(secret);
+    }
+  });
+
   it('awaits background error finalization before releasing the slot and always disposes', async () => {
     const generationError = new Error('generation failed');
     let rejectCompletion;
@@ -2846,7 +2886,7 @@ describe('ResumableAgentController resume metadata', () => {
 
     expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
       'conversation-123',
-      generationError.message,
+      publicErrorText('unknown'),
       1000,
     );
     expect(mockGenerationJobManager.completeJob.mock.invocationCallOrder[0]).toBeLessThan(

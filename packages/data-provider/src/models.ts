@@ -58,6 +58,11 @@ export type TModelSpec = {
   /** Equip the spec's ephemeral agent with the `ask_user_question` HITL tool. */
   askUserQuestion?: boolean;
   /**
+   * Equip the spec's ephemeral agent with `read_attachment`, `save_file` and `patch_file`, which
+   * read and write Synapse's file storage without the code sandbox.
+   */
+  fileAuthoring?: boolean;
+  /**
    * Let the model dispatch tool calls in the background (poll results via
    * `check_background_task`). Code execution is background-NATIVE: when the
    * admin enables the `run_in_background` agent capability, an
@@ -187,6 +192,7 @@ export const tModelSpecSchema = z.object({
   executeCode: z.boolean().optional(),
   memory: z.boolean().optional(),
   askUserQuestion: z.boolean().optional(),
+  fileAuthoring: z.boolean().optional(),
   runInBackground: z.union([z.boolean(), z.array(z.string())]).optional(),
   describeIntent: z.union([z.boolean(), z.array(z.string())]).optional(),
   artifacts: z.union([z.string(), z.boolean()]).optional(),

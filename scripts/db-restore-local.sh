@@ -10,7 +10,7 @@
 #                        (the one containing *.bson files, e.g. .../Synapse)
 #   --container <name>  Docker container running MongoDB (default: chat-mongodb)
 #   --target-db <name>  Database name to restore into locally (default: SynapseProd)
-#   --drop               Drop the target database's existing collections first
+#   --drop               Wipe the whole target database first, so it holds only the dump
 #   -y, --yes            Skip confirmation prompts
 #
 # By default this restores into a SEPARATE database (SynapseProd) so it never
@@ -53,6 +53,10 @@ if [ ! -d "$DUMP_DIR" ] || ! compgen -G "$DUMP_DIR/*.bson" >/dev/null; then
   exit 1
 fi
 
+case "$TARGET_DB" in
+  admin|config|local) echo "Error: refusing to restore into MongoDB system database '$TARGET_DB'."; exit 1 ;;
+esac
+
 command -v docker >/dev/null || { echo "Error: docker is required."; exit 1; }
 
 if ! docker ps --format '{{.Names}}' | grep -qx "$CONTAINER"; then
@@ -67,7 +71,7 @@ echo "About to restore into local Docker MongoDB"
 echo "  Container:   $CONTAINER"
 echo "  Source dump: $DUMP_DIR"
 echo "  Target DB:   $TARGET_DB"
-echo "  Mode:        $([ "$DROP" -eq 1 ] && echo 'DROP existing collections first' || echo 'merge (no drop)')"
+echo "  Mode:        $([ "$DROP" -eq 1 ] && echo "WIPE database '$TARGET_DB' first" || echo 'merge (no drop)')"
 if [ "$EXISTING_COUNT" != "0" ]; then
   echo "  Warning: '$TARGET_DB' already has $EXISTING_COUNT collection(s) in this container."
 fi
@@ -78,17 +82,20 @@ fi
 
 REMOTE_TMP="/tmp/restore-$(date +%Y%m%d-%H%M%S)"
 
-echo "[1/3] Copying dump into container ..."
+echo "[1/4] Copying dump into container ..."
 docker cp "$DUMP_DIR" "$CONTAINER:$REMOTE_TMP"
 
-echo "[2/3] Running mongorestore ..."
-RESTORE_ARGS=(--db="$TARGET_DB")
 if [ "$DROP" -eq 1 ]; then
-  RESTORE_ARGS+=(--drop)
+  echo "[2/4] Wiping database '$TARGET_DB' ..."
+  docker exec "$CONTAINER" mongosh "$TARGET_DB" --quiet --eval 'db.dropDatabase().ok'
+else
+  echo "[2/4] Keeping existing data (merge mode; existing _ids are not overwritten) ..."
 fi
-docker exec "$CONTAINER" mongorestore "${RESTORE_ARGS[@]}" "$REMOTE_TMP"
 
-echo "[3/3] Cleaning up ..."
+echo "[3/4] Running mongorestore ..."
+docker exec "$CONTAINER" mongorestore --db="$TARGET_DB" "$REMOTE_TMP"
+
+echo "[4/4] Cleaning up ..."
 docker exec "$CONTAINER" rm -rf "$REMOTE_TMP"
 
 echo ""

@@ -13,6 +13,7 @@ import {
 } from '@librechat/client';
 import type { TPlugin } from 'librechat-data-provider';
 import type { AgentForm } from '~/common';
+import useErrorToast from '~/hooks/useErrorToast';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -26,6 +27,7 @@ export default function AgentTool({
 }) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const showErrorToast = useErrorToast();
   const updateUserPlugins = useUpdateUserPluginsMutation();
   const { getValues, setValue } = useFormContext<AgentForm>();
 
@@ -48,10 +50,7 @@ export default function AgentTool({
         { pluginKey: toolId, action: 'uninstall', auth: {}, isEntityTool: true },
         {
           onError: (error: unknown) => {
-            showToast({
-              message: localize('com_ui_delete_tool_error_var', { 0: String(error) }),
-              status: 'error',
-            });
+            showErrorToast(error, 'com_ui_delete_tool_failed');
           },
           onSuccess: () => {
             const remainingToolIds = getValues('tools')?.filter((id: string) => id !== toolId);

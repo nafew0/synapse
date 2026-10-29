@@ -131,7 +131,13 @@ describe('institutionUsage model labels', () => {
       labels: { index: labelIndex, restrictToLabeled: false },
     });
     expect(unrestricted.total).toBe(3);
-    expect(unrestricted.models.some((row) => row.modelKey === 'claude-sonnet-4-5')).toBe(true);
+    const retired = unrestricted.models.find((row) => row.retired);
+    expect(retired).toMatchObject({
+      modelKey: 'retired',
+      displayName: 'Retired models',
+      retiredModelIds: ['claude-sonnet-4-5'],
+      totalTokens: 90,
+    });
   });
 
   it('omits cost and provider for a restricted caller and keeps them otherwise', async () => {
@@ -164,7 +170,7 @@ describe('institutionUsage model labels', () => {
     expect(result.models[0].displayName).toBe('Office Assistant');
   });
 
-  it('counts only labeled models in the summary so the card matches the table', async () => {
+  it('counts only current models in the summary, for either audience', async () => {
     const restricted = await getUsageSummary({
       ...range,
       labels: { index: labelIndex, restrictToLabeled: true },
@@ -177,7 +183,7 @@ describe('institutionUsage model labels', () => {
       ...range,
       labels: { index: labelIndex, restrictToLabeled: false },
     });
-    expect(unrestricted.summary.modelCount).toBe(3);
+    expect(unrestricted.summary.modelCount).toBe(2);
     expect(unrestricted.summary).toHaveProperty('totalCost');
   });
 

@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { unlink } from 'fs/promises';
 import { isMainThread } from 'worker_threads';
+import { REQUEST_ID_HEADER } from 'librechat-data-provider';
 import { tenantStorage, logger, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import type { TenantContext } from '@librechat/data-schemas';
 import type { Response, NextFunction } from 'express';
@@ -92,7 +93,7 @@ export function buildRequestContext(req: ContextRequest): TenantContext {
  */
 export function requestContextMiddleware(
   req: ContextRequest,
-  _res: Response,
+  res: Response,
   next: NextFunction,
 ): void {
   const context = buildRequestContext(req);
@@ -100,6 +101,9 @@ export function requestContextMiddleware(
     context.requestId = randomUUID();
   }
   req.requestId = context.requestId;
+  if (!res.headersSent) {
+    res.setHeader(REQUEST_ID_HEADER, context.requestId);
+  }
   runWithTenantContext(context, next);
 }
 

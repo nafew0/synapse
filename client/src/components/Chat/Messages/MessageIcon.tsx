@@ -7,6 +7,8 @@ import { useGetEndpointsQuery } from '~/data-provider';
 import { getIconEndpoint } from '~/utils';
 import { isImageURL } from '~/utils/icons';
 import Icon from '~/components/Endpoints/Icon';
+import OfficeAssistantAvatar, { isOfficeAssistant } from '~/components/OfficeAssistantAvatar';
+import { getModelBrand, ModelIcon } from '~/components/Chat/Menus/Endpoints/components/ModelIcon';
 
 type MessageIconProps = {
   iconData?: TMessageIcon;
@@ -26,6 +28,7 @@ export function arePropsEqual(prev: MessageIconProps, next: MessageIconProps): b
     [prev.iconData?.iconURL, next.iconData?.iconURL],
     [prev.iconData?.modelLabel, next.iconData?.modelLabel],
     [prev.iconData?.isCreatedByUser, next.iconData?.isCreatedByUser],
+    [prev.agent?.id, next.agent?.id],
     [prev.agent?.name, next.agent?.name],
     [prev.agent?.avatar?.filepath, next.agent?.avatar?.filepath],
     [prev.assistant?.name, next.assistant?.name],
@@ -65,6 +68,10 @@ const MessageIcon = memo(({ iconData, assistant, agent }: MessageIconProps) => {
     [endpointsConfig, endpoint],
   );
 
+  if (isOfficeAssistant(agent) && !isImageURL(iconData?.iconURL)) {
+    return <OfficeAssistantAvatar size={28.8} />;
+  }
+
   if (iconData?.isCreatedByUser !== true && isImageURL(iconURL)) {
     return (
       <ConvoIconURL
@@ -78,6 +85,18 @@ const MessageIcon = memo(({ iconData, assistant, agent }: MessageIconProps) => {
         agentName={agentName}
       />
     );
+  }
+
+  const hasEntityAvatar = Boolean(avatarURL);
+  const hasEndpointFallbackIcon = !iconURL || iconURL === iconData?.endpoint;
+  if (
+    iconData?.isCreatedByUser !== true &&
+    !hasEntityAvatar &&
+    hasEndpointFallbackIcon &&
+    iconData?.model &&
+    getModelBrand(iconData.model, endpoint ?? '')
+  ) {
+    return <ModelIcon modelId={iconData.model} endpoint={endpoint ?? ''} size={28.8} />;
   }
 
   return (

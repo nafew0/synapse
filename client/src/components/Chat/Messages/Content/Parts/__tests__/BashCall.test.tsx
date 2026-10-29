@@ -311,15 +311,14 @@ const mockScrollMetrics = (
 describe('BashCall streaming follow-scroll', () => {
   const streamingArgs = (command: string) => `{"command":"${command}`;
 
-  /** `autoExpandTools` opens the pane at mount, mirroring the user who
-   *  watches args stream into an expanded card. */
+  /** Command details stay compact even when the global auto-expand setting is on. */
   const streamingCall = (command: string) => (
     <RecoilRoot initializeState={({ set }) => set(store.autoExpandTools, true)}>
       <BashCall initialProgress={0.1} isSubmitting={true} args={streamingArgs(command)} output="" />
     </RecoilRoot>
   );
 
-  it('pins the expanded box to the args as rendered, including the async highlight commit', () => {
+  it('does not follow streamed command details while the operation is running', () => {
     const { container, rerender } = render(streamingCall('echo start'));
     const box = container.querySelector('.overflow-auto') as HTMLElement;
     const state = mockScrollMetrics(box, 300, { deriveHeightFromText: true });
@@ -327,10 +326,10 @@ describe('BashCall streaming follow-scroll', () => {
     rerender(streamingCall('echo start && echo a second streamed line'));
 
     expect(box.textContent).toContain('echo a second streamed line');
-    expect(state.scrollTop).toBe((box.textContent?.length ?? 0) * 10);
+    expect(state.writes).toHaveLength(0);
   });
 
-  it('stops following when the user scrolls up to read, and resumes once they return to the bottom', () => {
+  it('does not begin following after a user scrolls while details are compact', () => {
     const { container, rerender } = render(streamingCall('echo start'));
     const box = container.querySelector('.overflow-auto') as HTMLElement;
     const state = mockScrollMetrics(box, 300);
@@ -344,7 +343,7 @@ describe('BashCall streaming follow-scroll', () => {
     state.scrollTop = 580;
     fireEvent.scroll(box);
     rerender(streamingCall('echo start && echo second && echo third'));
-    expect(state.writes).toEqual([900]);
+    expect(state.writes).toHaveLength(0);
   });
 
   it('leaves a collapsed pane alone while args stream (default autoExpandTools)', () => {

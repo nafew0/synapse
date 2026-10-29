@@ -97,6 +97,7 @@ export default function FavoriteItem(props: FavoriteItemProps) {
             currentSpec={props.item}
             endpointsConfig={props.endpointsConfig}
             agentAvatarURL={props.agentAvatarURL}
+            agentId={props.item.preset?.agent_id}
           />
         </div>
       );

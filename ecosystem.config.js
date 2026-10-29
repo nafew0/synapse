@@ -7,6 +7,9 @@ module.exports = {
       instances: 2,
       exec_mode: "cluster",
       max_memory_restart: "2G",
+      wait_ready: true,
+      listen_timeout: 90000,
+      kill_timeout: 65000,
       env: { NODE_ENV: "production" },
     },
     {

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { FilePenLine, FilePlus2 } from 'lucide-react';
+import { FilePenLine, FilePlus2, LoaderCircle } from 'lucide-react';
 import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import parseJsonField, { parseJsonFieldOccurrences } from './parseJsonField';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
@@ -152,16 +152,18 @@ export default function FileAuthoringCall({
     previewLang = fileLang;
   }
 
-  const { showCode, toggleCode, expandStyle, expandRef, phase } = useToolCallState({
+  const { showCode, toggleCode, expandStyle, expandRef, phase, hasContent } = useToolCallState({
     initialProgress,
     isSubmitting,
     output,
     hasInput: !!filePath || !!preview,
     onExpand,
     runStepStatus,
+    hideDetailsWhileRunning: true,
+    autoExpandDetails: false,
   });
 
-  const highlighted = useLazyHighlight(preview || undefined, previewLang);
+  const highlighted = useLazyHighlight(showCode ? preview || undefined : undefined, previewLang);
   const { ref: previewPaneRef, onScroll: onPreviewPaneScroll } = useFollowScroll<HTMLPreElement>(
     highlighted ?? preview,
     phase === 'running',
@@ -193,21 +195,22 @@ export default function FileAuthoringCall({
           }
           durationMs={runStepDurationMs}
           icon={
-            <Icon
-              className={cn(
-                'size-4 shrink-0 text-text-secondary',
-                phase === 'running' && 'animate-pulse',
-              )}
-              aria-hidden="true"
-            />
+            phase === 'running' ? (
+              <LoaderCircle
+                className="size-4 shrink-0 animate-spin motion-reduce:animate-none"
+                aria-hidden="true"
+              />
+            ) : (
+              <Icon className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
+            )
           }
-          hasInput={!!filePath || !!preview}
+          hasInput={hasContent}
           isExpanded={showCode}
         />
       </div>
       <div style={expandStyle}>
         <div className="overflow-hidden" ref={expandRef}>
-          {!!preview && (
+          {showCode && !!preview && (
             <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
               <CodeWindowHeader language={previewIsDiff ? 'diff' : fileName} code={preview} />
               <pre

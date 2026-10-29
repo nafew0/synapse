@@ -9,6 +9,8 @@ import type {
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import MinimalIcon from '~/components/Endpoints/MinimalIcon';
 import { getAgentAvatarUrl, getIconEndpoint } from '~/utils';
+import OfficeAssistantAvatar, { isOfficeAssistant } from '~/components/OfficeAssistantAvatar';
+import { getModelBrand, ModelIcon } from '~/components/Chat/Menus/Endpoints/components/ModelIcon';
 import { isImageURL } from '~/utils/icons';
 
 const emptyEndpointsConfig = {} as TEndpointsConfig;
@@ -21,6 +23,7 @@ export default function EndpointIcon({
   agentsMap,
   context,
   size = 20,
+  animated = true,
 }: {
   conversation: TConversation | TPreset | null;
   endpointsConfig: TEndpointsConfig;
@@ -30,6 +33,7 @@ export default function EndpointIcon({
   agentsMap?: TAgentsMap;
   className?: string;
   size?: number;
+  animated?: boolean;
 }) {
   const convoIconURL = conversation?.iconURL ?? '';
   const originalEndpoint = conversation?.endpoint;
@@ -52,7 +56,20 @@ export default function EndpointIcon({
   const hasCustomIcon =
     isImageURL(convoIconURL) || (convoIconURL !== '' && convoIconURL !== originalEndpoint);
 
+  if (!hasCustomIcon && isOfficeAssistant(agent)) {
+    return <OfficeAssistantAvatar size={size} className={className} animated={animated} />;
+  }
+
   const iconURL = hasCustomIcon ? convoIconURL : entityAvatar || convoIconURL;
+
+  if (
+    !hasCustomIcon &&
+    !entityAvatar &&
+    conversation?.model &&
+    getModelBrand(conversation.model, endpoint ?? '')
+  ) {
+    return <ModelIcon modelId={conversation.model} endpoint={endpoint ?? ''} size={size} />;
+  }
 
   if (isImageURL(iconURL)) {
     return (

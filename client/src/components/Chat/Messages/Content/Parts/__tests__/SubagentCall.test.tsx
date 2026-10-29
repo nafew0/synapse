@@ -348,6 +348,38 @@ describe('SubagentCall — status resolution', () => {
     expect(screen.getByText('Agent errored')).toBeInTheDocument();
   });
 
+  it('shows a generic ticker line instead of the raw subagent error message', async () => {
+    renderWithState({
+      toolCallId: 'call_error_ticker',
+      initialProgress: 0.4,
+      isSubmitting: true,
+      progress: progressFromEvents({
+        subagentRunId: 'run_a',
+        subagentType: 'self',
+        status: 'run_step',
+        events: [
+          {
+            runId: 'p',
+            subagentRunId: 'run_a',
+            subagentType: 'self',
+            subagentAgentId: 'child',
+            phase: 'error',
+            data: { message: '429 Rate limit for gpt-x in organization org-abc' },
+            timestamp: '',
+          },
+        ],
+      }),
+    });
+
+    await waitFor(
+      () => {
+        expect(screen.getByText('Agent errored')).toBeInTheDocument();
+      },
+      { timeout: 2500 },
+    );
+    expect(screen.queryByText(/org-abc/)).not.toBeInTheDocument();
+  });
+
   it('uses the base "Running agent" label for non-self subagent types (name shown as sub-label elsewhere)', () => {
     renderWithState({
       toolCallId: 'call_named',

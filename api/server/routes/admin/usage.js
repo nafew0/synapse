@@ -4,7 +4,8 @@ const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { requireJwtAuth } = require('~/server/middleware');
 const {
   HttpError,
-  exportUsageCsv,
+  exportMemberUsageCsv,
+  exportMemberUsageWorkbook,
   getUsageSummary,
   getUsageTimeseries,
   listUsageByMember,
@@ -13,6 +14,8 @@ const {
 const { resolveUsageLabels } = require('~/server/services/usageLabels');
 
 const router = express.Router();
+
+const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 const requireReadUsage = requireCapability(SystemCapabilities.READ_USAGE);
@@ -115,17 +118,28 @@ router.get('/export.csv', async (req, res) => {
     return;
   }
 
+  /** Superadmins get the per-member workbook; institution admins the per-member summary CSV. */
   try {
-    const { csv } = await exportUsageCsv({
+    const stamp = new Date().toISOString().slice(0, 10);
+    if (req.isPlatformSuperadmin === true) {
+      const { buffer } = await exportMemberUsageWorkbook({
+        tenantId,
+        start: req.query.start,
+        end: req.query.end,
+        labels: await resolveUsageLabels(req),
+      });
+      res.setHeader('Content-Type', XLSX_TYPE);
+      res.setHeader('Content-Disposition', `attachment; filename="member-usage-${stamp}.xlsx"`);
+      return res.status(200).send(buffer);
+    }
+
+    const { csv } = await exportMemberUsageCsv({
       tenantId,
       start: req.query.start,
       end: req.query.end,
     });
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="usage-${new Date().toISOString().slice(0, 10)}.csv"`,
-    );
+    res.setHeader('Content-Disposition', `attachment; filename="member-usage-${stamp}.csv"`);
     res.status(200).send(csv);
   } catch (error) {
     return handleError(res, error, 'Failed to export usage CSV');

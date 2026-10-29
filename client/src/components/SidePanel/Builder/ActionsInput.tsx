@@ -20,6 +20,7 @@ import ActionCallback from '~/components/SidePanel/Builder/ActionCallback';
 import { ActionsTable, columns } from './ActionsTable';
 import { useAssistantsMapContext } from '~/Providers';
 import { useUpdateAction } from '~/data-provider';
+import useErrorToast from '~/hooks/useErrorToast';
 import { useLocalize } from '~/hooks';
 
 const debouncedValidation = debounce(
@@ -53,6 +54,7 @@ export default function ActionsInput({
 
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const showErrorToast = useErrorToast();
   const assistantMap = useAssistantsMapContext();
   const { handleSubmit, reset } = useFormContext<ActionAuthForm>();
   const [validationResult, setValidationResult] = useState<null | ValidationResult>(null);
@@ -100,11 +102,7 @@ export default function ActionsInput({
       setAction(data[2]);
     },
     onError(error) {
-      showToast({
-        message:
-          (error as Error | undefined)?.message ?? localize('com_assistants_update_actions_error'),
-        status: 'error',
-      });
+      showErrorToast(error, 'com_assistants_update_actions_error');
     },
   });
 

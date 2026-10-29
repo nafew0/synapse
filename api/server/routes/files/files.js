@@ -11,6 +11,7 @@ const {
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
   getCodeExecutionBaseUrl,
+  getStorageSource,
 } = require('@librechat/api');
 const {
   Time,
@@ -467,7 +468,7 @@ const getDirectDownloadURL = async ({
   file,
   customFilename = cleanFileName(file.filename),
 }) => {
-  const { getDownloadURL } = getStrategyFunctions(file.source);
+  const { getDownloadURL } = getStrategyFunctions(getStorageSource(file));
   if (!getDownloadURL) {
     return null;
   }
@@ -572,7 +573,7 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
       return res.status(400).send('The model used when creating this file is not available');
     }
 
-    const { getDownloadStream, getDownloadURL } = getStrategyFunctions(file.source);
+    const { getDownloadStream, getDownloadURL } = getStrategyFunctions(getStorageSource(file));
     if (!getDownloadStream && !getDownloadURL) {
       logger.warn(
         `File download requested by user ${userId} has no download method implemented: ${file.source}`,
@@ -583,6 +584,7 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
     const setHeaders = () => {
       res.setHeader('Content-Disposition', getContentDisposition(file.filename));
       res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader(
         'X-File-Metadata',
         encodeURIComponent(JSON.stringify(getDownloadFileMetadata(file))),
@@ -715,13 +717,14 @@ router.post('/', async (req, res) => {
     if (sseStream) {
       sseStream.sendError({
         message,
+        requestId: req.requestId,
         code: errorStatusCode,
         temp_file_id: metadata.temp_file_id,
         tool_resource: metadata.tool_resource,
         display_to_user: true,
       });
     } else {
-      res.status(errorStatusCode).json({ message });
+      res.status(errorStatusCode).json({ message, requestId: req.requestId });
     }
   } finally {
     if (cleanup) {

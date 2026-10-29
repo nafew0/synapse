@@ -29,6 +29,8 @@ const {
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   parseText,
+  isTextType,
+  parseTextNative,
   UploadStage,
   countTokens,
   DeliveryMethod,
@@ -38,6 +40,7 @@ const {
   sanitizeFilename,
   processAudioFile,
   sendUploadSuccess,
+  getStorageSource,
   getStorageMetadata,
   shouldEscalateToOcr,
   processTextWithTokenLimit,
@@ -259,7 +262,7 @@ const processDeleteRequest = async ({ req, files }) => {
   const agentFiles = [];
 
   for (const file of files) {
-    const source = file.source ?? FileSources.local;
+    const source = getStorageSource(file);
     if (req.body.agent_id && req.body.tool_resource) {
       agentFiles.push({
         tool_resource: req.body.tool_resource,
@@ -1077,6 +1080,33 @@ const registerSandboxResource = async ({
 };
 
 /**
+ * Copies the uploaded original out of the multer temp directory into the configured file
+ * storage. The temp copy is deleted once the upload request ends, so anything that must read the
+ * original later (re-uploading an expired sandbox copy, downloading it) needs this one.
+ *
+ * @returns {Promise<{ source: string, storageResult: object, storageMetadata: object }>}
+ */
+const storeOriginal = async ({ req, file, file_id, entity_id }) => {
+  const source = getFileStrategy(req.config, { isImage: false });
+  const { handleFileUpload } = getStrategyFunctions(source);
+  const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
+  const storageResult = await sanitizedUploadFn({
+    req,
+    file,
+    file_id,
+    basePath: 'uploads',
+    entity_id,
+  });
+  const storageMetadata = getStorageMetadata({
+    filepath: storageResult.filepath,
+    source,
+    storageKey: storageResult.storageKey,
+    storageRegion: storageResult.storageRegion,
+  });
+  return { source, storageResult, storageMetadata };
+};
+
+/**
  * Stores the original bytes and creates the record for a prepared file that keeps its own format:
  * a searchable document or a spreadsheet in the sandbox. One record can hold several roles at
  * once — a sandbox reference for editing, the vector-store flag for search, and a short preview
@@ -1098,24 +1128,12 @@ const persistPreparedFile = async ({
   sandboxRef,
   preparation,
 }) => {
-  const appConfig = req.config;
   const { file_id, temp_file_id = null, conversationId } = metadata;
-  const source = getFileStrategy(appConfig, { isImage: false });
-  const { handleFileUpload } = getStrategyFunctions(source);
-  const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
-  const storageResult = await sanitizedUploadFn({
+  const { source, storageResult, storageMetadata } = await storeOriginal({
     req,
     file,
     file_id,
-    basePath: 'uploads',
     entity_id,
-  });
-
-  const storageMetadata = getStorageMetadata({
-    filepath: storageResult.filepath,
-    source,
-    storageKey: storageResult.storageKey,
-    storageRegion: storageResult.storageRegion,
   });
 
   /* The upload's own name, never the one the vector store reports back. Search embeds the
@@ -1221,7 +1239,11 @@ const extractPreparedText = async ({
   }
 
   try {
-    const { text, bytes } = await parseText({ req, file, file_id: metadata.file_id });
+    /** Plain text and code are read byte for byte: the file tools edit this exact text, and a
+     * round trip through the RAG API's extractor can change whitespace such as the final newline. */
+    const { text, bytes } = isTextType(file.mimetype)
+      ? await parseTextNative(file)
+      : await parseText({ req, file, file_id: metadata.file_id });
     return text?.trim() ? { text, bytes, type: file.mimetype, ocrApplied: false } : undefined;
   } catch (err) {
     logger.warn(
@@ -1300,6 +1322,22 @@ const resolveAssistantTools = async ({ req, metadata }) => {
     tools.add(Tools.file_search);
   }
   return tools;
+};
+
+/**
+ * Whether an explicit `execute_code` upload may reach the sandbox. Only an assistant that carries
+ * `execute_code` (its agent record, its handoff targets, or its model spec) may send files there.
+ * When the assistant cannot be determined, the upload is refused while model specs are enforced,
+ * since every legitimate chat then names its spec.
+ *
+ * @param {{ req: ServerRequest, assistantTools: Set<string> | null }} params
+ * @returns {boolean}
+ */
+const isSandboxUploadAllowed = ({ req, assistantTools }) => {
+  if (assistantTools) {
+    return assistantTools.has(Tools.execute_code);
+  }
+  return req.config?.modelSpecs?.enforce !== true;
 };
 
 /**
@@ -1417,6 +1455,10 @@ const prepareUploadAutomatically = async ({ req, res, metadata, sseStream }) => 
   };
 
   if (plan.delivery === DeliveryMethod.full_text) {
+    /** The sandbox copy expires; re-creating it needs the original, not the deleted temp file. */
+    const original = sandboxRef
+      ? await storeOriginal({ req, file, file_id: metadata.file_id, entity_id })
+      : undefined;
     const result = await persistExtractedText({
       req,
       file,
@@ -1426,10 +1468,12 @@ const prepareUploadAutomatically = async ({ req, res, metadata, sseStream }) => 
       agent_id,
       text: extracted.text,
       bytes: extracted.bytes,
-      filepath: extracted.filepath,
+      filepath: original?.storageResult.filepath ?? extracted.filepath,
+      storageMetadata: original?.storageMetadata,
       type: extracted.type,
       fileMetadata: {
         ...sandboxRef,
+        storageSource: original?.source,
         preparation: { ...preparation, contextText: true, contextTokens: textTokens },
       },
     });
@@ -1536,6 +1580,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     const isCodeEnabled = await checkCapability(req, AgentCapabilities.execute_code);
     if (!isCodeEnabled) {
       throw new Error('Code execution is not enabled for Agents');
+    }
+    const assistantTools = await resolveAssistantTools({ req, metadata });
+    if (!isSandboxUploadAllowed({ req, assistantTools })) {
+      throw new Error('This assistant cannot use the code sandbox');
     }
     fileInfoMetadata = await uploadToCodeEnvironment({
       req,

@@ -1,0 +1,207 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="light" />
+    <meta name="supported-color-schemes" content="light" />
+  </head>
+  <body style="margin: 0; padding: 0; background: #f3f4f6; font-family: Arial, Helvetica, sans-serif; color: #1f2937; font-size: 14px; line-height: 1.5">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background: #f3f4f6; padding: 24px 0">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="680" cellpadding="0" cellspacing="0" style="max-width: 680px; width: 100%; background: #ffffff; border-radius: 8px; overflow: hidden; border: 1px solid #e5e7eb">
+            <tr>
+              <td style="background: #0f766e; padding: 18px 24px; color: #ffffff">
+                <div style="font-size: 12px; letter-spacing: 1px; text-transform: uppercase; opacity: 0.85">Synapse · Issue report</div>
+                <div style="font-size: 20px; font-weight: bold; margin-top: 4px">{{#if context.code}}{{context.code}}{{else}}General report{{/if}}</div>
+                <div style="margin-top: 8px">
+                  {{#if context.reference}}<span style="display: inline-block; background: #ffffff; color: #0f766e; font-weight: bold; font-family: Consolas, Menlo, monospace; padding: 2px 8px; border-radius: 4px; font-size: 13px">ref {{context.reference}}</span>{{/if}}
+                  {{#if reporter.institution}}<span style="display: inline-block; background: #115e59; color: #ffffff; padding: 2px 8px; border-radius: 4px; font-size: 13px; margin-left: 4px">{{reporter.institution}}</span>{{/if}}
+                </div>
+              </td>
+            </tr>
+
+            {{#if shownMessage}}
+              <tr>
+                <td style="padding: 16px 24px 0 24px">
+                  <div style="background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px 12px">
+                    <div style="font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px">User saw</div>
+                    <div style="font-style: italic; color: #374151">“{{shownMessage}}”</div>
+                  </div>
+                </td>
+              </tr>
+            {{/if}}
+
+            {{#if diagnosis}}
+              <tr>
+                <td style="padding: 16px 24px 0 24px">
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border: 1px solid #fecaca; border-left: 5px solid #dc2626; border-radius: 6px; background: #fff7f7">
+                    <tr>
+                      <td style="padding: 12px 14px 4px 14px; font-size: 15px; font-weight: bold; color: #b91c1c">🔍 Diagnosis</td>
+                    </tr>
+                    <tr>
+                      <td style="padding: 4px 14px 12px 14px">
+                        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size: 14px">
+                          {{#if diagnosis.failed}}
+                            <tr>
+                              <td width="130" style="padding: 5px 10px 5px 0; color: #6b7280; vertical-align: top">What failed</td>
+                              <td style="padding: 5px 0; font-weight: bold; color: #111827">{{diagnosis.failed}}</td>
+                            </tr>
+                          {{/if}}
+                          {{#if diagnosis.service}}
+                            <tr>
+                              <td width="130" style="padding: 5px 10px 5px 0; color: #6b7280; vertical-align: top">Service</td>
+                              <td style="padding: 5px 0"><span style="display: inline-block; background: #dbeafe; color: #1d4ed8; font-weight: bold; padding: 2px 8px; border-radius: 4px">{{diagnosis.service}}</span></td>
+                            </tr>
+                          {{/if}}
+                          {{#if diagnosis.upstreamCall}}
+                            <tr>
+                              <td width="130" style="padding: 5px 10px 5px 0; color: #6b7280; vertical-align: top">Failed call</td>
+                              <td style="padding: 5px 0"><span style="display: inline-block; background: #fee2e2; color: #b91c1c; font-weight: bold; font-family: Consolas, Menlo, monospace; font-size: 13px; padding: 2px 8px; border-radius: 4px; word-break: break-all">{{diagnosis.upstreamCall}}</span></td>
+                            </tr>
+                          {{/if}}
+                          {{#if diagnosis.upstreamReply}}
+                            <tr>
+                              <td width="130" style="padding: 5px 10px 5px 0; color: #6b7280; vertical-align: top">Service replied</td>
+                              <td style="padding: 5px 0"><span style="display: inline-block; background: #ffedd5; color: #9a3412; font-family: Consolas, Menlo, monospace; font-size: 13px; padding: 2px 8px; border-radius: 4px; word-break: break-all">{{diagnosis.upstreamReply}}</span></td>
+                            </tr>
+                          {{/if}}
+                          {{#if diagnosis.location.length}}
+                            <tr>
+                              <td width="130" style="padding: 5px 10px 5px 0; color: #6b7280; vertical-align: top">In our code</td>
+                              <td style="padding: 5px 0">
+                                {{#each diagnosis.location}}<div style="font-family: Consolas, Menlo, monospace; font-size: 12px; color: #6d28d9; background: #f5f3ff; padding: 2px 6px; border-radius: 3px; margin-bottom: 3px; word-break: break-all">{{this}}</div>{{/each}}
+                              </td>
+                            </tr>
+                          {{/if}}
+                          {{#if diagnosis.cause}}
+                            <tr>
+                              <td width="130" style="padding: 5px 10px 5px 0; color: #6b7280; vertical-align: top">Likely cause</td>
+                              <td style="padding: 5px 0"><div style="background: #fef3c7; border: 1px solid #fcd34d; color: #78350f; padding: 6px 10px; border-radius: 4px">💡 {{diagnosis.cause}}</div></td>
+                            </tr>
+                          {{/if}}
+                          {{#if context.requestId}}
+                            <tr>
+                              <td width="130" style="padding: 5px 10px 5px 0; color: #6b7280; vertical-align: top">Find in logs</td>
+                              <td style="padding: 5px 0"><span style="display: inline-block; background: #111827; color: #d1fae5; font-family: Consolas, Menlo, monospace; font-size: 12px; padding: 3px 8px; border-radius: 4px; word-break: break-all">grep {{context.requestId}} api/logs/error-*.log</span></td>
+                            </tr>
+                          {{/if}}
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            {{/if}}
+
+            <tr>
+              <td style="padding: 20px 24px 0 24px">
+                <div style="font-size: 13px; font-weight: bold; color: #0f766e; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #ccfbf1; padding-bottom: 4px; margin-bottom: 8px">👤 Reporter</div>
+                <table role="presentation" cellpadding="0" cellspacing="0" style="font-size: 14px">
+                  {{#if reporter.name}}<tr><td width="130" style="padding: 2px 10px 2px 0; color: #6b7280">Name</td><td style="padding: 2px 0; font-weight: bold">{{reporter.name}}</td></tr>{{/if}}
+                  {{#if reporter.email}}<tr><td width="130" style="padding: 2px 10px 2px 0; color: #6b7280">Email</td><td style="padding: 2px 0"><a href="mailto:{{reporter.email}}" style="color: #0f766e">{{reporter.email}}</a></td></tr>{{/if}}
+                  {{#if reporter.username}}<tr><td width="130" style="padding: 2px 10px 2px 0; color: #6b7280">Username</td><td style="padding: 2px 0">{{reporter.username}}</td></tr>{{/if}}
+                  {{#if reporter.role}}<tr><td width="130" style="padding: 2px 10px 2px 0; color: #6b7280">Role</td><td style="padding: 2px 0">{{reporter.role}}</td></tr>{{/if}}
+                  {{#if reporter.institution}}<tr><td width="130" style="padding: 2px 10px 2px 0; color: #6b7280">Institution</td><td style="padding: 2px 0">{{reporter.institution}}{{#if reporter.tenantId}} <span style="color: #9ca3af">({{reporter.tenantId}})</span>{{/if}}</td></tr>{{/if}}
+                  <tr><td width="130" style="padding: 2px 10px 2px 0; color: #6b7280">User ID</td><td style="padding: 2px 0; font-family: Consolas, Menlo, monospace; font-size: 12px; color: #4b5563">{{reporter.id}}</td></tr>
+                </table>
+              </td>
+            </tr>
+
+            {{#if description}}
+              <tr>
+                <td style="padding: 20px 24px 0 24px">
+                  <div style="font-size: 13px; font-weight: bold; color: #0f766e; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #ccfbf1; padding-bottom: 4px; margin-bottom: 8px">💬 What they wrote</div>
+                  <div style="white-space: pre-wrap; background: #ecfdf5; border-left: 4px solid #10b981; padding: 8px 12px; border-radius: 4px; color: #064e3b">{{description}}</div>
+                </td>
+              </tr>
+            {{/if}}
+
+            {{#if summaries.length}}
+              <tr>
+                <td style="padding: 20px 24px 0 24px">
+                  <div style="font-size: 13px; font-weight: bold; color: #0f766e; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #ccfbf1; padding-bottom: 4px; margin-bottom: 8px">🧾 Error details</div>
+                  {{#each summaries}}
+                    <div style="border: 1px solid #e5e7eb; border-radius: 6px; padding: 10px 12px; margin-bottom: 10px; background: #fafafa">
+                      <div style="margin-bottom: 6px">
+                        <span style="display: inline-block; background: #fee2e2; color: #b91c1c; font-weight: bold; font-size: 12px; padding: 1px 6px; border-radius: 3px">{{code}}</span>
+                        {{#if status}}<span style="display: inline-block; background: #e5e7eb; color: #374151; font-weight: bold; font-size: 12px; padding: 1px 6px; border-radius: 3px; margin-left: 4px">HTTP {{status}}</span>{{/if}}
+                        {{#if route}}<span style="color: #6b7280; font-size: 12px; margin-left: 6px">{{route}}</span>{{/if}}
+                        {{#if at}}<span style="color: #9ca3af; font-size: 12px; margin-left: 6px">{{at}}</span>{{/if}}
+                      </div>
+                      {{#if message}}<div style="color: #111827; margin-bottom: 6px">{{message}}</div>{{/if}}
+                      {{#if upstream.url}}<div style="font-size: 13px; margin-bottom: 4px"><span style="color: #6b7280">Call:</span> <code style="color: #b91c1c">{{upstream.method}} {{upstream.url}}</code></div>{{/if}}
+                      {{#if upstream.body}}<div style="font-size: 13px; margin-bottom: 4px"><span style="color: #6b7280">Reply:</span> <code style="color: #9a3412">{{upstream.body}}</code></div>{{/if}}
+                      {{#if provider}}<div style="font-size: 13px; margin-bottom: 4px"><span style="color: #6b7280">Model:</span> {{provider}}{{#if model}} / {{model}}{{/if}}</div>{{/if}}
+                      {{#if frames.length}}
+                        <pre style="white-space: pre-wrap; word-break: break-all; font-family: Consolas, Menlo, monospace; font-size: 12px; background: #1f2937; color: #e5e7eb; padding: 8px 10px; border-radius: 4px; margin: 6px 0 0 0">{{#each frames}}at {{this}}
+{{/each}}</pre>
+                      {{else if stack}}
+                        <pre style="white-space: pre-wrap; word-break: break-all; font-family: Consolas, Menlo, monospace; font-size: 12px; background: #1f2937; color: #e5e7eb; padding: 8px 10px; border-radius: 4px; margin: 6px 0 0 0">{{stack}}</pre>
+                      {{/if}}
+                      <div style="color: #9ca3af; font-size: 11px; margin-top: 6px">request_id {{requestId}}</div>
+                    </div>
+                  {{/each}}
+                </td>
+              </tr>
+            {{/if}}
+            {{#if missing.length}}
+              <tr>
+                <td style="padding: 8px 24px 0 24px">
+                  {{#each missing}}<div style="background: #fffbeb; border: 1px solid #fde68a; color: #92400e; padding: 6px 10px; border-radius: 4px; margin-bottom: 6px; font-size: 13px">No cached details for request_id {{this}} — search the server logs for it.</div>{{/each}}
+                </td>
+              </tr>
+            {{/if}}
+
+            {{#if recentErrors.length}}
+              <tr>
+                <td style="padding: 20px 24px 0 24px">
+                  <div style="font-size: 13px; font-weight: bold; color: #0f766e; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #ccfbf1; padding-bottom: 4px; margin-bottom: 8px">🕘 Recent errors in this session</div>
+                  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size: 13px">
+                    {{#each recentErrors}}
+                      <tr>
+                        <td style="padding: 3px 8px 3px 0; white-space: nowrap"><span style="background: #f3f4f6; color: #374151; font-weight: bold; padding: 1px 6px; border-radius: 3px; font-size: 12px">{{code}}</span></td>
+                        <td style="padding: 3px 8px; color: #6b7280; white-space: nowrap">{{occurredAt}}</td>
+                        <td style="padding: 3px 8px; color: #6b7280">{{page}}</td>
+                        <td style="padding: 3px 0; font-family: Consolas, Menlo, monospace; font-size: 11px; color: #9ca3af">{{requestId}}</td>
+                      </tr>
+                    {{/each}}
+                  </table>
+                </td>
+              </tr>
+            {{/if}}
+
+            {{#if lastMessage}}
+              <tr>
+                <td style="padding: 20px 24px 0 24px">
+                  <div style="font-size: 13px; font-weight: bold; color: #0f766e; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #ccfbf1; padding-bottom: 4px; margin-bottom: 8px">✉️ Last message (shared by the user)</div>
+                  <div style="white-space: pre-wrap; background: #f8fafc; border-left: 4px solid #94a3b8; padding: 8px 12px; border-radius: 4px; color: #334155">{{lastMessage}}</div>
+                </td>
+              </tr>
+            {{/if}}
+
+            <tr>
+              <td style="padding: 20px 24px 24px 24px">
+                <div style="font-size: 13px; font-weight: bold; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #e5e7eb; padding-bottom: 4px; margin-bottom: 8px">ℹ️ Context</div>
+                <table role="presentation" cellpadding="0" cellspacing="0" style="font-size: 12px; color: #4b5563">
+                  {{#if context.requestId}}<tr><td width="150" style="padding: 2px 10px 2px 0; color: #9ca3af">Request ID</td><td style="padding: 2px 0; font-family: Consolas, Menlo, monospace">{{context.requestId}}</td></tr>{{/if}}
+                  {{#if context.page}}<tr><td width="150" style="padding: 2px 10px 2px 0; color: #9ca3af">Page</td><td style="padding: 2px 0">{{context.page}}</td></tr>{{/if}}
+                  {{#if context.conversationId}}<tr><td width="150" style="padding: 2px 10px 2px 0; color: #9ca3af">Conversation ID</td><td style="padding: 2px 0; font-family: Consolas, Menlo, monospace">{{context.conversationId}}</td></tr>{{/if}}
+                  {{#if context.messageId}}<tr><td width="150" style="padding: 2px 10px 2px 0; color: #9ca3af">Message ID</td><td style="padding: 2px 0; font-family: Consolas, Menlo, monospace">{{context.messageId}}</td></tr>{{/if}}
+                  {{#if context.occurredAt}}<tr><td width="150" style="padding: 2px 10px 2px 0; color: #9ca3af">Reported at (client)</td><td style="padding: 2px 0">{{context.occurredAt}}</td></tr>{{/if}}
+                  <tr><td width="150" style="padding: 2px 10px 2px 0; color: #9ca3af">Server time</td><td style="padding: 2px 0">{{context.serverTime}}</td></tr>
+                  {{#if context.environment}}<tr><td width="150" style="padding: 2px 10px 2px 0; color: #9ca3af">Environment</td><td style="padding: 2px 0">{{context.environment}}</td></tr>{{/if}}
+                  <tr><td width="150" style="padding: 2px 10px 2px 0; color: #9ca3af">App version</td><td style="padding: 2px 0">server {{context.appVersion}}{{#if context.clientAppVersion}} · client {{context.clientAppVersion}}{{/if}}</td></tr>
+                  {{#if context.browser}}<tr><td width="150" style="padding: 2px 10px 2px 0; color: #9ca3af; vertical-align: top">Browser</td><td style="padding: 2px 0">{{context.browser}}</td></tr>{{/if}}
+                  {{#if context.language}}<tr><td width="150" style="padding: 2px 10px 2px 0; color: #9ca3af">Language / timezone</td><td style="padding: 2px 0">{{context.language}}{{#if context.timezone}} · {{context.timezone}}{{/if}}</td></tr>{{/if}}
+                  {{#if context.screen}}<tr><td width="150" style="padding: 2px 10px 2px 0; color: #9ca3af">Screen</td><td style="padding: 2px 0">{{context.screen}}</td></tr>{{/if}}
+                </table>
+              </td>
+            </tr>
+          </table>
+          <div style="color: #9ca3af; font-size: 11px; margin-top: 10px">Reply to this email to answer the user directly.</div>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

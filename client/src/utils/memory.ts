@@ -1,5 +1,6 @@
 import type { MemoriesResponse, TUserMemory, MemoryArtifact } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks/useLocalize';
+import { getErrorInfo, getErrorMessage } from './errors';
 
 type HandleMemoryArtifactParams = {
   memoryArtifact: MemoryArtifact;
@@ -13,9 +14,7 @@ type MemoryKeyErrorParams = {
   originalKey?: string;
 };
 
-type MemoryApiError = {
-  response?: { data?: { error?: string } };
-};
+type LocalizeFn = (key: TranslationKeys) => string;
 
 /** Mirrors the `key` validator on the memory schema in `packages/data-schemas`. */
 export const MEMORY_KEY_PATTERN = /^[a-z_]+$/;
@@ -66,13 +65,16 @@ export function getMemoryValueError(value: string): TranslationKeys | null {
   return value.trim() ? null : 'com_ui_field_required';
 }
 
-export function getMemoryApiErrorMessage(error: Error, fallback: string): string {
-  if (!('response' in error)) {
-    return fallback;
+/** Localized message for a failed memory create/update; never surfaces the server's own text. */
+export function getMemoryApiErrorMessage(error: unknown, localize: LocalizeFn): string {
+  const { status } = getErrorInfo(error);
+  if (status === 409) {
+    return localize('com_ui_memory_key_exists');
   }
-
-  const message = (error as Error & MemoryApiError).response?.data?.error;
-  return typeof message === 'string' && message.trim() ? message : fallback;
+  if (status === 400) {
+    return localize('com_ui_memory_invalid');
+  }
+  return getErrorMessage(error, localize, 'com_ui_memory_save_error');
 }
 
 /**

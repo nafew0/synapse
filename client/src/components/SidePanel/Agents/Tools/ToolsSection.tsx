@@ -29,6 +29,7 @@ import ToolsMarketplaceDialog from './ToolsMarketplaceDialog';
 import { useLocalize, useHasAccess } from '~/hooks';
 import { useAgentPanelContext } from '~/Providers';
 import { isEphemeralAgent, ESide } from '~/common';
+import useErrorToast from '~/hooks/useErrorToast';
 import ItemDialog from './ItemDialog/ItemDialog';
 import { mcpAllToken } from './items/selectors';
 import { InfoTrigger } from '../Advanced/ui';
@@ -44,6 +45,7 @@ interface Props {
 export default function ToolsSection({ agentId }: Props) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const showErrorToast = useErrorToast();
   const [open, setOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [dialogItem, setDialogItem] = useState<AgentItem | null>(null);
@@ -62,10 +64,7 @@ export default function ToolsSection({ agentId }: Props) {
       });
     },
     onError: (error) => {
-      showToast({
-        message: (error as Error).message || localize('com_assistants_delete_actions_error'),
-        status: 'error',
-      });
+      showErrorToast(error, 'com_assistants_delete_actions_error');
     },
   });
 

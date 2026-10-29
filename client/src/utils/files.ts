@@ -12,6 +12,7 @@ import {
   QueryKeys,
   inferMimeType,
   excelMimeTypes,
+  isExtensionAllowed,
   EToolResources,
   EModelEndpoint,
   retrievalMimeTypes,
@@ -24,6 +25,7 @@ import {
 } from 'librechat-data-provider';
 import type { TFile, EndpointFileConfig, FileConfig, RegexLike } from 'librechat-data-provider';
 import type { QueryClient } from '@tanstack/react-query';
+import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { ExtendedFile } from '~/common';
 
 export const partialTypes = ['text/x-'];
@@ -237,10 +239,13 @@ export function formatBytes(bytes: number, decimals = 2) {
 
 const { checkType } = defaultFileConfig;
 
+/** Reports a file validation failure as a translation key plus interpolation values. */
+export type TFileErrorSetter = (key: TranslationKeys, values?: Record<string, string>) => void;
+
 type FileSizeValidationParams = {
   fileList: File[];
   files: Map<string, ExtendedFile>;
-  setError: (error: string) => void;
+  setError: TFileErrorSetter;
   endpointFileConfig: EndpointFileConfig;
 };
 
@@ -254,7 +259,7 @@ export const validateFileSizes = ({
 
   for (const file of fileList) {
     if (fileSizeLimit && file.size >= fileSizeLimit) {
-      setError(`File size limit exceeded: ${fileSizeLimit / megabyte} MB`);
+      setError('com_error_files_upload_too_large', { 0: String(fileSizeLimit / megabyte) });
       return false;
     }
   }
@@ -266,7 +271,7 @@ export const validateFileSizes = ({
     );
     const incomingTotalSize = fileList.reduce((total, file) => total + file.size, 0);
     if (currentTotalSize + incomingTotalSize > totalSizeLimit) {
-      setError(`Total file size limit exceeded: ${totalSizeLimit / megabyte} MB`);
+      setError('com_error_files_total_too_large', { 0: String(totalSizeLimit / megabyte) });
       return false;
     }
   }
@@ -277,7 +282,7 @@ export const validateFileSizes = ({
 type FileDuplicateValidationParams = {
   fileList: File[];
   files: Map<string, ExtendedFile>;
-  setError: (error: string) => void;
+  setError: TFileErrorSetter;
 };
 
 export const validateFileDuplicates = ({
@@ -317,13 +322,13 @@ export const validateFiles = ({
 }: {
   fileList: File[];
   files: Map<string, ExtendedFile>;
-  setError: (error: string) => void;
+  setError: TFileErrorSetter;
   endpointFileConfig: EndpointFileConfig;
   toolResource?: string;
   fileConfig: FileConfig | null;
   skipSizeValidation?: boolean;
 }) => {
-  const { fileLimit, supportedMimeTypes, disabled } = endpointFileConfig;
+  const { fileLimit, supportedMimeTypes, supportedExtensions, disabled } = endpointFileConfig;
   /** Block all uploads if the endpoint is explicitly disabled */
   if (disabled === true) {
     setError('com_ui_attach_error_disabled');
@@ -336,17 +341,22 @@ export const validateFiles = ({
   }
 
   if (fileLimit && fileList.length + files.size > fileLimit) {
-    setError(`File limit reached: ${fileLimit} files`);
+    setError('com_error_files_limit', { 0: String(fileLimit) });
     return false;
   }
 
   for (let i = 0; i < fileList.length; i++) {
     let originalFile = fileList[i];
+    if (!isExtensionAllowed(originalFile.name, supportedExtensions)) {
+      setError('com_error_files_unsupported_type', { 0: originalFile.name });
+      return false;
+    }
+
     const fileType = inferMimeType(originalFile.name, originalFile.type);
 
     // Check if the file type is still empty after the extension check
     if (!fileType) {
-      setError('Unable to determine file type for: ' + originalFile.name);
+      setError('com_error_files_unsupported');
       return false;
     }
 
@@ -367,7 +377,7 @@ export const validateFiles = ({
     }
 
     if (!checkType(originalFile.type, mimeTypesToCheck)) {
-      setError(`Unsupported file type: ${originalFile.type}`);
+      setError('com_error_files_unsupported');
       return false;
     }
   }

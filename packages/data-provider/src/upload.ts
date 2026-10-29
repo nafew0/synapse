@@ -1,5 +1,6 @@
 import type { EToolResources } from './types/assistants';
 import type { TFileUpload } from './types/files';
+import { REQUEST_ID_HEADER } from './errors';
 import request from './request';
 
 const EVENT_STREAM_MEDIA_TYPE = 'text/event-stream';
@@ -18,6 +19,7 @@ export type UploadStageHandler = (fileId: string, stage: UploadStageName) => voi
 interface UploadErrorData {
   message?: string;
   code?: number;
+  requestId?: string;
   temp_file_id?: string;
   tool_resource?: EToolResources;
   display_to_user?: boolean;
@@ -33,7 +35,8 @@ class FileUploadError extends Error {
   public file_id: string;
   public tool_resource?: EToolResources;
   public display_to_user: boolean;
-  public response: { data: { message: string } };
+  public requestId?: string;
+  public response: { status?: number; data: { message: string; requestId?: string } };
 
   constructor(
     message: string,
@@ -41,6 +44,7 @@ class FileUploadError extends Error {
     toolResource?: EToolResources,
     displayToUser = false,
     code = 0,
+    requestId?: string,
   ) {
     super(message);
     this.name = 'CustomAppError';
@@ -48,7 +52,11 @@ class FileUploadError extends Error {
     this.file_id = fileId;
     this.tool_resource = toolResource;
     this.display_to_user = displayToUser;
-    this.response = { data: { message: displayToUser ? message : '' } };
+    this.requestId = requestId;
+    this.response = {
+      status: code || undefined,
+      data: { message: displayToUser ? message : '', requestId },
+    };
   }
 }
 
@@ -80,9 +88,11 @@ const parseEvent = (message: string): ParsedEvent => {
 
 const createHttpError = async (response: Response, formData: FormData) => {
   let message = `Server responded with status: ${response.status}`;
+  let requestId = response.headers.get(REQUEST_ID_HEADER) ?? undefined;
   try {
-    const data = (await response.json()) as { message?: string };
+    const data = (await response.json()) as { message?: string; requestId?: string };
     message = data.message || message;
+    requestId = data.requestId ?? requestId;
   } catch {
     // Preserve the status-based fallback for non-JSON responses.
   }
@@ -93,6 +103,7 @@ const createHttpError = async (response: Response, formData: FormData) => {
     getToolResource(formData),
     true,
     response.status,
+    requestId,
   );
 };
 
@@ -110,6 +121,7 @@ const createStreamError = (data: string, formData: FormData) => {
     error.tool_resource || getToolResource(formData),
     error.display_to_user ?? false,
     error.code ?? 0,
+    error.requestId,
   );
 };
 

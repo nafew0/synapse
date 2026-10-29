@@ -141,6 +141,15 @@ creditPackages:
 
 interface:
   customWelcome: 'Welcome to Synapse!'
+  privacyPolicy:
+    externalUrl: '/legal/privacy.html'
+    openNewTab: true
+  termsOfService:
+    externalUrl: '/legal/terms.html'
+    openNewTab: true
+  userGuide:
+    externalUrl: '/legal/guide.html'
+    openNewTab: true
   fileSearch: true
   modelSelect: true
   parameters: false
@@ -178,71 +187,86 @@ interface:
 # without the user choosing a mode: short documents are read in full, long ones are searched,
 # spreadsheets and data files go to the code sandbox. Thresholds are in tokens.
 fileConfig:
-  # Uploads are limited to what this deployment can actually do something with. Anything not
-  # listed is refused by the attach menu, by client validation and by the server's upload filter.
-  # Types left out on purpose:
-  #   video/*            nothing reads it — no ffmpeg in the sandbox, no vision model takes it
-  #   audio/* on agents  the sandbox has no speech-to-text; audio belongs to the Transcriber
-  #   aac audio          untested; m4a, mp4 and webm were verified 2026-09-23
-  #   archives on single models — nothing can open them without the code sandbox
+  # Uploads are limited to the file types ChatGPT or Claude document as supported (checked
+  # 2026-10-29; docs/chat-file-editing-plan.md), and only where this deployment can do something
+  # with them. Exceptions neither documents but users rely on: .yaml/.yml (configuration files),
+  # .heic/.heif photos (the iPhone default) and .ogg/.webm/.flac audio for the Transcriber
+  # (verified with the STT model).
+  #
+  # supportedExtensions is the gate: the attach menu, client validation and the server's upload
+  # filter all refuse a name whose extension is not listed. Many extensions share text/plain, so
+  # the MIME patterns below cannot tell .txt from .conf; they stay broad enough for the types
+  # browsers report for the listed extensions and are used to route a file (parser, OCR, vision,
+  # sandbox).
+  #
+  # Left out on purpose: .pkl (opening a pickle runs code in it); archives on single models
+  # (nothing opens them without the sandbox); video (nothing reads it).
   endpoints:
     # Office Assistant: the code sandbox, LibreOffice and the document skills.
     agents:
+      supportedExtensions: [pdf, doc, docx, odt, rtf, epub, pptx,
+                            txt, md, html, htm, tex,
+                            csv, tsv, xls, xlsx, json, xml, yaml, yml,
+                            c, cpp, cs, java, php, py, rb, js, ts, sh, css, go,
+                            jpg, jpeg, png, gif, webp, heic, heif,
+                            zip, tar]
       supportedMimeTypes:
-        # Vision for the model; Pillow, OpenCV and cairosvg in the sandbox
-        - '^image/(jpeg|png|gif|webp|heic|heif|svg\+xml)$'
-        # pdfplumber, pypdf, qpdf, poppler, and the pdf-to-docx skill
+        - '^image/(jpeg|png|gif|webp|heic|heif)$'
         - '^application/pdf$'
-        # Word, Excel and PowerPoint — legacy and OOXML, via the docx/xlsx/pptx skills
-        - '^application/(msword|vnd\.ms-excel|vnd\.ms-powerpoint)$'
-        - '^application/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.(presentation|template))$'
-        # OpenDocument — LibreOffice Writer, Calc and Impress are installed
-        - '^application/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)$'
-        - '^application/(epub\+zip|rtf)$'
-        # Text, markup and tabular data — pandas, pyarrow, chdb
-        - '^text/(plain|markdown|csv|tab-separated-values|html|xml|css|calendar|vtt)$'
-        - '^application/(json|xml|yaml|sql|csv)$'
-        - '^application/(x-parquet|vnd\.apache\.parquet)$'
-        # Source files the sandbox can read or run
-        - '^text/(javascript|x-c|x-c\+\+|x-h|x-csharp|x-java|x-php|x-python|x-script\.python|x-ruby|x-tex)$'
-        - '^application/(typescript|x-sh|vnd\.coffeescript)$'
-        # Archives and mail, opened with code
+        - '^application/(msword|vnd\.ms-excel|rtf|epub\+zip)$'
+        - '^application/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation)$'
+        - '^application/vnd\.oasis\.opendocument\.text$'
+        # Text, markup, data and source files: browsers name these many ways (text/x-c++src,
+        # text/x-go, application/x-tex), and the extension list already decides what is allowed.
+        - '^text/[\w.+-]+$'
+        - '^application/(json|xml|csv|yaml|x-yaml|javascript|x-javascript|typescript|x-sh|x-tex)$'
+        # Archives, opened with code in the sandbox
         - '^application/(zip|x-zip-compressed|x-tar)$'
-        - '^message/rfc822$'
 
-    # Single models read files, they cannot edit them: only what the parser or the RAG API can
-    # turn into text, plus images for vision.
-    custom: &readOnlyUploads
+    # Single models: no sandbox. They read what the parser or the RAG API can turn into text,
+    # plus images for vision.
+    custom: &chatUploads
+      supportedExtensions: [pdf, doc, docx, odt, rtf, epub, pptx,
+                            txt, md, html, htm, tex,
+                            csv, tsv, xls, xlsx, json, xml, yaml, yml,
+                            c, cpp, cs, java, php, py, rb, js, ts, sh, css, go,
+                            jpg, jpeg, png, gif, webp, heic, heif]
       supportedMimeTypes:
         - '^image/(jpeg|png|gif|webp|heic|heif)$'
         - '^application/pdf$'
-        - '^application/(msword|vnd\.ms-excel|vnd\.ms-powerpoint)$'
+        - '^application/(msword|vnd\.ms-excel|rtf|epub\+zip)$'
         - '^application/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation)$'
-        - '^application/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation)$'
-        - '^application/epub\+zip$'
-        - '^text/(plain|markdown|csv|tab-separated-values|html|xml)$'
-        - '^application/(json|xml|csv)$'
+        - '^application/vnd\.oasis\.opendocument\.text$'
+        - '^text/[\w.+-]+$'
+        - '^application/(json|xml|csv|yaml|x-yaml|javascript|x-javascript|typescript|x-sh|x-tex)$'
 
-    # Same as above, plus the audio formats verified with the STT model, for the Transcriber.
+    # The single models and the Transcriber share this endpoint, so it takes the single-model
+    # types plus the audio formats verified with the STT model.
     OpenRouter:
+      supportedExtensions: [pdf, doc, docx, odt, rtf, epub, pptx,
+                            txt, md, html, htm, tex,
+                            csv, tsv, xls, xlsx, json, xml, yaml, yml,
+                            c, cpp, cs, java, php, py, rb, js, ts, sh, css, go,
+                            jpg, jpeg, png, gif, webp, heic, heif,
+                            mp3, wav, m4a, ogg, webm, flac]
       supportedMimeTypes:
         - '^image/(jpeg|png|gif|webp|heic|heif)$'
         - '^application/pdf$'
-        - '^application/(msword|vnd\.ms-excel|vnd\.ms-powerpoint)$'
+        - '^application/(msword|vnd\.ms-excel|rtf|epub\+zip)$'
         - '^application/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation)$'
-        - '^application/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation)$'
-        - '^application/epub\+zip$'
-        - '^text/(plain|markdown|csv|tab-separated-values|html|xml)$'
-        - '^application/(json|xml|csv)$'
-        - '^audio/(mpeg|mp3|wav|wave|x-wav|ogg|vorbis|flac|x-flac|mp4|x-m4a|m4a|webm)$'
+        - '^application/vnd\.oasis\.opendocument\.text$'
+        - '^text/[\w.+-]+$'
+        - '^application/(json|xml|csv|yaml|x-yaml|javascript|x-javascript|typescript|x-sh|x-tex)$'
+        - '^audio/(mpeg|mp3|wav|wave|x-wav|ogg|vorbis|flac|x-flac|x-m4a|m4a|mp4|webm)$'
 
     # Image generation takes pictures and nothing else.
     OpenRouter Image:
+      supportedExtensions: [jpg, jpeg, png, gif, webp, heic, heif]
       supportedMimeTypes:
         - '^image/(jpeg|png|gif|webp|heic|heif)$'
 
     # Any endpoint without its own entry falls here rather than to the sandbox list.
-    default: *readOnlyUploads
+    default: *chatUploads
 
   autoPreparation:
     # Per-file ceiling for reading a document's text straight into the conversation.
@@ -308,7 +332,7 @@ modelSpecs:
       skills: false
       preset:
         endpoint: OpenRouter
-        model: openai/gpt-5.6-luna
+        model: openai/gpt-6-luna
         promptPrefix: |
           You return transcripts of audio files the user attaches.
 
@@ -323,12 +347,14 @@ modelSpecs:
           If no transcript is attached, tell the user to attach an audio file
           using "Upload as Text".
 
-    - name: gpt-5.6-luna
+    - name: gpt-6-luna
       label: ChatGPT
       askUserQuestion: true
-      # Retrieval only: long attachments are searchable, but editing a file needs the
-      # code sandbox, which belongs to the Office Assistant alone.
+      # Long attachments are searchable. Text and code files are edited with read_attachment,
+      # patch_file and save_file, which use file storage only: the code sandbox belongs to the
+      # Office Assistant alone (docs/chat-file-editing-plan.md).
       fileSearch: true
+      fileAuthoring: true
       # Single models are a plain "ask about your file" surface. The tool badge row and
       # the skills picker belong to building an assistant, not to using one — office work
       # goes to the Office Assistant, which carries its own tools and skills.
@@ -336,7 +362,7 @@ modelSpecs:
       skills: false
       preset:
         endpoint: OpenRouter
-        model: openai/gpt-5.6-luna
+        model: openai/gpt-6-luna
         promptPrefix: |
           ## When a file is attached
 
@@ -382,17 +408,33 @@ modelSpecs:
           Do not ask for passwords, payment information, or other unnecessary
           sensitive data. Do not ask for greetings or simple factual questions.
 
-          You can read attached files and answer questions about them. You cannot
-          edit a document or build a spreadsheet — when the user asks for that,
-          say so plainly in one sentence and tell them to switch to the Office
-          Assistant, which can return the edited file.
+          ## Returning files
 
-    - name: anthropic/claude-haiku-4.5
+          You can read attached files, and you can return text and code files
+          with your tools. When the user asks you to change an attached text or
+          code file, read it with read_attachment if its full text is not in the
+          message, then call patch_file with only the parts that change. It
+          returns an edited copy in the same format, named "<name>-edited.<ext>"
+          unless the user asks for another name. When the user asks for a new
+          file, or a short file rewritten from scratch, call save_file with the
+          complete content and a file name with the right extension.
+
+          A saved file is shown to the user as a download. Do not paste its
+          content in your reply as well; say in one or two sentences what you
+          changed.
+
+          You cannot edit or build Word, Excel, PowerPoint or PDF files. When the
+          user asks for that, say so plainly in one sentence and tell them to
+          switch to the Office Assistant, which can return the edited file.
+
+    - name: anthropic/claude-haiku-5.5
       label: Claude
       askUserQuestion: true
-      # Retrieval only: long attachments are searchable, but editing a file needs the
-      # code sandbox, which belongs to the Office Assistant alone.
+      # Long attachments are searchable. Text and code files are edited with read_attachment,
+      # patch_file and save_file, which use file storage only: the code sandbox belongs to the
+      # Office Assistant alone (docs/chat-file-editing-plan.md).
       fileSearch: true
+      fileAuthoring: true
       # Single models are a plain "ask about your file" surface. The tool badge row and
       # the skills picker belong to building an assistant, not to using one — office work
       # goes to the Office Assistant, which carries its own tools and skills.
@@ -400,7 +442,7 @@ modelSpecs:
       skills: false
       preset:
         endpoint: OpenRouter
-        model: anthropic/claude-haiku-4.5
+        model: anthropic/claude-haiku-5.5
         promptCache: true
         promptPrefix: |
           ## When a file is attached
@@ -447,17 +489,33 @@ modelSpecs:
           Do not ask for passwords, payment information, or other unnecessary
           sensitive data. Do not ask for greetings or simple factual questions.
 
-          You can read attached files and answer questions about them. You cannot
-          edit a document or build a spreadsheet — when the user asks for that,
-          say so plainly in one sentence and tell them to switch to the Office
-          Assistant, which can return the edited file.
+          ## Returning files
+
+          You can read attached files, and you can return text and code files
+          with your tools. When the user asks you to change an attached text or
+          code file, read it with read_attachment if its full text is not in the
+          message, then call patch_file with only the parts that change. It
+          returns an edited copy in the same format, named "<name>-edited.<ext>"
+          unless the user asks for another name. When the user asks for a new
+          file, or a short file rewritten from scratch, call save_file with the
+          complete content and a file name with the right extension.
+
+          A saved file is shown to the user as a download. Do not paste its
+          content in your reply as well; say in one or two sentences what you
+          changed.
+
+          You cannot edit or build Word, Excel, PowerPoint or PDF files. When the
+          user asks for that, say so plainly in one sentence and tell them to
+          switch to the Office Assistant, which can return the edited file.
 
     - name: deepseek/deepseek-v4-flash-0731
       label: Coding Expert
       askUserQuestion: true
-      # Retrieval only: long attachments are searchable, but editing a file needs the
-      # code sandbox, which belongs to the Office Assistant alone.
+      # Long attachments are searchable. Text and code files are edited with read_attachment,
+      # patch_file and save_file, which use file storage only: the code sandbox belongs to the
+      # Office Assistant alone (docs/chat-file-editing-plan.md).
       fileSearch: true
+      fileAuthoring: true
       # Single models are a plain "ask about your file" surface. The tool badge row and
       # the skills picker belong to building an assistant, not to using one — office work
       # goes to the Office Assistant, which carries its own tools and skills.
@@ -473,6 +531,25 @@ modelSpecs:
           Before responding, determine whether any missing detail would materially affect the correctness, safety, or implementation approach. If so, ask one concise technical follow-up question with 2–4 practical options, while allowing a custom answer. Ask no more than three clarification questions per request.
 
           Do not ask for information that can be inferred from the codebase, existing context, or standard conventions. Do not request passwords, API keys, access tokens, private keys, or other unnecessary secrets. Skip clarification for simple factual questions, routine coding tasks, or cases where a reasonable assumption can be stated and used safely.
+
+          ## Returning files
+
+          You can read attached files, and you can return text and code files
+          with your tools. When the user asks you to change an attached text or
+          code file, read it with read_attachment if its full text is not in the
+          message, then call patch_file with only the parts that change. It
+          returns an edited copy in the same format, named "<name>-edited.<ext>"
+          unless the user asks for another name. When the user asks for a new
+          file, or a short file rewritten from scratch, call save_file with the
+          complete content and a file name with the right extension.
+
+          A saved file is shown to the user as a download. Do not paste its
+          content in your reply as well; say in one or two sentences what you
+          changed.
+
+          You cannot edit or build Word, Excel, PowerPoint or PDF files. When the
+          user asks for that, say so plainly in one sentence and tell them to
+          switch to the Office Assistant, which can return the edited file.
 
     - name: google/gemini-3.1-flash-lite-image
       label: Image Generation
@@ -499,9 +576,11 @@ modelSpecs:
     - name: google/gemini-3.8-flash
       label: Google Gemini (Latest)
       askUserQuestion: true
-      # Retrieval only: long attachments are searchable, but editing a file needs the
-      # code sandbox, which belongs to the Office Assistant alone.
+      # Long attachments are searchable. Text and code files are edited with read_attachment,
+      # patch_file and save_file, which use file storage only: the code sandbox belongs to the
+      # Office Assistant alone (docs/chat-file-editing-plan.md).
       fileSearch: true
+      fileAuthoring: true
       # Single models are a plain "ask about your file" surface. The tool badge row and
       # the skills picker belong to building an assistant, not to using one — office work
       # goes to the Office Assistant, which carries its own tools and skills.
@@ -555,10 +634,24 @@ modelSpecs:
           Do not ask for passwords, payment information, or other unnecessary
           sensitive data. Do not ask for greetings or simple factual questions.
 
-          You can read attached files and answer questions about them. You cannot
-          edit a document or build a spreadsheet — when the user asks for that,
-          say so plainly in one sentence and tell them to switch to the Office
-          Assistant, which can return the edited file.
+          ## Returning files
+
+          You can read attached files, and you can return text and code files
+          with your tools. When the user asks you to change an attached text or
+          code file, read it with read_attachment if its full text is not in the
+          message, then call patch_file with only the parts that change. It
+          returns an edited copy in the same format, named "<name>-edited.<ext>"
+          unless the user asks for another name. When the user asks for a new
+          file, or a short file rewritten from scratch, call save_file with the
+          complete content and a file name with the right extension.
+
+          A saved file is shown to the user as a download. Do not paste its
+          content in your reply as well; say in one or two sentences what you
+          changed.
+
+          You cannot edit or build Word, Excel, PowerPoint or PDF files. When the
+          user asks for that, say so plainly in one sentence and tell them to
+          switch to the Office Assistant, which can return the edited file.
 
 endpoints:
   agents:
@@ -568,6 +661,11 @@ endpoints:
     # this, a large-document read/edit can dump tens of thousands of characters
     # into context on one turn.
     maxToolResultChars: 25000
+    # Hard ceiling on graph steps for any agent run. Each tool call costs about two
+    # steps (model turn + tool run) and context summaries add more, so Office agents
+    # raise their own limit (recursion_limit in config/phase-one-office-agents.yaml);
+    # every other agent keeps the 50-step default.
+    maxRecursionLimit: 150
     capabilities:
       - 'subagents'
       - 'execute_code'
@@ -592,13 +690,15 @@ endpoints:
       models:
         default:
           - openai/gpt-5.6-luna
+          - openai/gpt-6-luna
           - deepseek/deepseek-v4-flash-0731
           - anthropic/claude-haiku-4.5
+          - anthropic/claude-haiku-5.5
           - google/gemini-3.8-flash
         fetch: false
       titleConvo: true
       titleEndpoint: OpenRouter
-      titleModel: openai/gpt-5.6-luna
+      titleModel: openai/gpt-6-luna
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
       tokenConfig:
@@ -608,6 +708,21 @@ endpoints:
           read: 0.075
           write: 0.0417
           context: 1048576
+        # Neither model is in the built-in pricing table (tx.ts) or context map
+        # (tokens.ts); without these entries usage is billed at a fallback rate and
+        # gpt-6-luna gets no known context window. OpenRouter list prices, 2026-10-21.
+        'openai/gpt-6-luna':
+          prompt: 0.1
+          completion: 0.5
+          read: 0.01
+          write: 0.125
+          context: 1050000
+        'anthropic/claude-haiku-5.5':
+          prompt: 0.1
+          completion: 0.5
+          read: 0.01
+          write: 0.125
+          context: 1000000
 
     # Separate endpoint so `addParams` below (modalities/image_config) only ever
     # reaches the image models. Sending `modalities: ["image","text"]`

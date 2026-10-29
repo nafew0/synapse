@@ -137,16 +137,15 @@ describe('MessageIcon arePropsEqual', () => {
     expect(arePropsEqual({ iconData: baseIconData }, { iconData: baseIconData })).toBe(true);
   });
 
-  // avatarURL and display strings both remain '' in both states — nothing renders differently,
-  // so suppressing the re-render is correct even though the agent prop went from undefined to defined.
-  it('returns true when agent transitions from undefined to object with undefined display fields', () => {
+  // agent.id decides whether the Office Assistant avatar renders, so gaining an agent must re-render.
+  it('returns false when agent transitions from undefined to object with undefined display fields', () => {
     const agentNoFields = makeAgent({ name: undefined, avatar: undefined });
     expect(
       arePropsEqual(
         { iconData: baseIconData, agent: undefined },
         { iconData: baseIconData, agent: agentNoFields },
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('returns false when agent transitions from defined to undefined', () => {

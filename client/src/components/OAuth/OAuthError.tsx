@@ -1,39 +1,25 @@
 import React from 'react';
 import { Button } from '@librechat/client';
 import { useSearchParams } from 'react-router-dom';
+import type { TranslationKeys } from '~/hooks';
 import { useLocalize } from '~/hooks';
+
+const OAUTH_ERROR_KEYS: Record<string, TranslationKeys | undefined> = {
+  missing_code: 'com_ui_oauth_error_missing_code',
+  missing_state: 'com_ui_oauth_error_missing_state',
+  invalid_state: 'com_ui_oauth_error_invalid_state',
+  callback_failed: 'com_ui_oauth_error_callback_failed',
+};
+
+/** Maps the `error` query param to a localization key; unknown values never reach the UI. */
+export function getOAuthErrorKey(error: string | null): TranslationKeys {
+  return (error ? OAUTH_ERROR_KEYS[error] : undefined) ?? 'com_ui_oauth_error_generic';
+}
 
 export default function OAuthError() {
   const localize = useLocalize();
   const [searchParams] = useSearchParams();
-  const error = searchParams.get('error') || 'unknown_error';
-
-  const getErrorMessage = (error: string): string => {
-    switch (error) {
-      case 'missing_code':
-        return (
-          localize('com_ui_oauth_error_missing_code') ||
-          'Authorization code is missing. Please try again.'
-        );
-      case 'missing_state':
-        return (
-          localize('com_ui_oauth_error_missing_state') ||
-          'State parameter is missing. Please try again.'
-        );
-      case 'invalid_state':
-        return (
-          localize('com_ui_oauth_error_invalid_state') ||
-          'Invalid state parameter. Please try again.'
-        );
-      case 'callback_failed':
-        return (
-          localize('com_ui_oauth_error_callback_failed') ||
-          'Authentication callback failed. Please try again.'
-        );
-      default:
-        return localize('com_ui_oauth_error_generic') || error.replace(/_/g, ' ');
-    }
-  };
+  const messageKey = getOAuthErrorKey(searchParams.get('error'));
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-surface-secondary p-8">
@@ -57,9 +43,9 @@ export default function OAuthError() {
           </div>
         </div>
         <h1 className="mb-4 text-3xl font-bold text-text-primary">
-          {localize('com_ui_oauth_error_title') || 'Authentication Failed'}
+          {localize('com_ui_oauth_error_title')}
         </h1>
-        <p className="mb-6 text-sm text-text-secondary">{getErrorMessage(error)}</p>
+        <p className="mb-6 text-sm text-text-secondary">{localize(messageKey)}</p>
         <Button
           variant="default"
           onClick={() => window.close()}

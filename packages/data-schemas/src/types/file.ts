@@ -73,6 +73,8 @@ export interface IMongoFile extends Omit<Document, 'model'> {
     codeEnvRefs?: CodeEnvRefMap;
     /** Result of automatic upload preparation; see `FilePreparationMetadata`. */
     preparation?: FilePreparationMetadata;
+    /** Storage holding the uploaded original when `source` is `text`; see `getStorageSource`. */
+    storageSource?: string;
   };
   expiresAt?: Date;
   expiredAt?: Date | null;

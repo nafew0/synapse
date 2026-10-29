@@ -1,10 +1,13 @@
+import { X } from 'lucide-react';
 import { JSX } from 'react/jsx-runtime';
 import * as RadixToast from '@radix-ui/react-toast';
+import { useToast, useLocalize } from '~/hooks';
 import { NotificationSeverity } from '~/common';
-import { useToast } from '~/hooks';
 
 export function Toast(): JSX.Element {
+  const localize = useLocalize();
   const { toast, onOpenChange } = useToast();
+  const persistent = toast.duration !== undefined && !Number.isFinite(toast.duration);
   const severityClassName = {
     [NotificationSeverity.INFO]: 'border-status-info-strong bg-status-info-strong',
     [NotificationSeverity.SUCCESS]: 'border-status-success-strong bg-status-success-strong',
@@ -16,6 +19,7 @@ export function Toast(): JSX.Element {
     <RadixToast.Root
       open={toast.open}
       onOpenChange={onOpenChange}
+      duration={toast.duration}
       className="toast-root"
       style={{
         height: '74px',
@@ -51,6 +55,25 @@ export function Toast(): JSX.Element {
           <RadixToast.Description className="flex-1 justify-center gap-2">
             <div className="whitespace-pre-wrap text-left">{toast.message}</div>
           </RadixToast.Description>
+          {toast.action && (
+            <RadixToast.Action asChild altText={toast.action.label}>
+              <button
+                type="button"
+                onClick={toast.action.onClick}
+                className="ml-1 shrink-0 self-center rounded border border-current px-2 py-0.5 text-xs font-semibold underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-current"
+              >
+                {toast.action.label}
+              </button>
+            </RadixToast.Action>
+          )}
+          {persistent && (
+            <RadixToast.Close
+              aria-label={localize('com_ui_close')}
+              className="shrink-0 self-center rounded p-0.5 opacity-80 hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-current"
+            >
+              <X className="icon-sm" aria-hidden="true" />
+            </RadixToast.Close>
+          )}
         </div>
       </div>
     </RadixToast.Root>

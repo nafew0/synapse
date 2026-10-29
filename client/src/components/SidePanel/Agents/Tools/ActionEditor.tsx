@@ -18,6 +18,7 @@ import type { ActionAuthForm } from '~/common';
 import ActionsAuth from '~/components/SidePanel/Builder/ActionsAuth';
 import { useAgentPanelContext } from '~/Providers/AgentPanelContext';
 import { useDeleteAgentAction } from '~/data-provider';
+import useErrorToast from '~/hooks/useErrorToast';
 import { isEphemeralAgent } from '~/common';
 import ActionsInput from '../ActionsInput';
 import { useLocalize } from '~/hooks';
@@ -37,6 +38,7 @@ export default function ActionEditor({
 }: ActionEditorProps) {
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const showErrorToast = useErrorToast();
   const { action, setAction } = useAgentPanelContext();
 
   const deleteAgentAction = useDeleteAgentAction({
@@ -49,10 +51,7 @@ export default function ActionEditor({
       onClose();
     },
     onError(error) {
-      showToast({
-        message: (error as Error).message ?? localize('com_assistants_delete_actions_error'),
-        status: 'error',
-      });
+      showErrorToast(error, 'com_assistants_delete_actions_error');
     },
   });
 

@@ -9,6 +9,7 @@ import type {
 } from 'librechat-data-provider';
 import type { useLocalize } from '~/hooks';
 import SpecIcon from '~/components/Chat/Menus/Endpoints/components/SpecIcon';
+import OfficeAssistantAvatar, { isOfficeAssistantId } from '~/components/OfficeAssistantAvatar';
 import { Endpoint, SelectedValues } from '~/common';
 import { getSpecAgentAvatarURL } from '~/utils';
 
@@ -148,10 +149,19 @@ export function getSelectedIcon({
       currentSpec: spec,
       endpointsConfig,
       agentAvatarURL: getSpecAgentAvatarURL(spec, agentsMap),
+      agentId: spec.preset?.agent_id,
+      officeAssistantSize: 28,
     });
   }
 
   if (endpoint && model) {
+    if (isAgentsEndpoint(endpoint) && isOfficeAssistantId(model)) {
+      return React.createElement(OfficeAssistantAvatar, {
+        size: 28,
+        className: 'rounded-full',
+      });
+    }
+
     const selectedEndpoint = mappedEndpoints.find((e) => e.value === endpoint);
     if (!selectedEndpoint) {
       return null;

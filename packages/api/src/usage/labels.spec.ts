@@ -1,4 +1,4 @@
-import { buildModelLabelIndex, resolveModelLabel } from './labels';
+import { buildModelLabelIndex, resolveModelLabel, bareModelId } from './labels';
 
 import type { TModelSpec } from 'librechat-data-provider';
 
@@ -71,5 +71,44 @@ describe('resolveModelLabel', () => {
   it('returns undefined for a model outside the spec list', () => {
     expect(resolveModelLabel(index, { modelId: 'claude-sonnet-4-5' })).toBeUndefined();
     expect(resolveModelLabel(index, {})).toBeUndefined();
+  });
+});
+
+describe('renamed and retired models', () => {
+  const current = buildModelLabelIndex({
+    modelSpecs: {
+      list: [
+        spec('gpt-6-luna', 'ChatGPT', { endpoint: 'OpenRouter', model: 'openai/gpt-6-luna' }),
+        spec('anthropic/claude-haiku-5.5', 'Claude', {
+          endpoint: 'OpenRouter',
+          model: 'anthropic/claude-haiku-5.5',
+        }),
+      ] as TModelSpec[],
+    },
+  });
+
+  it('strips the provider prefix from a model id', () => {
+    expect(bareModelId('OpenAI/GPT-6-Luna ')).toBe('gpt-6-luna');
+    expect(bareModelId('gpt-6-luna')).toBe('gpt-6-luna');
+    expect(bareModelId(undefined)).toBe('');
+  });
+
+  it('matches a model id with or without its provider prefix', () => {
+    expect(resolveModelLabel(current, { modelId: 'gpt-6-luna' })).toBe('ChatGPT');
+    expect(resolveModelLabel(current, { modelId: 'openai/gpt-6-luna' })).toBe('ChatGPT');
+  });
+
+  it('names usage from a replaced spec or model after its successor', () => {
+    expect(resolveModelLabel(current, { specName: 'gpt-5.6-luna' })).toBe('ChatGPT');
+    expect(resolveModelLabel(current, { modelId: 'openai/gpt-5.6-luna' })).toBe('ChatGPT');
+    expect(resolveModelLabel(current, { specName: 'claude-haiku-4-5' })).toBe('Claude');
+    expect(resolveModelLabel(current, { modelId: 'anthropic/claude-haiku-4.5' })).toBe('Claude');
+  });
+
+  it('leaves a model with no successor unnamed, and ignores a successor that is gone', () => {
+    expect(resolveModelLabel(current, { modelId: 'z-ai/glm-5.2' })).toBeUndefined();
+    expect(
+      resolveModelLabel(current, { modelId: 'google/gemini-3.1-flash-image' }),
+    ).toBeUndefined();
   });
 });

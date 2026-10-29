@@ -1,4 +1,5 @@
 import { atom, PrimitiveAtom } from 'jotai';
+import type { TToastAction } from '~/common';
 import { NotificationSeverity } from '~/common';
 
 export const chatDirectionAtom: PrimitiveAtom<string> & {
@@ -13,6 +14,8 @@ export type ToastState = {
   message: string;
   severity: NotificationSeverity;
   showIcon: boolean;
+  action?: TToastAction;
+  duration?: number;
 };
 
 export const toastState: PrimitiveAtom<ToastState> & {

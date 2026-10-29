@@ -176,6 +176,13 @@ describe('Startup readiness wiring', () => {
     expect(triggerDeliveryIndex).toBeGreaterThan(-1);
     expect(readyIndex).toBeGreaterThan(triggerDeliveryIndex);
   });
+
+  it('signals PM2 only after readiness checks pass', () => {
+    const readyIndex = source.indexOf('serverReady = true;');
+    const signalIndex = source.indexOf("process.send?.('ready');");
+
+    expect(signalIndex).toBeGreaterThan(readyIndex);
+  });
 });
 
 describe('Server Configuration', () => {
@@ -323,7 +330,9 @@ describe('Server Configuration', () => {
       });
 
       expect(response.status).toBe(500);
-      expect(response.text).toBe('An unknown error occurred.');
+      expect(response.body).toEqual({ code: 'unknown', requestId: expect.any(String) });
+      expect(response.headers['x-request-id']).toBe(response.body.requestId);
+      expect(response.text).not.toContain('MongoDB operation failed');
     } finally {
       // Restore original function
       mongoose.models.User.findOne = originalFindOne;

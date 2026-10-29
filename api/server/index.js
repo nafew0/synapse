@@ -44,6 +44,7 @@ const {
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
   waitForKeyvRedisClient,
+  captureLoggedErrors,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const {
@@ -126,6 +127,7 @@ const configureGenerationStreams = () => {
 
 const startServer = async () => {
   await waitForKeyvRedisClient();
+  captureLoggedErrors();
   const { metricsMiddleware, metricsRouter } = createMetrics();
   if (!process.env.METRICS_SECRET) {
     logger.warn('[metrics] METRICS_SECRET is not set - /metrics will return 401 for all requests');
@@ -346,6 +348,7 @@ const startServer = async () => {
   app.use('/api/keys', routes.keys);
   app.use('/api/api-keys', routes.apiKeys);
   app.use('/api/user', routes.user);
+  app.use('/api/reports', routes.reports);
   app.use('/api/search', routes.search);
   app.use('/api/messages', routes.messages);
   app.use('/api/convos', routes.convos);
@@ -426,6 +429,7 @@ const startServer = async () => {
       await initializeAgentTriggerService({ address: server.address() });
       serverReady = true;
       logger.info('Server readiness checks passing.');
+      process.send?.('ready');
     } catch (initErr) {
       serverReady = false;
       logger.error('Post-listen initialization failed:', initErr);

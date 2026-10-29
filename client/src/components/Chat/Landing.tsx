@@ -148,9 +148,11 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
     >
       <div ref={contentRef} className="flex flex-col items-center gap-0 p-2">
         <div
-          className={`flex ${textHasMultipleLines ? 'flex-col' : 'flex-col md:flex-row'} items-center justify-center gap-2`}
+          className={`flex ${textHasMultipleLines ? 'flex-col gap-2' : 'flex-col gap-1.5 md:flex-row md:gap-2'} items-center justify-center`}
         >
-          <div className={`relative size-10 justify-center ${textHasMultipleLines ? 'mb-2' : ''}`}>
+          <div
+            className={`relative flex size-10 items-center justify-center ${textHasMultipleLines ? 'mb-2' : ''}`}
+          >
             <ConvoIcon
               agentsMap={agentsMap}
               assistantMap={assistantMap}
@@ -172,7 +174,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             )}
           </div>
           {((isAgent || isAssistant) && name) || name ? (
-            <div className="flex flex-col items-center gap-0 p-2">
+            <div className="flex flex-col items-center gap-0">
               <SplitText
                 key={`split-text-${name}`}
                 text={name}

@@ -8,6 +8,7 @@ import {
   stripHeavyErrorFields,
 } from './parsers';
 import { appendLogContext, attachRequestContext } from './requestLogContext';
+import { errorHookFormat } from './errorHook';
 import { getLogDirectory } from './utils';
 
 const { NODE_ENV, DEBUG_LOGGING, CONSOLE_JSON, DEBUG_CONSOLE, LOG_TO_FILE } = process.env;
@@ -133,6 +134,7 @@ if (useDebugConsole) {
 const logger: winston.Logger = winston.createLogger({
   level: level(),
   levels,
+  format: errorHookFormat(),
   transports,
 });
 

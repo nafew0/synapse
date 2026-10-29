@@ -627,10 +627,7 @@ function mapInviteMember(invite) {
       tenantId: invite.tenantId,
       accountScope,
     }),
-    status:
-      invite.status === InstitutionInviteStatuses.EXPIRED
-        ? InstitutionInviteStatuses.EXPIRED
-        : 'invited',
+    status: isInviteLapsed(invite) ? InstitutionInviteStatuses.EXPIRED : 'invited',
     inviteStatus: invite.status,
     inviteSource: invite.source,
     createdAt: formatDate(invite.createdAt),
@@ -659,17 +656,32 @@ function platformUserStatusFilter(status) {
   return {};
 }
 
-function platformInviteStatusFilter(status) {
+/**
+ * Whether an invitation can no longer be accepted. Decided by `expiresAt`, not the
+ * stored status alone: `EXPIRED` is only written when an invitee opens a dead link,
+ * so one that simply timed out unnoticed still reads as PENDING.
+ */
+function isInviteLapsed(invite, now = new Date()) {
+  if (invite.status === InstitutionInviteStatuses.EXPIRED) {
+    return true;
+  }
+  return (
+    invite.status === InstitutionInviteStatuses.PENDING &&
+    invite.expiresAt != null &&
+    new Date(invite.expiresAt).getTime() < now.getTime()
+  );
+}
+
+/** The invitation clause for a roster status filter, or `null` when no invitation can match. */
+function platformInviteStatusFilter(status, now = new Date()) {
   if (status === InstitutionInviteStatuses.EXPIRED) {
-    return InstitutionInviteStatuses.EXPIRED;
+    return buildInviteAudienceFilter(InviteAudiences.EXPIRED, now);
   }
   if (status === 'invited') {
-    return InstitutionInviteStatuses.PENDING;
+    return buildInviteAudienceFilter(InviteAudiences.PENDING, now);
   }
   if (!status) {
-    return {
-      $in: [InstitutionInviteStatuses.PENDING, InstitutionInviteStatuses.EXPIRED],
-    };
+    return buildInviteAudienceFilter(InviteAudiences.ALL, now);
   }
   return null;
 }
@@ -684,7 +696,94 @@ async function ensureNoCrossTenantConflict(email, tenantId) {
   return existing;
 }
 
-async function sendInstitutionInviteEmail({ email, token, appName, name }) {
+const INSTITUTION_NAME_TTL_MS = 60 * 1000;
+const institutionNameCache = new Map();
+
+/** Bulk resends mail one invitation per member, so the institution is read once
+ *  per burst rather than once per message. */
+async function getInstitutionName(tenantId) {
+  if (!tenantId) {
+    return '';
+  }
+
+  const cached = institutionNameCache.get(tenantId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.name;
+  }
+
+  const institution = await runAsSystem(() =>
+    models.Institution.findOne({ tenantId }).select('name').lean().exec(),
+  );
+  const name = String(institution?.name || '').trim();
+  institutionNameCache.set(tenantId, { name, expiresAt: Date.now() + INSTITUTION_NAME_TTL_MS });
+  return name;
+}
+
+const DEFAULT_ORG_WEBSITE_URL = 'https://bdren.net.bd';
+
+/** Set ORG_WEBSITE_URL to an empty value to drop the links entirely. */
+function resolveOrgWebsite() {
+  const configured = process.env.ORG_WEBSITE_URL;
+  const raw = (configured === undefined ? DEFAULT_ORG_WEBSITE_URL : configured).trim();
+  if (!raw) {
+    return { orgUrl: '', orgLabel: '' };
+  }
+
+  try {
+    const url = new URL(raw);
+    return { orgUrl: url.href.replace(/\/$/, ''), orgLabel: url.host.replace(/^www\./, '') };
+  } catch {
+    logger.warn('[institutionMembers] ORG_WEBSITE_URL is not a valid URL; omitting from email', {
+      configured: raw,
+    });
+    return { orgUrl: '', orgLabel: '' };
+  }
+}
+
+function formatInviteExpiry(expiresAt) {
+  if (!expiresAt) {
+    return '';
+  }
+
+  const date = expiresAt instanceof Date ? expiresAt : new Date(expiresAt);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  /** Invitations are read from anywhere, so a bare date is ambiguous by a day
+   *  either way and the host's own zone is the wrong answer for everyone not
+   *  sitting next to it. The deadline states a time and names the zone it is
+   *  stated in. UTC is the default because it disadvantages no reader;
+   *  INVITE_EMAIL_TIMEZONE pins a local zone when a deployment prefers one, and
+   *  the label follows whatever is chosen. */
+  const options = {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+    timeZoneName: 'short',
+  };
+  const locale = process.env.INVITE_EMAIL_LOCALE || undefined;
+
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      ...options,
+      timeZone: process.env.INVITE_EMAIL_TIMEZONE || 'UTC',
+    }).format(date);
+  } catch {
+    logger.warn('[institutionMembers] invalid INVITE_EMAIL_LOCALE or TIMEZONE; using en-GB UTC', {
+      locale,
+      timeZone: process.env.INVITE_EMAIL_TIMEZONE,
+    });
+    return new Intl.DateTimeFormat('en-GB', { ...options, timeZone: 'UTC' }).format(date);
+  }
+}
+
+const DEFAULT_SUPPORT_EMAIL = 'info@bdren.net.bd';
+
+async function sendInstitutionInviteEmail({ email, token, appName, name, tenantId, expiresAt }) {
   /** DOMAIN_CLIENT is where a browser reaches the app, which in local dev is the
    *  Vite server, not the API. */
   const appUrl = (process.env.DOMAIN_CLIENT || '').replace(/\/+$/, '');
@@ -694,14 +793,23 @@ async function sendInstitutionInviteEmail({ email, token, appName, name }) {
     return { inviteLink };
   }
 
+  const institutionName = await getInstitutionName(tenantId);
+
   try {
     await sendEmail({
       email,
-      subject: `You're invited to join ${appName}`,
+      subject: institutionName
+        ? `${institutionName} has invited you to ${appName}`
+        : `You're invited to join ${appName}`,
       payload: {
         appName,
         appUrl,
         inviteLink,
+        email,
+        institutionName,
+        expiresOn: formatInviteExpiry(expiresAt),
+        supportEmail: process.env.SUPPORT_EMAIL || DEFAULT_SUPPORT_EMAIL,
+        ...resolveOrgWebsite(),
         year: new Date().getFullYear(),
         name: String(name || '').trim(),
       },
@@ -797,6 +905,8 @@ async function createInstitutionInvite({
     token: rawToken,
     appName,
     name: invite.name,
+    tenantId,
+    expiresAt: invite.expiresAt,
   });
 
   await recordMemberAudit({
@@ -828,7 +938,13 @@ async function createStandaloneInvite({ email, username, creditPackageId, invite
   const tokenHash = await hashToken(rawToken);
   const name = requestedUsername || normalizedEmail.split('@')[0];
   const invite = await runAsSystem(() => models.InstitutionInvite.create({ accountScope: InstitutionInviteAccountScopes.STANDALONE, tenantId: null, email: normalizedEmail, name, requestedUsername, requestedRole: SystemRoles.USER, creditPackageId: pkg.id, status: InstitutionInviteStatuses.PENDING, tokenHash, invitedBy: toObjectId(invitedBy?.id ?? invitedBy?._id ?? invitedBy), lastSentAt: new Date(), expiresAt: new Date(Date.now() + getInviteExpiryMs()), source: InstitutionInviteSources.MANUAL }));
-  const emailResult = await sendInstitutionInviteEmail({ email: normalizedEmail, token: rawToken, appName: process.env.APP_TITLE || 'LibreChat', name: invite.name });
+  const emailResult = await sendInstitutionInviteEmail({
+    email: normalizedEmail,
+    token: rawToken,
+    appName: process.env.APP_TITLE || 'LibreChat',
+    name: invite.name,
+    expiresAt: invite.expiresAt,
+  });
   await recordMemberAudit({ tenantId: undefined, action: 'member.invited', actor: actorFromUser(invitedBy), target: { type: 'standalone_invite', id: invite._id, name: normalizedEmail }, metadata: { accountScope: InstitutionInviteAccountScopes.STANDALONE, packageId: pkg.id }, context });
   return { invite, ...emailResult };
 }
@@ -904,6 +1020,8 @@ async function reissueInvite(invite, { actor, context, tenantId, standalone }) {
     token: rawToken,
     appName: process.env.APP_TITLE || 'LibreChat',
     name: invite.name,
+    tenantId: standalone ? null : tenantId,
+    expiresAt: invite.expiresAt,
   });
 
   await recordMemberAudit({
@@ -1401,9 +1519,11 @@ async function buildPlatformMemberFilters({ tenantId, accountScope, query, statu
         ],
       },
       inviteFilter: {
-        accountScope: InstitutionInviteAccountScopes.STANDALONE,
-        ...(inviteStatus ? { status: inviteStatus } : { _id: null }),
-        ...searchFilter,
+        $and: [
+          { accountScope: InstitutionInviteAccountScopes.STANDALONE },
+          inviteStatus ?? { _id: null },
+          searchFilter,
+        ],
       },
       standalone: true,
     };
@@ -1424,10 +1544,12 @@ async function buildPlatformMemberFilters({ tenantId, accountScope, query, statu
       ],
     },
     inviteFilter: {
-      ...tenantFilter,
-      ...(inviteStatus ? { status: inviteStatus } : { _id: null }),
-      ...searchFilter,
-      ...(storedRole ? { requestedRole: storedRole } : null),
+      $and: [
+        tenantFilter,
+        inviteStatus ?? { _id: null },
+        searchFilter,
+        ...(storedRole ? [{ requestedRole: storedRole }] : []),
+      ],
     },
     standalone: false,
   };
@@ -1541,7 +1663,13 @@ async function listPlatformInstitutionMembers({
     };
     const statusFilter = platformUserStatusFilter(status);
     const userFilter = { $and: [tenantlessFilter, { email: { $nin: adminEmails } }, visibleMembershipFilter(), searchFilter, statusFilter, ...(status === 'invited' || status === InstitutionInviteStatuses.EXPIRED ? [{ _id: null }] : [])] };
-    const inviteFilter = { accountScope: InstitutionInviteAccountScopes.STANDALONE, ...(platformInviteStatusFilter(status) ? { status: platformInviteStatusFilter(status) } : { _id: null }), ...searchFilter };
+    const inviteFilter = {
+      $and: [
+        { accountScope: InstitutionInviteAccountScopes.STANDALONE },
+        platformInviteStatusFilter(status) ?? { _id: null },
+        searchFilter,
+      ],
+    };
     const fetchLimit = offset + limit;
     const [users, invites, userTotal, inviteTotal] = await runAsSystem(() => Promise.all([
       models.User.find(userFilter).select('_id name username email emailVerified role provider membershipStatus createdAt updatedAt suspendedAt removedAt').sort({ createdAt: -1 }).limit(fetchLimit).lean().exec(),
@@ -1580,10 +1708,12 @@ async function listPlatformInstitutionMembers({
   };
   const inviteStatus = platformInviteStatusFilter(status);
   const inviteFilter = {
-    ...tenantFilter,
-    ...(inviteStatus ? { status: inviteStatus } : { _id: null }),
-    ...searchFilter,
-    ...(storedRole ? { requestedRole: storedRole } : null),
+    $and: [
+      tenantFilter,
+      inviteStatus ?? { _id: null },
+      searchFilter,
+      ...(storedRole ? [{ requestedRole: storedRole }] : []),
+    ],
   };
   const fetchLimit = offset + limit;
 
@@ -2355,7 +2485,9 @@ async function getInstitutionImportJob({ tenantId, jobId }) {
 }
 
 module.exports = {
+  visibleMembershipFilter,
   HttpError,
+  visibleMembershipFilter,
   assertSeatLimitChangeAllowed,
   assertSeatsAvailable,
   completeInviteAcceptance,

@@ -12,7 +12,9 @@ import {
   InputOTPSeparator,
 } from '@librechat/client';
 import { useVerifyTwoFactorTempMutation } from '~/data-provider';
+import useErrorToast from '~/hooks/useErrorToast';
 import { useLocalize } from '~/hooks';
+import { getResponseStatus } from '~/utils';
 
 interface VerifyPayload {
   tempToken: string;
@@ -37,6 +39,7 @@ const TwoFactorScreen: React.FC = React.memo(() => {
   } = useForm<TwoFactorFormInputs>();
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const showErrorToast = useErrorToast();
   const [useBackup, setUseBackup] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const { mutate: verifyTempMutate } = useVerifyTwoFactorTempMutation({
@@ -50,12 +53,12 @@ const TwoFactorScreen: React.FC = React.memo(() => {
     },
     onError: (error: unknown) => {
       setIsLoading(false);
-      const err = error as { response?: { data?: { message?: unknown } } };
-      const errorMsg =
-        typeof err.response?.data?.message === 'string'
-          ? err.response.data.message
-          : 'Error verifying 2FA';
-      showToast({ message: errorMsg, status: 'error' });
+      const status = getResponseStatus(error);
+      if (status === 400 || status === 401) {
+        showToast({ message: localize('com_ui_2fa_invalid'), status: 'error' });
+        return;
+      }
+      showErrorToast(error, 'com_auth_2fa_verify_error');
     },
   });
 

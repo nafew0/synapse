@@ -153,6 +153,12 @@ const file: Schema<IMongoFile> = new Schema(
         type: preparationSchema,
         default: undefined,
       },
+      /** Storage strategy holding the uploaded original at `filepath`, for a record whose
+       * `source` names how its text is delivered (`text`) rather than where its bytes live. */
+      storageSource: {
+        type: String,
+        default: undefined,
+      },
     },
     expiresAt: {
       /* Short-lived upload TTL managed by MongoDB. This is separate from

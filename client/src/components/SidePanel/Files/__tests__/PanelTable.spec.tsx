@@ -172,7 +172,7 @@ describe('PanelTable handleFileClick', () => {
     expect(mockAddFile).not.toHaveBeenCalled();
     expect(mockShowToast).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: expect.stringContaining('com_ui_attach_error_limit'),
+        message: 'com_error_files_limit',
         status: 'error',
       }),
     );
@@ -193,7 +193,7 @@ describe('PanelTable handleFileClick', () => {
     expect(mockAddFile).not.toHaveBeenCalled();
     expect(mockShowToast).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: expect.stringContaining('com_ui_attach_error_total_size'),
+        message: 'com_error_files_total_too_large',
         status: 'error',
       }),
     );
@@ -215,7 +215,7 @@ describe('PanelTable handleFileClick', () => {
     expect(mockAddFile).toHaveBeenCalledTimes(1);
     expect(mockShowToast).not.toHaveBeenCalledWith(
       expect.objectContaining({
-        message: expect.stringContaining('com_ui_attach_error_total_size'),
+        message: 'com_error_files_total_too_large',
       }),
     );
   });

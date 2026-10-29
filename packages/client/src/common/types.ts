@@ -1,7 +1,14 @@
 import { NotificationSeverity } from './enum';
 
+export type TToastAction = {
+  label: string;
+  onClick: () => void;
+};
+
 export type TShowToast = {
   message: string;
+  /** Optional button shown inside the toast (e.g. "Report an issue"). */
+  action?: TToastAction;
   severity?: NotificationSeverity;
   showIcon?: boolean;
   duration?: number;

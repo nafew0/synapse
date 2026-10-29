@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Feather } from 'lucide-react';
 import { Skeleton } from '@librechat/client';
 import type t from 'librechat-data-provider';
+import OfficeAssistantAvatar, { isOfficeAssistant } from '~/components/OfficeAssistantAvatar';
 
 /**
  * Extracts the avatar URL from an agent's avatar property
@@ -99,6 +100,27 @@ export const renderAgentAvatar = (
   };
 
   const borderClasses = showBorder ? 'border-1 border-border-medium' : '';
+
+  if (isOfficeAssistant(agent)) {
+    const botAvatarSizes = {
+      icon: 20,
+      sm: 56,
+      md: 80,
+      lg: 96,
+      xl: 96,
+    };
+
+    return (
+      <div
+        className={`relative flex items-center justify-center ${sizeClasses[size]} ${className}`}
+      >
+        <OfficeAssistantAvatar
+          size={botAvatarSizes[size]}
+          className={`rounded-full ${borderClasses}`}
+        />
+      </div>
+    );
+  }
 
   if (avatarUrl) {
     return (
