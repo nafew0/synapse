@@ -68,6 +68,9 @@ jest.mock('@librechat/api', () => {
      *  filename disagrees with it hands the model a path that does not exist. */
     sanitizeFilename: (...args) => real().sanitizeFilename(...args),
     parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
+    /** Real: reads the multer temp file byte for byte. */
+    parseTextNative: (...args) => real().parseTextNative(...args),
+    isTextType: (...args) => real().isTextType(...args),
     processAudioFile: jest.fn(),
     sendUploadSuccess: jest.fn((res, sseStream, message, result) => {
       if (sseStream) {
@@ -983,6 +986,20 @@ describe('processAgentFileUpload', () => {
       );
     });
 
+    test('reads a code file byte for byte instead of through the RAG extractor', async () => {
+      const { parseText } = require('@librechat/api');
+      const source = 'def scan():\n    return 1\n';
+      const codePath = nodePath.join(uploadDir, 'scan.py');
+      nodeFs.writeFileSync(codePath, source);
+      const req = makeReq({ mimetype: 'text/x-python', ocrConfig: null, path: codePath });
+      req.file.size = Buffer.byteLength(source);
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: autoMetadata() });
+
+      expect(parseText).not.toHaveBeenCalled();
+      expect(db.createFile).toHaveBeenCalledWith(expect.objectContaining({ text: source }), true);
+    });
+
     test('stores the sanitized filename, the one the sandbox copy is mounted under', async () => {
       /**
        * `uploadToCodeEnvironment` uploads under `sanitizeFilename(originalname)`, and this
@@ -1529,6 +1546,75 @@ describe('processAgentFileUpload', () => {
         }),
         true,
       );
+    });
+
+    describe('only assistants with the sandbox may upload to it', () => {
+      const chatSpecs = {
+        enforce: true,
+        list: [
+          { name: 'chat-spec', fileSearch: true },
+          { name: 'sandbox-spec', executeCode: true },
+        ],
+      };
+      const sandboxUpload = (req, metadata) =>
+        processAgentFileUpload({
+          req,
+          res: mockRes,
+          metadata: {
+            tool_resource: EToolResources.execute_code,
+            file_id: 'file-uuid',
+            message_file: true,
+            ...metadata,
+          },
+        });
+
+      it('refuses a chat spec without executeCode, even when the request names execute_code', async () => {
+        const codeEnvUpload = setupCodeEnvUpload({ storage_session_id: 's', file_id: 'f' });
+        const req = makeReq();
+        req.config.modelSpecs = chatSpecs;
+
+        await expect(
+          sandboxUpload(req, { agent_id: 'ephemeral', spec: 'chat-spec' }),
+        ).rejects.toThrow('This assistant cannot use the code sandbox');
+        expect(codeEnvUpload).not.toHaveBeenCalled();
+      });
+
+      it('refuses an upload that names no assistant while model specs are enforced', async () => {
+        const codeEnvUpload = setupCodeEnvUpload({ storage_session_id: 's', file_id: 'f' });
+        const req = makeReq();
+        req.config.modelSpecs = chatSpecs;
+
+        await expect(sandboxUpload(req, { agent_id: 'ephemeral' })).rejects.toThrow(
+          'This assistant cannot use the code sandbox',
+        );
+        expect(codeEnvUpload).not.toHaveBeenCalled();
+      });
+
+      it('accepts a spec with executeCode', async () => {
+        const codeEnvUpload = setupCodeEnvUpload({ storage_session_id: 's', file_id: 'f' });
+        const req = makeReq();
+        req.config.modelSpecs = chatSpecs;
+
+        await sandboxUpload(req, { agent_id: 'ephemeral', spec: 'sandbox-spec' });
+        expect(codeEnvUpload).toHaveBeenCalled();
+      });
+
+      it('accepts an agent whose handoff specialist has execute_code', async () => {
+        const codeEnvUpload = setupCodeEnvUpload({ storage_session_id: 's', file_id: 'f' });
+        db.getAgent.mockResolvedValueOnce({
+          id: 'agent_office',
+          tools: ['ask_user_question'],
+          edges: [{ from: 'agent_office', to: 'agent_office_documents', edgeType: 'handoff' }],
+        });
+        db.getAgents.mockResolvedValueOnce([
+          { id: 'agent_office_documents', tools: ['execute_code'] },
+        ]);
+        const req = makeReq();
+        req.config.modelSpecs = chatSpecs;
+
+        await sandboxUpload(req, { agent_id: 'agent_office' });
+        expect(codeEnvUpload).toHaveBeenCalled();
+      });
     });
 
     it('skips retention metadata for persistent agent execute_code files outside all-data retention', async () => {

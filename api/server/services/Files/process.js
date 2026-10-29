@@ -29,6 +29,8 @@ const {
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   parseText,
+  isTextType,
+  parseTextNative,
   UploadStage,
   countTokens,
   DeliveryMethod,
@@ -1237,7 +1239,11 @@ const extractPreparedText = async ({
   }
 
   try {
-    const { text, bytes } = await parseText({ req, file, file_id: metadata.file_id });
+    /** Plain text and code are read byte for byte: the file tools edit this exact text, and a
+     * round trip through the RAG API's extractor can change whitespace such as the final newline. */
+    const { text, bytes } = isTextType(file.mimetype)
+      ? await parseTextNative(file)
+      : await parseText({ req, file, file_id: metadata.file_id });
     return text?.trim() ? { text, bytes, type: file.mimetype, ocrApplied: false } : undefined;
   } catch (err) {
     logger.warn(
@@ -1316,6 +1322,22 @@ const resolveAssistantTools = async ({ req, metadata }) => {
     tools.add(Tools.file_search);
   }
   return tools;
+};
+
+/**
+ * Whether an explicit `execute_code` upload may reach the sandbox. Only an assistant that carries
+ * `execute_code` (its agent record, its handoff targets, or its model spec) may send files there.
+ * When the assistant cannot be determined, the upload is refused while model specs are enforced,
+ * since every legitimate chat then names its spec.
+ *
+ * @param {{ req: ServerRequest, assistantTools: Set<string> | null }} params
+ * @returns {boolean}
+ */
+const isSandboxUploadAllowed = ({ req, assistantTools }) => {
+  if (assistantTools) {
+    return assistantTools.has(Tools.execute_code);
+  }
+  return req.config?.modelSpecs?.enforce !== true;
 };
 
 /**
@@ -1558,6 +1580,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     const isCodeEnabled = await checkCapability(req, AgentCapabilities.execute_code);
     if (!isCodeEnabled) {
       throw new Error('Code execution is not enabled for Agents');
+    }
+    const assistantTools = await resolveAssistantTools({ req, metadata });
+    if (!isSandboxUploadAllowed({ req, assistantTools })) {
+      throw new Error('This assistant cannot use the code sandbox');
     }
     fileInfoMetadata = await uploadToCodeEnvironment({
       req,

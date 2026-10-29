@@ -31,6 +31,7 @@ export enum FileContext {
   assistants_output = 'assistants_output',
   message_attachment = 'message_attachment',
   skill_file = 'skill_file',
+  file_authoring = 'file_authoring',
   filename = 'filename',
   updatedAt = 'updatedAt',
   source = 'source',
@@ -48,6 +49,12 @@ export type EndpointFileConfig = {
   fileSizeLimit?: number;
   totalSizeLimit?: number;
   supportedMimeTypes?: RegexLike[];
+  /**
+   * Lowercase extensions without the dot (`py`, `docx`). When set, a file is accepted only if its
+   * name ends in one of them, whatever MIME type the browser reports: many extensions share
+   * `text/plain`, so a MIME list alone cannot tell `.txt` from `.conf`.
+   */
+  supportedExtensions?: string[];
 };
 
 /**

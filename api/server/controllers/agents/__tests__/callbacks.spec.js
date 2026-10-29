@@ -11,6 +11,7 @@ jest.mock('@librechat/api', () => ({
     emitChunk: jest.fn(),
   },
   HOST_FILE_AUTHORING_ARTIFACT_KEY: '__librechat_file_authoring',
+  SAVED_FILE_ARTIFACT_KEY: 'saved_file',
   getToolInputValidationDetails: jest.fn((result, validationError) =>
     validationError != null
       ? {
@@ -154,6 +155,35 @@ describe('createToolEndCallback', () => {
       write: jest.fn(),
     };
     artifactPromises = [];
+  });
+
+  describe('saved_file artifact handling', () => {
+    it('attaches a file a chat model saved, tied to the reply message', async () => {
+      const toolEndCallback = createToolEndCallback({ req, res, artifactPromises });
+      const saved = {
+        file_id: 'file-1',
+        filename: 'scan-edited.py',
+        filepath: '/uploads/user123/file-1__scan-edited.py',
+        type: 'text/x-python',
+        bytes: 12,
+        context: 'file_authoring',
+      };
+
+      await toolEndCallback(
+        {
+          output: { name: 'patch_file', tool_call_id: 'tool123', artifact: { saved_file: saved } },
+        },
+        { run_id: 'run456', thread_id: 'thread789' },
+      );
+      const [attachment] = await Promise.all(artifactPromises);
+
+      expect(attachment).toEqual({
+        ...saved,
+        messageId: 'run456',
+        toolCallId: 'tool123',
+        conversationId: 'thread789',
+      });
+    });
   });
 
   describe('ui_resources artifact handling', () => {

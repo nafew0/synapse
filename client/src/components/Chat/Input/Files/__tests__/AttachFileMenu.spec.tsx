@@ -441,6 +441,32 @@ describe('AttachFileMenu', () => {
       );
     });
 
+    it('lists only the configured extensions when the endpoint has an extension allowlist', () => {
+      setupMocks();
+      mockUseGetStartupConfig.mockReturnValue({ data: { autoFilePreparationEnabled: true } });
+      renderMenu({
+        endpointType: EModelEndpoint.agents,
+        endpointFileConfig: { ...endpointFileConfig, supportedExtensions: ['pdf', 'py', 'png'] },
+      });
+      openMenu();
+      const accept = captureAcceptOnClick(() =>
+        fireEvent.click(screen.getByText('com_ui_upload_file')),
+      );
+      expect(accept).toBe('.pdf,.py,.png');
+    });
+
+    it('limits the image picker to the image extensions in the allowlist', () => {
+      setupMocks();
+      mockUseGetStartupConfig.mockReturnValue({ data: { autoFilePreparationEnabled: true } });
+      renderMenu({
+        endpointType: EModelEndpoint.agents,
+        endpointFileConfig: { ...endpointFileConfig, supportedExtensions: ['pdf', 'png', 'heic'] },
+      });
+      openMenu();
+      const accept = captureAcceptOnClick(() => fireEvent.click(screen.getByText('Upload Image')));
+      expect(accept).toBe('.png,.heic');
+    });
+
     it('limits the File Search picker to the endpoint allowlist', () => {
       setupMocks();
       mockUseAgentCapabilities.mockReturnValue({

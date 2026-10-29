@@ -19,6 +19,7 @@ import {
   Providers,
   EToolResources,
   EModelEndpoint,
+  getExtensionAccept,
   getUploadMimeAccept,
   getConfiguredMimeAccept,
   bedrockDocumentMimeTypes,
@@ -145,13 +146,17 @@ const AttachFileMenu = ({
         return;
       }
       inputRef.current.value = '';
+      const extensionAccept = getExtensionAccept(endpointFileConfig?.supportedExtensions, {
+        imagesOnly: fileType === 'image',
+      });
       const configuredAccept =
-        fileType !== undefined
+        extensionAccept ??
+        (fileType !== undefined
           ? getConfiguredMimeAccept(
               endpointFileConfig?.supportedMimeTypes,
               fileTypeCapabilities[fileType],
             )
-          : undefined;
+          : undefined);
       if (configuredAccept != null) {
         inputRef.current.accept = configuredAccept;
       } else if (fileType === 'image') {
@@ -172,7 +177,7 @@ const AttachFileMenu = ({
       inputRef.current.click();
       inputRef.current.accept = '';
     },
-    [endpointFileConfig?.supportedMimeTypes],
+    [endpointFileConfig?.supportedMimeTypes, endpointFileConfig?.supportedExtensions],
   );
 
   const dropdownItems = useMemo(() => {
