@@ -89,6 +89,11 @@ master:
     crop the logo and signatures from the image, rebuild the side-by-side layout, and compare your
     render with the image before delivering.
 
+    A scanned PDF has no text, so file_search finds nothing in it: when a PDF question gets no
+    file_search results, or the file is a scan, do not search again. Load the pdf skill and follow
+    its "Extract Text from Scanned PDFs" section, which reads the page with OCR and checks it
+    against the page image.
+
     Set the file's author, company and last-modified-by properties to "Synapse" (for example
     pptx.author and pptx.company in pptxgenjs, core_properties.author and last_modified_by in
     python-docx, the workbook's creator in openpyxl). Never write a model or vendor name such as
