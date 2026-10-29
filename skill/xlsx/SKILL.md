@@ -51,22 +51,23 @@ prove nothing else moved.
 
 1. **Never overwrite the original.** Keep the uploaded file untouched as the reference, and save
    your edit under a new name, such as `/mnt/data/<name>_updated.xlsx`.
-2. **Run the preflight first, in the same call as the inspection below:**
-   `python3 /mnt/data/skills/xlsx/scripts/preflight.py /mnt/data/original.xlsx`. It lists what an
-   openpyxl save would delete: sparklines, text boxes and shapes, Excel 2010 data bars, icon sets
-   and validation lists, slicers, pivot tables, form controls.
-   - **`openpyxl: safe`** — edit with openpyxl, and always load with
-     `load_workbook(path, rich_text=True)`: without it, a cell with a bold or coloured word loses
-     that formatting.
-   - **`openpyxl: UNSAFE`** — do not save the workbook with openpyxl at all. Change its cells with
-     `scripts/cells.py`, which writes into the XML and leaves every other part as it was:
-     ```bash
-     python3 /mnt/data/skills/xlsx/scripts/cells.py /mnt/data/original.xlsx /mnt/data/<name>_updated.xlsx \
-       --set "Budget!A11=Total" --set "Budget!B11==SUM(B5:B10)" --style "Budget!A11:F11=Budget!A10"
-     ```
-     `--set` takes a number, text, or a formula (value starting with `=`); `--style` copies one
-     cell's formatting to a range; `--width "Sheet!E=14"` sets a column width. Read the workbook
-     with openpyxl as much as you like, but only `cells.py` writes it.
+2. **Write with `scripts/cells.py` by default; it edits the XML and leaves every other part of the
+   workbook as Excel saved it.** An openpyxl save rewrites the whole file: even on a plain Excel
+   workbook it fixes auto-fitted row heights, stamps a style on every column and drops Excel's
+   row-height hints, which shifts the printed page; on richer ones it deletes sparklines, text
+   boxes, Excel 2010 data bars and validation, slicers and form controls.
+   ```bash
+   python3 /mnt/data/skills/xlsx/scripts/cells.py /mnt/data/original.xlsx /mnt/data/<name>_updated.xlsx \
+     --set "Budget!A11=Total" --set "Budget!B11==SUM(B5:B10)" --style "Budget!A11:F11=Budget!A10"
+   ```
+   `--set` takes a number, text, or a formula (value starting with `=`); `--style` copies one
+   cell's formatting to a range; `--width "Sheet!E=14"` sets a column width. Read the workbook
+   with openpyxl (`load_workbook(path, rich_text=True)`) as much as you like.
+   - **Only when the user asked to insert or delete rows or columns, or to add a sheet,** save with
+     openpyxl, and first run `python3 /mnt/data/skills/xlsx/scripts/preflight.py <file>`, in the
+     same call as the inspection below. If it says `openpyxl: UNSAFE`, tell the user which items
+     (sparklines, shapes, and so on) would be lost and ask before going ahead. Always load with
+     `rich_text=True`, or a cell with a bold or coloured word loses that formatting.
 3. **Inspect it with cell addresses before planning any write.** `markitdown` shows no addresses,
    so it cannot tell you where to write:
    ```python
