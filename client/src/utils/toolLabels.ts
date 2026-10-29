@@ -15,6 +15,11 @@ export const TOOL_FRIENDLY_NAME_KEYS: Record<string, TranslationKeys> = {
   run_tools_with_bash: 'com_ui_tool_name_code',
   bash_tool: 'com_ui_tool_name_code',
   web_search: 'com_ui_tool_name_web_search',
+  search_web: 'com_ui_tool_name_web_search',
+  read_web_page: 'com_ui_tool_name_read_web_page',
+  /** Former ids of `search_web` / `read_web_page`, still stored on older messages. */
+  firecrawl_search: 'com_ui_tool_name_web_search',
+  firecrawl_scrape: 'com_ui_tool_name_read_web_page',
   image_gen_oai: 'com_ui_tool_name_image_gen',
   image_edit_oai: 'com_ui_tool_name_image_edit',
   gemini_image_gen: 'com_ui_tool_name_image_gen',

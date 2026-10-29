@@ -19,6 +19,8 @@ jest.mock('~/hooks', () => ({
       com_assistants_allow_sites_you_trust: 'Only allow sites you trust',
       com_ui_via_server: `via ${values?.[0]}`,
       com_ui_tool_failed: 'failed',
+      com_ui_tool_name_web_search: 'Web Search',
+      com_ui_tool_name_read_web_page: 'Read Web Page',
     };
     return translations[key] || key;
   },
@@ -97,6 +99,7 @@ jest.mock('lucide-react', () => ({
 }));
 
 jest.mock('~/utils', () => ({
+  getToolDisplayLabel: jest.requireActual('~/utils/toolLabels').getToolDisplayLabel,
   logger: {
     error: jest.fn(),
   },
@@ -385,6 +388,26 @@ describe('ToolCall', () => {
       const toolCallInfo = screen.getByTestId('tool-call-info');
       const props = JSON.parse(toolCallInfo.textContent!);
       expect(props.output).toBeNull();
+    });
+
+    it.each([
+      ['search_web', 'Web Search'],
+      ['read_web_page', 'Read Web Page'],
+      ['firecrawl_search', 'Web Search'],
+      ['firecrawl_scrape', 'Read Web Page'],
+    ])('labels %s by what it does, never by its provider', (name, label) => {
+      const { container, rerender } = renderWithRecoil(
+        <ToolCall {...mockProps} name={name} output={null} initialProgress={0.5} isSubmitting />,
+      );
+      expect(screen.getByText(`Running ${label}`)).toBeInTheDocument();
+
+      rerender(
+        <RecoilRoot>
+          <ToolCall {...mockProps} name={name} />
+        </RecoilRoot>,
+      );
+      expect(screen.getByTestId('progress-text')).toHaveTextContent(`Completed ${label}`);
+      expect(container.textContent).not.toMatch(/firecrawl/i);
     });
 
     it('should handle simple function name without domain', () => {

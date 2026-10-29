@@ -354,10 +354,10 @@ describe('Tool Handlers', () => {
       try {
         const { loadedTools } = await loadTools({
           user: fakeUser._id,
-          tools: ['firecrawl_search', 'firecrawl_scrape'],
+          tools: ['search_web', 'read_web_page'],
           useSpecs: true,
         });
-        expect(loadedTools.map((t) => t.name)).toEqual(['firecrawl_search', 'firecrawl_scrape']);
+        expect(loadedTools.map((t) => t.name)).toEqual(['search_web', 'read_web_page']);
       } finally {
         delete process.env.FIRECRAWL_API_KEY;
       }
@@ -367,7 +367,7 @@ describe('Tool Handlers', () => {
       delete process.env.FIRECRAWL_API_KEY;
       const { loadedTools } = await loadTools({
         user: fakeUser._id,
-        tools: ['firecrawl_search'],
+        tools: ['search_web'],
         useSpecs: true,
       });
       expect(loadedTools).toHaveLength(0);

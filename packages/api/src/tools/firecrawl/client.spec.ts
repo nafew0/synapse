@@ -152,10 +152,10 @@ describe('Firecrawl client', () => {
       );
     });
 
-    it('throws with the Firecrawl error on a failed request', async () => {
+    it('throws a provider-neutral error on a failed request', async () => {
       reply = { status: 402, body: { success: false, error: 'Payment required' } };
       await expect(searchFirecrawl(config, { query: 'x' })).rejects.toThrow(
-        'Firecrawl request failed with status 402: Payment required',
+        'Web request failed with status 402',
       );
     });
   });
@@ -220,34 +220,34 @@ describe('Firecrawl client', () => {
         status: 200,
         body: { success: true, data: { web: [{ url: 'https://e.org', title: 'E' }] } },
       };
-      const searchTool = createFirecrawlTool('firecrawl_search', { config });
-      expect(searchTool.name).toBe('firecrawl_search');
+      const searchTool = createFirecrawlTool('search_web', { config });
+      expect(searchTool.name).toBe('search_web');
       await expect(searchTool.invoke({ query: 'e' })).resolves.toBe('1. E\nURL: https://e.org');
     });
 
     it('shares one budget across tools created for the same request', async () => {
       reply = { status: 200, body: { success: true, data: { markdown: 'Body' } } };
       const budgetScope = {};
-      const first = createFirecrawlTool('firecrawl_scrape', { config, budgetScope });
-      const second = createFirecrawlTool('firecrawl_scrape', { config, budgetScope });
+      const first = createFirecrawlTool('read_web_page', { config, budgetScope });
+      const second = createFirecrawlTool('read_web_page', { config, budgetScope });
 
       await first.invoke({ url: 'https://f.org/1' });
       await second.invoke({ url: 'https://f.org/2' });
       const refused = await second.invoke({ url: 'https://f.org/3' });
 
       expect(requests).toHaveLength(2);
-      expect(refused).toContain('Budget reached: firecrawl_scrape has been used 2 of 2 times');
+      expect(refused).toContain('Budget reached: Reading web pages has been used 2 of 2 times');
     });
 
     it('counts searches and scrapes separately, and a new request gets a fresh budget', async () => {
       reply = { status: 200, body: { success: true, data: { web: [] } } };
       const scope = {};
-      const search = createFirecrawlTool('firecrawl_search', { config, budgetScope: scope });
+      const search = createFirecrawlTool('search_web', { config, budgetScope: scope });
       await search.invoke({ query: 'a' });
       await search.invoke({ query: 'b' });
       await expect(search.invoke({ query: 'c' })).resolves.toContain('Budget reached');
 
-      const nextTurn = createFirecrawlTool('firecrawl_search', { config, budgetScope: {} });
+      const nextTurn = createFirecrawlTool('search_web', { config, budgetScope: {} });
       await expect(nextTurn.invoke({ query: 'd' })).resolves.toBe('No results found for "d".');
       expect(requests).toHaveLength(3);
     });

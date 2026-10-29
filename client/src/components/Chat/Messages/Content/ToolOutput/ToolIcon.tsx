@@ -47,6 +47,14 @@ const ICON_MAP: Record<ToolIconType, React.ComponentType<{ className?: string }>
   generic: Wrench,
 };
 
+const WEB_TOOL_NAMES = new Set([
+  'web_search',
+  'search_web',
+  'read_web_page',
+  'firecrawl_search',
+  'firecrawl_scrape',
+]);
+
 export function getToolIconType(name: string): ToolIconType {
   if (!name) {
     return 'generic';
@@ -57,7 +65,7 @@ export function getToolIconType(name: string): ToolIconType {
   if (name === 'execute_code' || name === Constants.PROGRAMMATIC_TOOL_CALLING) {
     return 'execute_code';
   }
-  if (name === 'web_search') {
+  if (WEB_TOOL_NAMES.has(name)) {
     return 'web_search';
   }
   if (name === 'image_gen_oai' || name === 'image_edit_oai' || name === 'gemini_image_gen') {
