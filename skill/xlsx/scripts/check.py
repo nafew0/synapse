@@ -3,7 +3,7 @@
     python3 check.py <out.xlsx> [--original src.xlsx --allow 'Sheet!B2:D9' ... --new-sheet NAME[:TEMPLATE] ...]
                      [--formula 'Sheet!F12' ... --expect 'Sheet!F12=150000' ...]
 
-Runs recalc.py (which rewrites the file in place), verify_calculations.py when --formula or
+Runs recalc.py (which writes the computed values into the file), verify_calculations.py when --formula or
 --expect is given, verify_structure.py when --original is given, and renders the first pages
 into one image. The last lines are a short report and that image's path. Exit 0 when every
 gate passed, 2 when something needs fixing. Never deliver on 2.

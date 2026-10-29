@@ -40,7 +40,7 @@ python3 /mnt/data/skills/xlsx/scripts/check.py /mnt/data/<output>.xlsx \
   --formula 'Sheet!B10' --expect 'Sheet!B10=1245'
 ```
 
-It recalculates (in place), runs the calculation gate for each `--formula`/`--expect`, runs the structure preservation gate when `--original` is given (with your `--allow` and `--new-sheet` flags), and renders the first printed pages into one image. Exit 0 means every gate passed; 2 lists what failed. Read the report, then read the render image once. Fix every failure in one round, rerun the same line, and never deliver on exit 2. The sections below explain each gate; you do not run their commands separately.
+It recalculates (writing only the computed values into your file), runs the calculation gate for each `--formula`/`--expect`, runs the structure preservation gate when `--original` is given (with your `--allow` and `--new-sheet` flags), and renders the first printed pages into one image. Exit 0 means every gate passed; 2 lists what failed. Read the report, then read the render image once. Fix every failure in one round, rerun the same line, and never deliver on exit 2. The sections below explain each gate; you do not run their commands separately.
 
 Special cases live in reference files, read only when the task needs them: `references/charts.md` before adding or changing a chart, `references/finance.md` for a financial model or a statement built from a source document.
 
@@ -51,11 +51,27 @@ prove nothing else moved.
 
 1. **Never overwrite the original.** Keep the uploaded file untouched as the reference, and save
    your edit under a new name, such as `/mnt/data/<name>_updated.xlsx`.
-2. **Inspect it with cell addresses before planning any write.** `markitdown` shows no addresses,
+2. **Run the preflight first, in the same call as the inspection below:**
+   `python3 /mnt/data/skills/xlsx/scripts/preflight.py /mnt/data/original.xlsx`. It lists what an
+   openpyxl save would delete: sparklines, text boxes and shapes, Excel 2010 data bars, icon sets
+   and validation lists, slicers, pivot tables, form controls.
+   - **`openpyxl: safe`** — edit with openpyxl, and always load with
+     `load_workbook(path, rich_text=True)`: without it, a cell with a bold or coloured word loses
+     that formatting.
+   - **`openpyxl: UNSAFE`** — do not save the workbook with openpyxl at all. Change its cells with
+     `scripts/cells.py`, which writes into the XML and leaves every other part as it was:
+     ```bash
+     python3 /mnt/data/skills/xlsx/scripts/cells.py /mnt/data/original.xlsx /mnt/data/<name>_updated.xlsx \
+       --set "Budget!A11=Total" --set "Budget!B11==SUM(B5:B10)" --style "Budget!A11:F11=Budget!A10"
+     ```
+     `--set` takes a number, text, or a formula (value starting with `=`); `--style` copies one
+     cell's formatting to a range; `--width "Sheet!E=14"` sets a column width. Read the workbook
+     with openpyxl as much as you like, but only `cells.py` writes it.
+3. **Inspect it with cell addresses before planning any write.** `markitdown` shows no addresses,
    so it cannot tell you where to write:
    ```python
    from openpyxl import load_workbook
-   wb = load_workbook('/mnt/data/original.xlsx')
+   wb = load_workbook('/mnt/data/original.xlsx', rich_text=True)
    for ws in wb:
        print('##', ws.title, '| merged:', sorted(str(r) for r in ws.merged_cells.ranges))
        for row in ws.iter_rows():
@@ -63,26 +79,26 @@ prove nothing else moved.
                if cell.value is not None:
                    print(cell.coordinate, repr(cell.value))
    ```
-3. **Find every target by its label, never by guessing an address.** Locate the table header
+4. **Find every target by its label, never by guessing an address.** Locate the table header
    ("Sl. #", "Description"), the total ("Total Estimated cost") and fields such as "Amount in
    words" or "Remarks" in that output, and write relative to them.
-4. **Write only to a merged range's top-left cell, and never unmerge.** A `MergedCell` read-only
+5. **Write only to a merged range's top-left cell, and never unmerge.** A `MergedCell` read-only
    error means the address is wrong — you are writing into a title or a label. Stop and inspect
    again. Unmerging to make the write succeed destroys the form's layout.
-5. **Do not insert or delete rows or columns, and do not rebuild the workbook,** unless the user
+6. **Do not insert or delete rows or columns, and do not rebuild the workbook,** unless the user
    asked for exactly that. If the items do not fit the existing rows, ask with
    `ask_user_question` instead of restructuring the form.
-6. **Fill the inputs and let the existing formulas compute.** Write quantities and unit costs,
+7. **Fill the inputs and let the existing formulas compute.** Write quantities and unit costs,
    leave the estimated-cost and total formulas in place, and extend a `SUM` range only when you
    were asked to add rows.
-7. **Fit your content to the form; never fit the form to your content.** Column widths, row
+8. **Fit your content to the form; never fit the form to your content.** Column widths, row
    heights, margins, the page header and footer, print titles and fit-to-page are part of the
    form. They decide how it prints on the one page the office signs. Never change them unless
    the user asked. When text or a number is too big for its cell, change the content instead:
    use the template's own wording style, abbreviate ("2nd mtg, 24 Nov 2025"), move detail into
    Remarks, or group rows. If it still cannot fit, ask with `ask_user_question`. The gate reports
    anything that no longer fits as a `fit` issue and any changed print layout as a `layout` issue.
-8. **Pass the structure preservation gate before you deliver.**
+9. **Pass the structure preservation gate before you deliver.**
 
 ## Adding a tab modeled on an existing sheet
 
@@ -122,7 +138,7 @@ and is what leaves the new tab broken. Copy the sheet itself, then fill it like 
 ## Mandatory structure preservation gate
 
 For any edit to a file the user provided, a clean recalculation is not completion. After saving
-under the new name, and after `recalc.py` (which rewrites the file in place):
+under the new name, and after `recalc.py`:
 
 ```bash
 python /mnt/data/skills/xlsx/scripts/verify_structure.py /mnt/data/original.xlsx /mnt/data/original_updated.xlsx \
@@ -144,7 +160,7 @@ python /mnt/data/skills/xlsx/scripts/verify_structure.py /mnt/data/original.xlsx
 - **It also checks that every cell's content fits the sheet's existing widths and heights**
   (`fit` issues): a number that would print as `####`, text cut off by a merged cell or a filled
   neighbour, wrapped text taller than a fixed-height row. A cell that already overflowed in the
-  original is not reported. Fix a `fit` issue by changing the content, as in step 7 of
+  original is not reported. Fix a `fit` issue by changing the content, as in step 8 of
   **Editing a user's workbook**, never by resizing the column or row. It already
   tolerates what LibreOffice rewrites on save: rounded row heights, explicit default alignment,
   color alpha bytes, the automatic color (`indexed 64`) saved as `auto`, and page options the
@@ -153,9 +169,11 @@ python /mnt/data/skills/xlsx/scripts/verify_structure.py /mnt/data/original.xlsx
   an `error` key exits 1 for bad arguments.
 - **Do not return or attach the workbook unless it reports `success`.** On failure, start again
   from the untouched original — do not patch the broken output.
-- **A `media` issue means images or charts were lost.** openpyxl drops logos, pictures and shapes
-  on save, so even a correct edit loses them. Never deliver that silently: tell the user what
-  would be lost and ask how to proceed.
+- **A `media` issue means part of the design was lost:** images, charts, text boxes, sparklines,
+  Excel 2010 conditional formats or validation, rich text or pivot tables. openpyxl drops most of
+  these on save. Redo the edit from the untouched original with `scripts/cells.py` (or with
+  `rich_text=True` for rich text). If a part is still lost, never deliver silently: tell the user
+  what would be lost and ask how to proceed.
 - In the final response, say which ranges you changed and how many merged ranges and untouched
   cells were verified.
 
@@ -182,7 +200,7 @@ formula cell reads back as `None` to anything reading cached values — `pandas`
 python /mnt/data/skills/xlsx/scripts/recalc.py /mnt/data/output.xlsx [timeout_seconds]   # default 30
 ```
 
-LibreOffice computes every formula, the file is **rewritten in place**, and you get JSON:
+LibreOffice computes every formula on a copy; only the results are written into your file (its design, sparklines and shapes are untouched), and it is marked to recalculate when Excel opens it. You get JSON:
 `status` (`success` | `errors_found`), `total_formulas`, `total_errors`, and an
 `error_summary` naming up to 100 cells per error type (`locations_truncated` says how many it
 withheld — trust `total_errors`, not the length of the list). Fix what it names and run it

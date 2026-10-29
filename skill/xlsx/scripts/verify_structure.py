@@ -113,6 +113,19 @@ def color_key(color):
     return None
 
 
+COLOR_TOKEN = re.compile(r'\[(black|blue|cyan|green|magenta|red|white|yellow|color\s*\d+)\]', re.IGNORECASE)
+
+
+def format_key(code):
+    """A number format by meaning. Writers spell the same format differently: LibreOffice turns
+    `"-"` into `\\-`, `(` into `\\(` and `[Red]` into `[RED]`; Excel shows them identically."""
+    if not code:
+        return 'General'
+    code = re.sub(r'"(.)"', lambda m: '\\' + m.group(1), code)
+    code = re.sub(r'\\(.)', r'\1', code)
+    return COLOR_TOKEN.sub(lambda m: f'[{m.group(1).upper()}]', code)
+
+
 def style_key(cell):
     font, fill, border, alignment = cell.font, cell.fill, cell.border, cell.alignment
     fill_key = None
@@ -128,7 +141,7 @@ def style_key(cell):
         ),
         # An unset alignment and Excel's defaults render the same; LibreOffice writes the defaults out.
         (alignment.horizontal or 'general', alignment.vertical or 'bottom', bool(alignment.wrap_text), alignment.indent or 0),
-        cell.number_format,
+        format_key(cell.number_format),
     )
 
 
@@ -143,12 +156,27 @@ def value_key(value):
 
 
 def media_counts(path):
+    """Parts and design features a save can lose without touching any cell: openpyxl drops
+    sparklines, shapes, Excel 2010 conditional formats and validation, and rich text."""
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
+
+        def text(pattern):
+            return ''.join(archive.read(n).decode('utf-8', 'replace') for n in names if re.match(pattern, n))
+
+        sheets = text(r'xl/worksheets/sheet\d+\.xml$')
+        drawings = text(r'xl/drawings/drawing\d+\.xml$')
+        strings = text(r'xl/sharedStrings\.xml$')
     return {
         'images': sum(1 for name in names if name.startswith('xl/media/')),
         'charts': sum(1 for name in names if re.match(r'xl/charts/chart\d+\.xml$', name)),
         'drawings': sum(1 for name in names if re.match(r'xl/drawings/drawing\d+\.xml$', name)),
+        'text boxes and shapes': len(re.findall(r'<(?:\w+:)?(?:sp|grpSp|cxnSp)[ >]', drawings)),
+        'sparklines': len(re.findall(r'<x14:sparkline>', sheets)),
+        'Excel 2010 conditional formats': len(re.findall(r'<x14:cfRule\b', sheets)),
+        'Excel 2010 data validations': len(re.findall(r'<x14:dataValidation\b', sheets)),
+        'rich-text cells': len(re.findall(r'<(?:\w+:)?si>\s*<(?:\w+:)?r>', strings)) + len(re.findall(r'<(?:\w+:)?is>\s*<(?:\w+:)?r>', sheets)),
+        'pivot tables': sum(1 for name in names if re.match(r'xl/pivotTables/pivotTable\d+\.xml$', name)),
     }
 
 
@@ -241,9 +269,16 @@ def compare_sheet(name, before, after, allowed, report, before_auto=frozenset(),
             report('layout', name, f'{setting}: {value!r} -> {after_layout[setting]!r}')
 
     def validations(ws):
-        # Only "between" rules read a second bound; LibreOffice fills in an unused one on save.
+        # Only "between" rules read a second bound; LibreOffice fills in an unused one on save,
+        # and writes the default operator ("between") that an Excel file leaves out.
         return {
-            (dv.type, dv.operator, str(dv.sqref), dv.formula1, dv.formula2 if dv.operator in RANGE_OPERATORS else None)
+            (
+                dv.type,
+                None if dv.type == 'list' else (dv.operator or 'between'),
+                str(dv.sqref),
+                dv.formula1,
+                dv.formula2 if (dv.operator or 'between') in RANGE_OPERATORS else None,
+            )
             for dv in ws.data_validations.dataValidation
         }
 
