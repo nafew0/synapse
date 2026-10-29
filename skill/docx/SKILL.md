@@ -72,7 +72,7 @@ First run `ls /mnt/data`: an attached picture is normally there under its own na
 
 **Copy every word.** Look at the image and transcribe it in full: letterhead, memo number, both dates, title, body, signature block, addressee, the second memo line, and every copy-list entry with its own numbering (`২-১২।` stays one entry). Keep Bangla digits as Bangla digits. Small print in a low-resolution scan is hard to read, so take a second reading for anything you are unsure of: `tesseract <image> - -l ben+eng --psm 6` on a copy upscaled with `convert <image> -resize 300% /mnt/data/qa/up.png`. Mark a word you still cannot read as `[?]`, never a guess. A "new order in this layout" with no new content still keeps the sample's text, so the user edits from a full draft. Use a placeholder only for a field the user says will change and did not supply.
 
-**Carry the pictures over, cropped from the scan.** Cut the logo, the signatures and any seal out of the image with Pillow and place them with `ImageRun` at the size they occupy on the page. Handwritten margin notes, "Received" stamps and initials added after printing are not part of the document: leave them out and say so in one line.
+**Carry the pictures over, cropped from the scan.** Cut the logo, the signatures and any seal out of the image with Pillow and place them with `ImageRun` at the size they occupy on the page. A signature is the cropped image only: never also type the handwriting out as text beside it. Handwritten margin notes, "Received" stamps and initials added after printing are not part of the document: leave them out and say so in one line.
 
 **Rebuild the layout, not just the reading order:**
 

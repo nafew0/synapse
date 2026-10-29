@@ -30,6 +30,29 @@ export const sandboxFilename = (href: string | undefined): string | null => {
   return leafOf(decode(path.split(/[?#]/)[0]));
 };
 
+/**
+ * Code spans and fenced blocks (kept as written), link targets (`](`, resolved by the link
+ * renderer), or a bare sandbox path. A path ends before whitespace, brackets, quotes and the
+ * sentence punctuation that follows it, Bangla `।` included.
+ */
+const SANDBOX_TEXT_PATTERN =
+  /(```[\s\S]*?```|`[^`\n]*`)|(\]\()?(?<![\w/])(?:sandbox:)?\/mnt\/data\/([^\s()[\]`'"<>]*[^\s()[\]`'"<>.,;:!?।])/g;
+
+/**
+ * Shows a sandbox path the model wrote into its reply (`/mnt/data/qa/report.docx`) as the bare
+ * file name. The path means nothing to the user, and the file itself is attached to the reply.
+ */
+export const hideSandboxPaths = (content: string): string => {
+  if (!content.includes('/mnt/data/')) {
+    return content;
+  }
+  return content.replace(
+    SANDBOX_TEXT_PATTERN,
+    (match: string, code?: string, linkTarget?: string, path?: string) =>
+      code != null || linkTarget != null || path == null ? match : leafOf(path),
+  );
+};
+
 /** Keeps `sandbox:` hrefs, which react-markdown would otherwise blank out, so links to generated files can resolve. */
 export const urlTransform = (url: string): string =>
   sandboxFilename(url) != null ? url : defaultUrlTransform(url);

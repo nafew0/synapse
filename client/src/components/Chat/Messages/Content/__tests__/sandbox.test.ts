@@ -1,5 +1,5 @@
 import type { TAttachment } from 'librechat-data-provider';
-import { findSandboxAttachment, sandboxFilename, urlTransform } from '../sandbox';
+import { findSandboxAttachment, hideSandboxPaths, sandboxFilename, urlTransform } from '../sandbox';
 
 describe('sandboxFilename', () => {
   it.each([
@@ -41,5 +41,33 @@ describe('findSandboxAttachment', () => {
   it('returns undefined when nothing matches', () => {
     expect(findSandboxAttachment(attachments, 'missing.pdf')).toBeUndefined();
     expect(findSandboxAttachment(undefined, 'report.docx')).toBeUndefined();
+  });
+});
+
+describe('hideSandboxPaths', () => {
+  it.each([
+    [
+      'ওয়ার্ড ফাইলটি তৈরি হয়েছে: /mnt/data/office-order.docx।',
+      'ওয়ার্ড ফাইলটি তৈরি হয়েছে: office-order.docx।',
+    ],
+    [
+      'The file is at /mnt/data/ugc-office-order-bn.docx.',
+      'The file is at ugc-office-order-bn.docx.',
+    ],
+    ['Saved to sandbox:/mnt/data/qa/notes.txt, see above', 'Saved to notes.txt, see above'],
+    ['(/mnt/data/report.xlsx)', '(report.xlsx)'],
+    ['**/mnt/data/deck.pptx**', '**deck.pptx**'],
+  ])('shows %s as the file name', (content, expected) => {
+    expect(hideSandboxPaths(content)).toBe(expected);
+  });
+
+  it.each([
+    'Open [the report](sandbox:/mnt/data/report.docx) to review.',
+    'Run `python3 /mnt/data/qa/build.py` again.',
+    '```bash\nls /mnt/data/qa\n```',
+    'See https://example.com/mnt/data/a.docx for the spec.',
+    'No sandbox paths here.',
+  ])('leaves %s as written', (content) => {
+    expect(hideSandboxPaths(content)).toBe(content);
   });
 });
