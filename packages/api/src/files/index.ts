@@ -1,4 +1,5 @@
 export * from './agents';
+export * from './authoring';
 export * from './audio';
 export * from './code';
 export * from './context';

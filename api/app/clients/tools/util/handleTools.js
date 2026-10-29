@@ -7,6 +7,7 @@ const {
   mcpToolPattern,
   isFirecrawlTool,
   createFirecrawlTool,
+  isFileAuthoringTool,
   resolveFirecrawlBudgetScope,
   loadWebSearchAuth,
   splitMCPToolKey,
@@ -59,6 +60,7 @@ const {
 } = require('~/server/services/MCP');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
+const { createChatFileTool } = require('~/server/services/Files/authoring');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
@@ -429,6 +431,9 @@ const loadTools = async ({
       continue;
     } else if (tool === ASK_USER_QUESTION_TOOL_NAME) {
       requestedTools[tool] = async () => createAskUserQuestionTool();
+      continue;
+    } else if (isFileAuthoringTool(tool)) {
+      requestedTools[tool] = async () => createChatFileTool(tool, options.req);
       continue;
     } else if (isFirecrawlTool(tool)) {
       requestedTools[tool] = async () =>

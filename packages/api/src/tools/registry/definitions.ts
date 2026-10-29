@@ -2,6 +2,7 @@ import { WebSearchToolDefinition, CalculatorToolDefinition } from '@librechat/ag
 import type { ExtendedJsonSchema } from './schema';
 import { AskUserQuestionToolDefinition } from '~/agents/hitl/askUserQuestionTool';
 import { firecrawlToolkit } from '~/tools/firecrawl/definitions';
+import { fileAuthoringToolkit } from '~/files/authoring/definitions';
 import { geminiToolkit } from '~/tools/toolkits/gemini';
 import { oaiToolkit } from '~/tools/toolkits/oai';
 
@@ -401,6 +402,21 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   firecrawl_scrape: {
     ...firecrawlToolkit.firecrawl_scrape,
     toolType: 'builtin',
+  },
+  read_attachment: {
+    ...fileAuthoringToolkit.read_attachment,
+    toolType: 'builtin',
+    responseFormat: 'content_and_artifact',
+  },
+  save_file: {
+    ...fileAuthoringToolkit.save_file,
+    toolType: 'builtin',
+    responseFormat: 'content_and_artifact',
+  },
+  patch_file: {
+    ...fileAuthoringToolkit.patch_file,
+    toolType: 'builtin',
+    responseFormat: 'content_and_artifact',
   },
   file_search: {
     name: 'file_search',

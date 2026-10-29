@@ -349,9 +349,11 @@ modelSpecs:
     - name: gpt-6-luna
       label: ChatGPT
       askUserQuestion: true
-      # Retrieval only: long attachments are searchable, but editing a file needs the
-      # code sandbox, which belongs to the Office Assistant alone.
+      # Long attachments are searchable. Text and code files are edited with read_attachment,
+      # patch_file and save_file, which use file storage only: the code sandbox belongs to the
+      # Office Assistant alone (docs/chat-file-editing-plan.md).
       fileSearch: true
+      fileAuthoring: true
       # Single models are a plain "ask about your file" surface. The tool badge row and
       # the skills picker belong to building an assistant, not to using one — office work
       # goes to the Office Assistant, which carries its own tools and skills.
@@ -405,17 +407,33 @@ modelSpecs:
           Do not ask for passwords, payment information, or other unnecessary
           sensitive data. Do not ask for greetings or simple factual questions.
 
-          You can read attached files and answer questions about them. You cannot
-          edit a document or build a spreadsheet — when the user asks for that,
-          say so plainly in one sentence and tell them to switch to the Office
-          Assistant, which can return the edited file.
+          ## Returning files
+
+          You can read attached files, and you can return text and code files
+          with your tools. When the user asks you to change an attached text or
+          code file, read it with read_attachment if its full text is not in the
+          message, then call patch_file with only the parts that change. It
+          returns an edited copy in the same format, named "<name>-edited.<ext>"
+          unless the user asks for another name. When the user asks for a new
+          file, or a short file rewritten from scratch, call save_file with the
+          complete content and a file name with the right extension.
+
+          A saved file is shown to the user as a download. Do not paste its
+          content in your reply as well; say in one or two sentences what you
+          changed.
+
+          You cannot edit or build Word, Excel, PowerPoint or PDF files. When the
+          user asks for that, say so plainly in one sentence and tell them to
+          switch to the Office Assistant, which can return the edited file.
 
     - name: anthropic/claude-haiku-5.5
       label: Claude
       askUserQuestion: true
-      # Retrieval only: long attachments are searchable, but editing a file needs the
-      # code sandbox, which belongs to the Office Assistant alone.
+      # Long attachments are searchable. Text and code files are edited with read_attachment,
+      # patch_file and save_file, which use file storage only: the code sandbox belongs to the
+      # Office Assistant alone (docs/chat-file-editing-plan.md).
       fileSearch: true
+      fileAuthoring: true
       # Single models are a plain "ask about your file" surface. The tool badge row and
       # the skills picker belong to building an assistant, not to using one — office work
       # goes to the Office Assistant, which carries its own tools and skills.
@@ -470,17 +488,33 @@ modelSpecs:
           Do not ask for passwords, payment information, or other unnecessary
           sensitive data. Do not ask for greetings or simple factual questions.
 
-          You can read attached files and answer questions about them. You cannot
-          edit a document or build a spreadsheet — when the user asks for that,
-          say so plainly in one sentence and tell them to switch to the Office
-          Assistant, which can return the edited file.
+          ## Returning files
+
+          You can read attached files, and you can return text and code files
+          with your tools. When the user asks you to change an attached text or
+          code file, read it with read_attachment if its full text is not in the
+          message, then call patch_file with only the parts that change. It
+          returns an edited copy in the same format, named "<name>-edited.<ext>"
+          unless the user asks for another name. When the user asks for a new
+          file, or a short file rewritten from scratch, call save_file with the
+          complete content and a file name with the right extension.
+
+          A saved file is shown to the user as a download. Do not paste its
+          content in your reply as well; say in one or two sentences what you
+          changed.
+
+          You cannot edit or build Word, Excel, PowerPoint or PDF files. When the
+          user asks for that, say so plainly in one sentence and tell them to
+          switch to the Office Assistant, which can return the edited file.
 
     - name: deepseek/deepseek-v4-flash-0731
       label: Coding Expert
       askUserQuestion: true
-      # Retrieval only: long attachments are searchable, but editing a file needs the
-      # code sandbox, which belongs to the Office Assistant alone.
+      # Long attachments are searchable. Text and code files are edited with read_attachment,
+      # patch_file and save_file, which use file storage only: the code sandbox belongs to the
+      # Office Assistant alone (docs/chat-file-editing-plan.md).
       fileSearch: true
+      fileAuthoring: true
       # Single models are a plain "ask about your file" surface. The tool badge row and
       # the skills picker belong to building an assistant, not to using one — office work
       # goes to the Office Assistant, which carries its own tools and skills.
@@ -496,6 +530,25 @@ modelSpecs:
           Before responding, determine whether any missing detail would materially affect the correctness, safety, or implementation approach. If so, ask one concise technical follow-up question with 2–4 practical options, while allowing a custom answer. Ask no more than three clarification questions per request.
 
           Do not ask for information that can be inferred from the codebase, existing context, or standard conventions. Do not request passwords, API keys, access tokens, private keys, or other unnecessary secrets. Skip clarification for simple factual questions, routine coding tasks, or cases where a reasonable assumption can be stated and used safely.
+
+          ## Returning files
+
+          You can read attached files, and you can return text and code files
+          with your tools. When the user asks you to change an attached text or
+          code file, read it with read_attachment if its full text is not in the
+          message, then call patch_file with only the parts that change. It
+          returns an edited copy in the same format, named "<name>-edited.<ext>"
+          unless the user asks for another name. When the user asks for a new
+          file, or a short file rewritten from scratch, call save_file with the
+          complete content and a file name with the right extension.
+
+          A saved file is shown to the user as a download. Do not paste its
+          content in your reply as well; say in one or two sentences what you
+          changed.
+
+          You cannot edit or build Word, Excel, PowerPoint or PDF files. When the
+          user asks for that, say so plainly in one sentence and tell them to
+          switch to the Office Assistant, which can return the edited file.
 
     - name: google/gemini-3.1-flash-lite-image
       label: Image Generation
@@ -522,9 +575,11 @@ modelSpecs:
     - name: google/gemini-3.8-flash
       label: Google Gemini (Latest)
       askUserQuestion: true
-      # Retrieval only: long attachments are searchable, but editing a file needs the
-      # code sandbox, which belongs to the Office Assistant alone.
+      # Long attachments are searchable. Text and code files are edited with read_attachment,
+      # patch_file and save_file, which use file storage only: the code sandbox belongs to the
+      # Office Assistant alone (docs/chat-file-editing-plan.md).
       fileSearch: true
+      fileAuthoring: true
       # Single models are a plain "ask about your file" surface. The tool badge row and
       # the skills picker belong to building an assistant, not to using one — office work
       # goes to the Office Assistant, which carries its own tools and skills.
@@ -578,10 +633,24 @@ modelSpecs:
           Do not ask for passwords, payment information, or other unnecessary
           sensitive data. Do not ask for greetings or simple factual questions.
 
-          You can read attached files and answer questions about them. You cannot
-          edit a document or build a spreadsheet — when the user asks for that,
-          say so plainly in one sentence and tell them to switch to the Office
-          Assistant, which can return the edited file.
+          ## Returning files
+
+          You can read attached files, and you can return text and code files
+          with your tools. When the user asks you to change an attached text or
+          code file, read it with read_attachment if its full text is not in the
+          message, then call patch_file with only the parts that change. It
+          returns an edited copy in the same format, named "<name>-edited.<ext>"
+          unless the user asks for another name. When the user asks for a new
+          file, or a short file rewritten from scratch, call save_file with the
+          complete content and a file name with the right extension.
+
+          A saved file is shown to the user as a download. Do not paste its
+          content in your reply as well; say in one or two sentences what you
+          changed.
+
+          You cannot edit or build Word, Excel, PowerPoint or PDF files. When the
+          user asks for that, say so plainly in one sentence and tell them to
+          switch to the Office Assistant, which can return the edited file.
 
 endpoints:
   agents:

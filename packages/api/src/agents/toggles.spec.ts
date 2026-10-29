@@ -32,11 +32,20 @@ const sandboxSpec = {
   preset: { endpoint: 'OpenRouter', model: 'some/model' },
 } as unknown as TModelSpec;
 
+const authoringSpec = {
+  name: 'authoring-spec',
+  label: 'Authoring',
+  fileSearch: true,
+  fileAuthoring: true,
+  hideBadgeRow: true,
+  preset: { endpoint: 'OpenRouter', model: 'some/model' },
+} as unknown as TModelSpec;
+
 const config = {
   config: {},
   fileStrategy: FileSources.local,
   imageOutputType: 'png',
-  modelSpecs: { list: [chatSpec, toggleSpec, sandboxSpec] },
+  modelSpecs: { list: [chatSpec, toggleSpec, sandboxSpec, authoringSpec] },
 };
 
 const everything: TEphemeralAgent = {
@@ -103,6 +112,15 @@ describe('loadEphemeralAgent tool switches', () => {
   test('a spec with the badge row keeps user toggles but not the sandbox', async () => {
     const tools = await ephemeralTools('toggle-spec', { execute_code: true, web_search: true });
     expect(tools).toEqual([Tools.web_search]);
+  });
+
+  test('a spec with fileAuthoring gets the storage-only file tools and still no sandbox', async () => {
+    expect(await ephemeralTools('authoring-spec', { execute_code: true })).toEqual([
+      Tools.file_search,
+      'read_attachment',
+      'save_file',
+      'patch_file',
+    ]);
   });
 
   test('without a spec the request switches stand', async () => {

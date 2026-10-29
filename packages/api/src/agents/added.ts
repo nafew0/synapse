@@ -16,6 +16,7 @@ import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
 import { synthesizeBackgroundToolOptions } from '~/agents/background';
 import { mergeSynthesizedToolOptions } from '~/agents/selection';
 import { synthesizeIntentToolOptions } from '~/agents/intent';
+import { fileAuthoringToolNames } from '~/files/authoring/definitions';
 import { scopeEphemeralAgent } from '~/agents/toggles';
 import { getCustomEndpointConfig } from '~/app/config';
 
@@ -215,6 +216,9 @@ export async function loadAddedAgent(
    *  `createRun` gating (hitlCapable, non-subagent, admin filter) is uniform. */
   if (toggles?.ask_user_question === true || modelSpec?.askUserQuestion === true) {
     tools.push(ASK_USER_QUESTION_TOOL_NAME);
+  }
+  if (modelSpec?.fileAuthoring === true) {
+    tools.push(...fileAuthoringToolNames);
   }
 
   const addedServers = new Set<string>();

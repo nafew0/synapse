@@ -31,6 +31,7 @@ export enum FileContext {
   assistants_output = 'assistants_output',
   message_attachment = 'message_attachment',
   skill_file = 'skill_file',
+  file_authoring = 'file_authoring',
   filename = 'filename',
   updatedAt = 'updatedAt',
   source = 'source',

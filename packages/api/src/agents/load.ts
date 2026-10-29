@@ -21,6 +21,7 @@ import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
 import { synthesizeBackgroundToolOptions } from '~/agents/background';
 import { mergeSynthesizedToolOptions } from '~/agents/selection';
 import { synthesizeIntentToolOptions } from '~/agents/intent';
+import { fileAuthoringToolNames } from '~/files/authoring/definitions';
 import { scopeEphemeralAgent } from '~/agents/toggles';
 import { getCustomEndpointConfig } from '~/app/config';
 
@@ -93,6 +94,9 @@ export async function loadEphemeralAgent(
    *  subagent, and the admin hasn't excluded it (filteredTools/includedTools). */
   if (ephemeralAgent?.ask_user_question === true || modelSpec?.askUserQuestion === true) {
     tools.push(ASK_USER_QUESTION_TOOL_NAME);
+  }
+  if (modelSpec?.fileAuthoring === true) {
+    tools.push(...fileAuthoringToolNames);
   }
 
   const addedServers = new Set<string>();
