@@ -189,8 +189,9 @@ interface:
 fileConfig:
   # Uploads are limited to the file types ChatGPT or Claude document as supported (checked
   # 2026-10-29; docs/chat-file-editing-plan.md), and only where this deployment can do something
-  # with them. Two exceptions neither documents but users rely on: .heic/.heif photos (the iPhone
-  # default) and .ogg/.webm/.flac audio for the Transcriber (verified with the STT model).
+  # with them. Exceptions neither documents but users rely on: .yaml/.yml (configuration files),
+  # .heic/.heif photos (the iPhone default) and .ogg/.webm/.flac audio for the Transcriber
+  # (verified with the STT model).
   #
   # supportedExtensions is the gate: the attach menu, client validation and the server's upload
   # filter all refuse a name whose extension is not listed. Many extensions share text/plain, so
@@ -205,7 +206,7 @@ fileConfig:
     agents:
       supportedExtensions: [pdf, doc, docx, odt, rtf, epub, pptx,
                             txt, md, html, htm, tex,
-                            csv, tsv, xls, xlsx, json, xml,
+                            csv, tsv, xls, xlsx, json, xml, yaml, yml,
                             c, cpp, cs, java, php, py, rb, js, ts, sh, css, go,
                             jpg, jpeg, png, gif, webp, heic, heif,
                             zip, tar]
@@ -218,7 +219,7 @@ fileConfig:
         # Text, markup, data and source files: browsers name these many ways (text/x-c++src,
         # text/x-go, application/x-tex), and the extension list already decides what is allowed.
         - '^text/[\w.+-]+$'
-        - '^application/(json|xml|csv|javascript|x-javascript|typescript|x-sh|x-tex)$'
+        - '^application/(json|xml|csv|yaml|x-yaml|javascript|x-javascript|typescript|x-sh|x-tex)$'
         # Archives, opened with code in the sandbox
         - '^application/(zip|x-zip-compressed|x-tar)$'
 
@@ -227,7 +228,7 @@ fileConfig:
     custom: &chatUploads
       supportedExtensions: [pdf, doc, docx, odt, rtf, epub, pptx,
                             txt, md, html, htm, tex,
-                            csv, tsv, xls, xlsx, json, xml,
+                            csv, tsv, xls, xlsx, json, xml, yaml, yml,
                             c, cpp, cs, java, php, py, rb, js, ts, sh, css, go,
                             jpg, jpeg, png, gif, webp, heic, heif]
       supportedMimeTypes:
@@ -237,14 +238,14 @@ fileConfig:
         - '^application/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation)$'
         - '^application/vnd\.oasis\.opendocument\.text$'
         - '^text/[\w.+-]+$'
-        - '^application/(json|xml|csv|javascript|x-javascript|typescript|x-sh|x-tex)$'
+        - '^application/(json|xml|csv|yaml|x-yaml|javascript|x-javascript|typescript|x-sh|x-tex)$'
 
     # The single models and the Transcriber share this endpoint, so it takes the single-model
     # types plus the audio formats verified with the STT model.
     OpenRouter:
       supportedExtensions: [pdf, doc, docx, odt, rtf, epub, pptx,
                             txt, md, html, htm, tex,
-                            csv, tsv, xls, xlsx, json, xml,
+                            csv, tsv, xls, xlsx, json, xml, yaml, yml,
                             c, cpp, cs, java, php, py, rb, js, ts, sh, css, go,
                             jpg, jpeg, png, gif, webp, heic, heif,
                             mp3, wav, m4a, ogg, webm, flac]
@@ -255,7 +256,7 @@ fileConfig:
         - '^application/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation)$'
         - '^application/vnd\.oasis\.opendocument\.text$'
         - '^text/[\w.+-]+$'
-        - '^application/(json|xml|csv|javascript|x-javascript|typescript|x-sh|x-tex)$'
+        - '^application/(json|xml|csv|yaml|x-yaml|javascript|x-javascript|typescript|x-sh|x-tex)$'
         - '^audio/(mpeg|mp3|wav|wave|x-wav|ogg|vorbis|flac|x-flac|x-m4a|m4a|mp4|webm)$'
 
     # Image generation takes pictures and nothing else.
