@@ -1319,6 +1319,22 @@ const resolveAssistantTools = async ({ req, metadata }) => {
 };
 
 /**
+ * Whether an explicit `execute_code` upload may reach the sandbox. Only an assistant that carries
+ * `execute_code` (its agent record, its handoff targets, or its model spec) may send files there.
+ * When the assistant cannot be determined, the upload is refused while model specs are enforced,
+ * since every legitimate chat then names its spec.
+ *
+ * @param {{ req: ServerRequest, assistantTools: Set<string> | null }} params
+ * @returns {boolean}
+ */
+const isSandboxUploadAllowed = ({ req, assistantTools }) => {
+  if (assistantTools) {
+    return assistantTools.has(Tools.execute_code);
+  }
+  return req.config?.modelSpecs?.enforce !== true;
+};
+
+/**
  * Handles an upload the user attached without choosing a destination. Extraction and delivery are
  * decided here rather than in the composer: the browser knows a file's bytes but not how much text
  * it holds, whether a PDF is a scan, or how much of the conversation's budget is already spent.
@@ -1558,6 +1574,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     const isCodeEnabled = await checkCapability(req, AgentCapabilities.execute_code);
     if (!isCodeEnabled) {
       throw new Error('Code execution is not enabled for Agents');
+    }
+    const assistantTools = await resolveAssistantTools({ req, metadata });
+    if (!isSandboxUploadAllowed({ req, assistantTools })) {
+      throw new Error('This assistant cannot use the code sandbox');
     }
     fileInfoMetadata = await uploadToCodeEnvironment({
       req,

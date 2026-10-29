@@ -16,6 +16,7 @@ import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
 import { synthesizeBackgroundToolOptions } from '~/agents/background';
 import { mergeSynthesizedToolOptions } from '~/agents/selection';
 import { synthesizeIntentToolOptions } from '~/agents/intent';
+import { scopeEphemeralAgent } from '~/agents/toggles';
 import { getCustomEndpointConfig } from '~/app/config';
 
 const { mcp_all, mcp_delimiter } = Constants;
@@ -182,14 +183,14 @@ export async function loadAddedAgent(
     return result as unknown as Agent;
   }
 
-  const mcpServers = new Set<string>(ephemeralAgent?.mcp);
-  const userId = req.user?.id ?? '';
-
   const modelSpecs = (appConfig?.modelSpecs as { list?: TModelSpec[] })?.list;
   let modelSpec: (typeof modelSpecs extends Array<infer T> | undefined ? T : never) | null = null;
   if (spec != null && spec !== '') {
     modelSpec = modelSpecs?.find((s) => s.name === spec) ?? null;
   }
+  const toggles = scopeEphemeralAgent(ephemeralAgent, modelSpec);
+  const mcpServers = new Set<string>(toggles?.mcp);
+  const userId = req.user?.id ?? '';
   if (modelSpec?.mcpServers) {
     for (const mcpServer of modelSpec.mcpServers) {
       mcpServers.add(mcpServer);
@@ -197,22 +198,22 @@ export async function loadAddedAgent(
   }
 
   const tools: string[] = [];
-  if (ephemeralAgent?.execute_code === true || modelSpec?.executeCode === true) {
+  if (toggles?.execute_code === true || modelSpec?.executeCode === true) {
     tools.push(Tools.execute_code);
   }
-  if (ephemeralAgent?.file_search === true || modelSpec?.fileSearch === true) {
+  if (toggles?.file_search === true || modelSpec?.fileSearch === true) {
     tools.push(Tools.file_search);
   }
-  if (ephemeralAgent?.web_search === true || modelSpec?.webSearch === true) {
+  if (toggles?.web_search === true || modelSpec?.webSearch === true) {
     tools.push(Tools.web_search);
   }
-  if (ephemeralAgent?.memory === true || modelSpec?.memory === true) {
+  if (toggles?.memory === true || modelSpec?.memory === true) {
     tools.push(Tools.memory);
   }
   /** Mirror the primary ephemeral loader (`loadEphemeralAgent`) so a model
    *  spec's Ask User flag equips the added top-level agent too; downstream
    *  `createRun` gating (hitlCapable, non-subagent, admin filter) is uniform. */
-  if (ephemeralAgent?.ask_user_question === true || modelSpec?.askUserQuestion === true) {
+  if (toggles?.ask_user_question === true || modelSpec?.askUserQuestion === true) {
     tools.push(ASK_USER_QUESTION_TOOL_NAME);
   }
 

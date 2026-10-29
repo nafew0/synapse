@@ -1531,6 +1531,75 @@ describe('processAgentFileUpload', () => {
       );
     });
 
+    describe('only assistants with the sandbox may upload to it', () => {
+      const chatSpecs = {
+        enforce: true,
+        list: [
+          { name: 'chat-spec', fileSearch: true },
+          { name: 'sandbox-spec', executeCode: true },
+        ],
+      };
+      const sandboxUpload = (req, metadata) =>
+        processAgentFileUpload({
+          req,
+          res: mockRes,
+          metadata: {
+            tool_resource: EToolResources.execute_code,
+            file_id: 'file-uuid',
+            message_file: true,
+            ...metadata,
+          },
+        });
+
+      it('refuses a chat spec without executeCode, even when the request names execute_code', async () => {
+        const codeEnvUpload = setupCodeEnvUpload({ storage_session_id: 's', file_id: 'f' });
+        const req = makeReq();
+        req.config.modelSpecs = chatSpecs;
+
+        await expect(
+          sandboxUpload(req, { agent_id: 'ephemeral', spec: 'chat-spec' }),
+        ).rejects.toThrow('This assistant cannot use the code sandbox');
+        expect(codeEnvUpload).not.toHaveBeenCalled();
+      });
+
+      it('refuses an upload that names no assistant while model specs are enforced', async () => {
+        const codeEnvUpload = setupCodeEnvUpload({ storage_session_id: 's', file_id: 'f' });
+        const req = makeReq();
+        req.config.modelSpecs = chatSpecs;
+
+        await expect(sandboxUpload(req, { agent_id: 'ephemeral' })).rejects.toThrow(
+          'This assistant cannot use the code sandbox',
+        );
+        expect(codeEnvUpload).not.toHaveBeenCalled();
+      });
+
+      it('accepts a spec with executeCode', async () => {
+        const codeEnvUpload = setupCodeEnvUpload({ storage_session_id: 's', file_id: 'f' });
+        const req = makeReq();
+        req.config.modelSpecs = chatSpecs;
+
+        await sandboxUpload(req, { agent_id: 'ephemeral', spec: 'sandbox-spec' });
+        expect(codeEnvUpload).toHaveBeenCalled();
+      });
+
+      it('accepts an agent whose handoff specialist has execute_code', async () => {
+        const codeEnvUpload = setupCodeEnvUpload({ storage_session_id: 's', file_id: 'f' });
+        db.getAgent.mockResolvedValueOnce({
+          id: 'agent_office',
+          tools: ['ask_user_question'],
+          edges: [{ from: 'agent_office', to: 'agent_office_documents', edgeType: 'handoff' }],
+        });
+        db.getAgents.mockResolvedValueOnce([
+          { id: 'agent_office_documents', tools: ['execute_code'] },
+        ]);
+        const req = makeReq();
+        req.config.modelSpecs = chatSpecs;
+
+        await sandboxUpload(req, { agent_id: 'agent_office' });
+        expect(codeEnvUpload).toHaveBeenCalled();
+      });
+    });
+
     it('skips retention metadata for persistent agent execute_code files outside all-data retention', async () => {
       const expiredAt = new Date('2030-01-01T00:00:00.000Z');
       setupCodeEnvUpload({ storage_session_id: 'sess-4', file_id: 'fid-4' });
