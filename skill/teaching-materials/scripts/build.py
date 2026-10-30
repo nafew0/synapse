@@ -21,7 +21,7 @@ from docx.shared import Cm, Pt, RGBColor
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import check  # noqa: E402
-from spec import LETTERS, PAPERS, Node, SpecError, analyse, bloom_level, fmt, header, load, mcq_letters, scale_of  # noqa: E402
+from spec import DEFAULT_FONT, DEFAULT_SIZE, LETTERS, PAPERS, Node, SpecError, analyse, bloom_level, fmt, header, load, mcq_letters, scale_of  # noqa: E402
 
 A4 = (21.0, 29.7)
 MARGINS = (2.0, 2.0, 2.0, 2.5)
@@ -121,10 +121,10 @@ class Writer:
 
     def __init__(self, spec):
         font = spec.get("font", {})
-        self.latin = font.get("latin", "Times New Roman")
+        self.latin = font.get("latin", DEFAULT_FONT)
         self.bangla = font.get("bangla", "Nikosh")
         self.mono = font.get("mono", "Courier New")
-        self.size = float(font.get("size", 12))
+        self.size = float(font.get("size", DEFAULT_SIZE))
         self.labels = {**LABELS, **spec.get("labels", {})}
         self.doc = Document()
         self.setup(spec)
@@ -257,7 +257,7 @@ class Writer:
     def code(self, text, indent):
         for line in str(text).splitlines() or [""]:
             paragraph = self.para(after=0, indent=indent + 0.3)
-            self.run(paragraph, line or " ", mono=True, size=self.size - 1.5)
+            self.run(paragraph, line or " ", mono=True, size=self.size)
             shade(paragraph)
 
     def table(self, rows, widths, grid=True, header_row=True, centre_from=None, size=None):
@@ -559,7 +559,7 @@ def key_entry(writer, node, parent=None):
         writer.run(paragraph, preview(node.text), italic=True)
     level = bloom_level(node, parent)
     if level and not level.startswith("?") and not node.children:
-        writer.run(paragraph, f"  ({writer.labels['bloom']}: {level.capitalize()})", italic=True, size=writer.size - 2)
+        writer.run(paragraph, f"  ({writer.labels['bloom']}: {level.capitalize()})", italic=True, size=writer.size)
     if node.marks is not None and not node.children:
         writer.run(paragraph, f"\t{marks_text(writer, node.marks)}")
     indent = text_indent(node.level)
@@ -601,7 +601,7 @@ def bloom_summary(writer, paper):
 def build_key(spec, paper, out):
     writer = Writer(spec)
     head = header(spec)
-    writer.para(writer.labels["confidential"].upper(), align="center", bold=True, size=writer.size - 2, after=2)
+    writer.para(writer.labels["confidential"].upper(), align="center", bold=True, size=writer.size, after=2)
     writer.title(writer.labels["key_title"])
     course = " – ".join(str(head[key]) for key in ("course_code", "course_title") if head.get(key))
     for line in (course, head.get("exam") or spec.get("title", "")):
@@ -662,7 +662,7 @@ def likert(writer, spec, section, number):
         number += 1
         text = item.get("text", "") if isinstance(item, dict) else item
         rows.append([str(number), text, *[BOX] * len(scale)])
-    writer.table(rows, widths, centre_from=2, size=writer.size - 3)
+    writer.table(rows, widths, centre_from=2, size=writer.size)
     return number
 
 

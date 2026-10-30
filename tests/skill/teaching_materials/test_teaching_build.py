@@ -209,3 +209,23 @@ def test_worksheet_shows_worked_examples_and_answer_space(tmp_path):
                                        '2.\tDecompose R(A, B, C) above into relations in 3NF.']
     assert 'R1(A, B) and R2(B, C)' in text_of(Document(tmp_path / 'sheet-answer-key.docx'))
     assert 'End of paper' not in text
+
+
+def test_paper_and_key_are_a4_times_new_roman_11_with_larger_headers(tmp_path):
+    result = build(fixture('exam'), tmp_path / 'paper.docx')
+    assert result.returncode == 0, result.stdout
+
+    for name in ('paper.docx', 'paper-answer-key.docx'):
+        doc = Document(tmp_path / name)
+        section = doc.sections[0]
+        assert round(section.page_width.cm, 1) == 21.0 and round(section.page_height.cm, 1) == 29.7
+        assert doc.styles['Normal'].font.name == 'Times New Roman'
+        assert doc.styles['Normal'].font.size.pt == 11
+        assert doc.styles['Heading 1'].font.size.pt > 11
+
+
+def test_the_user_can_still_ask_for_another_size(tmp_path):
+    spec = fixture('exam')
+    spec['font'] = {'size': 12}
+    assert build(spec, tmp_path / 'paper.docx').returncode == 0
+    assert Document(tmp_path / 'paper.docx').styles['Normal'].font.size.pt == 12

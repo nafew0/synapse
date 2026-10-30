@@ -1,15 +1,40 @@
 {
   "kind": "worksheet",
   "title": "Worksheet 3: Normalisation",
-  "header": {"course_code": "IS 2104", "course_title": "Database Systems"},
-  "instructions": ["Work through the example, then answer the questions in the space provided."],
+  "header": {
+    "course_code": "IS 2104",
+    "course_title": "Database Systems"
+  },
+  "instructions": [
+    "Work through the example, then answer the questions in the space provided."
+  ],
   "sections": [
-    {"title": "Worked example", "questions": [
-      {"type": "example", "text": "Is the relation R(A, B, C) with A → B and B → C in third normal form?", "solution": "No. C depends on A only through B, a transitive dependency, so R is in 2NF but not 3NF."}
-    ]},
-    {"title": "Practice", "questions": [
-      {"text": "Give one reason for normalising a database.", "answer_lines": 3, "model_answer": "It removes update anomalies caused by redundant data."},
-      {"text": "Decompose R(A, B, C) above into relations in 3NF.", "answer_lines": 4, "model_answer": "R1(A, B) and R2(B, C)."}
-    ]}
+    {
+      "title": "Worked example",
+      "questions": [
+        {
+          "type": "example",
+          "text": "Is the relation R(A, B, C) with A → B and B → C in third normal form?",
+          "solution": "No. C depends on A only through B, a transitive dependency, so R is in 2NF but not 3NF."
+        }
+      ]
+    },
+    {
+      "title": "Practice",
+      "questions": [
+        {
+          "text": "Give one reason for normalising a database.",
+          "answer_lines": 3,
+          "model_answer": "It removes update anomalies caused by redundant data.",
+          "explanation": "A short reason the answer is right."
+        },
+        {
+          "text": "Decompose R(A, B, C) above into relations in 3NF.",
+          "answer_lines": 4,
+          "model_answer": "R1(A, B) and R2(B, C).",
+          "explanation": "A short reason the answer is right."
+        }
+      ]
+    }
   ]
 }

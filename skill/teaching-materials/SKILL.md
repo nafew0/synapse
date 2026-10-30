@@ -91,6 +91,12 @@ than three Bloom levels) do not block delivery; fix them if it is quick, or ment
 
 ## Writing rules
 
+- **Page and font.** Everything is A4, Times New Roman, 11 pt body; headings and the paper's title are
+  larger. Leave `font` out of the spec unless the user asks for something else. The gate checks this.
+- **Explanations are on by default and brief.** Every answered question gets an `explanation` in the
+  key: one or two sentences, at most 40 words, saying why the answer is right. Do not repeat the model
+  answer. Set `"explanations": false` only if the user asks for none, and
+  `"explanation_length": "detailed"` only if they ask for longer ones.
 - **Answers never go on the student paper.** Model answers, MCQ keys, marking schemes and
   explanations go only in the answer fields; the build puts them in the key. Worked examples on a
   worksheet are the one exception (`"type": "example"`).

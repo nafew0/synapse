@@ -27,6 +27,9 @@ from docx.oxml.ns import qn
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from office.soffice import run_soffice  # noqa: E402
 from spec import (  # noqa: E402
+    DEFAULT_FONT,
+    DEFAULT_SIZE,
+    MAX_EXPLANATION_WORDS,
     PAPERS,
     SpecError,
     analyse,
@@ -199,6 +202,42 @@ def bloom_checks(spec, paper, defects, warnings):
     return f"Bloom: {', '.join(f'{level} {count}' for level, count in counts.items())}" if counts else None
 
 
+def page_checks(spec, doc, what, defects):
+    """Every paper and key is A4, in the spec's font and size (Times New Roman 11 unless the spec says otherwise)."""
+    section = doc.sections[0]
+    if abs(section.page_width.cm - 21.0) > 0.1 or abs(section.page_height.cm - 29.7) > 0.1:
+        defects.append(f"{what} is not A4 ({section.page_width.cm:.1f} x {section.page_height.cm:.1f} cm)")
+    font = spec.get("font", {})
+    wanted_name, wanted_size = font.get("latin", DEFAULT_FONT), float(font.get("size", DEFAULT_SIZE))
+    normal = doc.styles["Normal"].font
+    if normal.name != wanted_name:
+        defects.append(f"{what} body font is {normal.name}, not {wanted_name}")
+    if normal.size is None or abs(normal.size.pt - wanted_size) > 0.01:
+        defects.append(f"{what} body size is {normal.size.pt if normal.size else 'unset'} pt, not {wanted_size:g} pt")
+
+
+def explanation_checks(spec, paper, defects):
+    """Each answered question explains its answer briefly, unless the spec opts out."""
+    if spec.get("explanations") is False:
+        return None
+    detailed = spec.get("explanation_length") == "detailed"
+    answered = [item for node in paper.nodes() for item in [node]
+                if not item.children and item.data.get("type") != "example"
+                and (item.data.get("answer") or item.data.get("model_answer"))]
+    explained = 0
+    for node in answered:
+        text = str(node.data.get("explanation") or "").strip()
+        if not text:
+            defects.append(f"Q{node.label} has an answer but no short explanation; add one, or set \"explanations\": false if the user asked for none")
+            continue
+        explained += 1
+        words = len(text.split())
+        if words > MAX_EXPLANATION_WORDS and not detailed:
+            defects.append(f"Q{node.label} explanation is {words} words; keep it to {MAX_EXPLANATION_WORDS} or fewer, "
+                           "or set \"explanation_length\": \"detailed\" if the user asked for more")
+    return f"explanations: {explained} of {len(answered)}" if answered else None
+
+
 def exam_checks(spec, paper_doc, key_doc, defects, warnings):
     paper = analyse(spec)
     defects.extend(paper.defects)
@@ -232,6 +271,9 @@ def exam_checks(spec, paper_doc, key_doc, defects, warnings):
         if placeholders:
             info.append(f"placeholders to fill in: {', '.join(placeholders)}")
     duplicate_checks(paper, defects)
+    explained = explanation_checks(spec, paper, defects)
+    if explained:
+        info.append(explained)
     bloom = bloom_checks(spec, paper, defects, warnings)
     if bloom:
         info.append(bloom)
@@ -374,6 +416,10 @@ def run(spec, paper_path, key_path=None, render=False, qa_dir=None):
         info = notes_checks(spec, paper_doc, defects, warnings)
     else:
         info = plan_checks(spec, defects, warnings)
+    if paper_doc is not None:
+        page_checks(spec, paper_doc, "paper", defects)
+    if key_doc is not None:
+        page_checks(spec, key_doc, "key", defects)
     if paper_doc is not None and not has_page_numbers(paper_doc):
         defects.append("no 'Page x of y' footer")
     lines = [f"kind: {kind}", *info]

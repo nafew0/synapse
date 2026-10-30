@@ -14,10 +14,14 @@
 Fields every kind takes:
 
 ```json
-"font": {"latin": "Times New Roman", "bangla": "Nikosh", "size": 12},
+"font": {"latin": "Times New Roman", "bangla": "Nikosh", "size": 11},
 "labels": {"marks": "নম্বর"},
 "header": {"institution": "...", "faculty": "...", "department": "..."}
 ```
+
+The values above for `font` are the defaults: leave it out unless the user asks for another font or
+size. Papers and keys are always A4. For exam, MCQ and worksheet specs, top-level `"explanations": false`
+turns off the required explanation, and `"explanation_length": "detailed"` lifts its 40-word limit.
 
 `labels` overrides any fixed wording (see `LABELS` in `build.py`): use it for a paper in Bangla.
 Text is plain: no Markdown. A `[Bracketed placeholder]` is reported back so the user can fill it in.

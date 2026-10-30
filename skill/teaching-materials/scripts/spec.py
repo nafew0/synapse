@@ -40,6 +40,11 @@ def norm(text):
     return re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", str(text).casefold())).strip()
 
 
+DEFAULT_FONT = "Times New Roman"
+DEFAULT_SIZE = 11.0
+MAX_EXPLANATION_WORDS = 40
+
+
 @dataclass
 class Node:
     label: str

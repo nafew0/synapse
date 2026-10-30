@@ -264,3 +264,46 @@ def test_render_flag_says_when_it_is_skipped(tmp_path):
 
     assert result.returncode == 0
     assert 'render: skipped' in result.stdout
+
+
+def _first_answered(spec):
+    return next(q for section in spec['sections'] for q in section['questions'] if q.get('answer') or q.get('model_answer'))
+
+
+def test_answered_question_needs_an_explanation_unless_opted_out(tmp_path):
+    spec = fixture('exam')
+    del _first_answered(spec)['explanation']
+    result, _, _ = build(spec, tmp_path)
+    assert result.returncode == 2 and 'no short explanation' in result.stdout
+
+    spec['explanations'] = False
+    result, spec_path, paper = build(spec, tmp_path)
+    assert result.returncode == 0, result.stdout
+
+
+def test_long_explanation_is_a_defect_unless_detailed_was_asked_for(tmp_path):
+    spec = fixture('exam')
+    _first_answered(spec)['explanation'] = ' '.join(['word'] * 41)
+    result, _, _ = build(spec, tmp_path)
+    assert result.returncode == 2 and 'explanation is 41 words' in result.stdout
+
+    spec['explanation_length'] = 'detailed'
+    result, spec_path, paper = build(spec, tmp_path)
+    assert result.returncode == 0, result.stdout
+
+
+def test_gate_fails_a_paper_that_is_not_a4_or_not_the_right_font(tmp_path):
+    from docx import Document
+    from docx.shared import Cm, Pt
+
+    spec = fixture('exam')
+    result, spec_path, paper = build(spec, tmp_path)
+    assert result.returncode == 0, result.stdout
+    doc = Document(paper)
+    doc.sections[0].page_width, doc.sections[0].page_height = Cm(21.59), Cm(27.94)
+    doc.styles['Normal'].font.name = 'Calibri'
+    doc.styles['Normal'].font.size = Pt(12)
+    doc.save(paper)
+    result = check(spec_path, paper)
+    assert result.returncode == 2
+    assert 'not A4' in result.stdout and 'body font is Calibri' in result.stdout and 'body size is 12' in result.stdout
