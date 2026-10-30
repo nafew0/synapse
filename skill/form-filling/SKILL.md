@@ -1,6 +1,6 @@
 ---
 name: form-filling
-description: "Fill in a form from the user's documents or messages: application, nomination or award (Ekushey Padak), funding or survey forms, as fillable or scanned PDF or Word. Not for making a new blank form (use docx or pdf)."
+description: "Fill in a form, or update one already filled, from the user's documents or messages: application, nomination, award, funding or survey forms, as fillable or scanned PDF or Word. Not for making a new blank form (use docx or pdf)."
 user-invocable: false
 license: Proprietary. LICENSE.txt has complete terms
 ---
@@ -29,6 +29,7 @@ skill. For making a new blank form, use `docx` or `pdf`.
 | Scanned PDF, or a photo of a form | `… (scanned image, no text layer)` | Overlay in pixels: render the page, read positions off the image |
 | Word `.docx` | `N fields (docx)` | Map by id: table cells, content controls, `____`/`……` blanks, ☐ boxes |
 | Word `.doc` | — | Convert first: `python3 scripts/office/soffice.py --headless --convert-to docx --outdir /mnt/data/qa FILE.doc` |
+| Already filled, change some values | Run with `--include-filled` | See "Updating a filled form" |
 
 A photo (`.jpg`, `.png`) of a form: save it as a one-page PDF at 100 dpi
 (`Image.open(p).convert("RGB").save("/mnt/data/qa/form.pdf", resolution=100)`), then use the
@@ -86,6 +87,22 @@ python3 scripts/check.py /mnt/data/FORM.docx /mnt/data/FORM-filled.docx /mnt/dat
 placement, in a call of its own. Overlay forms need this look most: if text sits on a label or off
 its line, move x/y in the mapping and refill once. Keep it to one round, two at most. When the gate
 fails, read the defect and check whether the mapping or the gate is wrong before changing the form.
+
+## Updating a filled form
+
+Use the same workflow, with `fields.py FORM --include-filled`. Word lists filled cells, controls, ticked
+boxes and `Label: value` paragraphs (`p7.v0`); a flat PDF lists `Label: value` lines with their position.
+
+- Change ONLY the fields the user named. Never re-derive or "tidy" other values; `check.py` fails if an
+  unmapped field changed.
+- A new value needs a source like any fill; the user's message is a valid source.
+- Word and fillable PDF: map the id to the new value; it replaces the old one in place. Flat PDF: a
+  `{"replace": {"page": 1, "find": "Physics"}}` entry. Scan or photo: `{"replace": {"page": 1, "box": […], "units": "px", "dpi": N}}`.
+  Details in `references/mapping.md`.
+- In the reply, list each change as old → new (`check.py` prints these lines). For a flat or scanned
+  PDF, say the old text may still be found in the file underneath, and offer `"flatten_replaced": true`,
+  which removes it by turning those pages into images (they lose their text layer).
+- If the user needs the file editable afterwards, offer `pdf-to-docx`.
 
 ## Never invent
 

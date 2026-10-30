@@ -1,6 +1,10 @@
 """List the fields of a PDF or Word form as JSON with a stable id per field.
 
-Usage: python fields.py FORM.pdf|FORM.docx [--out fields.json]
+Usage: python fields.py FORM.pdf|FORM.docx [--include-filled] [--out fields.json]
+
+--include-filled also lists what already holds a value, for updating a filled form: filled Word value
+cells and "Label: value" paragraphs, and "Label: value" lines of a flat PDF. Ids of empty fields do not
+change with the flag.
 
 Exit codes: 0 fields found, 2 no fillable fields (flat PDF: candidate blanks are listed for the
 overlay route), 1 bad arguments or unreadable file.
@@ -24,6 +28,12 @@ SERIAL = re.compile(r"\(?([0-9০-৯]{1,3}|[a-zA-Z]|[ivxIVX]{1,4})[.)]?\)?")
 INDEX = re.compile(r"([a-z]+)(\d+)")
 BANGLA = re.compile(r"[ঀ-৿]")
 SKIP_ANCESTORS = {qn("w:sdt"), qn("w:txbxContent"), qn("w:del")}
+LABEL_VALUE = re.compile(r"\s*(?P<label>[^:：]{1,60}?)\s*(?:[:：]|ঃ(?=\s))\s*")
+INNER_LABEL = re.compile(r"\S[:：]\s")
+FIELD_GAP = re.compile(r"\s{2,}")
+BREAK_TAGS = {qn("w:tab"), qn("w:br"), qn("w:cr")}
+COLON_CELLS = {":", "："}
+MARK_KINDS = {"b": "blank", "x": "box", "v": "value"}
 PDF_RADIO, PDF_PUSH, PDF_MULTILINE, PDF_REQUIRED = 1 << 15, 1 << 16, 1 << 12, 1 << 1
 
 
@@ -111,6 +121,65 @@ def paragraph_fields(p_el, prefix):
     return fields
 
 
+def paragraph_breaks(p_el):
+    """Offsets in paragraph_text where a tab or line break separates the text."""
+    own = set(text_nodes(p_el))
+    position, breaks = 0, []
+    for element in p_el.iter():
+        if element in own:
+            position += len(element.text or "")
+        elif element.tag in BREAK_TAGS and element.getparent().tag == qn("w:r"):
+            breaks.append(position)
+    return breaks
+
+
+def segments(text, breaks=()):
+    cuts = sorted({*breaks, *(edge for gap in FIELD_GAP.finditer(text) for edge in gap.span())})
+    edges = [0, *cuts, len(text)]
+    return [(start, end) for start, end in zip(edges, edges[1:]) if text[start:end].strip()]
+
+
+def label_is_plausible(label):
+    has_letter = any(ch.isalpha() for ch in label)
+    return has_letter and len(label.split()) <= 8 and not re.search(r"[?!।]", label)
+
+
+def value_is_plausible(value):
+    return not (is_filler(value) or MARK.search(value) or INNER_LABEL.search(value) or value.startswith("//"))
+
+
+def has_break_between(start, end, breaks):
+    return any(start <= edge <= end for edge in breaks)
+
+
+def label_value_spans(text, breaks=()):
+    """(label, start, end) of each "Label: value" piece; a piece holding two labels is ambiguous and left out."""
+    spans = []
+    pieces = segments(text, breaks)
+    for index, (start, end) in enumerate(pieces):
+        piece = text[start:end]
+        label_only = piece.strip()
+        if label_only.endswith(":") and index + 1 < len(pieces) and not has_break_between(end, pieces[index + 1][0], breaks):
+            next_start, next_end = pieces[index + 1]
+            value = text[next_start:next_end].rstrip()
+            if label_is_plausible(label_only[:-1]) and value_is_plausible(value) and not LABEL_VALUE.match(value):
+                spans.append((clean_label(label_only[:-1]), next_start, next_start + len(value)))
+            continue
+        match = LABEL_VALUE.match(piece)
+        if not match:
+            continue
+        value = piece[match.end():].rstrip()
+        if label_is_plausible(match.group("label")) and value_is_plausible(value):
+            spans.append((clean_label(match.group("label")), start + match.end(), start + match.end() + len(value)))
+    return spans
+
+
+def paragraph_values(p_el, prefix):
+    text = paragraph_text(p_el)
+    return [{"id": f"{prefix}.v{number}", "kind": "value", "type": "text", "label": label, "value": text[start:end]}
+            for number, (label, start, end) in enumerate(label_value_spans(text, paragraph_breaks(p_el)))]
+
+
 def unique_cells(row):
     seen, cells = set(), []
     for cell in row.cells:
@@ -147,9 +216,45 @@ def cell_label(cells, header, row_index, column):
     return ""
 
 
-def table_fields(table, prefix):
+def row_is_bold(cells):
+    runs = [r for cell in cells for r in cell._tc.iter(qn("w:r")) if "".join(t.text or "" for t in r.iter(qn("w:t"))).strip()]
+    return bool(runs) and all(r.find(f"{qn('w:rPr')}/{qn('w:b')}") is not None for r in runs)
+
+
+def is_grid(table, rows):
+    """A table with a header row and records below it, rather than label and value pairs."""
+    if len(rows) < 2 or len(rows[0]) < 2:
+        return False
+    declared = table.rows[0]._tr.find(f"{qn('w:trPr')}/{qn('w:tblHeader')}") is not None
+    if declared or any(is_serial(cells[0].text) for cells in rows[1:] if cells):
+        return True
+    if any(is_filler(cell.text) for cell in rows[0][1:]):
+        return False
+    columns = len(rows[0])
+    if any(cells[1].text.strip() in COLON_CELLS for cells in rows if len(cells) > 1):
+        return False
+    return columns % 2 == 1 or row_is_bold(rows[0])
+
+
+def value_columns(cells):
+    """In a label and value row, every second cell after any serial number and ":" cells."""
+    columns = [c for c, cell in enumerate(cells)
+               if cell.text.strip() not in COLON_CELLS and not (c == 0 and is_serial(cell.text))]
+    return set(columns[1::2])
+
+
+def filled_cell_label(cells, header, grid, r, c):
+    if not grid:
+        return cell_label(cells, header, r, c) if c in value_columns(cells) else ""
+    if r == 0 or (c == 0 and is_serial(cells[0].text)) or c >= len(header) or is_filler(header[c]):
+        return ""
+    return f"{clean_label(header[c])} (row {r})"
+
+
+def table_fields(table, prefix, include_filled=False):
     rows = [unique_cells(row) for row in table.rows]
     header = [cell.text.strip() for cell in rows[0]] if rows else []
+    grid = include_filled and is_grid(table, rows)
     seen, fields = set(), []
     for r, cells in enumerate(rows):
         for c, cell in enumerate(cells):
@@ -162,8 +267,10 @@ def table_fields(table, prefix):
             if not is_filler(cell.text):
                 for p, paragraph in enumerate(cell.paragraphs):
                     fields += paragraph_fields(paragraph._p, f"{cell_id}.p{p}")
+                if include_filled:
+                    fields += filled_cell_fields(cell, cell_id, filled_cell_label(cells, header, grid, r, c))
                 continue
-            label = cell_label(cells, header, r, c)
+            label = filled_cell_label(cells, header, grid, r, c) if grid else cell_label(cells, header, r, c)
             if not label:
                 continue
             field = {"id": cell_id, "kind": "cell", "type": "text", "label": label, "value": ""}
@@ -172,6 +279,13 @@ def table_fields(table, prefix):
                 field["width_pt"] = width
             fields.append(field)
     return fields
+
+
+def filled_cell_fields(cell, cell_id, label):
+    if label and not MARK.search(cell.text) and not cell.tables:
+        return [{"id": cell_id, "kind": "cell", "type": "text", "label": label, "value": cell.text.strip()}]
+    return [field for p, paragraph in enumerate(cell.paragraphs)
+            for field in paragraph_values(paragraph._p, f"{cell_id}.p{p}")]
 
 
 def all_sdts(doc):
@@ -249,19 +363,30 @@ def body_position(element, body):
     return len(body)
 
 
-def docx_fields(path):
+def docx_fields(path, include_filled=False):
     doc = Document(str(path))
     body = doc.element.body
     fields = []
     for i, paragraph in enumerate(doc.paragraphs):
         fields += [(body.index(paragraph._p), f) for f in paragraph_fields(paragraph._p, f"p{i}")]
+        if include_filled:
+            fields += [(body.index(paragraph._p), f) for f in paragraph_values(paragraph._p, f"p{i}")]
     for i, table in enumerate(doc.tables):
-        fields += [(body.index(table._tbl), f) for f in table_fields(table, f"t{i}")]
+        fields += [(body.index(table._tbl), f) for f in table_fields(table, f"t{i}", include_filled)]
     for i, sdt in enumerate(all_sdts(doc)):
         if sdt_is_field(sdt):
             fields.append((body_position(sdt, body), sdt_info(sdt, i)))
     fields.sort(key=lambda pair: pair[0])
     return {"kind": "docx", "fields": [field for _, field in fields]}
+
+
+def mark_span(paragraph, kind, number):
+    text = paragraph_text(paragraph)
+    if kind == "value":
+        _, start, end = label_value_spans(text, paragraph_breaks(paragraph))[number]
+        return start, end
+    _, start, end = [m for m in marks(text) if m[0] == kind][number]
+    return start, end
 
 
 class Target:
@@ -295,12 +420,11 @@ def docx_target(doc, field_id, sdts=None, spans=True):
                 continue
             if name == "p" and paragraph is None:
                 paragraph = container.paragraphs[number]._p
-            elif name in ("b", "x") and paragraph is not None and i == len(tokens) - 1:
-                kind = "blank" if name == "b" else "box"
+            elif name in MARK_KINDS and paragraph is not None and i == len(tokens) - 1:
+                kind = MARK_KINDS[name]
                 if not spans:
                     return Target(kind, paragraph, mark=(kind, number))
-                _, start, end = [m for m in marks(paragraph_text(paragraph)) if m[0] == kind][number]
-                return Target(kind, paragraph, mark=(kind, number), span=(start, end))
+                return Target(kind, paragraph, mark=(kind, number), span=mark_span(paragraph, kind, number))
             else:
                 raise KeyError(field_id)
             i += 1
@@ -458,28 +582,74 @@ def line_blanks(page, number):
     return blanks
 
 
-def pdf_flat_info(path):
+def page_lines(page):
+    """Text lines of a page as (text, slots): slots[i] is the character object behind text[i], None for a gap."""
+    chars = [c for c in page.dedupe_chars().chars if c.get("upright", True) and c["text"].strip()]
+    chars.sort(key=lambda c: (-c["matrix"][5], c["x0"]))
+    rows = []
+    for char in chars:
+        if rows and abs(rows[-1][0]["matrix"][5] - char["matrix"][5]) <= 2:
+            rows[-1].append(char)
+        else:
+            rows.append([char])
+    return [line_text(sorted(row, key=lambda c: c["x0"])) for row in rows]
+
+
+def line_text(row):
+    text, slots = "", []
+    for previous, char in zip([None, *row], row):
+        gap = char["x0"] - previous["x1"] if previous else 0
+        spaces = 2 if gap > char["size"] * 0.5 else 1 if gap > char["size"] * 0.15 else 0
+        text += " " * spaces + char["text"]
+        slots += [None] * spaces + [char] * len(char["text"])
+    return text, slots
+
+
+def filled_lines(page, number):
+    """"Label: value" lines of a flat page, as candidates for a replace entry."""
+    found = []
+    for text, slots in page_lines(page):
+        for label, start, end in label_value_spans(text):
+            chars = [slot for slot in slots[start:end] if slot]
+            found.append({"page": number, "label": label, "value": text[start:end], "x": round(chars[0]["x0"], 1),
+                          "y": round(chars[0]["matrix"][5], 1), "width": round(chars[-1]["x1"] - chars[0]["x0"], 1),
+                          "size": round(chars[0]["size"], 1), "font": chars[0]["fontname"]})
+    return found
+
+
+def holds_value(blank, item):
+    """A rule or dotted run with a listed value sitting on it is not a blank."""
+    return (blank["page"] == item["page"] and abs(blank["y"] - item["y"]) < 8
+            and blank["x"] - 2 <= item["x"] <= blank["x"] + blank["width"])
+
+
+def pdf_flat_info(path, include_filled=False):
     import pdfplumber
 
     with pdfplumber.open(str(path)) as pdf:
+        filled = [item for i, p in enumerate(pdf.pages, start=1) for item in filled_lines(p, i)] if include_filled else []
         pages = [{"page": i, "width": float(p.width), "height": float(p.height),
                   "text_chars": len(p.chars)} for i, p in enumerate(pdf.pages, start=1)]
         blanks = [blank for i, p in enumerate(pdf.pages, start=1) for blank in line_blanks(p, i)]
+    blanks = [blank for blank in blanks if not any(holds_value(blank, item) for item in filled)]
     for i, blank in enumerate(blanks):
         blank["id"] = f"p{blank['page']}.l{i}"
     scanned = all(page["text_chars"] < 20 for page in pages)
     form = PdfReader(str(path)).trailer["/Root"].get("/AcroForm")
     xfa = form is not None and "/XFA" in form.get_object()
-    return {"kind": "pdf_flat", "fields": [], "scanned": scanned, "xfa": xfa, "pages": pages, "blanks": blanks}
+    info = {"kind": "pdf_flat", "fields": [], "scanned": scanned, "xfa": xfa, "pages": pages, "blanks": blanks}
+    if include_filled:
+        info["filled"] = [{"id": f"p{item['page']}.v{i}", **item} for i, item in enumerate(filled)]
+    return info
 
 
-def list_fields(path):
+def list_fields(path, include_filled=False):
     kind = form_kind(path)
     if kind == "docx":
-        return docx_fields(path)
+        return docx_fields(path, include_filled)
     if kind == "pdf_form":
         return pdf_form_fields(path)
-    return pdf_flat_info(path)
+    return pdf_flat_info(path, include_filled)
 
 
 def summary_lines(info, limit=80):
@@ -491,6 +661,10 @@ def summary_lines(info, limit=80):
         lines.append(f"{len(info['blanks'])} candidate blanks (underscore runs and drawn lines) listed in the JSON")
         lines += [f"  {b['id']}  p{b['page']} x={b['x']} y={b['y']} w={b['width']}  {b['label']}"
                   for b in info["blanks"][:limit]]
+        if "filled" in info:
+            lines.append(f'{len(info["filled"])} filled "Label: value" lines; change one with a replace entry')
+            lines += [f"  {f['id']}  p{f['page']} x={f['x']} y={f['y']} w={f['width']} size={f['size']}  "
+                      f"{f['label']} = {f['value']!r}" for f in info["filled"][:limit]]
         return lines
     fields = info["fields"]
     lines = [f"{len(fields)} fields ({info['kind']})"]
@@ -507,10 +681,11 @@ def summary_lines(info, limit=80):
 def main(argv):
     parser = argparse.ArgumentParser(description="List the fields of a PDF or Word form.")
     parser.add_argument("form")
+    parser.add_argument("--include-filled", action="store_true", help="also list fields that already hold a value")
     parser.add_argument("--out", help="write the full field list here as JSON")
     args = parser.parse_args(argv)
     try:
-        info = list_fields(args.form)
+        info = list_fields(args.form, args.include_filled)
     except Exception as error:
         print(f"error: cannot read {args.form}: {error}")
         return 1

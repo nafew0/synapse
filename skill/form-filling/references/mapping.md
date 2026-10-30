@@ -101,7 +101,21 @@ Ids from `fields.py`:
 | `t0.r1.c0.p0.b0` | `____` or `……` blank inside a table cell's paragraph | replaces the blank in place |
 | `p7.b1` | Second blank in body paragraph 7 (`Name: ______  Date: ______`) | replaces the blank; `\n` becomes a space |
 | `p9.x0` | First ☐ in body paragraph 9 | `true` → ☒, `false` → ☐ |
-| `sdt3` | Content control (plain text, date, drop-down, check box) | replaces the placeholder; drop-downs take an option's text |
+| `sdt3` | Content control (plain text, date, drop-down, check box) | replaces the placeholder or the old value; drop-downs take an option's text |
+
+With `fields.py --include-filled` the list also holds what already has a value, each with its `value`.
+`fill.py` accepts these ids without the flag and replaces the old value in place, in the first run's
+formatting. Ids of empty fields are the same with or without the flag.
+
+| Id | Place |
+|---|---|
+| `t0.r1.c1` | A filled value cell, labelled from the cell to its left or its column header (`Degree (row 1)`) |
+| `p7.v0`, `t0.r0.c0.p0.v0` | Value of the first `Label: value` in a paragraph; pieces are separated by a tab, a line break or 2+ spaces |
+| `p9.x0`, `sdt3` | Ticked boxes and filled controls have the same ids as when empty |
+
+A piece that holds a second label after a single space (`Name: Rahima Date: 2020`) is not listed, since
+its value cannot be told apart; edit that one with the `docx` skill. Run `fields.py` on the file you are
+updating: blank numbers (`p7.b1`) count the blanks still in that file.
 
 ```json
 {
@@ -123,3 +137,41 @@ Bangla values get the `bangla_font` in the run's complex-script slot (`w:cs`) an
 complex-script language; `check.py` fails a Bangla run without it. Word table rows grow to fit, so
 long cell text never overflows; a value much longer than its underscore blank is noted because the
 line will wrap.
+
+## Updating a flat or scanned PDF (replace)
+
+A replace entry covers the old value with a rectangle and draws the new one. Use it instead of `x`/`y`.
+Only flat or scanned PDFs take it; a fillable PDF or Word form is updated by id.
+
+```json
+{
+  "flatten_replaced": false,
+  "fields": [
+    {"id": "dept", "label": "Department", "value": "Chemistry", "source": "user message",
+     "replace": {"page": 1, "find": "Physics"}},
+    {"id": "year", "value": "2026", "source": "user message",
+     "replace": {"page": 1, "find": "2025", "occurrence": 2, "cover": "#f2f2f2"}},
+    {"id": "roll", "label": "Roll", "value": "1042", "old": "1024", "source": "user message", "size": 11,
+     "replace": {"page": 1, "box": [214, 228, 120, 24], "units": "px", "dpi": 100}}
+  ]
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `find` | The printed text, on one line (it may span words). Whole words, case-sensitive. Not found or more than one match on that page is an error. |
+| `occurrence` | Which match to use, from 1, reading from the top. |
+| `box` | `[x, y, width, height]`. In points the origin is the bottom left and `x, y` is the box's lower-left corner. With `"units": "px"` and `dpi` (here or at the top of the mapping) it is pixels with the origin at the top left, and `x, y` is the upper-left corner. |
+| `cover` | Rectangle colour, `#rrggbb`, default white. Match the paper of a shaded form or an off-white scan. |
+| `size` | On the entry. Default: the old text's size for `find`, 70% of the box height for `box`. |
+| `old` | On the entry, for a `box` on a scan: what the box held, shown in the old → new report. |
+
+`find` keeps the old baseline, size, weight and family (Times, Helvetica or Courier, whichever is closest).
+A longer `find` value keeps its size while it fits the free space (up to the next printed word, the end of the rule under it, or the page margin), and shrinks only when something is in the way. A `box` value shrinks to the box. Below 6 pt `fill.py` draws nothing and `check.py` fails. A rule under the old value is redrawn after the cover.
+A value that needs more room, a Bangla text layer that does not extract cleanly, or a rotated page:
+use `box`.
+
+**The old text stays underneath.** A cover hides a value but it can still be copied or found by search,
+and `fill.py` says so for each one. `"flatten_replaced": true` rasterises each page with a replacement at
+200 dpi so the old text is gone, at the cost of that page's text layer. It needs poppler; without it
+`fill.py` exits 1 and writes nothing.
