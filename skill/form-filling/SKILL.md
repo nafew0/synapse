@@ -52,8 +52,17 @@ skill's XML editing instead.
 **2. Build the mapping** at `/mnt/data/qa/mapping.json`: one entry per field, with the value and the
 **source** of the value (`"CV.pdf p2"`, `"NID card"`, `"user message"`). Full schema and examples:
 `references/mapping.md`. Read every source document once before mapping (`pdftotext -layout`,
-`pandoc -t plain`; for a scan, `tesseract IMG - -l ben+eng`). "Use the information I already gave"
-means the earlier messages are the source; quote them as `"user message (earlier)"`.
+`pandoc -t plain`; for a scan, `tesseract IMG - -l ben+eng`; for Excel or CSV,
+`python3 scripts/read_source.py staff.xlsx [--sheet S] [--find "Nimal Perera"]`). "Use the information
+I already gave" means the earlier messages are the source; quote them as `"user message (earlier)"`.
+
+**From a spreadsheet:** `read_source.py` prints each filled cell as displayed, with its address. Copy
+values exactly as printed (dates, decimals and leading zeros are already formatted), and cite the cell:
+`"staff.xlsx, Sheet1!B4"`. Match a form field to a column by the header above it, or to a label in the
+cell beside it. Use `--find` when the sheet lists many people; if it matches several rows, ask which
+one. Never take a value from another person's row to fill a gap: leave it blank with a reason.
+A phone or ID stored by Excel as a number has already lost its leading zero (`712345678`): do not add
+one yourself, fill what the cell holds and mention it in the reply.
 
 - A value with no source stays `""`, gets `"required": true` if the form marks it required (`*`,
   "mandatory", the PDF's own flag), and gets a reason in `blank_reasons`.

@@ -982,3 +982,56 @@ def test_flat_pdf_cover_redraws_the_rule_it_paints_over(tmp_path):
         plan = fill_module.replace_plan(entry, {}, pdf, [box], fill_module.Report(), {})
     assert len(plan["rules"]) == 1
     assert plan["rules"][0][2] == pytest.approx(747, abs=0.5)
+
+
+def _staff_book(path):
+    import datetime
+
+    from openpyxl import Workbook
+
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "Staff"
+    sheet.append(["Name", "Department", "Phone", "Joined", "Salary", "Share"])
+    sheet.append(["Nimal Perera", "Physics", "0712345678", datetime.date(2019, 3, 5), 125000, 0.25])
+    sheet.append(["Kamala Silva", "Chemistry", "0779876543", datetime.date(2021, 7, 1), 98500.5, 0.1])
+    sheet["D2"].number_format = "dd.mm.yyyy"
+    sheet["D3"].number_format = "yyyy-mm-dd"
+    sheet["E2"].number_format = "#,##0"
+    sheet["E3"].number_format = "#,##0.00"
+    sheet["F2"].number_format = "0%"
+    sheet["F3"].number_format = "0.0%"
+    sheet["G2"] = "=E2*2"
+    book.save(path)
+    return path
+
+
+def test_read_source_shows_cells_as_displayed_with_addresses(tmp_path):
+    result = run("read_source.py", _staff_book(tmp_path / "staff.xlsx"), cwd=tmp_path)
+    assert "A2=Nimal Perera" in result.stdout and "C2=0712345678" in result.stdout
+    assert "D2=05.03.2019" in result.stdout and "D3=2021-07-01" in result.stdout
+    assert "E2=125,000" in result.stdout and "E3=98,500.50" in result.stdout
+    assert "F2=25%" in result.stdout and "F3=10.0%" in result.stdout
+
+
+def test_read_source_warns_about_a_formula_with_no_stored_result(tmp_path):
+    result = run("read_source.py", _staff_book(tmp_path / "staff.xlsx"), cwd=tmp_path)
+    assert result.returncode == 2 and "G2" in result.stdout
+
+
+def test_read_source_find_keeps_the_header_and_warns_on_no_or_many_matches(tmp_path):
+    book = _staff_book(tmp_path / "staff.xlsx")
+    found = run("read_source.py", book, "--find", "kamala", cwd=tmp_path)
+    assert "A1=Name" in found.stdout and "A3=Kamala Silva" in found.stdout and "Nimal" not in found.stdout
+    assert "matches" not in found.stdout
+    assert "matches 0 rows" in run("read_source.py", book, "--find", "nobody", cwd=tmp_path).stdout
+    assert "matches 2 rows" in run("read_source.py", book, "--find", "a", "--sheet", "Staff", cwd=tmp_path).stdout
+
+
+def test_read_source_reads_csv_and_rejects_other_files(tmp_path):
+    data = tmp_path / "staff.csv"
+    data.write_text("Name,Phone\nNimal,0712345678\n", encoding="utf-8")
+    assert "B2=0712345678" in run("read_source.py", data, cwd=tmp_path).stdout
+    other = tmp_path / "note.txt"
+    other.write_text("x")
+    assert run("read_source.py", other, cwd=tmp_path).returncode == 1
