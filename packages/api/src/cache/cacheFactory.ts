@@ -36,7 +36,17 @@ import { violationFile } from './keyvFiles';
 const inMemoryCacheMap = new Map<string, Keyv>();
 
 /**
+ * Memoized Redis-backed Keyv instances keyed by namespace and TTL.
+ * Each `new KeyvRedis(client)` adds listeners to the shared client that are never
+ * removed, so creating one per call leaks listeners and adapters.
+ */
+const redisCacheMap = new Map<string, Keyv>();
+
+/**
  * Creates a cache instance using Redis or a fallback store. Suitable for general caching needs.
+ *
+ * **Redis mode**: instances are memoized by namespace and TTL, so repeated calls never
+ * add listeners to the shared Redis client.
  *
  * **In-memory mode** (no Redis, no custom fallbackStore): instances are memoized by
  * namespace so that every call-site shares the same underlying `Map`. The first
@@ -49,6 +59,11 @@ const inMemoryCacheMap = new Map<string, Keyv>();
  */
 export const standardCache = (namespace: string, ttl?: number, fallbackStore?: object): Keyv => {
   if (keyvRedisClient && !cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES?.includes(namespace)) {
+    const redisCacheKey = `${namespace}|${ttl}`;
+    const existingRedisCache = redisCacheMap.get(redisCacheKey);
+    if (existingRedisCache) {
+      return existingRedisCache;
+    }
     try {
       const keyvRedis = new KeyvRedis(keyvRedisClient);
       const cache = new Keyv(keyvRedis, { namespace, ttl });
@@ -85,7 +100,9 @@ export const standardCache = (namespace: string, ttl?: number, fallbackStore?: o
         logger.debug(`Cleared ${keysToDelete.length} keys from namespace ${namespace}`);
       };
 
-      return instrumentRedisCache(cache, namespace);
+      const instrumentedCache = instrumentRedisCache(cache, namespace);
+      redisCacheMap.set(redisCacheKey, instrumentedCache);
+      return instrumentedCache;
     } catch (err) {
       logger.error(`Failed to create Redis cache for namespace ${namespace}:`, err);
       throw err;
