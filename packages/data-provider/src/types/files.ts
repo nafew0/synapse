@@ -137,6 +137,15 @@ export type FileConfigInput = {
   checkType?: (fileType: string, supportedTypes: RegexLike[]) => boolean;
 };
 
+/** Per-page verdict from the upload's local classifier. Page numbers are 1-based. */
+export type FilePageScan = {
+  pages: number;
+  /** Pages whose text cannot be used as it is, so only OCR can read them. */
+  ocrPages: number[];
+  /** The part of `ocrPages` that has a text layer, but a damaged one. */
+  garbledPages: number[];
+};
+
 /**
  * What automatic preparation did with an upload: how its text was obtained and how that text
  * reaches the model. Read by the attachment chip and by the conversation's full-text budget.
@@ -154,6 +163,8 @@ export type FilePreparationMetadata = {
   contextTokens?: number;
   /** Pages the extractor saw, used to judge whether a PDF is a scan. */
   pageCount?: number;
+  /** Which pages need OCR. Absent for anything but a PDF the parser could open. */
+  scan?: FilePageScan;
 };
 
 export type TFile = {

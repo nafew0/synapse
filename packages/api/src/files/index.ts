@@ -13,6 +13,7 @@ export * from './prepare';
 export * from './rag';
 export * from './regexEngine';
 export * from './retention';
+export * from './scan/classify';
 export * from './sse';
 export * from './storage';
 export * from './sweep';

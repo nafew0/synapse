@@ -11,6 +11,14 @@ const preparationSchema = new Schema(
     ocrApplied: { type: Boolean },
     contextTokens: { type: Number },
     pageCount: { type: Number },
+    scan: {
+      type: {
+        pages: { type: Number },
+        ocrPages: { type: [Number] },
+        garbledPages: { type: [Number] },
+      },
+      _id: false,
+    },
   },
   { _id: false },
 );
