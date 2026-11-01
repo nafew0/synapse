@@ -4,6 +4,8 @@
 
 "Convert" means the user's own document: keep every name, number and signature. Only "a new one like this" with new details from the user replaces them; with no new details it still keeps the sample's text.
 
+A scanned PDF works the same way: first render it with `pdftoppm -r 150 -png <file>.pdf /mnt/data/qa/page`, and treat each page image as the scan.
+
 The whole job is five tool calls after loading this skill. Do not add OCR, enlarged crops, or a hand-written docx-js script: each of those has cost runs ten extra steps and made the file worse.
 
 ## 1. Look at the scan
