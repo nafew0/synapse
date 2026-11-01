@@ -17,6 +17,7 @@ import MessageAudio from './MessageAudio';
 import Feedback from './Feedback';
 import { cn } from '~/utils';
 import store from '~/store';
+import { hideOfficeWorkNotes } from '~/utils/workNotes';
 
 type THoverButtons = {
   isEditing: boolean;
@@ -53,7 +54,7 @@ const extractMessageContent = (message: TMessage): string => {
   }
 
   if (Array.isArray(message.content)) {
-    return message.content
+    return (hideOfficeWorkNotes(message.model, message.content, false) ?? [])
       .map((part) => {
         if (part == null) {
           return '';

@@ -6,6 +6,7 @@ import { useMessagesViewContext, useAssistantsMapContext, useAgentsMapContext } 
 import useCopyToClipboard, { hasCopyableText } from './useCopyToClipboard';
 import { useGetAddedConvo } from '~/hooks/Chat';
 import { logger } from '~/utils';
+import { hideOfficeWorkNotes } from '~/utils/workNotes';
 
 export default function useMessageHelpers(props: TMessageProps) {
   const { message, currentEditId, setCurrentEditId } = props;
@@ -81,9 +82,16 @@ export default function useMessageHelpers(props: TMessageProps) {
     regenerate(message, { addedConvo: getAddedConvo() });
   };
 
-  const copyToClipboard = useCopyToClipboard({ text, content });
+  const visibleContent = useMemo(
+    () => hideOfficeWorkNotes(message?.model, content, false),
+    [message?.model, content],
+  );
+  const copyToClipboard = useCopyToClipboard({ text, content: visibleContent });
 
-  const getCanCopy = useCallback(() => hasCopyableText({ text, content }), [text, content]);
+  const getCanCopy = useCallback(
+    () => hasCopyableText({ text, content: visibleContent }),
+    [text, visibleContent],
+  );
 
   return {
     ask,

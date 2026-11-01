@@ -73,8 +73,8 @@ when it finds defects, each named by slide and shape.
   may substitute a narrower font than PowerPoint will use.
 - It is a floor, not a ceiling: it cannot see contrast, alignment or crowding. Do the visual
   pass below as well.
-- If the check cannot run at all, say so plainly in your final response rather than implying
-  the deck was verified.
+- If the check cannot run at all, ask the user in plain words to look the deck over closely
+  rather than implying it was verified, with no tool or check names.
 
 ### Visual QA
 
@@ -115,8 +115,8 @@ User-visible defects to look for:
 
 **Finding a defect is half the job.** Fix it in the generator, rebuild, and re-render the slides
 you changed before delivering — a deck shipped with overlapping text after you looked at it is
-worse than one never checked, because the user reasonably assumes you looked. Say in the final
-response which slides you checked and what you fixed.
+worse than one never checked, because the user reasonably assumes you looked. Keep the checks and
+fixes out of the final response.
 
 ## Converting to Images
 

@@ -9,6 +9,7 @@ import type {
 import type { ReactNode, ReactElement } from 'react';
 import type { ToolCallGroupExpansionState } from './ToolCallGroup';
 import { mapAttachments, filterAttachmentsForPart, groupSequentialToolCalls } from '~/utils';
+import { hideOfficeWorkNotes } from '~/utils/workNotes';
 import { groupActivityPhases, lastVisibleContentIdx } from '~/utils/activityLabels';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import MemoryArtifacts, { hasMemoryArtifacts } from './MemoryArtifacts';
@@ -189,7 +190,7 @@ type ContentPartsProps = {
 const ContentParts = memo(function ContentParts({
   edit,
   isLast,
-  content,
+  content: storedContent,
   manualSkills,
   messageId,
   enterEdit,
@@ -212,6 +213,10 @@ const ContentParts = memo(function ContentParts({
 }: ContentPartsProps) {
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
+  const content = useMemo(
+    () => hideOfficeWorkNotes(model, storedContent, effectiveIsSubmitting),
+    [model, storedContent, effectiveIsSubmitting],
+  );
   const localToolGroupExpansionRef = useRef(new Map<string, ToolCallGroupExpansionState>());
   const expansionState = toolGroupExpansionState ?? localToolGroupExpansionRef.current;
   const fallbackScopeRef = useRef({ messageId, scope: 0 });
@@ -482,7 +487,7 @@ const ContentParts = memo(function ContentParts({
         <SearchContext.Provider value={{ searchResults }}>
           <MemoryArtifacts attachments={attachments} />
           <EditContentParts
-            content={content ?? []}
+            content={storedContent ?? []}
             contentIndexOffset={contentIndexOffset}
             messageId={messageId}
             isSubmitting={isSubmitting}

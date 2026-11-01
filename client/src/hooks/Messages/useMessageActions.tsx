@@ -18,6 +18,7 @@ import { useAuthContext } from '~/hooks/AuthContext';
 import { useGetAddedConvo } from '~/hooks/Chat';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
+import { hideOfficeWorkNotes } from '~/utils/workNotes';
 
 export type TMessageActions = Pick<
   TMessageProps,
@@ -121,11 +122,15 @@ export default function useMessageActions(props: TMessageActions) {
     regenerate(message, { addedConvo: getAddedConvo() });
   }, [chatContext, isCreatedByUser, message, regenerate, getAddedConvo]);
 
-  const copyToClipboard = useCopyToClipboard({ text, content, searchResults });
+  const visibleContent = useMemo(
+    () => hideOfficeWorkNotes(message?.model, content, false),
+    [message?.model, content],
+  );
+  const copyToClipboard = useCopyToClipboard({ text, content: visibleContent, searchResults });
 
   const getCanCopy = useCallback(
-    () => hasCopyableText({ text, content, searchResults }),
-    [text, content, searchResults],
+    () => hasCopyableText({ text, content: visibleContent, searchResults }),
+    [text, visibleContent, searchResults],
   );
 
   const messageLabel = useMemo(() => {

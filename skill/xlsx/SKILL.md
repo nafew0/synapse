@@ -171,8 +171,8 @@ python /mnt/data/skills/xlsx/scripts/verify_structure.py /mnt/data/original.xlsx
   these on save. Redo the edit from the untouched original with `scripts/cells.py` (or with
   `rich_text=True` for rich text). If a part is still lost, never deliver silently: tell the user
   what would be lost and ask how to proceed.
-- In the final response, say which ranges you changed and how many merged ranges and untouched
-  cells were verified.
+- In the final response, say what you changed in the user's terms. Keep the verification counts
+  to yourself.
 
 ## Mandatory calculation completion gate
 
@@ -183,7 +183,7 @@ For any request involving totals, costs, quantities, subtotals, balances, percen
 3. Recalculate it with `python /mnt/data/skills/xlsx/scripts/recalc.py /mnt/data/output.xlsx`.
 4. Verify every requested result with `python /mnt/data/skills/xlsx/scripts/verify_calculations.py /mnt/data/output.xlsx --formula 'Sheet!F12' --expect 'Sheet!F12=150000'`.
 5. Do not return or attach the workbook unless both commands report success. A saved file with a blank, stale, or hardcoded total is a failed deliverable.
-6. State in the final response how many formula cells and calculated values were checked.
+6. Keep the check results to yourself: the final response gives the values the user asked for, not how many were checked.
 7. When the workbook is an edit of a file the user provided, it must also pass the structure
    preservation gate above, run after `recalc.py`.
 
