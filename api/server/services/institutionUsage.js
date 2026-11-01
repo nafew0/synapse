@@ -363,6 +363,30 @@ async function getUsageSummary({ tenantId, start, end, labels }) {
   return { range, summary: stripRestrictedFields(resolved, restrictToLabeled) };
 }
 
+/** A member who used nothing in the range: listed with zero usage. */
+function idleMemberRow(user) {
+  return {
+    userId: String(user._id),
+    name: user.name,
+    email: user.email,
+    username: user.username,
+    role: user.role,
+    membershipStatus: user.membershipStatus,
+    promptTokens: 0,
+    completionTokens: 0,
+    totalTokens: 0,
+    totalCost: 0,
+    eventCount: 0,
+  };
+}
+
+/**
+ * Every member of the institution, busiest first: those who used tokens in the
+ * range, then everyone who can sign in (active or suspended) with zero usage.
+ * Former members and deleted accounts with usage in the range stay listed, so
+ * the rows add up to the summary. One row per member keeps the set small enough
+ * to search, sort and page in memory.
+ */
 async function listUsageByMember({ tenantId, start, end, limit, offset, query, labels }) {
   const range = await resolveRange(tenantId, { start, end });
   const pagination = parsePagination({ limit, offset });
@@ -370,67 +394,67 @@ async function listUsageByMember({ tenantId, start, end, limit, offset, query, l
   const search = typeof query === 'string' && query.trim() ? query.trim() : null;
   const regex = search ? new RegExp(escapeRegex(search), 'i') : null;
 
-  const [result] = await tenantStorage.run({ tenantId }, async () =>
-    Transaction.aggregate([
-      { $match: getBaseMatch(range) },
-      ...requestRollupStages({ user: '$user' }),
-      { $set: { _id: '$_id.user' } },
-      {
-        $lookup: {
-          from: 'users',
-          localField: '_id',
-          foreignField: '_id',
-          as: 'user',
+  const [usageRows, users] = await tenantStorage.run({ tenantId }, () =>
+    Promise.all([
+      Transaction.aggregate([
+        { $match: getBaseMatch(range) },
+        ...requestRollupStages({ user: '$user' }),
+        { $set: { _id: '$_id.user' } },
+        {
+          $lookup: {
+            from: 'users',
+            localField: '_id',
+            foreignField: '_id',
+            as: 'user',
+          },
         },
-      },
-      {
-        $unwind: {
-          path: '$user',
-          preserveNullAndEmptyArrays: true,
+        {
+          $unwind: {
+            path: '$user',
+            preserveNullAndEmptyArrays: true,
+          },
         },
-      },
-      ...(regex
-        ? [
-            {
-              $match: {
-                $or: [{ 'user.name': regex }, { 'user.email': regex }, { 'user.username': regex }],
-              },
-            },
-          ]
-        : []),
-      {
-        $project: {
-          _id: 0,
-          userId: { $toString: '$_id' },
-          name: { $ifNull: ['$user.name', 'Unknown member'] },
-          email: '$user.email',
-          role: '$user.role',
-          membershipStatus: '$user.membershipStatus',
-          promptTokens: 1,
-          completionTokens: 1,
-          totalTokens: { $add: ['$promptTokens', '$completionTokens'] },
-          totalCost: 1,
-          eventCount: 1,
-          lastUsedAt: 1,
+        {
+          $project: {
+            _id: 0,
+            userId: { $toString: '$_id' },
+            name: '$user.name',
+            email: '$user.email',
+            username: '$user.username',
+            role: '$user.role',
+            membershipStatus: '$user.membershipStatus',
+            promptTokens: 1,
+            completionTokens: 1,
+            totalTokens: { $add: ['$promptTokens', '$completionTokens'] },
+            totalCost: 1,
+            eventCount: 1,
+            lastUsedAt: 1,
+          },
         },
-      },
-      { $sort: { totalTokens: -1, name: 1 } },
-      {
-        $facet: {
-          rows: [{ $skip: pagination.offset }, { $limit: pagination.limit }],
-          meta: [{ $count: 'total' }],
-        },
-      },
+      ]),
+      models.User.find({ tenantId, ...visibleMembershipFilter() })
+        .select('_id name email username role membershipStatus')
+        .lean()
+        .exec(),
     ]),
   );
 
-  const total = result?.meta?.[0]?.total ?? 0;
+  const usedBy = new Set(usageRows.map((row) => row.userId));
+  const idleRows = users.filter((user) => !usedBy.has(String(user._id))).map(idleMemberRow);
+  const matches = (row) =>
+    !regex || [row.name, row.email, row.username].some((value) => value && regex.test(value));
+  const rows = [...usageRows, ...idleRows]
+    .filter(matches)
+    .map(({ username: _username, ...row }) => ({ ...row, name: row.name ?? 'Unknown member' }))
+    .sort((a, b) => b.totalTokens - a.totalTokens || a.name.localeCompare(b.name));
   const restrictToLabeled = labels?.restrictToLabeled === true;
 
   return {
     range,
-    members: (result?.rows ?? []).map((row) => stripRestrictedFields(row, restrictToLabeled)),
-    total,
+    members: rows
+      .slice(pagination.offset, pagination.offset + pagination.limit)
+      .map((row) => stripRestrictedFields(row, restrictToLabeled)),
+    total: rows.length,
     limit: pagination.limit,
     offset: pagination.offset,
   };
