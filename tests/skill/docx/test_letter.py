@@ -51,6 +51,14 @@ def test_crop_trims_to_ink_and_whitens_paper(scan, tmp_path):
     assert 'sig:' in result.stdout
 
 
+def test_crop_warns_when_a_box_slices_the_ink(scan, tmp_path):
+    sliced = run('crop.py', scan, tmp_path / 'qa', 'sig=340,440,440,540', cwd=tmp_path)
+    whole = run('crop.py', scan, tmp_path / 'qa', 'sig=280,440,440,540', cwd=tmp_path)
+
+    assert 'BOX CUTS INK on its left side' in sliced.stdout
+    assert 'BOX CUTS INK' not in whole.stdout
+
+
 def test_crop_reports_a_box_with_no_ink(scan, tmp_path):
     result = run('crop.py', scan, tmp_path / 'qa', 'empty=150,150,250,250', cwd=tmp_path)
 
@@ -64,6 +72,19 @@ def test_crop_read_writes_two_enlarged_halves(scan, tmp_path):
     assert result.returncode == 0
     top = Image.open(tmp_path / 'qa' / 'read-top.jpg')
     assert top.format == 'JPEG' and top.width == 1200
+
+
+def test_crop_read_writes_a_grid_labelled_in_scan_pixels(tmp_path):
+    Image.new('RGB', (3000, 4000), 'white').save(tmp_path / 'page.png')
+
+    run('crop.py', tmp_path / 'page.png', tmp_path / 'qa', '--read', cwd=tmp_path)
+
+    grid = Image.open(tmp_path / 'qa' / 'grid.jpg')
+    assert max(grid.size) <= 1568
+    scale = grid.width / 3000
+    red, green, _ = grid.getpixel((round(1000 * scale), 500))
+    assert red > green + 40
+    assert (tmp_path / 'qa' / 'grid.jpg').stat().st_size < 1024 * 1024
 
 
 def test_crop_read_caps_a_high_resolution_page_under_the_read_limit(tmp_path):
