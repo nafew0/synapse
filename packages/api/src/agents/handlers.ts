@@ -1,6 +1,6 @@
 import yaml from 'js-yaml';
 import { Types } from 'mongoose';
-import { GraphEvents, Constants } from '@librechat/agents';
+import { GraphEvents, Constants, CODE_EXECUTION_TOOLS } from '@librechat/agents';
 import { logger, normalizeSkillFrontmatterKeys } from '@librechat/data-schemas';
 import type {
   LCTool,
@@ -16,6 +16,7 @@ import type { StructuredToolInterface } from '@librechat/agents/langchain/tools'
 import type { ValidationIssue } from '@librechat/data-schemas';
 import type { CodeEnvRef } from 'librechat-data-provider';
 import { dedupeInjectedFiles } from './injectedFiles';
+import { fitImageForModel } from './vision';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
 import type { CodeExecutionContext } from './execution';
 import type { ServerRequest } from '~/types';
@@ -1483,19 +1484,33 @@ function isCompleteImage(buffer: Buffer, mime: string): boolean {
  * callback saves the same data URL as a viewable attachment. Shared by the
  * skill-file and sandbox read paths so both surface images identically.
  */
-function buildImageArtifactResult(
+async function buildImageArtifactResult(
   toolCallId: string,
   displayPath: string,
   mimeType: string,
-  bytes: number,
-  base64: string,
-): ToolExecuteResult {
+  buffer: Buffer,
+): Promise<ToolExecuteResult> {
+  const image = await fitImageForModel(buffer, mimeType).catch((error: unknown) => {
+    logger.warn(`[handleReadFileCall] Could not prepare "${displayPath}" for the model:`, error);
+    return null;
+  });
+  if (!image) {
+    return {
+      toolCallId,
+      status: 'success',
+      content: `Image "${displayPath}" (${buffer.length} bytes) is too large to show. Use \`bash_tool\` to make a smaller copy (e.g. \`convert ${displayPath} -resize 1200x1200 /mnt/data/qa/small.jpg\`) and read that.`,
+    };
+  }
+  const resized =
+    image.bytes === buffer.length ? '' : `, shown as a ${image.bytes}-byte ${image.mimeType}`;
   return {
     toolCallId,
     status: 'success',
-    content: `Image: ${displayPath} (${bytes} bytes, ${mimeType})`,
+    content: `Image: ${displayPath} (${buffer.length} bytes, ${mimeType}${resized})`,
     artifact: {
-      content: [{ type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } }],
+      content: [
+        { type: 'image_url', image_url: { url: `data:${image.mimeType};base64,${image.base64}` } },
+      ],
     },
   };
 }
@@ -1600,7 +1615,7 @@ async function handleSandboxImageRead(
     return binaryHint();
   }
   onSuccess?.();
-  return buildImageArtifactResult(tc.id, filePath, mimeType, buffer.length, read.base64);
+  return await buildImageArtifactResult(tc.id, filePath, mimeType, buffer);
 }
 
 /**
@@ -1796,8 +1811,23 @@ export function mergeSandboxSessionArtifact(
      * The read and write paths clean the session as they send it, but the SDK's in-process tool
      * node builds `_injected_files` straight from the stored session, so a duplicate kept here
      * reaches codeapi untouched and fails every execution for the rest of the conversation.
+     *
+     * A later call in the batch mounts this list, so a file the sandbox did not echo stays, and an
+     * echo of a file already held keeps its kind and version.
      */
-    context.files = dedupeInjectedFiles(files);
+    const incoming = dedupeInjectedFiles(files);
+    const incomingNames = new Set(incoming.map((file) => file.name));
+    const held = context.files ?? [];
+    const heldByName = new Map(held.map((file) => [file.name, file]));
+    context.files = dedupeInjectedFiles([
+      ...held.filter((file) => !incomingNames.has(file.name)),
+      ...incoming.map((file) => {
+        const known = heldByName.get(file.name);
+        return known?.id === file.id
+          ? { ...known, ...file }
+          : { resource_id: file.id, kind: 'user', ...file };
+      }),
+    ]);
   }
 }
 
@@ -3507,13 +3537,7 @@ async function handleReadFileCall(
 
       // Return images/PDFs as artifacts
       if (IMAGE_MIMES.has(file.mimeType) && buffer.length <= MAX_BINARY_BYTES) {
-        return buildImageArtifactResult(
-          tc.id,
-          args.path,
-          file.mimeType,
-          buffer.length,
-          buffer.toString('base64'),
-        );
+        return await buildImageArtifactResult(tc.id, args.path, file.mimeType, buffer);
       }
 
       // TODO: PDF artifact support requires a document content block path
@@ -3756,6 +3780,32 @@ function getFileAuthoringQueueKey(
   return `skill:${parsed.skillName}`;
 }
 
+const SANDBOX_BATCH_QUEUE_KEY = 'sandbox:batch';
+
+function usesSandboxWorkspace(
+  tc: ToolCallRequest,
+  mergedConfigurable: Record<string, unknown>,
+): boolean {
+  return (
+    CODE_EXECUTION_TOOLS.has(tc.name) ||
+    tc.name === Constants.READ_FILE ||
+    getFileAuthoringQueueKey(tc, mergedConfigurable)?.startsWith('sandbox:') === true
+  );
+}
+
+/**
+ * Calls in one model step are all planned from the session as it stood before the step. Run
+ * together, a build mounts the script an edit beside it is replacing, and its echo of the old ref
+ * then overwrites the edit in the session. Reads alone cannot conflict, so they stay parallel.
+ */
+function shouldSequenceSandboxCalls(
+  toolCalls: ToolCallRequest[],
+  mergedConfigurable: Record<string, unknown>,
+): boolean {
+  const sandboxCalls = toolCalls.filter((tc) => usesSandboxWorkspace(tc, mergedConfigurable));
+  return sandboxCalls.length > 1 && sandboxCalls.some((tc) => tc.name !== Constants.READ_FILE);
+}
+
 /**
  * Creates the ON_TOOL_EXECUTE handler for event-driven tool execution.
  * This handler receives batched tool calls, loads the required tools,
@@ -3953,6 +4003,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
             };
             const authoringQueues = new Map<string, Promise<void>>();
             const sandboxAuthoringContexts = new Map<string, SandboxSessionContext>();
+            const sequenceSandboxCalls = shouldSequenceSandboxCalls(toolCalls, mergedConfigurable);
 
             /**
              * Background tool calls. The set of tools that received the injected
@@ -4409,14 +4460,6 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                       };
                     }
 
-                    if (
-                      isSandboxFileAuthoringCall &&
-                      handlerResult.status === 'success' &&
-                      sandboxContext
-                    ) {
-                      mergeSandboxSessionArtifact(sandboxContext, handlerResult.artifact);
-                    }
-
                     if (toolEndCallback && handlerResult.artifact) {
                       await toolEndCallback(
                         {
@@ -4604,7 +4647,10 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   }
                 };
 
-                const queueKey = getFileAuthoringQueueKey(tc, mergedConfigurable);
+                const queueKey =
+                  sequenceSandboxCalls && usesSandboxWorkspace(tc, mergedConfigurable)
+                    ? SANDBOX_BATCH_QUEUE_KEY
+                    : getFileAuthoringQueueKey(tc, mergedConfigurable);
                 if (!queueKey) {
                   return reportResult(await execute());
                 }
@@ -4616,10 +4662,23 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   sandboxAuthoringContexts.set(queueKey, sandboxContext);
                 }
                 const previous = authoringQueues.get(queueKey) ?? Promise.resolve();
-                const resultPromise = previous.then(
-                  () => execute(sandboxContext),
-                  () => execute(sandboxContext),
-                );
+                const runQueued = async (): Promise<ToolExecuteResult> => {
+                  if (!sandboxContext) {
+                    return execute();
+                  }
+                  if (sandboxContext.session_id) {
+                    tc.codeSessionContext = {
+                      ...tc.codeSessionContext,
+                      ...sandboxContext,
+                    } as ToolCallRequest['codeSessionContext'];
+                  }
+                  const result = await execute(sandboxContext);
+                  if (result.status === 'success') {
+                    mergeSandboxSessionArtifact(sandboxContext, result.artifact);
+                  }
+                  return result;
+                };
+                const resultPromise = previous.then(runQueued, runQueued);
                 authoringQueues.set(
                   queueKey,
                   resultPromise.then(

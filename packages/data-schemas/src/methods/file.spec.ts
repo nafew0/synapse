@@ -552,6 +552,43 @@ describe('File Methods', () => {
       expect(files[0].file_id).toBe(fileId);
     });
 
+    it('restores small qa/ working files from this branch only', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const conversationId = uuidv4();
+      const working = async (filename: string, messageId: string, bytes: number) => {
+        const fileId = uuidv4();
+        await fileMethods.createFile({
+          file_id: fileId,
+          user: userId,
+          conversationId,
+          messageId,
+          filename,
+          filepath: `/uploads/${fileId}`,
+          type: 'application/json',
+          bytes,
+          context: FileContext.execute_code,
+          metadata: {
+            codeEnvRef: {
+              kind: 'user',
+              id: userId.toString(),
+              storage_session_id: 'sess',
+              file_id: fileId,
+            },
+          },
+        });
+      };
+      await working('qa/spec.json', 'msg-this-branch', 5000);
+      await working('qa/page-1.png', 'msg-this-branch', 500000);
+      await working('qa/other.json', 'msg-other-branch', 5000);
+      await working('output.csv', 'msg-this-branch', 100);
+
+      const files = await fileMethods.getCodeGeneratedFiles(conversationId, [], undefined, [
+        'msg-this-branch',
+      ]);
+
+      expect(files.map((file) => file.filename)).toEqual(['qa/spec.json']);
+    });
+
     it('reaches a file whose creator messageId is on a sibling branch (regression)', async () => {
       /* Branched-conversation case: sibling A creates the file (its
        * messageId is preserved on the File record), sibling N

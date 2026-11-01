@@ -179,7 +179,8 @@ claim.
 - LibreOffice writes every text box twice — DrawingML in `mc:Choice`, VML in `mc:Fallback`. Any
   text you extract yourself will be doubled unless you skip the fallback branch; `probe.py` does.
 - A PDF of scanned pages has no text to recover. The gate says so rather than pretending; that
-  document needs OCR (the `pdf` skill) before any conversion is worth attempting.
+  document is not for this skill: render its pages to images and follow the docx skill's
+  `references/scan.md`.
 
 ## Files
 

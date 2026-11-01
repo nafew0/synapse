@@ -484,6 +484,9 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
     endpoint,
   });
   const storageMetadata = getStorageMetadata({ filepath, source, storageKey, storageRegion });
+  const sandboxMetadata = returnFile
+    ? undefined
+    : await getImageSandboxMetadata({ req, file, metadata });
 
   const result = await db.createFile(
     {
@@ -496,6 +499,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
       filename: file.originalname,
       context: FileContext.message_attachment,
       source,
+      metadata: sandboxMetadata,
       type: `image/${appConfig.imageOutputType}`,
       ...(await getRetentionExpiry(req)),
       width,
@@ -1341,6 +1345,42 @@ const isSandboxUploadAllowed = ({ req, assistantTools }) => {
 };
 
 /**
+ * Copies an attached image into the code sandbox when the assistant has one, so it can crop a
+ * logo or signature out of a scan, OCR it, or compare a render against it. The model still sees
+ * the image as before; this only adds the `codeEnvRef`. Only assistants whose tools include
+ * `execute_code` get the copy, and a failed copy never fails the upload.
+ *
+ * @param {object} params
+ * @param {ServerRequest} params.req
+ * @param {Express.Multer.File} params.file
+ * @param {FileMetadata} params.metadata
+ * @returns {Promise<object | undefined>} `metadata` carrying the `codeEnvRef`, or undefined.
+ */
+const getImageSandboxMetadata = async ({ req, file, metadata }) => {
+  try {
+    const [codeExecution, assistantTools] = await Promise.all([
+      checkCapability(req, AgentCapabilities.execute_code),
+      resolveAssistantTools({ req, metadata }),
+    ]);
+    if (!codeExecution || !assistantTools?.has(Tools.execute_code)) {
+      return undefined;
+    }
+    return await uploadToCodeEnvironment({
+      req,
+      file,
+      agent_id: metadata.agent_id,
+      messageAttachment: !!metadata.message_file,
+    });
+  } catch (err) {
+    logger.warn(
+      `[getImageSandboxMetadata] Could not copy "${file.originalname}" to the sandbox:`,
+      err,
+    );
+    return undefined;
+  }
+};
+
+/**
  * Handles an upload the user attached without choosing a destination. Extraction and delivery are
  * decided here rather than in the composer: the browser knows a file's bytes but not how much text
  * it holds, whether a PDF is a scan, or how much of the conversation's budget is already spent.
@@ -1705,6 +1745,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       tool_resource,
       updatingUserId: req?.user?.id,
     });
+  }
+
+  if (isImage && fileInfoMetadata == null) {
+    fileInfoMetadata = await getImageSandboxMetadata({ req, file, metadata });
   }
 
   if (isImage) {

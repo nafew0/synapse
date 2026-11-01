@@ -13,7 +13,10 @@ A `.docx` is a ZIP archive of XML files. Choose your approach by task:
 |---|---|
 | **Create** a new document | Write a `docx` (npm) script — see gotchas below |
 | **Edit** an existing document | `unzip` → edit `word/document.xml` → `zip` (docx-js cannot open existing files) |
-| **Read** content | `pandoc -t markdown file.docx` |
+| **Read** content or structure | `python3 /mnt/data/skills/docx/scripts/outline.py file.docx` (numbered paragraphs, tables, headers), or `pandoc -t markdown file.docx` |
+| **Change some text** (a name, date, number, wording) | `python3 /mnt/data/skills/docx/scripts/replace.py in.docx out.docx "old" "new"`: one call, formatting kept, validated. Do not unpack for this |
+| **Office letter, order or notice** (letterhead, memo and date row, signature blocks, copy list) | `scripts/letter.py` with a JSON spec — see `references/scan.md` for the spec; it builds, fits the page, validates and renders in one call |
+| **Recreate** a scanned or photographed page (`.jpg`, `.png`) as Word | `references/scan.md` |
 
 > Script paths below are relative to this skill's directory.
 
@@ -37,31 +40,36 @@ Write the build script to `/mnt/data/qa/build.js.txt` and run it in the same cal
 
 ## Verify the output
 
-After writing a `.docx`, render it and look at it:
+One command builds, validates and renders, and draws every page into one grid:
 
 ```bash
-mkdir -p /mnt/data/qa && \
-python3 /mnt/data/skills/docx/scripts/office/soffice.py --headless --convert-to pdf --outdir /mnt/data/qa /mnt/data/output.docx && \
-pdftoppm -jpeg -r 100 /mnt/data/qa/output.pdf /mnt/data/qa/page && \
-ls /mnt/data/qa/page-*.jpg   # then Read the images
+python3 /mnt/data/skills/docx/scripts/check.py /mnt/data/output.docx --build /mnt/data/qa/build.js.txt
+# for an edit of the user's file: python3 .../check.py /mnt/data/<name>-edited.docx --original /mnt/data/<name>.docx
 ```
+
+Read the report, then read the grid image once. Do not read the pages one by one: several page images in one turn are dropped before they reach you.
 
 **Render into `/mnt/data/qa`, never into `/mnt/data` itself.** A file at the top of `/mnt/data` is delivered to the user, so a checked document would arrive with a page image per page and a stray PDF beside it. A file in a subdirectory is not delivered, and it survives between calls, so the images can still be read on the next call.
 
 **Do not use a dot-prefixed directory such as `.render/`.** It is hidden from the user, but it is also wiped between calls, so a render written there cannot be read back at all.
 
-`pdftoppm` zero-pads page numbers to the width of the page count (`page-01.jpg`…`page-12.jpg`).
-
 ### Keep the check to one round, two at most
 
 Every tool call spends part of a fixed step budget for the whole request. A run that keeps polishing hits that limit, stops with an error, and the user receives no file — even a finished one. So:
 
-- **Build, validate and render in one call:** `node /mnt/data/qa/build.js.txt && python3 /mnt/data/skills/docx/scripts/office/validate.py <docx> && python3 /mnt/data/skills/docx/scripts/office/soffice.py … && pdftoppm …`.
-- **Read the pages once and list every problem you see before changing anything.** Then fix them all in a single `edit_file` call (it accepts several edits at once) and rebuild and re-render in one command. Do not fix one cosmetic detail per round.
+- **Build, validate and render in one call:** `scripts/check.py` with `--build` (above).
+- **Read the pages once and list every problem you see before changing anything.** Then fix them all in a single `edit_file` call (it accepts several edits at once) and rebuild and re-render in one command. Do not fix one cosmetic detail per round. Never patch the build script with `sed` or a Python `.replace()`: they fail silently and have deleted whole blocks.
+- **Read an image in a call of its own, never in the same call as the command that writes it.** Calls in one turn run together, so the read happens before the file exists.
 - **Re-render once to confirm.** If only something minor remains (spacing, a footer word, a line break), deliver the file and mention it rather than starting another round.
 - **Do not load this skill again** after the conversation is summarized. Its rules still apply, and your build script is still at `/mnt/data/qa/build.js.txt`.
 
+## From a scan or photo of a page
+
+A picture of an office order, letter or notice to be turned into Word: read `references/scan.md` (`read_file /mnt/data/skills/docx/references/scan.md`) and follow it. It is about five tool calls with `scripts/crop.py` and `scripts/letter.py`; do not hand-write a docx-js script for it.
+
 ## Editing existing documents
+
+Match the document's existing fonts, colours, styles and structure. Edit the XML in place; never rebuild the content in a new document, which drops the original styling.
 
 Legacy `.doc` files must be converted first: `python scripts/office/soffice.py --headless --convert-to docx file.doc`.
 

@@ -267,23 +267,20 @@ pdftk input.pdf rotate 1east output rotated.pdf
 ## Common Tasks
 
 ### Extract Text from Scanned PDFs
-```python
-# Requires: pip install pytesseract pdf2image
-import pytesseract
-from pdf2image import convert_from_path
 
-# Convert PDF to images
-images = convert_from_path('scanned.pdf')
+A scanned PDF has no text layer (`pdftotext` prints nothing), so `file_search` finds nothing in it either; go straight to OCR. Render at 300 dpi and name the languages: Tesseract's default is English only, which turns Bangla into noise. The sandbox has the high-accuracy `ben` and `eng` models.
 
-# OCR each page
-text = ""
-for i, image in enumerate(images):
-    text += f"Page {i+1}:\n"
-    text += pytesseract.image_to_string(image)
-    text += "\n\n"
-
-print(text)
+```bash
+mkdir -p /mnt/data/qa && cd /mnt/data/qa && \
+pdftoppm -r 300 -png /mnt/data/scan.pdf page && \
+for p in page-*.png; do echo "== $p"; tesseract "$p" - -l ben+eng --psm 4 2>/dev/null; done
 ```
+
+OCR of Bangla is a first draft, not the answer: conjuncts, digits and names come out wrong at
+office-scan quality. When the exact wording matters, read the page images themselves with
+`read_file` (at most three in one turn) and correct the OCR text from what you see; mark a word
+you still cannot read as `[?]`. To recreate a scanned page as a Word file, use the docx skill's
+`references/scan.md` instead.
 
 ### Add Watermark
 ```python
@@ -339,7 +336,7 @@ with open("encrypted.pdf", "wb") as output:
 | Extract tables | pdfplumber | `page.extract_tables()` |
 | Create PDFs | reportlab | Canvas or Platypus |
 | Command line merge | qpdf | `qpdf --empty --pages ...` |
-| OCR scanned PDFs | pytesseract | Convert to image first |
+| OCR scanned PDFs | `pdftoppm -r 300` + `tesseract -l ben+eng` | See **Extract Text from Scanned PDFs**; check against the page image |
 | Fill PDF forms | pdf-lib or pypdf (see FORMS.md) | See FORMS.md |
 
 ## Next Steps

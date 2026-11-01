@@ -9,6 +9,7 @@ import type {
   ToolExecuteBatchRequest,
   ToolExecuteResult,
   ToolCallRequest,
+  CodeEnvFile,
 } from '@librechat/agents';
 import type { CodeExecutionContext } from './execution';
 import {
@@ -188,7 +189,7 @@ describe('createToolExecuteHandler', () => {
       expect(capturedConfigs[0]._injected_files).toBeUndefined();
     });
 
-    it('passes session context independently for multiple code execution calls', async () => {
+    it('passes each code execution call the session the one before it left', async () => {
       const capturedConfigs: Record<string, unknown>[] = [];
       const handler = createHandler(capturedConfigs);
 
@@ -232,8 +233,9 @@ describe('createToolExecuteHandler', () => {
       await invokeHandler(handler, toolCalls);
 
       expect(capturedConfigs).toHaveLength(2);
+      expect(capturedConfigs[0].session_id).toBe('session-A');
+      expect(capturedConfigs[1].session_id).toBe(`result-session-${Constants.EXECUTE_CODE}`);
       for (const config of capturedConfigs) {
-        expect(config.session_id).toBe('session-A');
         expect(config._injected_files).toEqual([
           {
             storage_session_id: 'session-A',
@@ -489,6 +491,107 @@ describe('createToolExecuteHandler', () => {
         expect(call.files?.map((file) => file.name)).toEqual(['order.pdf']);
       }
       expect(reads.length + writes.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('sandbox calls in one model step', () => {
+    const script = {
+      id: 'old-ref',
+      resource_id: 'user-1',
+      name: 'qa/build.js.txt',
+      storage_session_id: 'sess-old',
+      kind: 'user',
+    } as CodeEnvFile;
+    const skillFile = {
+      id: 'skill-ref',
+      resource_id: 'skill-1',
+      name: 'skills/pptx/SKILL.md',
+      storage_session_id: 'sess-skill',
+      kind: 'skill',
+      version: 3,
+    } as CodeEnvFile;
+
+    function batchHandler(
+      capturedConfigs: Record<string, unknown>[],
+      readSandboxFile: ToolExecuteOptions['readSandboxFile'] = jest.fn(async () => ({
+        content: 'old',
+      })),
+    ) {
+      const bash = createMockTool(Constants.BASH_TOOL, capturedConfigs);
+      const writeSandboxFile: ToolExecuteOptions['writeSandboxFile'] = jest.fn(async () => ({
+        session_id: 'sess-write',
+        files: [{ id: 'new-ref', name: script.name, storage_session_id: 'sess-write' }],
+      }));
+      const loadTools: ToolExecuteOptions['loadTools'] = jest.fn(async () => ({
+        loadedTools: [bash] as never[],
+        configurable: {
+          fileAuthoringToolNames: new Set<string>(['create_file']),
+          codeEnvAvailable: true,
+          codeExecutionContext: {
+            baseUrl: 'https://code.example.com',
+            codeSessionKey: 'execute_code',
+            executionProfile: 'default',
+            statefulSessions: false,
+          },
+        },
+      }));
+      return createToolExecuteHandler({ loadTools, writeSandboxFile, readSandboxFile });
+    }
+
+    it('mounts what a write beside it just produced, keeping the other session files', async () => {
+      const capturedConfigs: Record<string, unknown>[] = [];
+      const handler = batchHandler(capturedConfigs);
+      const codeSessionContext = { session_id: 'sess-1', files: [script, skillFile] };
+
+      await invokeHandler(handler, [
+        {
+          id: 'call_write',
+          name: 'create_file',
+          args: { path: '/mnt/data/qa/build.js.txt', content: 'new', overwrite: true },
+          codeSessionContext,
+        },
+        {
+          id: 'call_build',
+          name: Constants.BASH_TOOL,
+          args: { command: 'node qa/build.js.txt' },
+          codeSessionContext,
+        },
+      ]);
+
+      const injected = capturedConfigs[0]._injected_files as Array<{
+        id: string;
+        kind?: string;
+        resource_id?: string;
+      }>;
+      expect(injected.find((file) => file.id === 'new-ref')).toMatchObject({
+        kind: 'user',
+        resource_id: 'new-ref',
+      });
+      expect(capturedConfigs[0].session_id).toBe('sess-write');
+      expect(injected.map((file) => file.id).sort()).toEqual(['new-ref', 'skill-ref']);
+      expect(injected.find((file) => file.id === 'skill-ref')?.kind).toBe('skill');
+    });
+
+    it('still runs sandbox reads together', async () => {
+      const release: Array<() => void> = [];
+      const readSandboxFile = jest.fn(
+        () => new Promise<null>((resolve) => release.push(() => resolve(null))),
+      );
+      const handler = batchHandler([], readSandboxFile as ToolExecuteOptions['readSandboxFile']);
+      const toolCalls: ToolCallRequest[] = ['a', 'b'].map((id) => ({
+        id,
+        name: Constants.READ_FILE,
+        args: { path: `/mnt/data/qa/${id}.txt` },
+        codeSessionContext: { session_id: 'sess-1', files: [script] },
+      }));
+
+      const pending = invokeHandler(handler, toolCalls);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      const started = readSandboxFile.mock.calls.length;
+      release.forEach((done) => done());
+      await pending;
+
+      expect(started).toBe(2);
     });
   });
 
@@ -2558,7 +2661,7 @@ describe('createToolExecuteHandler', () => {
           }
 
           expect(session_id).toBe('sess-new');
-          expect(files).toEqual(sandboxFiles);
+          expect(files).toEqual(sandboxFiles.map((file) => expect.objectContaining(file)));
           return { content: 'hello world\n' };
         },
       );
@@ -2579,7 +2682,7 @@ describe('createToolExecuteHandler', () => {
             expect(content).toBe('hello world\n');
           } else {
             expect(session_id).toBe('sess-new');
-            expect(files).toEqual(sandboxFiles);
+            expect(files).toEqual(sandboxFiles.map((file) => expect.objectContaining(file)));
             expect(content).toBe('goodbye world\n');
           }
           return {

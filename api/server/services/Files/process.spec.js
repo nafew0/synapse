@@ -193,6 +193,7 @@ const { convertImage } = require('~/server/services/Files/images');
 const db = require('~/models');
 const {
   processAgentFileUpload,
+  processImageFile,
   processDeleteRequest,
   processFileURL,
   sweepExpiredFiles,
@@ -1398,6 +1399,88 @@ describe('processAgentFileUpload', () => {
         expect.objectContaining({ type: 'image/png' }),
         true,
       );
+    });
+
+    describe('images for an assistant with the sandbox', () => {
+      /**
+       * A scanned office order is read by the model as a picture, but cropping its logo or
+       * signatures, OCR-ing small print, and comparing a render against it all need the file in
+       * /mnt/data as well.
+       */
+      const imageReq = () => {
+        convertImage.mockResolvedValue({ filepath: '/images/upload.png', source: 'local' });
+        return makeReq({ mimetype: 'image/png', ocrConfig: null, path: uploadPath });
+      };
+
+      test('copies the image into the sandbox and still sends it to the provider', async () => {
+        db.getAgent.mockResolvedValueOnce({ id: 'agent_office', tools: ['execute_code'] });
+
+        await processAgentFileUpload({
+          req: imageReq(),
+          res: mockRes,
+          metadata: autoMetadata({ agent_id: 'agent_office' }),
+        });
+
+        expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.execute_code);
+        expect(db.createFile).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'image/png',
+            metadata: expect.objectContaining({ codeEnvRef: expect.anything() }),
+          }),
+          true,
+        );
+      });
+
+      test('copies an image uploaded through the image route', async () => {
+        db.getAgent.mockResolvedValueOnce({ id: 'agent_office', tools: ['execute_code'] });
+
+        await processImageFile({
+          req: imageReq(),
+          res: mockRes,
+          metadata: { file_id: 'img-1', agent_id: 'agent_office', message_file: 'true' },
+        });
+
+        expect(db.createFile).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: expect.objectContaining({ codeEnvRef: expect.anything() }),
+          }),
+          true,
+        );
+      });
+
+      test('keeps the image out of the sandbox for an agent without execute_code', async () => {
+        db.getAgent.mockResolvedValueOnce({ id: 'agent_chat', tools: ['file_search'] });
+
+        await processImageFile({
+          req: imageReq(),
+          res: mockRes,
+          metadata: { file_id: 'img-1', agent_id: 'agent_chat', message_file: 'true' },
+        });
+
+        expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.execute_code);
+        expect(db.createFile).toHaveBeenCalledWith(
+          expect.objectContaining({ metadata: undefined }),
+          true,
+        );
+      });
+
+      test('still saves the image when the sandbox copy fails', async () => {
+        db.getAgent.mockResolvedValueOnce({ id: 'agent_office', tools: ['execute_code'] });
+        routeStrategies({
+          codeEnv: { handleFileUpload: jest.fn().mockRejectedValue(new Error('sandbox down')) },
+        });
+
+        await processImageFile({
+          req: imageReq(),
+          res: mockRes,
+          metadata: { file_id: 'img-1', agent_id: 'agent_office', message_file: 'true' },
+        });
+
+        expect(db.createFile).toHaveBeenCalledWith(
+          expect.objectContaining({ file_id: 'img-1', metadata: undefined }),
+          true,
+        );
+      });
     });
 
     test('falls back to full text when neither retrieval nor a sandbox is reachable', async () => {
