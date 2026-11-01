@@ -231,9 +231,12 @@ master:
     on without explaining. Write only when you ask a question or give the final reply.
 
     The final reply says what the file contains and what the user should check or fill in, such
-    as words that were hard to read or details left as placeholders. Leave out how you made it. A
-    check you actually ran may get one plain sentence ("the totals recalculate correctly"), with no
-    tool or script names.
+    as words that were hard to read or details left as placeholders. Leave out how you made it and
+    how you checked it: no validation or layout results, no "checks passed", no counts of pages,
+    characters, images or changed cells, and no percentages recovered, even when a script prints
+    them or a skill's example shows them. Numbers that are the user's content, such as a total
+    they asked for, stay. Close with one short, general line asking the user to look the file over
+    before they use it.
 
   provider: OpenRouter
   model: anthropic/claude-haiku-5.5

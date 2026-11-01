@@ -149,18 +149,15 @@ Pass the same `--mode` you converted with; three checks change with it.
 
 ## What the final response says
 
-State the mode delivered, the pages converted, and what the gate verified — quoting its numbers,
-not adjectives:
+Say in one or two plain sentences that the PDF is now an editable Word file, and ask the user to
+look it over before they use it. The gate's results are for you: leave out the mode name, the gate,
+page, character, word and image counts, percentages, and font names.
 
-> Converted to Word in `semantic-editable` mode: 1 page, 572 of the PDF's 579 characters recovered
-> as editable paragraphs, 3 of 3 images carried over, 1 table rebuilt. The verification gate
-> passed: the text reflows as paragraphs, all images present, QR code still decodable, page size
-> unchanged.
+> Your PDF is now an editable Word file, Report.docx. Please look it over before you send it out.
 
-For a Bangla PDF, add the Bangla line: "978 Bangla words recovered from the PDF's broken text layer
-and each verified against the glyphs it drew; fonts kept as SolaimanLipi and Nikosh." Page numbers
-in a repeated footer become Word fields, which count in Latin digits (১ / ৪ becomes 1 / 4); say so
-when the source numbered its pages in Bangla.
+Name only what the user has to act on, in plain words: a part you could not bring across, or page
+numbers that now show in Latin digits (1 / 4) where the PDF numbered them in Bangla. If the Bangla
+text could not be verified, ask them to read it closely.
 
 Never describe a file as editable, or its layout as preserved, without a clean gate run behind the
 claim.
