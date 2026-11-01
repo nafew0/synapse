@@ -13,6 +13,8 @@ const {
   getUserMCPAuthMap,
   firecrawlToolNames,
   fileAuthoringToolNames: chatFileToolNames,
+  READ_DOCUMENT_TOOL_NAME,
+  isDocumentOcrAllowed,
   isFirecrawlTool,
   isFirecrawlConfigured,
   loadToolDefinitions,
@@ -535,6 +537,7 @@ const nativeTools = new Set([
   Tools.memory,
   ...firecrawlToolNames,
   ...chatFileToolNames,
+  READ_DOCUMENT_TOOL_NAME,
 ]);
 
 const mcpServerPinPrefix = `${Constants.mcp_server}${Constants.mcp_delimiter}`;
@@ -669,6 +672,13 @@ async function loadToolDefinitionsWrapper({
     }
     if (isFirecrawlTool(tool)) {
       return isFirecrawlConfigured();
+    }
+    if (tool === READ_DOCUMENT_TOOL_NAME) {
+      return isDocumentOcrAllowed({
+        config: req.config?.documentOcr,
+        tenantId: req.user?.tenantId,
+        agentId: agent.id,
+      });
     }
     if (tool === Tools.memory) {
       return checkCapability(AgentCapabilities.memory);

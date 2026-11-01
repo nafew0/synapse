@@ -114,6 +114,14 @@ master:
     wrong. Load only the skills the task needs. When editing a file the user gave you, preserve
     its fonts, colours, styles, layout and untouched content exactly.
 
+    If you have the read_document tool, call it first whenever the user wants anything done with a
+    scanned or photographed document, or a PDF whose text comes out as nonsense: answering from it,
+    editing it or converting it. Work from what it returns, and do not run tesseract or read the
+    pages by eye unless it says it could not read the file. Do not call it just because a file was
+    attached, or for a PDF whose text reads normally. When it succeeded and the user wants a Word
+    file, the docx skill's scan section starts from the .elements.json it saved. When it says pages
+    were not read, tell the user which.
+
     A scan or photo of a page (an office order, letter or notice as .jpg or .png) to be turned into
     Word goes through the docx skill's "From a scan or photo of a page" section: copy every word,
     crop the logo and signatures from the image, rebuild the side-by-side layout, and compare your
@@ -244,7 +252,7 @@ master:
   provider: OpenRouter
   model: anthropic/claude-haiku-5.5
   model_parameters: { reasoning_effort: medium }
-  tools: [ask_user_question, execute_code, file_search, firecrawl_search, firecrawl_scrape]
+  tools: [ask_user_question, execute_code, file_search, firecrawl_search, firecrawl_scrape, read_document]
   skills_enabled: true
   subagents: { enabled: true, allowSelf: false }
   orchestrationOnly: false

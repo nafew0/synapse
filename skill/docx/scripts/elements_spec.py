@@ -1,0 +1,428 @@
+"""Turn read_document's elements into the spec letter.py builds from.
+
+    python3 elements_spec.py <name.elements.json> <spec.json> [--scan <page image>] [--crops <dir>]
+
+The text comes from the elements as they are, so no word is retyped. What the elements cannot say
+is printed as the report, for you to settle before building:
+
+  crop: logo x0,y0,x1,y1      a picture on the page, its box in the scan's pixels (needs --scan)
+  crop: sig1 (box needed)     a picture with no position: take its box from the page image
+
+Each picture's block already points at <crops>/<name>.png, so run crop.py with those names. A
+letterhead, memo row or signature that came out wrong is fixed in the spec, not by retyping it all.
+"""
+
+import argparse
+import json
+import re
+import sys
+from html.parser import HTMLParser
+from pathlib import Path
+
+DEFAULT_CROPS = "/mnt/data/qa"
+MEMO = re.compile(r"^\s*(?:স্মারক|সূত্র|Memo\b|Ref(?:erence)?\b)", re.IGNORECASE)
+DATE_LABEL = re.compile(r"^\s*(?:তারিখ|Date\b)", re.IGNORECASE)
+DATE_INSIDE = re.compile(r"(?:তারিখ|Date\b)", re.IGNORECASE)
+DATE_ONLY = re.compile(r"^[০-৯\d]{1,2}\s+\S+\s+[০-৯\d]{4}(?:\s*\S*)?$")
+LIST_NUMBER = re.compile(r"^\s*([০-৯\d]+(?:\s*[-–]\s*[০-৯\d]+)?\s*[।)]|[০-৯\d]+\.(?=\s)|[ক-হ]\s*[।)]|[•·])\s*(.*)$", re.DOTALL)
+CELL_NUMBER = re.compile(r"\s+(?=[০-৯\d]{1,2}[.।]\s)")
+HANDWRITTEN_DATE = re.compile(r"^[০-৯\d]{1,2}[/.-][০-৯\d]{1,2}[/.-][০-৯\d]{2,4}$")
+SHORT_LINE = 70
+MAX_SIGNATURE_LINES = 5
+PICTURE_TYPES = {"Image", "Figure", "Picture"}
+DROPPED_TYPES = {"PageBreak", "PageNumber"}
+TEXT_TYPES = {"NarrativeText", "UncategorizedText", "ListItem", "Form"}
+MIN_PICTURE_SHARE = 0.002
+RIGHT_SIDE_SHARE = 0.55
+CENTER_TOLERANCE = 0.05
+HEAD_SEARCH = 14
+
+
+class TableParser(HTMLParser):
+    """Rows of cells from Unstructured's table HTML, keeping spans and header cells."""
+
+    def __init__(self):
+        super().__init__()
+        self.rows = []
+        self.cell = None
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "tr":
+            self.rows.append([])
+        elif tag in ("td", "th"):
+            if not self.rows:
+                self.rows.append([])
+            values = dict(attrs)
+            self.cell = {
+                "text": "",
+                "rowspan": int(values.get("rowspan") or 1),
+                "colspan": int(values.get("colspan") or 1),
+                "header": tag == "th",
+            }
+            self.rows[-1].append(self.cell)
+        elif tag == "br" and self.cell is not None:
+            self.cell["text"] += "\n"
+
+    def handle_endtag(self, tag):
+        if tag in ("td", "th"):
+            if self.cell is not None:
+                self.cell["text"] = re.sub(r"[ \t]+", " ", self.cell["text"]).strip()
+            self.cell = None
+
+    def handle_data(self, data):
+        if self.cell is not None:
+            self.cell["text"] += data
+
+
+def table_rows(html):
+    parser = TableParser()
+    parser.feed(html)
+    rows = [row for row in parser.rows if row]
+    for row in rows:
+        for cell in row:
+            if LIST_NUMBER.match(cell["text"]):
+                cell["text"] = CELL_NUMBER.sub("\n", cell["text"])
+    return rows
+
+
+def text_of(element):
+    return (element.get("text") or "").strip()
+
+
+def is_memo(element):
+    return bool(MEMO.search(text_of(element))) and len(text_of(element)) <= SHORT_LINE * 2
+
+
+def is_date_label(element):
+    return bool(DATE_LABEL.search(text_of(element))) and len(text_of(element)) <= SHORT_LINE
+
+
+def is_short(element):
+    return element.get("type") not in PICTURE_TYPES and 0 < len(text_of(element)) <= SHORT_LINE
+
+
+def layout_box(element):
+    """The element's box and page size as the service measured them, or None."""
+    coordinates = (element.get("metadata") or {}).get("coordinates") or {}
+    points = coordinates.get("points")
+    if not points or not coordinates.get("layout_width"):
+        return None
+    xs, ys = [p[0] for p in points], [p[1] for p in points]
+    return min(xs), min(ys), max(xs), max(ys), coordinates["layout_width"], coordinates.get("layout_height") or 1
+
+
+def boxes_overlap(a, b):
+    box_a, box_b = layout_box(a), layout_box(b)
+    if not box_a or not box_b:
+        return False
+    return box_a[0] < box_b[2] and box_b[0] < box_a[2] and box_a[1] < box_b[3] and box_b[1] < box_a[3]
+
+
+def squeeze(text):
+    return re.sub(r"\s+", "", text)
+
+
+def without_echoes(elements):
+    """Drops a line the service returned twice: alone, and again inside a neighbour it overlaps.
+
+    The same words elsewhere on the page are a real repeat, such as a date on two memo rows.
+    """
+    kept = []
+    elements = list(elements)
+    for index, element in enumerate(elements):
+        text = squeeze(text_of(element))
+        following = elements[index + 1] if index + 1 < len(elements) else None
+        # Returned again as the first line of the next element: keep this one, cut that line.
+        if following is not None and text and "\n" in text_of(following):
+            first, rest = text_of(following).split("\n", 1)
+            if squeeze(first) == text:
+                elements[index + 1] = {**following, "text": rest}
+                kept.append(element)
+                continue
+        neighbours = elements[max(index - 1, 0) : index] + elements[index + 1 : index + 2]
+        echoed = "\n" not in text_of(element) and any(
+            "\n" in text_of(other)
+            and boxes_overlap(element, other)
+            and text in (squeeze(line) for line in text_of(other).split("\n"))
+            for other in neighbours
+        )
+        if not (text and echoed):
+            kept.append(element)
+    return kept
+
+
+def split_element(element):
+    """One element per block. The service often returns a list, or a whole signature, as one."""
+    text = text_of(element)
+    if element.get("type") not in TEXT_TYPES or "\n" not in text:
+        if element.get("type") in TEXT_TYPES and LIST_NUMBER.match(text):
+            return [{**element, "type": "ListItem"}]
+        return [element]
+
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    # Mostly short lines are separate lines, such as a letterhead; long ones are one wrapped paragraph.
+    all_short = sum(len(line) <= SHORT_LINE for line in lines) * 2 > len(lines)
+    blocks, paragraph, item = [], [], None
+
+    def emit(kind, content):
+        blocks.append({**element, "type": kind, "text": content})
+
+    def flush():
+        nonlocal paragraph, item
+        if item is not None:
+            emit("ListItem", " ".join(item))
+        elif paragraph:
+            emit("NarrativeText", " ".join(paragraph))
+        paragraph, item = [], None
+
+    for line in lines:
+        if LIST_NUMBER.match(line):
+            flush()
+            item = [line]
+        elif (MEMO.match(line) or DATE_LABEL.match(line)) and not paragraph:
+            flush()
+            emit("NarrativeText", line)
+        elif item is not None:
+            item.append(line)
+        elif all_short:
+            flush()
+            emit("NarrativeText", line)
+        else:
+            paragraph.append(line)
+    flush()
+    return blocks
+
+
+def prepare(elements):
+    elements = [e for e in elements if e.get("type") not in DROPPED_TYPES and not is_speck(e)]
+    return [block for element in without_echoes(elements) for block in split_element(element)]
+
+
+def is_speck(element):
+    """A dot on the scan, returned as a picture."""
+    box = layout_box(element)
+    if element.get("type") not in PICTURE_TYPES or not box:
+        return False
+    x0, y0, x1, y1, width, height = box
+    return (x1 - x0) * (y1 - y0) / (width * height) < MIN_PICTURE_SHARE
+
+
+def is_centered(element):
+    box = layout_box(element)
+    return bool(box) and abs((box[0] + box[2]) / 2 / box[4] - 0.5) <= CENTER_TOLERANCE
+
+
+def is_right_side(element):
+    box = layout_box(element)
+    return bool(box) and box[0] / box[4] >= RIGHT_SIDE_SHARE
+
+
+def box_of(element, scan_size):
+    """The element's box in the scan's pixels, or None when it has no position or no scan was given."""
+    coordinates = (element.get("metadata") or {}).get("coordinates") or {}
+    points = coordinates.get("points")
+    if not points or not scan_size:
+        return None
+    x_scale = scan_size[0] / (coordinates.get("layout_width") or scan_size[0])
+    y_scale = scan_size[1] / (coordinates.get("layout_height") or scan_size[1])
+    xs, ys = [p[0] * x_scale for p in points], [p[1] * y_scale for p in points]
+    return [round(min(xs)), round(min(ys)), round(max(xs)), round(max(ys))]
+
+
+class SpecBuilder:
+    def __init__(self, elements, scan_size, crops_dir):
+        self.source = elements
+        self.elements = prepare(elements)
+        self.scan_size = scan_size
+        self.crops_dir = crops_dir
+        self.blocks = []
+        self.crops = []
+        self.signatures = 0
+        self.index = 0
+
+    def crop(self, name, element):
+        box = box_of(element, self.scan_size)
+        self.crops.append({"name": name, "box": box})
+        return f"{self.crops_dir}/{name}.png"
+
+    def letterhead(self):
+        """Everything above the first memo row, else the run of titles before the document's title."""
+        memo_at = next(
+            (i for i, e in enumerate(self.elements[:HEAD_SEARCH]) if is_memo(e) or is_date_label(e)),
+            None,
+        )
+        if memo_at is not None:
+            run = self.elements[:memo_at]
+        else:
+            run = []
+            for element in self.elements:
+                if element.get("type") not in ("Title", "Header") and element.get("type") not in PICTURE_TYPES:
+                    break
+                run.append(element)
+            run = run[:-1] if len(run) >= 2 else []
+        lines = [text_of(e) for e in run if e.get("type") not in PICTURE_TYPES and text_of(e)]
+        pictures = [e for e in run if e.get("type") in PICTURE_TYPES]
+        if lines or pictures:
+            block = {"type": "letterhead", "lines": []}
+            for index, line in enumerate(lines):
+                block["lines"].append({"text": line, "size": 14 if index == 0 else 11, "bold": index == 0})
+            if pictures:
+                block["logo"] = self.crop("logo", pictures[0])
+            self.blocks.append(block)
+        self.index = len(run)
+
+    def memo(self):
+        """A memo row: the number on the left, the date on the right, in one element or several."""
+        left, right = "", []
+        while self.index < len(self.elements):
+            element = self.elements[self.index]
+            text = text_of(element)
+            if not left and is_memo(element):
+                match = DATE_INSIDE.search(text)
+                left = text[: match.start()].strip() if match else text
+                if match:
+                    right.append(text[match.start() :].strip())
+            elif is_date_label(element) or (right and DATE_ONLY.match(text)):
+                right.append(text)
+            else:
+                break
+            self.index += 1
+        if left or right:
+            self.blocks.append({"type": "memo", "left": left, "right": right})
+            return True
+        return False
+
+    def signature(self, element=None):
+        """A signature and the short printed lines under it. The line just above is its intro.
+
+        The service often returns no picture for the handwriting, so the crop may need a box.
+        """
+        self.signatures += 1
+        block = {"type": "signature", "image": self.crop(f"sig{self.signatures}", element or {}), "lines": []}
+        previous = self.blocks[-1] if self.blocks else None
+        if previous and previous.get("type") == "paragraph" and len(previous["text"]) <= SHORT_LINE:
+            block["intro"] = self.blocks.pop()["text"]
+        while (
+            self.index < len(self.elements)
+            and len(block["lines"]) < MAX_SIGNATURE_LINES
+            and self.elements[self.index].get("type") in ("NarrativeText", "UncategorizedText")
+            and is_short(self.elements[self.index])
+            and not is_memo(self.elements[self.index])
+            and not is_date_label(self.elements[self.index])
+        ):
+            line = text_of(self.elements[self.index])
+            self.index += 1
+            # A handwritten date beside the signature is inside its crop already.
+            if not (HANDWRITTEN_DATE.match(line) and not block["lines"]):
+                block["lines"].append(line)
+        self.blocks.append(block)
+
+    def picture(self, element, position):
+        """A picture low on the page beside text is a signature; anything else stays a picture."""
+        following = self.elements[position + 1] if position + 1 < len(self.elements) else None
+        if following is not None and is_short(following):
+            self.signature(element)
+            return
+        self.blocks.append({"type": "image", "path": self.crop(f"image{position}", element)})
+
+    def list_items(self):
+        items = []
+        while self.index < len(self.elements) and self.elements[self.index].get("type") == "ListItem":
+            text = text_of(self.elements[self.index])
+            match = LIST_NUMBER.match(text)
+            items.append([match.group(1).strip(), match.group(2).strip()] if match else ["•", text])
+            self.index += 1
+        self.blocks.append({"type": "list", "items": items})
+
+    def body(self):
+        titled = any(block["type"] == "title" for block in self.blocks)
+        while self.index < len(self.elements):
+            position = self.index
+            element = self.elements[position]
+            kind = element.get("type")
+            text = text_of(element)
+            if kind == "ListItem":
+                self.list_items()
+                continue
+            if text and (is_memo(element) or is_date_label(element)) and self.memo():
+                continue
+            if kind in ("NarrativeText", "UncategorizedText") and is_short(element) and is_right_side(element):
+                self.signature()
+                continue
+            self.index += 1
+            if kind in PICTURE_TYPES:
+                self.picture(element, position)
+            elif kind == "Table":
+                html = (element.get("metadata") or {}).get("text_as_html")
+                rows = table_rows(html) if html else []
+                block = {"type": "table", "rows": rows} if rows else {"type": "paragraph", "text": text}
+                self.blocks.append(block)
+            elif not text:
+                continue
+            elif kind == "Title" and not titled:
+                self.blocks.append({"type": "title", "text": text})
+                titled = True
+            elif kind == "Title":
+                block = {"type": "heading", "text": text, "bold": True}
+                if is_centered(element):
+                    block["align"] = "center"
+                self.blocks.append(block)
+            elif kind in ("Header", "Footer"):
+                # A running head repeats on every page; the first is enough.
+                if not any(block.get("text") == text for block in self.blocks):
+                    block = {"type": "paragraph", "text": text, "size": 9, "align": "left"}
+                    if is_centered(element):
+                        block["align"] = "center"
+                    self.blocks.append(block)
+            else:
+                self.blocks.append({"type": "paragraph", "text": text})
+
+    def build(self):
+        self.letterhead()
+        self.memo()
+        self.body()
+        pages = [int((e.get("metadata") or {}).get("page_number") or 1) for e in self.source] or [1]
+        return {"pages": max(pages), "blocks": self.blocks}
+
+
+def image_size(path):
+    from PIL import Image
+
+    with Image.open(path) as image:
+        return image.size
+
+
+def convert(elements, scan_size=None, crops_dir=DEFAULT_CROPS):
+    builder = SpecBuilder(elements, scan_size, crops_dir)
+    return builder.build(), builder.crops
+
+
+def main(argv):
+    parser = argparse.ArgumentParser(description="Turn read_document's elements into a letter.py spec.")
+    parser.add_argument("elements")
+    parser.add_argument("spec")
+    parser.add_argument("--scan", help="the page image, to turn element positions into crop boxes")
+    parser.add_argument("--crops", default=DEFAULT_CROPS, help="where crop.py writes the pictures")
+    args = parser.parse_args(argv)
+
+    elements = json.loads(Path(args.elements).read_text(encoding="utf-8"))
+    spec, crops = convert(elements, image_size(args.scan) if args.scan else None, args.crops)
+    Path(args.spec).write_text(json.dumps(spec, ensure_ascii=False, indent=1), encoding="utf-8")
+
+    kinds = {}
+    for block in spec["blocks"]:
+        kinds[block["type"]] = kinds.get(block["type"], 0) + 1
+    print(f"spec: {args.spec}")
+    print(f"pages: {spec['pages']}")
+    print("check against the page: memo numbers and anything handwritten; the service can misread those")
+    print("blocks: " + ", ".join(f"{count} {kind}" for kind, count in kinds.items()))
+    for crop in crops:
+        box = ",".join(str(value) for value in crop["box"]) if crop["box"] else "(box needed)"
+        print(f"crop: {crop['name']} {box}")
+    if not crops:
+        print("crop: none")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

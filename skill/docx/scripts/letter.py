@@ -24,6 +24,8 @@ The spec is data, not code. Bangla goes in the complex-script font slot automati
     {"type": "address", "lines": ["...", "..."]},
     {"type": "heading", "text": "সদয় অবগতি ...", "underline": true},
     {"type": "list", "items": [["১।", "সচিব, ইউজিসি, ঢাকা।"], ["২-১২।", "..."]]},
+    {"type": "table", "rows": [[{"text": "...", "header": true, "colspan": 2}], [{"text": "..."}, {"text": "..."}]],
+     "widths_cm": [8, 9]},
     {"type": "image", "path": "...", "width_cm": 4, "align": "center"},
     {"type": "spacer", "pt": 6}
   ]
@@ -288,6 +290,41 @@ def numbered_list(doc, block, style):
         add_text(paragraph, f"{number}\t{text}", style, block)
 
 
+def data_table(doc, block, style):
+    """A ruled table. A cell may span rows and columns; a later row skips the columns one covers."""
+    rows = block.get("rows", [])
+    placed, taken = [], set()
+    for row_index, row in enumerate(rows):
+        column = 0
+        for cell in row:
+            while (row_index, column) in taken:
+                column += 1
+            down, across = int(cell.get("rowspan", 1)), int(cell.get("colspan", 1))
+            taken.update((row_index + r, column + c) for r in range(down) for c in range(across))
+            placed.append((row_index, column, down, across, cell))
+            column += across
+    columns = max((c + 1 for _, c in taken), default=1)
+    widths = block.get("widths_cm") or [style.text_width_cm / columns] * columns
+    table = doc.add_table(rows=len(rows), cols=columns)
+    table.style = "Table Grid"
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.autofit = False
+    for column, width in zip(table.columns, widths):
+        column.width = Cm(float(width))
+    for row in table.rows:
+        for cell, width in zip(row.cells, widths):
+            cell.width = Cm(float(width))
+    for row_index, column, down, across, cell in placed:
+        target = table.cell(row_index, column)
+        if down > 1 or across > 1:
+            target = target.merge(table.cell(row_index + down - 1, column + across - 1))
+        lines = str(cell.get("text", "")).split("\n")
+        for index, line in enumerate(lines):
+            paragraph = shape(cell_paragraph(target, index == 0), style, block, after=0)
+            add_text(paragraph, line, style, block, bold=bool(cell.get("header")) or block.get("bold", False))
+    doc.add_paragraph().paragraph_format.space_after = style.gap(block.get("space_after", 4))
+
+
 def build(spec, out_path, style):
     doc = Document()
     section = doc.sections[0]
@@ -323,6 +360,8 @@ def build(spec, out_path, style):
             lines_block(doc, block, style)
         elif kind == "list":
             numbered_list(doc, block, style)
+        elif kind == "table":
+            data_table(doc, block, style)
         elif kind == "image":
             paragraph = shape(doc.add_paragraph(), style, block, align="center", after=4)
             picture(paragraph, block["path"], block.get("width_cm") or natural_width_cm(block["path"]))

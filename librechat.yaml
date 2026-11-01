@@ -292,6 +292,17 @@ fileConfig:
 #   baseURL: 'https://api.mistral.ai/v1'
 #   mistralModel: 'mistral-ocr-latest'
 
+# The Office Assistant's document reader (tool `read_document`). Sends scanned pages to Unstructured
+# (Parse API), so it is off until an assistant and an institution are both listed.
+# documentOcr:
+#   apiUrl: 'https://transform.unstructured.io'
+#   apiKey: '${UNSTRUCTURED_API_KEY}'
+#   profile: 'best'
+#   maxPages: 50
+#   concurrency: 5
+#   agents: ['agent_office_assistant']
+#   enabledTenants: []
+
 speech:
   stt:
     openai:

@@ -6,11 +6,10 @@ import {
   excelMimeTypes,
   defaultAutoPreparation,
 } from 'librechat-data-provider';
-import type { PDFPageProxy, TextItem } from 'pdfjs-dist/types/src/display/api';
 import type { FilePageScan } from 'librechat-data-provider';
 import type { MistralOCRUploadResult } from '~/types';
-import type { PageKind, PageOps, PageSignals } from '../scan/classify';
-import { classifyPage, measureOperators, summarizeScan } from '../scan/classify';
+import { summarizeScan } from '../scan/classify';
+import { readPdfPages } from '../scan/read';
 import { assertSafeZipSize } from './zipSafety';
 
 type ParsedDocument = {
@@ -107,43 +106,18 @@ function getParserForMimeType(mimetype: string): FileParseFn | undefined {
   return undefined;
 }
 
-/** Reads a page's drawing operators. If they cannot be read, assume a picture rather than miss a scan. */
-async function measurePage(page: PDFPageProxy, ops: PageOps): Promise<Omit<PageSignals, 'text'>> {
-  try {
-    const { fnArray, argsArray } = await page.getOperatorList();
-    const [x0, y0, x1, y1] = page.view;
-    return measureOperators({ fnArray, argsArray, ops, pageArea: (x1 - x0) * (y1 - y0) });
-  } catch {
-    return { imageCoverage: 1, hiddenText: false, pathCount: 0 };
-  }
-}
-
-/** Parses PDF, returns the text inside and a verdict on each page, in one walk over the pages. */
+/** Parses PDF, returns the text inside and a verdict on each page. */
 async function pdfToText(
   file: Express.Multer.File,
   minCharsPerPage: number,
 ): Promise<ParsedDocument> {
-  // Imported inline so that Jest can test other routes without failing due to loading ESM
-  const { getDocument, OPS } = await import('pdfjs-dist/legacy/build/pdf.mjs');
-
   const data = new Uint8Array(await fs.promises.readFile(file.path));
-  const pdf = await getDocument({ data }).promise;
-
-  let fullText = '';
-  const kinds: PageKind[] = [];
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const textContent = await page.getTextContent();
-    const strings = textContent.items
-      .filter((item): item is TextItem => !('type' in item))
-      .map((item) => item.str);
-    fullText += strings.join(' ') + '\n';
-    const measured = await measurePage(page, OPS);
-    kinds.push(classifyPage({ text: strings.join(''), ...measured }, minCharsPerPage));
-    page.cleanup();
-  }
-
-  return { text: fullText, pages: pdf.numPages, scan: summarizeScan(kinds) };
+  const { texts, kinds } = await readPdfPages(data, minCharsPerPage);
+  return {
+    text: texts.map((text) => `${text}\n`).join(''),
+    pages: kinds.length,
+    scan: summarizeScan(kinds),
+  };
 }
 
 /** Parses Word document, returns text inside. */
