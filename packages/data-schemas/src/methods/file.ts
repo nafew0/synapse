@@ -28,6 +28,9 @@ function withOwnerScope<T extends FilterQuery<IMongoFile>>(
 }
 
 /** Factory function that takes mongoose instance and returns the file methods */
+/** Largest `qa/` working file restored to the sandbox on a later request. */
+const MAX_WORKING_FILE_BYTES = 256 * 1024;
+
 export function createFileMethods(mongoose: typeof import('mongoose')): {
   findFileById: (file_id: string, options?: Record<string, unknown>) => Promise<IMongoFile | null>;
   getFiles: (
@@ -45,6 +48,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     conversationId: string,
     threadFileIds?: string[],
     ownerScope?: FileOwnerScope,
+    threadMessageIds?: string[],
   ) => Promise<IMongoFile[]>;
   getUserCodeFiles: (fileIds: string[], ownerScope: FileOwnerScope) => Promise<IMongoFile[]>;
   claimCodeFile: (data: {
@@ -226,6 +230,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     conversationId: string,
     threadFileIds?: string[],
     ownerScope?: FileOwnerScope,
+    threadMessageIds?: string[],
   ): Promise<IMongoFile[]> {
     if (!conversationId) {
       return [];
@@ -238,7 +243,9 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
      * the current conversation branch, not orphaned files from other
      * branches or deleted messages.
      */
-    if (!threadFileIds || threadFileIds.length === 0) {
+    const fileIds = threadFileIds ?? [];
+    const messageIds = threadMessageIds ?? [];
+    if (fileIds.length === 0 && messageIds.length === 0) {
       return [];
     }
 
@@ -247,10 +254,26 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         {
           conversationId,
           context: FileContext.execute_code,
-          file_id: { $in: threadFileIds },
-          $or: [
-            { 'metadata.codeEnvRef': { $exists: true } },
-            { 'metadata.codeEnvRefs': { $exists: true } },
+          $and: [
+            {
+              $or: [
+                { file_id: { $in: fileIds } },
+                /** Working files (`qa/`) are never message attachments, so only their message
+                 *  ties them to this branch. A follow-up needs its build script, spec and crops;
+                 *  the size cap leaves page renders behind. */
+                {
+                  filename: /^qa\//,
+                  messageId: { $in: messageIds },
+                  bytes: { $lte: MAX_WORKING_FILE_BYTES },
+                },
+              ],
+            },
+            {
+              $or: [
+                { 'metadata.codeEnvRef': { $exists: true } },
+                { 'metadata.codeEnvRefs': { $exists: true } },
+              ],
+            },
           ],
         },
         ownerScope,

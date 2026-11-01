@@ -62,8 +62,18 @@ def test_crop_read_writes_two_enlarged_halves(scan, tmp_path):
     result = run('crop.py', scan, tmp_path / 'qa', '--read', cwd=tmp_path)
 
     assert result.returncode == 0
-    top = Image.open(tmp_path / 'qa' / 'read-top.png')
-    assert top.width == 1200
+    top = Image.open(tmp_path / 'qa' / 'read-top.jpg')
+    assert top.format == 'JPEG' and top.width == 1200
+
+
+def test_crop_read_caps_a_high_resolution_page_under_the_read_limit(tmp_path):
+    Image.effect_noise((1240, 1754), 40).convert('RGB').save(tmp_path / 'page.png')
+
+    run('crop.py', tmp_path / 'page.png', tmp_path / 'qa', '--read', cwd=tmp_path)
+
+    path = tmp_path / 'qa' / 'read-top.jpg'
+    assert max(Image.open(path).size) <= 1568
+    assert path.stat().st_size < 1024 * 1024
 
 
 def spec_for(scan_dir, body_paragraphs=1):

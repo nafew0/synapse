@@ -132,3 +132,15 @@ def test_recalc_writes_values_without_rewriting_the_workbook(tmp_path):
     with zipfile.ZipFile(tmp_path / 'edited.xlsx') as archive:
         assert 'fullCalcOnLoad="1"' in archive.read('xl/workbook.xml').decode()
         assert 'Arial' in archive.read('xl/styles.xml').decode()
+
+
+def test_outline_shows_addresses_formulas_and_risks(tmp_path):
+    workbook(tmp_path / 'original.xlsx')
+    run('cells.py', 'original.xlsx', 'edited.xlsx', '--set', 'Budget!B4==SUM(B2:B3)', cwd=tmp_path)
+
+    result = run('outline.py', 'edited.xlsx', cwd=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert 'sparklines: 1' in result.stdout and 'UNSAFE' in result.stdout
+    assert 'B4: =SUM(B2:B3)' in result.stdout
+    assert 'A2: ICT' in result.stdout

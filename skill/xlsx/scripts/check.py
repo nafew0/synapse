@@ -16,6 +16,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+from openpyxl import load_workbook
 from PIL import Image
 
 SCRIPTS = Path(__file__).resolve().parent
@@ -59,6 +60,16 @@ def render_pages(workbook, out_path):
         return out_path, total
 
 
+def computed_lines(workbook, refs):
+    """Each --formula cell's result, so nobody has to work it out by hand."""
+    values = load_workbook(workbook, data_only=True)
+    lines = []
+    for ref in refs:
+        sheet, _, cell = ref.rpartition("!")
+        lines.append(f"  {ref} = {values[sheet.strip(chr(39))][cell].value!r}")
+    return lines
+
+
 def main(argv):
     parser = argparse.ArgumentParser(description="Recalculate a workbook and run every gate on it.")
     parser.add_argument("workbook", type=Path)
@@ -86,6 +97,7 @@ def main(argv):
         calc = parse_json(out) or {}
         if calc.get("status") == "success":
             report.append(f"calculations: success, {len(calc.get('checked', []))} checked")
+            report.extend(computed_lines(args.workbook, args.formula))
         else:
             failed = True
             report.append(f"calculations: FAILED {'; '.join(calc.get('failures', [])) or (out or err)[-400:]}")

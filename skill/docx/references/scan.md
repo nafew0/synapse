@@ -16,7 +16,7 @@ Make the reading copies, in a call of its own:
 mkdir -p /mnt/data/qa && cd /mnt/data && file <scan> && python3 /mnt/data/skills/docx/scripts/crop.py <scan> qa --read
 ```
 
-Then, in one turn, read three images: `read_file /mnt/data/<scan>`, `/mnt/data/qa/read-top.png` and `/mnt/data/qa/read-bottom.png`. The halves are the page enlarged 2x, so read every word from them; use the whole scan for the layout and for the crop boxes, in the scan's own pixels (its size is in the `file` output). If the scan is not in `/mnt/data`, transcribe from the picture in the conversation, skip the crops, and say in one line that the logo and signatures were left out.
+Then, in one turn, read three images: `read_file /mnt/data/<scan>`, `/mnt/data/qa/read-top.jpg` and `/mnt/data/qa/read-bottom.jpg`. The halves are the page enlarged 2x, so read every word from them; use the whole scan for the layout and for the crop boxes, in the scan's own pixels (its size is in the `file` output). If the scan is not in `/mnt/data`, transcribe from the picture in the conversation, skip the crops, and say in one line that the logo and signatures were left out.
 
 Write down every word: letterhead, memo number, both dates, title, body, signature blocks, addressee, the second memo line, and every copy-list entry with its own numbering (`২-১২।` stays one entry). Keep Bangla digits as Bangla digits. A handwritten digit you cannot read becomes `[?]`; printed text you can read is copied, not marked. Do not run tesseract: on these scans it returns noise.
 

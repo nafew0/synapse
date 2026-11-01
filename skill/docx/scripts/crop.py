@@ -3,8 +3,8 @@
     python3 crop.py <scan> <out_dir> name=x0,y0,x1,y1 [name=x0,y0,x1,y1 ...]
     python3 crop.py <scan> <out_dir> --read
 
---read writes the page as two overlapping halves enlarged 2x (read-top.png and
-read-bottom.png), so small print is easier to read; read them together with the scan.
+--read writes the page as two overlapping halves enlarged up to 2x (read-top.jpg and
+read-bottom.jpg), so small print is easier to read; read them together with the scan.
 
 Coordinates are pixels in the scan as given (`file <scan>` prints its size). Each box is
 padded a little, trimmed to the ink inside it, given a pure white background, and saved
@@ -19,6 +19,8 @@ from PIL import Image, ImageOps
 
 PAD = 6
 INK = 200
+# Vision models downsample past this, and read_file refuses images over 1 MB.
+READ_EDGE = 1568
 WHITE = 225
 
 
@@ -72,9 +74,11 @@ def reading_halves(scan, out_dir):
     halves = {"read-top": (0, 0, scan.width, middle + overlap), "read-bottom": (0, middle - overlap, scan.width, scan.height)}
     for name, box in halves.items():
         half = scan.crop(box)
-        half = half.resize((half.width * 2, half.height * 2), Image.LANCZOS)
-        path = out_dir / f"{name}.png"
-        half.save(path)
+        scale = min(2, READ_EDGE / max(half.size))
+        if scale > 1:
+            half = half.resize((round(half.width * scale), round(half.height * scale)), Image.LANCZOS)
+        path = out_dir / f"{name}.jpg"
+        half.save(path, quality=85)
         print(f"{name}: {path} (scan rows {box[1]}-{box[3]})")
     return 0
 

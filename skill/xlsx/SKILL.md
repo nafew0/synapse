@@ -32,13 +32,16 @@ license: Proprietary. LICENSE.txt has complete terms
 
 ## Check in one call
 
-After every save, run all the gates together:
+Edit and check in one call, chained with `&&`:
 
 ```bash
-python3 /mnt/data/skills/xlsx/scripts/check.py /mnt/data/<output>.xlsx \
-  --original /mnt/data/<their workbook>.xlsx --allow 'Sheet!E3:E10' --allow 'Sheet!A10:D10' \
-  --formula 'Sheet!B10' --expect 'Sheet!B10=1245'
+cd /mnt/data && python3 /mnt/data/skills/xlsx/scripts/cells.py original.xlsx original-edited.xlsx \
+  --set 'Sheet!D11==C11/B11-1' --style 'Sheet!D11=Sheet!D10' && \
+python3 /mnt/data/skills/xlsx/scripts/check.py original-edited.xlsx --original original.xlsx \
+  --allow 'Sheet!D11' --formula 'Sheet!D11'
 ```
+
+**Never work out an expected result in your head for `--expect`.** Use `--expect` only for a figure the user gave you, or one you computed with Python in the same call. `--formula` proves the cell holds a formula, and the report prints its value: read that, then quote it to the user. When you write a new formula beside others, copy the neighbour's formatting with `--style`; `outline.py` shows each cell's number format.
 
 It recalculates (writing only the computed values into your file), runs the calculation gate for each `--formula`/`--expect`, runs the structure preservation gate when `--original` is given (with your `--allow` and `--new-sheet` flags), and renders the first printed pages into one image. Exit 0 means every gate passed; 2 lists what failed. Read the report, then read the render image once. Fix every failure in one round, rerun the same line, and never deliver on exit 2. The sections below explain each gate; you do not run their commands separately.
 
@@ -68,18 +71,11 @@ prove nothing else moved.
      same call as the inspection below. If it says `openpyxl: UNSAFE`, tell the user which items
      (sparklines, shapes, and so on) would be lost and ask before going ahead. Always load with
      `rich_text=True`, or a cell with a bold or coloured word loses that formatting.
-3. **Inspect it with cell addresses before planning any write.** `markitdown` shows no addresses,
-   so it cannot tell you where to write:
-   ```python
-   from openpyxl import load_workbook
-   wb = load_workbook('/mnt/data/original.xlsx', rich_text=True)
-   for ws in wb:
-       print('##', ws.title, '| merged:', sorted(str(r) for r in ws.merged_cells.ranges))
-       for row in ws.iter_rows():
-           for cell in row:
-               if cell.value is not None:
-                   print(cell.coordinate, repr(cell.value))
-   ```
+3. **Inspect it with cell addresses before planning any write:**
+   `python3 /mnt/data/skills/xlsx/scripts/outline.py /mnt/data/original.xlsx`. It prints what an
+   openpyxl save would damage, then each sheet's merged ranges and every filled cell with its
+   address, formula and value. Do not write your own inspection code. `markitdown` shows no
+   addresses, so it cannot tell you where to write.
 4. **Find every target by its label, never by guessing an address.** Locate the table header
    ("Sl. #", "Description"), the total ("Total Estimated cost") and fields such as "Amount in
    words" or "Remarks" in that output, and write relative to them.

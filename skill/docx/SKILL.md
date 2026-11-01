@@ -13,7 +13,8 @@ A `.docx` is a ZIP archive of XML files. Choose your approach by task:
 |---|---|
 | **Create** a new document | Write a `docx` (npm) script — see gotchas below |
 | **Edit** an existing document | `unzip` → edit `word/document.xml` → `zip` (docx-js cannot open existing files) |
-| **Read** content | `pandoc -t markdown file.docx` |
+| **Read** content or structure | `python3 /mnt/data/skills/docx/scripts/outline.py file.docx` (numbered paragraphs, tables, headers), or `pandoc -t markdown file.docx` |
+| **Change some text** (a name, date, number, wording) | `python3 /mnt/data/skills/docx/scripts/replace.py in.docx out.docx "old" "new"`: one call, formatting kept, validated. Do not unpack for this |
 | **Office letter, order or notice** (letterhead, memo and date row, signature blocks, copy list) | `scripts/letter.py` with a JSON spec — see `references/scan.md` for the spec; it builds, fits the page, validates and renders in one call |
 | **Recreate** a scanned or photographed page (`.jpg`, `.png`) as Word | `references/scan.md` |
 
