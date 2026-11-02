@@ -139,6 +139,25 @@ creditPackages:
       price: 5000
       credits: 75000000
 
+memory:
+  validKeys: ['personal_info', 'work_info', 'preferences', 'communication_style', 'interests', 'context']
+  tokenLimit: 2000
+  personalize: true
+  agent:
+    enabled: true
+    provider: 'OpenRouter'
+    model: 'google/gemini-3.8-flash'
+    model_parameters:
+      temperature: 0.1
+    instructions: |
+      You maintain a short profile of the user. From the latest messages, save durable facts about them:
+      name, age, institution, role or profession, field of study or work, language preference
+      (Bangla or English), and how they like answers written (tone, length, formality).
+      Update an existing key instead of duplicating it. Delete a fact when the user asks you to forget it.
+      Never store passwords, ID numbers, health, financial or other sensitive data.
+      Write facts without gendered pronouns, and never guess gender.
+      Never store one-off task details. If there is nothing durable to save, do nothing.
+
 interface:
   customWelcome: 'Welcome to Synapse!'
   privacyPolicy:
