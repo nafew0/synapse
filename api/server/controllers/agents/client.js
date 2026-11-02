@@ -2181,7 +2181,26 @@ class AgentClient extends BaseClient {
    * @param {BaseMessage[]} messages
    * @returns {Promise<void | (TAttachment | null)[]>}
    */
-  async runMemory(messages) {
+  /**
+   * Logs memory-agent tokens in the ledger (`context: 'memory'`) for usage
+   * reports. They are deliberately not charged to balance or usage packages.
+   * @param {UsageMetadata[]} collectedUsage
+   */
+  async recordMemoryUsage(collectedUsage) {
+    try {
+      await this.recordCollectedUsage({
+        collectedUsage,
+        context: 'memory',
+        balance: { enabled: false },
+        transactions: getTransactionsConfig(this.options.req.config),
+        updateStreamUsage: false,
+      });
+    } catch (error) {
+      logger.error('[AgentClient] Failed to record memory usage', error);
+    }
+  }
+
+  async runMemory(messages, signal) {
     try {
       if (this.processMemory == null) {
         return;
@@ -2254,7 +2273,12 @@ class AgentClient extends BaseClient {
         });
       }
       const bufferMessage = new HumanMessage(limitedMemoryInput);
-      return await this.processMemory([bufferMessage]);
+      const collectedUsage = [];
+      try {
+        return await this.processMemory([bufferMessage], { signal, collectedUsage });
+      } finally {
+        await this.recordMemoryUsage(collectedUsage);
+      }
     } catch (error) {
       logger.error('Memory Agent failed to process memory', error);
     }
@@ -3148,7 +3172,7 @@ class AgentClient extends BaseClient {
         // }
 
         if (this.processMemory) {
-          memoryPromise = this.runMemory(memoryMessages);
+          memoryPromise = this.runMemory(memoryMessages, abortController.signal);
         }
 
         /** Seed calibration state from previous run if encoding matches */

@@ -3110,6 +3110,44 @@ describe('AgentClient - titleConvo', () => {
       expect(result).toBeUndefined();
       expect(mockProcessMemory).not.toHaveBeenCalled();
     });
+
+    it('passes the stop signal and logs usage without charging balance', async () => {
+      const { HumanMessage } = require('@librechat/agents/langchain/messages');
+      const usage = { input_tokens: 40, output_tokens: 5, model: 'memory-model' };
+      const { signal } = new AbortController();
+      client.recordCollectedUsage = jest.fn().mockResolvedValue();
+      mockProcessMemory.mockImplementation(async (_messages, options) => {
+        options.collectedUsage.push(usage);
+      });
+
+      await client.runMemory([new HumanMessage('Remember my name')], signal);
+
+      expect(mockProcessMemory.mock.calls[0][1].signal).toBe(signal);
+      expect(client.recordCollectedUsage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          context: 'memory',
+          collectedUsage: [usage],
+          balance: { enabled: false },
+          updateStreamUsage: false,
+        }),
+      );
+    });
+
+    it('still logs usage when extraction fails', async () => {
+      const { HumanMessage } = require('@librechat/agents/langchain/messages');
+      const usage = { input_tokens: 40, output_tokens: 5 };
+      client.recordCollectedUsage = jest.fn().mockResolvedValue();
+      mockProcessMemory.mockImplementation(async (_messages, options) => {
+        options.collectedUsage.push(usage);
+        throw new Error('provider failed');
+      });
+
+      await expect(client.runMemory([new HumanMessage('Test')])).resolves.toBeUndefined();
+
+      expect(client.recordCollectedUsage).toHaveBeenCalledWith(
+        expect.objectContaining({ collectedUsage: [usage] }),
+      );
+    });
   });
 
   describe('getMessagesForConversation - mapMethod and mapCondition', () => {

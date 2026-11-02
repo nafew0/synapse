@@ -1,6 +1,8 @@
 import { Types } from 'mongoose';
 import { Tools, MemoryScope } from 'librechat-data-provider';
 import { Run, Providers, GraphEvents } from '@librechat/agents';
+import { logger } from '@librechat/data-schemas';
+import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import {
@@ -160,6 +162,73 @@ describe('Memory attachment generation fencing', () => {
       },
       { expectedCreatedAt: 1234 },
     );
+  });
+});
+
+describe('Memory run usage and cancellation', () => {
+  const createRunner = async () => {
+    const [, runMemory] = await createMemoryProcessor({
+      res: { headersSent: true, write: jest.fn() } as unknown as Response,
+      userId: 'user-1',
+      messageId: 'response-1',
+      conversationId: 'conversation-1',
+      config: { llmConfig: { provider: Providers.OPENROUTER, model: 'memory-model' } as never },
+      memoryMethods: {
+        setMemory: jest.fn(),
+        deleteMemory: jest.fn(),
+        getFormattedMemories: jest.fn().mockResolvedValue({
+          withKeys: '',
+          withoutKeys: '',
+          totalTokens: 0,
+        }),
+      },
+    });
+    return runMemory;
+  };
+
+  it('collects the usage of each model call in the memory run', async () => {
+    const processStream = jest.fn(async () => {
+      const runConfig = (Run.create as jest.Mock).mock.lastCall[0];
+      runConfig.customHandlers[GraphEvents.CHAT_MODEL_END].handle(GraphEvents.CHAT_MODEL_END, {
+        output: { usage_metadata: { input_tokens: 40, output_tokens: 5 } },
+      });
+      return 'success';
+    });
+    (Run.create as jest.Mock).mockReturnValueOnce({ processStream });
+    const collectedUsage: UsageMetadata[] = [];
+
+    await (
+      await createRunner()
+    )([], { collectedUsage });
+
+    expect(collectedUsage).toEqual([
+      {
+        input_tokens: 40,
+        output_tokens: 5,
+        model: 'memory-model',
+        provider: Providers.OPENROUTER,
+      },
+    ]);
+  });
+
+  it('stops with the reply: passes the signal and resolves quietly on abort', async () => {
+    const controller = new AbortController();
+    const processStream = jest.fn(
+      (_inputs: unknown, config: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          config.signal.addEventListener('abort', () => reject(new Error('Aborted')));
+        }),
+    );
+    (Run.create as jest.Mock).mockReturnValueOnce({ processStream });
+    const errorSpy = jest.spyOn(logger, 'error');
+
+    const pending = (await createRunner())([], { signal: controller.signal });
+    await new Promise((resolve) => setImmediate(resolve));
+    controller.abort();
+
+    await expect(pending).resolves.toBeUndefined();
+    expect(processStream.mock.calls[0][1].signal).toBe(controller.signal);
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 });
 

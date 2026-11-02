@@ -34,6 +34,7 @@ import type { BaseMessage, ToolMessage } from '@librechat/agents/langchain/messa
 import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
 import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
 import type { Response as ServerResponse } from 'express';
+import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { ServerRequest, RunLLMConfig } from '~/types';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
 import { resolveConfigHeaders, createSafeUser } from '~/utils';
@@ -66,6 +67,11 @@ function normalizeMemoryLLMConfig(llmConfig?: Partial<LLMConfig>): SanitizedMemo
     delete config.apiKey;
   }
   return config as SanitizedMemoryLLMConfig;
+}
+
+export interface MemoryRunOptions {
+  signal?: AbortSignal;
+  collectedUsage?: UsageMetadata[];
 }
 
 export const memoryInstructions =
@@ -695,6 +701,26 @@ export async function buildInlineMemoryTool({
   });
 }
 
+/** Collects token usage from the memory run so the caller can record it. */
+const createMemoryUsageHandler = (
+  collectedUsage: UsageMetadata[],
+  llmConfig?: Partial<LLMConfig>,
+): EventHandler => ({
+  handle: (_event, data, metadata) => {
+    const usage = (data as { output?: { usage_metadata?: UsageMetadata } } | undefined)?.output
+      ?.usage_metadata;
+    if (!usage) {
+      return;
+    }
+    const model = metadata?.ls_model_name ?? (llmConfig as { model?: string } | undefined)?.model;
+    collectedUsage.push({
+      ...usage,
+      ...(typeof model === 'string' ? { model } : {}),
+      ...(llmConfig?.provider ? { provider: llmConfig.provider } : {}),
+    });
+  },
+});
+
 export class BasicToolEndHandler implements EventHandler {
   private callback?: ToolEndCallback;
   constructor(callback?: ToolEndCallback) {
@@ -737,6 +763,8 @@ export async function processMemory({
   streamId = null,
   jobCreatedAt,
   user,
+  signal,
+  collectedUsage,
 }: {
   res: ServerResponse;
   setMemory: MemoryMethods['setMemory'];
@@ -756,6 +784,10 @@ export async function processMemory({
   streamId?: string | null;
   jobCreatedAt?: number;
   user?: IUser;
+  /** Cancels extraction when the user stops the reply */
+  signal?: AbortSignal;
+  /** Receives the token usage of each model call in the memory run */
+  collectedUsage?: UsageMetadata[];
 }): Promise<(TAttachment | null)[] | undefined> {
   try {
     const memoryTool = createMemoryTool({
@@ -870,6 +902,9 @@ ${memory ?? 'No existing memories'}`;
     });
     const customHandlers = {
       [GraphEvents.TOOL_END]: new BasicToolEndHandler(memoryCallback),
+      ...(collectedUsage
+        ? { [GraphEvents.CHAT_MODEL_END]: createMemoryUsageHandler(collectedUsage, llmConfig) }
+        : {}),
     };
 
     /**
@@ -933,6 +968,7 @@ ${memory ?? 'No existing memories'}`;
       streamMode: 'values',
       recursionLimit: 3,
       version: 'v2',
+      ...(signal ? { signal } : {}),
     } as const;
 
     const inputs = {
@@ -951,6 +987,10 @@ ${memory ?? 'No existing memories'}`;
     }
     return await Promise.all(artifactPromises);
   } catch (error) {
+    if (signal?.aborted) {
+      logger.debug('[MemoryAgent] Stopped with the reply', { userId, conversationId, messageId });
+      return;
+    }
     logger.error(
       `[MemoryAgent] Failed to process memory | userId: ${userId} | conversationId: ${conversationId} | messageId: ${messageId}`,
       { error },
@@ -981,7 +1021,15 @@ export async function createMemoryProcessor({
   streamId?: string | null;
   jobCreatedAt?: number;
   user?: IUser;
-}): Promise<[string, (messages: BaseMessage[]) => Promise<(TAttachment | null)[] | undefined>]> {
+}): Promise<
+  [
+    string,
+    (
+      messages: BaseMessage[],
+      options?: MemoryRunOptions,
+    ) => Promise<(TAttachment | null)[] | undefined>,
+  ]
+> {
   const { validKeys, instructions, llmConfig, tokenLimit } = config;
   const finalInstructions = instructions || getDefaultInstructions(validKeys, tokenLimit);
 
@@ -992,7 +1040,10 @@ export async function createMemoryProcessor({
 
   return [
     withoutKeys,
-    async function (messages: BaseMessage[]): Promise<(TAttachment | null)[] | undefined> {
+    async function (
+      messages: BaseMessage[],
+      options?: MemoryRunOptions,
+    ): Promise<(TAttachment | null)[] | undefined> {
       try {
         return await processMemory({
           res,
@@ -1012,6 +1063,8 @@ export async function createMemoryProcessor({
           setMemory: memoryMethods.setMemory,
           deleteMemory: memoryMethods.deleteMemory,
           user,
+          signal: options?.signal,
+          collectedUsage: options?.collectedUsage,
         });
       } catch (error) {
         logger.error('Memory Agent failed to process memory', error);
