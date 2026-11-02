@@ -74,6 +74,28 @@ export interface MemoryRunOptions {
   collectedUsage?: UsageMetadata[];
 }
 
+/**
+ * Links memory extraction to the reply's abort signal for as long as the reply
+ * runs. `completeJob` also aborts that signal on successful completion, so call
+ * `detach` once the reply settles or slow extractions get cancelled.
+ */
+export function linkMemoryAbort(replySignal: AbortSignal): {
+  signal: AbortSignal;
+  detach: () => void;
+} {
+  const controller = new AbortController();
+  const stop = () => controller.abort();
+  if (replySignal.aborted) {
+    stop();
+  } else {
+    replySignal.addEventListener('abort', stop, { once: true });
+  }
+  return {
+    signal: controller.signal,
+    detach: () => replySignal.removeEventListener('abort', stop),
+  };
+}
+
 export const memoryInstructions =
   'The system automatically stores important user information and can update or delete memories based on user requests, enabling dynamic memory management.';
 

@@ -8,6 +8,7 @@ import type { Response } from 'express';
 import {
   processMemory,
   createMemoryProcessor,
+  linkMemoryAbort,
   createMemoryTool,
   getMemoryAgentId,
   getRequestMemories,
@@ -162,6 +163,29 @@ describe('Memory attachment generation fencing', () => {
       },
       { expectedCreatedAt: 1234 },
     );
+  });
+});
+
+describe('linkMemoryAbort', () => {
+  it('cancels extraction when the reply is stopped', () => {
+    const reply = new AbortController();
+    const { signal } = linkMemoryAbort(reply.signal);
+    reply.abort();
+    expect(signal.aborted).toBe(true);
+  });
+
+  it('keeps extraction running when the job aborts after the reply settled', () => {
+    const reply = new AbortController();
+    const { signal, detach } = linkMemoryAbort(reply.signal);
+    detach();
+    reply.abort();
+    expect(signal.aborted).toBe(false);
+  });
+
+  it('starts cancelled when the reply is already stopped', () => {
+    const reply = new AbortController();
+    reply.abort();
+    expect(linkMemoryAbort(reply.signal).signal.aborted).toBe(true);
   });
 });
 

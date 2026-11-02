@@ -78,6 +78,7 @@ const {
   getRequestMemories,
   getMemoryAgentId,
   createMemoryProcessor,
+  linkMemoryAbort,
   agentHasInlineMemoryTools,
   loadAgent: loadAgentFn,
   createMultiAgentMapper,
@@ -2182,22 +2183,38 @@ class AgentClient extends BaseClient {
    * @returns {Promise<void | (TAttachment | null)[]>}
    */
   /**
-   * Logs memory-agent tokens in the ledger (`context: 'memory'`) for usage
-   * reports. They are deliberately not charged to balance or usage packages.
-   * @param {UsageMetadata[]} collectedUsage
+   * Builds a recorder that logs memory-agent tokens in the ledger
+   * (`context: 'memory'`) for usage reports, deliberately without charging balance
+   * or usage packages. Extraction can outlive the request and `disposeClient`
+   * clears this client, so everything it needs is captured up front.
+   * @returns {(collectedUsage: UsageMetadata[]) => Promise<void>}
    */
-  async recordMemoryUsage(collectedUsage) {
-    try {
-      await this.recordCollectedUsage({
-        collectedUsage,
-        context: 'memory',
-        balance: { enabled: false },
-        transactions: getTransactionsConfig(this.options.req.config),
-        updateStreamUsage: false,
-      });
-    } catch (error) {
-      logger.error('[AgentClient] Failed to record memory usage', error);
-    }
+  createMemoryUsageRecorder() {
+    const params = {
+      user: this.user ?? this.options.req.user?.id,
+      tenantId: this.options.req.user?.tenantId,
+      requireTenant: Boolean(this.options.req.user?.tenantId),
+      conversationId: this.conversationId,
+      messageId: this.responseMessageId,
+      model: this.options.req.config?.memory?.agent?.model ?? this.model,
+      context: 'memory',
+      balance: { enabled: false },
+      transactions: getTransactionsConfig(this.options.req.config),
+      endpointTokenConfig: this.options.endpointTokenConfig,
+    };
+    const deps = {
+      spendTokens: db.spendTokens,
+      spendStructuredTokens: db.spendStructuredTokens,
+      pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+      bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
+    };
+    return async (collectedUsage) => {
+      try {
+        await recordCollectedUsage(deps, { ...params, collectedUsage });
+      } catch (error) {
+        logger.error('[AgentClient] Failed to record memory usage', error);
+      }
+    };
   }
 
   async runMemory(messages, signal) {
@@ -2273,11 +2290,12 @@ class AgentClient extends BaseClient {
         });
       }
       const bufferMessage = new HumanMessage(limitedMemoryInput);
+      const recordMemoryUsage = this.createMemoryUsageRecorder();
       const collectedUsage = [];
       try {
         return await this.processMemory([bufferMessage], { signal, collectedUsage });
       } finally {
-        await this.recordMemoryUsage(collectedUsage);
+        await recordMemoryUsage(collectedUsage);
       }
     } catch (error) {
       logger.error('Memory Agent failed to process memory', error);
@@ -2949,6 +2967,7 @@ class AgentClient extends BaseClient {
     let run;
     /** @type {Promise<(TAttachment | null)[] | undefined>} */
     let memoryPromise;
+    let detachMemoryAbort;
     const appConfig = this.options.req.config;
     const balanceConfig = getBalanceConfig(appConfig);
     const transactionsConfig = getTransactionsConfig(appConfig);
@@ -3172,7 +3191,9 @@ class AgentClient extends BaseClient {
         // }
 
         if (this.processMemory) {
-          memoryPromise = this.runMemory(memoryMessages, abortController.signal);
+          const memoryAbort = linkMemoryAbort(abortController.signal);
+          detachMemoryAbort = memoryAbort.detach;
+          memoryPromise = this.runMemory(memoryMessages, memoryAbort.signal);
         }
 
         /** Seed calibration state from previous run if encoding matches */
@@ -3457,6 +3478,8 @@ class AgentClient extends BaseClient {
         await Promise.allSettled(this.pendingSubagentEmits);
         this.pendingSubagentEmits = [];
       }
+
+      detachMemoryAbort?.();
 
       try {
         const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
