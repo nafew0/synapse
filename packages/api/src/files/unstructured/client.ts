@@ -35,7 +35,7 @@ const FAILED_STATUSES = new Set(['failed', 'cancelled']);
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Runs at most `limit` tasks at once; the rest wait their turn. */
-export function createLimiter(limit: number) {
+export function createLimiter(limit: number): <T>(task: () => Promise<T>) => Promise<T> {
   const waiting: Array<() => void> = [];
   let running = 0;
   return async <T>(task: () => Promise<T>): Promise<T> => {

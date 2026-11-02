@@ -60,7 +60,14 @@ A4 = (21.0, 29.7)
 DEFAULT_MARGINS = [1.5, 2.0, 1.5, 2.0]
 MIN_SIZE = 10.0
 MIN_MARGIN = 1.2
-FIT_STEPS = 10
+FIT_STEPS = 16
+GAP_STEP = 0.7
+MIN_GAP_SCALE = 0.3
+SIGNATURE_STEP = 0.85
+MIN_SIGNATURE_SCALE = 0.6
+# Bangla faces such as Nikosh carry tall line metrics, so a dense page overflows at any type size.
+# The last fitting step sets the leading itself, tall enough for conjuncts and vowel signs.
+TIGHT_LEADING = 1.25
 SCALE_STEP = 0.03
 BANGLA = re.compile(r"[ঀ-৿]")
 ALIGN = {
@@ -107,7 +114,10 @@ def insert_ordered(parent, child, order):
 class Style:
     """Type size and spacing, scaled down together while fitting the page."""
 
-    def __init__(self, spec, scale=1.0, margins=None):
+    def __init__(self, spec, scale=1.0, margins=None, tight=False, gap_scale=1.0, signature_scale=1.0):
+        self.tight = tight
+        self.gap_scale = gap_scale
+        self.signature_scale = signature_scale
         font = spec.get("font", {})
         self.latin = font.get("latin", "Times New Roman")
         self.bangla = font.get("bangla", "Nikosh")
@@ -119,7 +129,7 @@ class Style:
         return max(MIN_SIZE * 0.85, (float(value) if value else self.base) * self.scale)
 
     def gap(self, points):
-        return Pt(max(0.0, float(points) * self.scale))
+        return Pt(max(0.0, float(points) * self.scale * self.gap_scale))
 
     @property
     def text_width_cm(self):
@@ -168,10 +178,18 @@ def shape(paragraph, style, block, align="left", before=0, after=4):
     paragraph.alignment = ALIGN.get(block.get("align", align), WD_ALIGN_PARAGRAPH.LEFT)
     fmt.space_before = style.gap(block.get("space_before", before))
     fmt.space_after = style.gap(block.get("space_after", after))
-    fmt.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
-    fmt.line_spacing = max(1.0, 1.15 * min(1.0, style.scale + 0.1))
+    if style.tight:
+        fmt.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+        fmt.line_spacing = Pt(style.size(block.get("size")) * TIGHT_LEADING)
+    else:
+        fmt.line_spacing_rule = WD_LINE_SPACING.MULTIPLE
+        fmt.line_spacing = max(1.0, 1.15 * min(1.0, style.scale + 0.1))
     if block.get("first_indent_cm"):
         fmt.first_line_indent = Cm(float(block["first_indent_cm"]))
+    if block.get("left_indent_cm"):
+        fmt.left_indent = Cm(float(block["left_indent_cm"]))
+    if block.get("right_indent_cm"):
+        fmt.right_indent = Cm(float(block["right_indent_cm"]))
     return paragraph
 
 
@@ -203,11 +221,28 @@ def borderless_table(container, widths_cm):
     return table.rows[0].cells
 
 
+def gap_after_table(doc, style, points):
+    """Word needs a paragraph between tables; this one takes only the gap, not a line of text."""
+    paragraph = doc.add_paragraph()
+    fmt = paragraph.paragraph_format
+    fmt.space_before, fmt.space_after = Pt(0), style.gap(points)
+    fmt.line_spacing_rule, fmt.line_spacing = WD_LINE_SPACING.EXACTLY, Pt(1)
+    p_pr = paragraph._p.get_or_add_pPr()
+    mark = OxmlElement("w:rPr")
+    size = OxmlElement("w:sz")
+    size.set(qn("w:val"), "2")
+    mark.append(size)
+    insert_ordered(p_pr, mark, P_PR_ORDER)
+    return paragraph
+
+
 def cell_paragraph(cell, first):
     return cell.paragraphs[0] if first else cell.add_paragraph()
 
 
 def picture(paragraph, path, width_cm):
+    """An exact line height would clip the picture to that one line."""
+    paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
     paragraph.add_run().add_picture(str(path), width=Cm(float(width_cm)))
 
 
@@ -247,15 +282,22 @@ def memo(doc, block, style):
         add_text(paragraph, line, style, block)
         if index == 0 and len(right) > 1 and block.get("rule_between", True):
             bottom_rule(paragraph)
-    doc.add_paragraph().paragraph_format.space_after = style.gap(block.get("space_after", 4))
+    gap_after_table(doc, style, block.get("space_after", 4))
 
 
 def signature(doc, block, style):
     width = float(block.get("width_cm", 6.5))
     side = block.get("align", "right")
-    widths = [style.text_width_cm - width, width] if side == "right" else [width, style.text_width_cm - width]
-    cells = borderless_table(doc, widths)
-    cell = cells[1] if side == "right" else cells[0]
+    if block.get("left_cm") is not None:
+        before = min(float(block["left_cm"]), max(style.text_width_cm - width, 0))
+        after = max(style.text_width_cm - before - width, 0)
+        widths = [w for w in (before, width, after) if w > 0]
+        cells = borderless_table(doc, widths)
+        cell = cells[1 if before > 0 else 0]
+    else:
+        widths = [style.text_width_cm - width, width] if side == "right" else [width, style.text_width_cm - width]
+        cells = borderless_table(doc, widths)
+        cell = cells[1] if side == "right" else cells[0]
     first = True
     if block.get("intro"):
         add_text(shape(cell_paragraph(cell, first), style, {}, align="center", after=2), block["intro"], style, block)
@@ -263,13 +305,13 @@ def signature(doc, block, style):
     if block.get("image"):
         paragraph = shape(cell_paragraph(cell, first), style, {}, align="center", after=0)
         image_width = block.get("image_width_cm") or min(width - 0.5, natural_width_cm(block["image"]))
-        picture(paragraph, block["image"], image_width)
+        picture(paragraph, block["image"], float(image_width) * style.signature_scale)
         first = False
     for line in block.get("lines", []):
         paragraph = shape(cell_paragraph(cell, first), style, {}, align="center", after=0)
         add_text(paragraph, line, style, block)
         first = False
-    doc.add_paragraph().paragraph_format.space_after = style.gap(block.get("space_after", 2))
+    gap_after_table(doc, style, block.get("space_after", 2))
 
 
 def lines_block(doc, block, style):
@@ -279,14 +321,18 @@ def lines_block(doc, block, style):
         add_text(paragraph, line, style, block)
 
 
+TABLE_BLOCKS = {"memo", "signature", "table"}
+
+
 def numbered_list(doc, block, style):
     hanging = Cm(float(block.get("hanging_cm", 1.4)))
     for number, text in block.get("items", []):
         paragraph = shape(doc.add_paragraph(), style, block, align="justify", after=1)
         fmt = paragraph.paragraph_format
-        fmt.left_indent = hanging
+        start = Cm(float(block.get("left_indent_cm", 0))) + hanging
+        fmt.left_indent = start
         fmt.first_line_indent = -hanging
-        fmt.tab_stops.add_tab_stop(hanging)
+        fmt.tab_stops.add_tab_stop(start)
         add_text(paragraph, f"{number}\t{text}", style, block)
 
 
@@ -322,7 +368,7 @@ def data_table(doc, block, style):
         for index, line in enumerate(lines):
             paragraph = shape(cell_paragraph(target, index == 0), style, block, after=0)
             add_text(paragraph, line, style, block, bold=bool(cell.get("header")) or block.get("bold", False))
-    doc.add_paragraph().paragraph_format.space_after = style.gap(block.get("space_after", 4))
+    gap_after_table(doc, style, block.get("space_after", 4))
 
 
 def build(spec, out_path, style):
@@ -341,6 +387,8 @@ def build(spec, out_path, style):
 
     for block in spec.get("blocks", []):
         kind = block.get("type")
+        if block.get("space_before") and (kind in TABLE_BLOCKS or (kind == "letterhead" and block.get("logo"))):
+            gap_after_table(doc, style, block["space_before"])
         if kind == "letterhead":
             letterhead(doc, block, style)
         elif kind == "memo":
@@ -388,9 +436,12 @@ def render(docx_path, work):
 
 
 def fit(spec, out_path, target, work):
-    """Shrink margins, then type and spacing together, until the page count is met."""
+    """Shrink margins, then type and spacing together, the leading, then signatures, until the pages fit."""
     margins = list(spec.get("page", {}).get("margins_cm", DEFAULT_MARGINS))
     scale = 1.0
+    tight = False
+    gap_scale = 1.0
+    signature_scale = 1.0
     style = Style(spec, scale, margins)
     for attempt in range(FIT_STEPS):
         build(spec, out_path, style)
@@ -401,10 +452,16 @@ def fit(spec, out_path, target, work):
             margins = [max(MIN_MARGIN, margins[0] - 0.3), margins[1], max(MIN_MARGIN, margins[2] - 0.3), margins[3]]
         elif style.base * scale > MIN_SIZE:
             scale = max(MIN_SIZE / style.base, scale - SCALE_STEP)
+        elif not tight:
+            tight = True
+        elif gap_scale > MIN_GAP_SCALE:
+            gap_scale = max(MIN_GAP_SCALE, gap_scale * GAP_STEP)
+        elif signature_scale > MIN_SIGNATURE_SCALE:
+            signature_scale = max(MIN_SIGNATURE_SCALE, signature_scale * SIGNATURE_STEP)
         else:
             break
-        style = Style(spec, scale, margins)
-    return style, pdf, pages, FIT_STEPS
+        style = Style(spec, scale, margins, tight, gap_scale, signature_scale)
+    return style, pdf, pages, attempt + 1
 
 
 def validate(out_path):
@@ -430,6 +487,15 @@ def missing_fonts(style):
         if name.lower() not in matched and not any(twin in matched for twin in twins):
             missing.append(f"{name} (drawn as {matched.split(',')[0] or 'nothing'})")
     return missing
+
+
+def page_image(source, work):
+    """The image to compare against. A PDF source gives its first page."""
+    if Path(source).suffix.lower() != ".pdf":
+        return source
+    stem = Path(work) / "source"
+    subprocess.run(["pdftoppm", "-png", "-r", "100", "-f", "1", "-l", "1", str(source), str(stem)], check=True)
+    return next(Path(work).glob("source-*.png"))
 
 
 def side_by_side(source, page_png, out_path, height=1100):
@@ -481,7 +547,8 @@ def main(argv):
     ]
     if args.source:
         compare = qa / f"{out_path.stem}-compare.jpg"
-        side_by_side(args.source, page_png, compare)
+        with tempfile.TemporaryDirectory() as work:
+            side_by_side(page_image(args.source, work), page_png, compare)
         report.append(f"compare: {compare}  (scan left, your page right)")
     print("\n".join(report))
     return 0 if valid and pages <= target else 2

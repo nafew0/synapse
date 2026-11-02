@@ -15,6 +15,7 @@ const {
   fileAuthoringToolNames: chatFileToolNames,
   READ_DOCUMENT_TOOL_NAME,
   isDocumentOcrAllowed,
+  buildDocumentReadContext,
   isFirecrawlTool,
   isFirecrawlConfigured,
   loadToolDefinitions,
@@ -1230,6 +1231,15 @@ async function loadToolDefinitionsWrapper({
         throw error;
       }
       logger.error('[loadToolDefinitionsWrapper] Error priming code files:', error);
+    }
+  }
+
+  if (filteredTools.includes(READ_DOCUMENT_TOOL_NAME)) {
+    const scanContext = buildDocumentReadContext(
+      Object.values(tool_resources ?? {}).flatMap((resource) => resource?.files ?? []),
+    );
+    if (scanContext) {
+      dynamicToolContextMap[READ_DOCUMENT_TOOL_NAME] = scanContext;
     }
   }
 

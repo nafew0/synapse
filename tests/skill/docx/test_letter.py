@@ -41,6 +41,31 @@ def scan(tmp_path):
     return path
 
 
+def test_a_picture_is_not_clipped_by_tight_leading(scan):
+    sys.path.insert(0, str(SCRIPTS))
+    from docx.enum.text import WD_LINE_SPACING
+    from docx.shared import Pt
+    from letter import picture
+
+    paragraph = Document().add_paragraph()
+    paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    paragraph.paragraph_format.line_spacing = Pt(12.5)
+    picture(paragraph, scan, 2)
+    assert paragraph.paragraph_format.line_spacing_rule == WD_LINE_SPACING.SINGLE
+
+
+def test_fitting_shrinks_the_signature_but_keeps_its_proportions(scan, tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from letter import Style, build
+
+    spec = {'blocks': [{'type': 'signature', 'image': str(scan), 'image_width_cm': 4, 'lines': ['Name']}]}
+    out = tmp_path / 'out.docx'
+    build(spec, out, Style(spec, signature_scale=0.5))
+    shape = Document(out).tables[0].rows[0].cells[-1].paragraphs[0].runs[0]._r.xpath('.//wp:extent')[0]
+    assert round(int(shape.get('cx')) / 360000, 1) == 2.0
+    assert round(int(shape.get('cy')) / int(shape.get('cx')), 2) == round(800 / 600, 2)
+
+
 def test_crop_trims_to_ink_and_whitens_paper(scan, tmp_path):
     result = run('crop.py', scan, tmp_path / 'qa', 'logo=20,20,120,120', 'sig=280,440,440,540', cwd=tmp_path)
 

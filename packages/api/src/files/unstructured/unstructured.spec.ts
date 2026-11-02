@@ -3,7 +3,7 @@ import { PDFDocument } from 'pdf-lib';
 import type { AddressInfo } from 'net';
 import type { DocumentReadDeps, DocumentReading } from './tool';
 import type { UnstructuredElement } from './types';
-import { createDocumentReadTool, isDocumentOcrAllowed } from './tool';
+import { buildDocumentReadContext, createDocumentReadTool, isDocumentOcrAllowed } from './tool';
 import { createLimiter, createUnstructuredClient } from './client';
 import { elementsToMarkdown, mergePages } from './merge';
 import { subsetPdf } from './pages';
@@ -203,6 +203,26 @@ describe('merge', () => {
     expect(markdown).toBe(
       '<!-- page 1 -->\n\n## শিরোনাম\n\n- এক\n\n<!-- page 2 -->\n\n<table></table>',
     );
+  });
+});
+
+describe('buildDocumentReadContext', () => {
+  const scanned = (file_id: string, filename: string, ocrPages: number[]) => ({
+    file_id,
+    filename,
+    metadata: { preparation: { scan: { ocrPages } } },
+  });
+
+  it('names each file once with its pages', () => {
+    const file = scanned('a', 'order.pdf', [2, 5]);
+    const context = buildDocumentReadContext([file, file, scanned('b', 'typed.pdf', []), {}]);
+    expect(context).toContain('- "order.pdf": pages 2, 5');
+    expect(context?.match(/order\.pdf/g)).toHaveLength(1);
+    expect(context).not.toContain('typed.pdf');
+  });
+
+  it('says nothing when no file needs OCR', () => {
+    expect(buildDocumentReadContext([scanned('b', 'typed.pdf', []), {}])).toBeUndefined();
   });
 });
 

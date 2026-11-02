@@ -8,7 +8,7 @@ import pytest
 SCRIPTS = Path(__file__).resolve().parents[3] / "skill" / "docx" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from elements_spec import convert, table_rows  # noqa: E402
+from elements_spec import convert, memo_warnings, table_rows  # noqa: E402
 
 
 def el(kind, text="", **metadata):
@@ -66,12 +66,12 @@ def test_positions_become_crop_boxes_in_scan_pixels():
         "layout_width": 1000, "layout_height": 2000,
     })
     _, crops = convert([picture, el("Title", "শিরোনাম"), el("NarrativeText", "বিষয়: " * 40)], (2000, 4000))
-    assert crops == [{"name": "logo", "box": [200, 100, 600, 300]}]
+    assert crops == [{"name": "logo", "box": [200, 100, 600, 300], "page": 1}]
 
 
 def test_a_picture_without_position_asks_for_a_box():
     _, crops = convert([el("Image"), el("Title", "শিরোনাম"), el("NarrativeText", "x" * 200)])
-    assert crops == [{"name": "logo", "box": None}]
+    assert crops == [{"name": "logo", "box": None, "page": 1}]
 
 
 def test_a_document_with_no_letterhead_keeps_its_title():
@@ -134,7 +134,8 @@ def test_real_parse_shape_becomes_the_letter_blocks():
     ]
     head, first_memo = spec["blocks"][0], spec["blocks"][1]
     assert [line["text"] for line in head["lines"]] == ["ছাত্রকল্যাণ অধিদপ্তর", "একটি বিশ্ববিদ্যালয়", "ফোন : ০৩১-২৫১"]
-    assert first_memo == {"type": "memo", "left": "স্মারক নং-বি/০৩৬৮", "right": ["তারিখঃ ০১/০৪/২০২৬ খ্রিঃ।"]}
+    assert first_memo["left"] == "স্মারক নং-বি/০৩৬৮"
+    assert first_memo["right"] == ["তারিখঃ ০১/০৪/২০২৬ খ্রিঃ।"]
     assert spec["blocks"][3]["align"] == "center"
     assert "স্মারক নং ৪০.০১.০০০০ মূলে" in spec["blocks"][4]["text"]
     assert spec["blocks"][5]["rows"][1][1]["text"] == "১. প্রথম নগদ\n২. দ্বিতীয় নগদ"
@@ -151,7 +152,10 @@ def test_real_parse_shape_becomes_the_letter_blocks():
     assert spec["blocks"][12]["lines"] == ["(মোঃ রহিম)", "সেকশন অফিসার"]
     assert [crop["name"] for crop in crops] == ["logo", "sig1", "sig2"]
     assert crops[0]["box"] == [500, 50, 800, 310]
-    assert crops[1]["box"] is None
+    # The signature's box stops above its printed lines: 4 lines of the page's 40-60px line height.
+    assert crops[1]["box"][:3] == [1310, 1780, 1800]
+    assert 1780 < crops[1]["box"][3] < 2000
+    assert crops[2]["box"][1] == 2490 and crops[2]["box"][3] < 2660
 
 
 def test_mostly_short_lines_stay_apart_and_a_heading_is_not_repeated():
@@ -198,3 +202,134 @@ def test_table_block_builds_with_merged_cells(letter, tmp_path):
     assert table.cell(1, 0).text == table.cell(2, 0).text == "ক"
     assert table.cell(2, 1).text == "২"
     assert table.cell(0, 0).paragraphs[0].runs[0].font.bold is True
+
+
+def test_tight_style_sets_the_leading_from_the_type_size(letter, tmp_path):
+    from docx import Document
+    from docx.enum.text import WD_LINE_SPACING
+
+    spec = {"font": {"size": 10}, "blocks": [{"type": "paragraph", "text": "বিজ্ঞপ্তি"}]}
+    out = tmp_path / "t.docx"
+    letter.build(spec, out, letter.Style(spec, tight=True))
+    fmt = Document(str(out)).paragraphs[0].paragraph_format
+    assert fmt.line_spacing_rule == WD_LINE_SPACING.EXACTLY
+    assert fmt.line_spacing.pt == pytest.approx(12.5)
+
+
+def test_memo_numbers_that_disagree_are_reported():
+    spec, _ = convert(NOTICE, (2000, 3000))
+    warnings = memo_warnings(spec)
+    assert len(warnings) == 1 and "০৩৬৮" in warnings[0] and "০০৬৮" in warnings[0]
+
+
+def test_memo_numbers_that_agree_are_not_reported():
+    blocks = [{"type": "memo", "left": "স্মারক/০০৬৮"}, {"type": "memo", "left": "স্মারক/ ০০৬৮(০৮)"}]
+    assert memo_warnings({"blocks": blocks}) == []
+
+
+def test_side_margins_come_from_the_page():
+    spec, _ = convert([el("NarrativeText", "x" * 200, **box(300, 100, 1700, 300))])
+    top, right, bottom, left = spec["page"]["margins_cm"]
+    assert (left, right) == (3.15, 3.15)
+    assert top == 1.0
+    assert bottom == 2.0
+
+
+def test_table_columns_are_measured_from_the_scan_and_pictures_keep_their_size(tmp_path):
+    pytest.importorskip("PIL")
+    from PIL import Image, ImageDraw
+
+    import scan_to_docx
+
+    page = Image.new("RGB", (1000, 1000), "white")
+    draw = ImageDraw.Draw(page)
+    for x in (100, 400, 900):
+        draw.line([(x, 200), (x, 500)], fill="black", width=2)
+    assert scan_to_docx.table_widths(page, (100, 200, 900, 500), 2, 0.02) == [6.0, 10.0]
+    assert scan_to_docx.table_widths(page, (100, 200, 900, 500), 3, 0.02) is None
+
+    Image.new("RGB", (100, 50), "white").save(tmp_path / "logo.png")
+    spec = {"blocks": [
+        {"type": "letterhead", "logo": str(tmp_path / "logo.png")},
+        {"type": "signature", "image": str(tmp_path / "sig1.png"), "lines": ["নাম"]},
+        {"type": "image", "path": str(tmp_path / "image3.png")},
+    ]}
+    missing = scan_to_docx.place_pictures(spec, {"logo"}, tmp_path, 0.02)
+    assert spec["blocks"][0]["logo_width_cm"] == 2.0
+    assert "image" not in spec["blocks"][1]
+    assert [b["type"] for b in spec["blocks"]] == ["letterhead", "signature"]
+    assert set(missing) == {"sig1", "image3"}
+
+
+def test_blocks_take_their_spacing_indent_and_alignment_from_the_page():
+    elements = [
+        el("Title", "শিরোনাম", **box(850, 100, 1150, 200)),
+        el("NarrativeText", "প্রথম অনুচ্ছেদ। " * 12, **box(300, 400, 1700, 450)),
+        el("NarrativeText", "ডানে সরানো অনুচ্ছেদ। " * 12, **box(500, 650, 1700, 700)),
+    ]
+    spec, _ = convert(elements)
+    title, first, second = spec["blocks"]
+    assert first.get("align") != "center"
+    assert title["align"] == "center"
+    assert title["size"] > 10.5
+    # 200 px at 2000 px wide is 2.1 cm of page, about 59.5 pt.
+    assert first["space_before"] == pytest.approx(59.5, abs=0.5)
+    assert "left_indent_cm" not in first
+    assert second["left_indent_cm"] == pytest.approx(2.1)
+    assert all(block["space_after"] == 0 for block in spec["blocks"])
+    assert not any(key.startswith("_") for block in spec["blocks"] for key in block)
+
+
+def test_signature_and_date_sit_where_the_page_has_them():
+    spec, _ = convert([
+        el("Title", "ক", **box(300, 100, 600, 150)),
+        el("NarrativeText", "স্মারক ১", **box(300, 300, 700, 340)),
+        el("NarrativeText", "তারিখঃ ১", **box(1300, 300, 1700, 340)),
+        el("NarrativeText", "অনুচ্ছেদ " * 40, **box(300, 400, 1700, 900)),
+        el("NarrativeText", "(নাম)\nপদবি", **box(1200, 1000, 1700, 1300)),
+    ])
+    memo = next(b for b in spec["blocks"] if b["type"] == "memo")
+    signature = next(b for b in spec["blocks"] if b["type"] == "signature")
+    assert memo["right_width_cm"] == pytest.approx(4.2, abs=0.1)
+    assert signature["left_cm"] == pytest.approx(9.45, abs=0.1)
+    assert signature["width_cm"] == pytest.approx(5.25, abs=0.1)
+
+
+def test_a_loose_logo_box_keeps_only_the_logo(tmp_path):
+    pytest.importorskip("PIL")
+    from PIL import Image, ImageDraw
+
+    import scan_to_docx
+
+    page = Image.new("RGB", (300, 200), "white")
+    draw = ImageDraw.Draw(page)
+    draw.ellipse([10, 40, 130, 160], outline="black", width=8)
+    draw.line([(10, 100), (130, 100)], fill="black", width=8)
+    draw.text((220, 20), "note", fill="black")
+    path = tmp_path / "logo.png"
+    page.save(path)
+    scan_to_docx.keep_largest_shape(path)
+    with Image.open(path) as kept:
+        assert kept.width < 150 and kept.height < 150
+
+
+def test_a_skewed_table_rule_is_still_found():
+    pytest.importorskip("PIL")
+    from PIL import Image, ImageDraw
+
+    import scan_to_docx
+
+    page = Image.new("RGB", (1000, 1000), "white")
+    draw = ImageDraw.Draw(page)
+    for x in (100, 400, 900):
+        draw.line([(x, 200), (x + 4, 500)], fill="black", width=2)
+    assert scan_to_docx.table_widths(page, (100, 200, 900, 500), 2, 0.02) == [6.0, 10.0]
+
+
+def test_list_indent_adds_to_the_hanging_number(letter, tmp_path):
+    from docx import Document
+
+    spec = {"blocks": [{"type": "list", "hanging_cm": 0.7, "left_indent_cm": 1, "items": [["১।", "শর্ত"]]}]}
+    out = tmp_path / "t.docx"
+    letter.build(spec, out, letter.Style(spec))
+    assert Document(str(out)).paragraphs[0].paragraph_format.left_indent.cm == pytest.approx(1.7, abs=0.01)

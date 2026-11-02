@@ -10,13 +10,7 @@ The whole job is five tool calls after loading this skill. Do not add OCR, enlar
 
 ## If `read_document` saved elements
 
-When the `read_document` tool has read this file, `/mnt/data/document-<id>.elements.json` exists. Do not transcribe: the words come from it. Make the page image with `pdftoppm -r 150 -png <pdf> qa/page` if the source is a PDF, then:
-
-```bash
-mkdir -p /mnt/data/qa && cd /mnt/data && python3 /mnt/data/skills/docx/scripts/elements_spec.py document-<id>.elements.json qa/spec.json --scan <page image>
-```
-
-The report lists the blocks and the crops. Read the page image once with `read_file` and open `qa/spec.json`: fix any block type that came out wrong (a letterhead line taken as a title, a signature block taken as paragraphs) with `edit_file`, without retyping text. Where a word is plainly misread, correct that word from the image. A crop printed with a box goes to `crop.py` as is; one marked `(box needed)` takes its box from the image. A picture the elements missed but the page shows, such as a logo or seal, gets its own crop and block. Then do step 2, leaving out the `cat > qa/spec.json` part, and steps 3 and 4.
+Use the Word conversion command in the skill's "From a scan or photo of a page" section. Follow this page only for its spec reference, when a block must change, or for the steps below when `read_document` is not available.
 
 If the file is not there, or `read_document` said it could not read the file, carry on from step 1.
 

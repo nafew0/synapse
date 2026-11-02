@@ -5,7 +5,7 @@ import { defaultAutoPreparation, extractEnvVariable } from 'librechat-data-provi
 import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
 import type { TDocumentOcrConfig } from 'librechat-data-provider';
 import type { UnstructuredClient } from './client';
-import type { UnstructuredElement } from './types';
+import type { UnstructuredClientOptions, UnstructuredElement } from './types';
 import { READ_DOCUMENT_TOOL_NAME, documentReadToolDefinition } from './definitions';
 import { elementsToMarkdown, mergePages } from './merge';
 import { readPdfPages } from '../scan/read';
@@ -68,18 +68,46 @@ export function isDocumentOcrAllowed({
   );
 }
 
-export const resolveDocumentOcrClientOptions = (config: TDocumentOcrConfig) => ({
+export const resolveDocumentOcrClientOptions = (
+  config: TDocumentOcrConfig,
+): UnstructuredClientOptions => ({
   apiUrl: extractEnvVariable(config.apiUrl),
   apiKey: extractEnvVariable(config.apiKey),
   profile: config.profile,
   concurrency: config.concurrency,
 });
 
+interface ClassifiedFile {
+  file_id?: string;
+  filename?: string;
+  metadata?: { preparation?: { scan?: { ocrPages?: number[] } } } | null;
+}
+
+/**
+ * Tells the assistant which attached files the upload's classifier found need OCR. Without this it
+ * cannot know a PDF is a scan, and searches it first (seen in a real run).
+ */
+export function buildDocumentReadContext(files: ClassifiedFile[]): string | undefined {
+  const seen = new Set<string | undefined>();
+  const lines: string[] = [];
+  for (const file of files) {
+    const pages = file.metadata?.preparation?.scan?.ocrPages;
+    if (!pages?.length || seen.has(file.file_id)) {
+      continue;
+    }
+    seen.add(file.file_id);
+    lines.push(`- "${file.filename}": pages ${describeRange(pages)}`);
+  }
+  if (lines.length === 0) {
+    return undefined;
+  }
+  return `These attached files are scanned or have damaged text on these pages, so file_search and pdftotext cannot read them:\n${lines.join('\n')}\nWhen the user wants anything done with one of them, call read_document on it first, before file_search or any skill.`;
+}
+
 /** Sandbox names are ASCII and short: a long Bangla file name once broke every sandbox run. */
 const sandboxBase = (file: DocumentFile): string => `document-${file.file_id.slice(0, 8)}`;
 
-const describeRange = (pages: number[]): string =>
-  pages.length > 1 ? `${pages[0]}-${pages[pages.length - 1]}` : String(pages[0]);
+const describeRange = (pages: number[]): string => pages.join(', ');
 
 async function readDocument(
   file: DocumentFile,
@@ -168,7 +196,7 @@ export function createDocumentReadTool(deps: DocumentReadDeps): DynamicStructure
       ]);
 
       const notes = [
-        `Read "${file.filename}". Saved as /mnt/data/${elementsRef.name} and /mnt/data/${markdownRef.name}.`,
+        `Read "${file.filename}". Saved as /mnt/data/${elementsRef.name} and /mnt/data/${markdownRef.name} for this request only; on a later request call read_document again, which is free. For Word, load the docx skill and run: cd /mnt/data && python3 /mnt/data/skills/docx/scripts/scan_to_docx.py ${elementsRef.name} <source file> /mnt/data/<name>.docx`,
       ];
       if (reading.pagesSkipped.length > 0) {
         notes.push(
