@@ -37,7 +37,7 @@ import type { Response as ServerResponse } from 'express';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { ServerRequest, RunLLMConfig } from '~/types';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
-import { resolveConfigHeaders, createSafeUser } from '~/utils';
+import { resolveConfigHeaders, createSafeUser, writeGuarded } from '~/utils';
 import { checkAccess } from '~/middleware/access';
 import { isMemoryEnabled } from '~/memory';
 import Tokenizer from '~/utils/tokenizer';
@@ -1149,7 +1149,7 @@ async function handleMemoryArtifact({
       { expectedCreatedAt: jobCreatedAt },
     );
   } else {
-    res.write(`event: attachment\ndata: ${JSON.stringify(attachment)}\n\n`);
+    writeGuarded(res, `event: attachment\ndata: ${JSON.stringify(attachment)}\n\n`);
   }
   return attachment;
 }
