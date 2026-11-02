@@ -435,7 +435,7 @@ const loadTools = async ({
       requestedTools[tool] = async () => createAskUserQuestionTool();
       continue;
     } else if (tool === READ_DOCUMENT_TOOL_NAME) {
-      const reader = createDocumentReader(options.req, agent?.id);
+      const reader = await createDocumentReader(options.req, agent?.id);
       if (reader) {
         requestedTools[tool] = async () => reader;
       }

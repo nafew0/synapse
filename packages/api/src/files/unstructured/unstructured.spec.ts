@@ -251,15 +251,15 @@ describe('isDocumentOcrAllowed', () => {
     maxPages: 50,
     concurrency: 5,
     agents: ['agent_office_assistant'],
-    enabledTenants: ['tenant-a'],
+    pricePerPageUsd: 0.015,
   };
 
-  it('needs the assistant and the institution both listed', () => {
-    const allowed = { config, tenantId: 'tenant-a', agentId: 'agent_office_assistant' };
+  it('needs the assistant listed and the institution switched on', () => {
+    const allowed = { config, ocrAccess: true, agentId: 'agent_office_assistant' };
     expect(isDocumentOcrAllowed(allowed)).toBe(true);
     expect(isDocumentOcrAllowed({ ...allowed, agentId: 'other' })).toBe(false);
-    expect(isDocumentOcrAllowed({ ...allowed, tenantId: 'tenant-b' })).toBe(false);
-    expect(isDocumentOcrAllowed({ ...allowed, tenantId: undefined })).toBe(false);
+    expect(isDocumentOcrAllowed({ ...allowed, ocrAccess: false })).toBe(false);
+    expect(isDocumentOcrAllowed({ ...allowed, ocrAccess: undefined })).toBe(false);
     expect(isDocumentOcrAllowed({ ...allowed, config: undefined })).toBe(false);
   });
 });
@@ -275,6 +275,7 @@ describe('read_document', () => {
       { type: 'Title', text: 'OCR title', metadata: { page_number: 1 } },
       { type: 'NarrativeText', text: 'OCR body', metadata: { page_number: 2 } },
     ]);
+    const recordCharge = jest.fn(async () => undefined);
     const deps: DocumentReadDeps = {
       client: { partition },
       maxPages: 50,
@@ -282,13 +283,14 @@ describe('read_document', () => {
       readBytes: async () => Buffer.from('bytes'),
       getCached: async (key) => cache.get(key),
       setCached: async (key, value) => void cache.set(key, value),
+      recordCharge,
       uploadToSandbox: async (name, content) => {
         uploads[name] = content;
         return { id: `id-${name}`, name, storage_session_id: 'storage-1', kind: 'user' };
       },
       ...overrides,
     };
-    return { deps, partition, uploads, reader: createDocumentReadTool(deps) };
+    return { deps, partition, uploads, recordCharge, reader: createDocumentReadTool(deps) };
   };
 
   const invoke = async (
@@ -349,6 +351,52 @@ describe('read_document', () => {
     });
     await invoke(reader, 'order.pdf');
     expect(partition).toHaveBeenCalledTimes(1);
+  });
+
+  it('charges once, for the pages that came back', async () => {
+    const bytes = await threePagePdf();
+    const { reader, recordCharge } = build({ readBytes: async () => bytes });
+    await invoke(reader, 'order.pdf');
+    await invoke(reader, 'order.pdf');
+    expect(recordCharge).toHaveBeenCalledTimes(1);
+    expect(recordCharge).toHaveBeenCalledWith(
+      expect.objectContaining({
+        pages: 2,
+        file: expect.objectContaining({ file_id: pdf.file_id }),
+      }),
+    );
+  });
+
+  it('does not charge when the service returns nothing', async () => {
+    const { reader, recordCharge } = build({
+      client: { partition: jest.fn(async () => []) },
+    });
+    await invoke(reader, 'photo.png');
+    expect(recordCharge).not.toHaveBeenCalled();
+  });
+
+  it('keeps the answer when the charge cannot be recorded', async () => {
+    const { reader } = build({
+      recordCharge: async () => {
+        throw new Error('database down');
+      },
+    });
+    const { content } = await invoke(reader, 'photo.png');
+    expect(content).toContain('# OCR title');
+  });
+
+  it('sends nothing, charges nothing and keeps the typed pages when the allowance is short', async () => {
+    const bytes = await threePagePdf();
+    const { reader, partition, recordCharge } = build({
+      readBytes: async () => bytes,
+      checkAllowance: async () => false,
+    });
+    const { content } = await invoke(reader, 'order.pdf');
+    expect(partition).not.toHaveBeenCalled();
+    expect(recordCharge).not.toHaveBeenCalled();
+    expect(content).toContain('not enough allowance');
+    expect(content).toContain('typed first page');
+    expect(content).not.toContain('garbage');
   });
 
   it('stops at the page limit and says which pages were not read', async () => {

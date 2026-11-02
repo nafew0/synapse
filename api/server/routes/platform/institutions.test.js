@@ -377,6 +377,56 @@ describe('platform institutions route', () => {
       mockRecordAuditEntry.mockReset();
     });
 
+    describe('ocr-access', () => {
+      const mockModels = require('~/db/models');
+      const findOneAndUpdate = (result) => {
+        mockModels.Institution.findOneAndUpdate.mockReturnValue({
+          lean: () => ({ exec: async () => result }),
+        });
+      };
+
+      it('switches it on and audits before and after', async () => {
+        findOneAndUpdate({ name: 'CUET', ocrAccess: false });
+        const response = await invokeRoute({
+          path: '/:tenantId/ocr-access',
+          method: 'patch',
+          params: { tenantId: 'tenant-a' },
+          body: { enabled: true },
+        });
+        expect(response).toEqual({ statusCode: 200, body: { enabled: true } });
+        const [audit] = mockRecordAuditEntry.mock.calls[0];
+        expect(audit.metadata).toEqual({
+          operation: 'ocr_access_granted',
+          before: false,
+          after: true,
+        });
+      });
+
+      it('rejects a non-boolean without writing', async () => {
+        mockModels.Institution.findOneAndUpdate.mockClear();
+        const response = await invokeRoute({
+          path: '/:tenantId/ocr-access',
+          method: 'patch',
+          params: { tenantId: 'tenant-a' },
+          body: { enabled: 'yes' },
+        });
+        expect(response.statusCode).toBe(400);
+        expect(mockModels.Institution.findOneAndUpdate).not.toHaveBeenCalled();
+      });
+
+      it('answers 404 for an unknown institution, without an audit', async () => {
+        findOneAndUpdate(null);
+        const response = await invokeRoute({
+          path: '/:tenantId/ocr-access',
+          method: 'patch',
+          params: { tenantId: 'missing' },
+          body: { enabled: false },
+        });
+        expect(response.statusCode).toBe(404);
+        expect(mockRecordAuditEntry).not.toHaveBeenCalled();
+      });
+    });
+
     it('enables an agent without a group and delegates with the authenticated actor', async () => {
       mockSetTenantAgentAccess.mockResolvedValue(enabledResult);
 

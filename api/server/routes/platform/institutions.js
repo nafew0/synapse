@@ -307,10 +307,27 @@ router.post('/', async (req, res) => {
         createdBy: req.user.id ?? req.user._id,
       });
       if (packageId) {
-        const pkg = await models.InstitutionPackage.findOne({ id: packageId, active: true }).lean().exec();
+        const pkg = await models.InstitutionPackage.findOne({ id: packageId, active: true })
+          .lean()
+          .exec();
         if (!pkg) throw new HttpError(400, 'Active institution package not found');
-        const effectiveLimit = Number.isInteger(monthlyTokenLimit) && monthlyTokenLimit > 0 ? monthlyTokenLimit : pkg.monthlyTokenLimit;
-        created.packageAssignment = { packageId: pkg.id, packageSnapshot: { name: pkg.name, description: pkg.description, price: pkg.price, currency: pkg.currency, monthlyTokenLimit: pkg.monthlyTokenLimit }, monthlyTokenLimit: effectiveLimit, assignedAt: new Date(), assignedBy: req.user.id ?? req.user._id };
+        const effectiveLimit =
+          Number.isInteger(monthlyTokenLimit) && monthlyTokenLimit > 0
+            ? monthlyTokenLimit
+            : pkg.monthlyTokenLimit;
+        created.packageAssignment = {
+          packageId: pkg.id,
+          packageSnapshot: {
+            name: pkg.name,
+            description: pkg.description,
+            price: pkg.price,
+            currency: pkg.currency,
+            monthlyTokenLimit: pkg.monthlyTokenLimit,
+          },
+          monthlyTokenLimit: effectiveLimit,
+          assignedAt: new Date(),
+          assignedBy: req.user.id ?? req.user._id,
+        };
         await created.save();
       }
       return created;
@@ -410,6 +427,59 @@ router.get('/:tenantId', async (req, res) => {
   }
 });
 
+/** Whether this institution's scanned documents may be sent to the OCR service. */
+router.get('/:tenantId/ocr-access', async (req, res) => {
+  try {
+    const institution = await runAsSystem(() =>
+      db.getInstitutionByTenantId(req.params.tenantId, 'ocrAccess'),
+    );
+    if (!institution) {
+      return res.status(404).json({ error: 'Institution not found' });
+    }
+    return res.status(200).json({ enabled: institution.ocrAccess === true });
+  } catch (error) {
+    logger.error('[platform/institutions] Failed to load OCR access', error);
+    return res.status(500).json({ error: 'Failed to load OCR access' });
+  }
+});
+
+router.patch('/:tenantId/ocr-access', async (req, res) => {
+  const { tenantId } = req.params;
+  const { enabled } = req.body ?? {};
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ error: 'enabled must be a boolean' });
+  }
+
+  try {
+    const before = await runAsSystem(() =>
+      models.Institution.findOneAndUpdate(
+        { tenantId: tenantId.trim() },
+        { $set: { ocrAccess: enabled } },
+        { new: false, projection: { ocrAccess: 1, name: 1 } },
+      )
+        .lean()
+        .exec(),
+    );
+    if (!before) {
+      return res.status(404).json({ error: 'Institution not found' });
+    }
+    await recordPlatformAudit(req, {
+      action: 'institution.updated',
+      severity: 'warning',
+      target: { type: 'institution', id: tenantId, name: before.name },
+      metadata: {
+        operation: enabled ? 'ocr_access_granted' : 'ocr_access_revoked',
+        before: before.ocrAccess === true,
+        after: enabled,
+      },
+    });
+    return res.status(200).json({ enabled });
+  } catch (error) {
+    logger.error('[platform/institutions] Failed to update OCR access', error);
+    return res.status(500).json({ error: 'Failed to update OCR access' });
+  }
+});
+
 function sendAgentAccessError(res, error, fallback) {
   if (error instanceof HttpError || error instanceof TenantAgentAccessError) {
     return res.status(error.statusCode).json({ error: error.message });
@@ -496,11 +566,44 @@ router.post('/:tenantId/package', async (req, res) => {
   try {
     const institution = await runAsSystem(() => db.getInstitutionByTenantId(req.params.tenantId));
     if (!institution) return res.status(404).json({ error: 'Institution not found' });
-    const pkg = await runAsSystem(() => models.InstitutionPackage.findOne({ id: req.body?.packageId, active: true }).lean().exec());
+    const pkg = await runAsSystem(() =>
+      models.InstitutionPackage.findOne({ id: req.body?.packageId, active: true }).lean().exec(),
+    );
     if (!pkg) return res.status(400).json({ error: 'Active institution package not found' });
-    const monthlyTokenLimit = Number.isInteger(req.body?.monthlyTokenLimit) && req.body.monthlyTokenLimit > 0 ? req.body.monthlyTokenLimit : pkg.monthlyTokenLimit;
-    const updated = await runAsSystem(() => models.Institution.findOneAndUpdate({ tenantId: req.params.tenantId }, { $set: { packageAssignment: { packageId: pkg.id, packageSnapshot: { name: pkg.name, description: pkg.description, price: pkg.price, currency: pkg.currency, monthlyTokenLimit: pkg.monthlyTokenLimit }, monthlyTokenLimit, assignedAt: new Date(), assignedBy: req.user.id ?? req.user._id } } }, { new: true }).lean().exec());
-    await recordPlatformAudit(req, { action: 'institution.updated', target: { type: 'institution', id: req.params.tenantId }, metadata: { packageId: pkg.id, monthlyTokenLimit } });
+    const monthlyTokenLimit =
+      Number.isInteger(req.body?.monthlyTokenLimit) && req.body.monthlyTokenLimit > 0
+        ? req.body.monthlyTokenLimit
+        : pkg.monthlyTokenLimit;
+    const updated = await runAsSystem(() =>
+      models.Institution.findOneAndUpdate(
+        { tenantId: req.params.tenantId },
+        {
+          $set: {
+            packageAssignment: {
+              packageId: pkg.id,
+              packageSnapshot: {
+                name: pkg.name,
+                description: pkg.description,
+                price: pkg.price,
+                currency: pkg.currency,
+                monthlyTokenLimit: pkg.monthlyTokenLimit,
+              },
+              monthlyTokenLimit,
+              assignedAt: new Date(),
+              assignedBy: req.user.id ?? req.user._id,
+            },
+          },
+        },
+        { new: true },
+      )
+        .lean()
+        .exec(),
+    );
+    await recordPlatformAudit(req, {
+      action: 'institution.updated',
+      target: { type: 'institution', id: req.params.tenantId },
+      metadata: { packageId: pkg.id, monthlyTokenLimit },
+    });
     return res.json({ institution: updated });
   } catch (error) {
     logger.error('[platform/institutions] package assignment failed', error);

@@ -301,7 +301,7 @@ fileConfig:
 #   maxPages: 50
 #   concurrency: 5
 #   agents: ['agent_office_assistant']
-#   enabledTenants: []
+#   pricePerPageUsd: 0.015
 
 speech:
   stt:

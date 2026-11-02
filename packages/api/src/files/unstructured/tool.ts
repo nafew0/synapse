@@ -35,6 +35,17 @@ export interface DocumentReading {
   elements: UnstructuredElement[];
   pagesRead: number[];
   pagesSkipped: number[];
+  /** Pages the service returned something for. Only these are charged. */
+  pagesCharged: number;
+  /** The allowance did not cover the read, so nothing was sent. Never cached. */
+  refused?: boolean;
+}
+
+export interface DocumentCharge {
+  file: DocumentFile;
+  pages: number;
+  /** Hash of the file's bytes: a retry of the same read charges once. */
+  contentHash: string;
 }
 
 export interface DocumentReadDeps {
@@ -45,28 +56,33 @@ export interface DocumentReadDeps {
   readBytes: (file: DocumentFile) => Promise<Buffer | null>;
   getCached: (key: string) => Promise<DocumentReading | undefined>;
   setCached: (key: string, reading: DocumentReading) => Promise<void>;
+  /** Whether the allowance covers this many pages. Absent means usage is recorded, not enforced. */
+  checkAllowance?: (pages: number) => Promise<boolean>;
+  recordCharge: (charge: DocumentCharge) => Promise<void>;
   uploadToSandbox: (name: string, content: string) => Promise<SandboxFileRef>;
 }
 
 type ToolOutput = [string, { session_id: string; files: SandboxFileRef[] } | undefined];
 
-/** Whether this assistant, for this institution, may send documents out. Denies unless both are listed. */
+/** Whether this assistant, for this institution, may send documents out. Denies unless both agree. */
 export function isDocumentOcrAllowed({
   config,
-  tenantId,
+  ocrAccess,
   agentId,
 }: {
   config?: Partial<TDocumentOcrConfig>;
-  tenantId?: string;
+  ocrAccess?: boolean;
   agentId?: string;
 }): boolean {
-  if (!config?.apiUrl || !config.apiKey || !agentId || !tenantId) {
+  if (!config?.apiUrl || !config.apiKey || !agentId || ocrAccess !== true) {
     return false;
   }
-  return (
-    config.agents?.includes(agentId) === true && config.enabledTenants?.includes(tenantId) === true
-  );
+  return config.agents?.includes(agentId) === true;
 }
+
+/** Pages the service returned elements for, counted before they are merged with parser text. */
+const countPagesReturned = (elements: UnstructuredElement[]): number =>
+  new Set(elements.map((element) => element.metadata?.page_number ?? 1)).size;
 
 export const resolveDocumentOcrClientOptions = (
   config: TDocumentOcrConfig,
@@ -125,9 +141,12 @@ const describeRange = (pages: number[]): string => pages.join(', ');
 async function readDocument(
   file: DocumentFile,
   buffer: Buffer,
-  deps: Pick<DocumentReadDeps, 'client' | 'maxPages'>,
+  deps: Pick<DocumentReadDeps, 'client' | 'maxPages' | 'checkAllowance'>,
 ): Promise<DocumentReading> {
   if (IMAGE_TYPES.test(file.type)) {
+    if (deps.checkAllowance && !(await deps.checkAllowance(1))) {
+      return { elements: [], pagesRead: [], pagesSkipped: [1], pagesCharged: 0, refused: true };
+    }
     const ocrElements = await deps.client.partition({
       buffer,
       filename: file.filename,
@@ -137,6 +156,7 @@ async function readDocument(
       elements: mergePages({ ocrElements, ocrPages: [1], texts: [] }),
       pagesRead: [1],
       pagesSkipped: [],
+      pagesCharged: countPagesReturned(ocrElements),
     };
   }
 
@@ -147,6 +167,20 @@ async function readDocument(
   const needed = kinds.flatMap((kind, index) => (kind === 'text' ? [] : [index + 1]));
   const pagesRead = needed.slice(0, deps.maxPages);
   const pagesSkipped = needed.slice(deps.maxPages);
+  if (
+    pagesRead.length > 0 &&
+    deps.checkAllowance &&
+    !(await deps.checkAllowance(pagesRead.length))
+  ) {
+    const usable = texts.map((text, index) => (needed.includes(index + 1) ? '' : text));
+    return {
+      elements: mergePages({ ocrElements: [], ocrPages: [], texts: usable }),
+      pagesRead: [],
+      pagesSkipped: needed,
+      pagesCharged: 0,
+      refused: true,
+    };
+  }
   const ocrElements =
     pagesRead.length > 0
       ? await deps.client.partition({
@@ -161,7 +195,25 @@ async function readDocument(
     elements: mergePages({ ocrElements, ocrPages: pagesRead, texts: usable }),
     pagesRead,
     pagesSkipped,
+    pagesCharged: countPagesReturned(ocrElements),
   };
+}
+
+/** The read already succeeded and was cached, so a failed record must not fail the turn. */
+async function chargeForReading(
+  deps: Pick<DocumentReadDeps, 'recordCharge'>,
+  file: DocumentFile,
+  reading: DocumentReading,
+  contentHash: string,
+): Promise<void> {
+  if (reading.pagesCharged === 0) {
+    return;
+  }
+  try {
+    await deps.recordCharge({ file, pages: reading.pagesCharged, contentHash });
+  } catch (error) {
+    logger.error('[read_document] could not record the charge', error);
+  }
 }
 
 /**
@@ -197,8 +249,9 @@ export function createDocumentReadTool(deps: DocumentReadDeps): DynamicStructure
       const key = createHash('sha256').update(buffer).digest('hex');
       const cached = await deps.getCached(key);
       const reading = cached ?? (await readDocument(file, buffer, deps));
-      if (!cached) {
+      if (!cached && !reading.refused) {
         await deps.setCached(key, reading);
+        await chargeForReading(deps, file, reading, key);
       }
 
       const markdown = elementsToMarkdown(reading.elements);
@@ -211,7 +264,11 @@ export function createDocumentReadTool(deps: DocumentReadDeps): DynamicStructure
       const notes = [
         `Read "${file.filename}". Saved as /mnt/data/${elementsRef.name} and /mnt/data/${markdownRef.name} for this request only; on a later request call read_document again, which is free. For Word, load the docx skill and run: cd /mnt/data && python3 /mnt/data/skills/docx/scripts/scan_to_docx.py ${elementsRef.name} <source file> /mnt/data/<name>.docx`,
       ];
-      if (reading.pagesSkipped.length > 0) {
+      if (reading.refused) {
+        notes.push(
+          `Pages ${describeRange(reading.pagesSkipped)} were NOT read: there is not enough allowance left to read scanned pages. Tell the user.`,
+        );
+      } else if (reading.pagesSkipped.length > 0) {
         notes.push(
           `Pages ${describeRange(reading.pagesSkipped)} were NOT read: only ${deps.maxPages} pages are read per document. Tell the user.`,
         );

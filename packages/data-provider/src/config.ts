@@ -1930,7 +1930,7 @@ export const documentOcrSchema = z.object({
   maxPages: z.number().int().min(1).default(50),
   concurrency: z.number().int().min(1).default(5),
   agents: z.array(z.string()).default([]),
-  enabledTenants: z.array(z.string()).default([]),
+  pricePerPageUsd: z.number().nonnegative().default(0.015),
 });
 
 export type TDocumentOcrConfig = z.infer<typeof documentOcrSchema>;

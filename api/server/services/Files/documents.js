@@ -1,5 +1,6 @@
 const { Readable } = require('stream');
-const { Time, CacheKeys } = require('librechat-data-provider');
+const { logger, runAsSystem } = require('@librechat/data-schemas');
+const { Time, CacheKeys, documentOcrSchema } = require('librechat-data-provider');
 const {
   getStorageSource,
   createDocumentReadTool,
@@ -28,17 +29,42 @@ const streamToBuffer = async (stream) => {
 };
 
 /**
+ * The institution's OCR switch, read at most once per request and denied on any failure. Only asked
+ * for agents that have the tool, and read fresh so that switching off takes effect at once.
+ *
+ * @param {ServerRequest} req
+ * @returns {Promise<boolean>}
+ */
+function getDocumentOcrAccess(req) {
+  const tenantId = req.user?.tenantId;
+  if (!tenantId || !req.config?.documentOcr) {
+    return Promise.resolve(false);
+  }
+  if (!req.documentOcrAccess) {
+    req.documentOcrAccess = runAsSystem(() => db.getInstitutionByTenantId(tenantId, 'ocrAccess'))
+      .then((institution) => institution?.ocrAccess === true)
+      .catch((error) => {
+        logger.error('[read_document] could not read the institution switch', error);
+        return false;
+      });
+  }
+  return req.documentOcrAccess;
+}
+
+/**
  * Creates `read_document` for this request, or `null` when this assistant or institution may not
  * send documents out. Lookups are scoped to the requesting user.
  *
  * @param {ServerRequest} req
  * @param {string} [agentId]
  */
-function createDocumentReader(req, agentId) {
-  const config = req.config?.documentOcr;
-  if (!isDocumentOcrAllowed({ config, tenantId: req.user?.tenantId, agentId })) {
+async function createDocumentReader(req, agentId) {
+  const ocrAccess = await getDocumentOcrAccess(req);
+  if (!isDocumentOcrAllowed({ config: req.config?.documentOcr, ocrAccess, agentId })) {
     return null;
   }
+  /* The app config holds the YAML as written, so the schema's defaults are applied here. */
+  const config = documentOcrSchema.parse(req.config.documentOcr);
   const userId = req.user.id;
   const { conversationId } = req.body ?? {};
   const requestFileIds = (req.body?.files ?? []).map((file) => file.file_id).filter(Boolean);
@@ -66,6 +92,16 @@ function createDocumentReader(req, agentId) {
     },
     getCached: (hash) => cache.get(cacheKey(hash)),
     setCached: (hash, reading) => cache.set(cacheKey(hash), reading, Time.ONE_DAY * 7),
+    recordCharge: ({ file, pages, contentHash }) =>
+      db.createOcrTransaction({
+        user: userId,
+        tenantId: req.user.tenantId,
+        fileId: file.file_id,
+        pages,
+        contentHash,
+        profile: config.profile,
+        pricePerPageUsd: config.pricePerPageUsd,
+      }),
     uploadToSandbox: async (name, content) => {
       const uploaded = await uploadCodeEnvFile({
         req,
@@ -84,4 +120,4 @@ function createDocumentReader(req, agentId) {
   });
 }
 
-module.exports = { createDocumentReader };
+module.exports = { createDocumentReader, getDocumentOcrAccess };

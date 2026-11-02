@@ -44,6 +44,7 @@ const {
   isFatalAgentInitializationError,
   resolveCodeExecutionContext,
 } = require('@librechat/api');
+const { getDocumentOcrAccess } = require('~/server/services/Files/documents');
 const {
   Time,
   Tools,
@@ -661,6 +662,9 @@ async function loadToolDefinitionsWrapper({
       ? await primeSearchResources({ req, agent, agentResourceType, tool_resources })
       : null;
 
+  const ocrAccess = agent.tools?.includes(READ_DOCUMENT_TOOL_NAME)
+    ? await getDocumentOcrAccess(req)
+    : false;
   const filteredTools = agent.tools?.filter((tool) => {
     if (tool === Tools.file_search) {
       return (primedSearch?.files?.length ?? 0) > 0;
@@ -677,7 +681,7 @@ async function loadToolDefinitionsWrapper({
     if (tool === READ_DOCUMENT_TOOL_NAME) {
       return isDocumentOcrAllowed({
         config: req.config?.documentOcr,
-        tenantId: req.user?.tenantId,
+        ocrAccess,
         agentId: agent.id,
       });
     }
