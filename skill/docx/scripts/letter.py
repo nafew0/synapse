@@ -60,7 +60,6 @@ A4 = (21.0, 29.7)
 DEFAULT_MARGINS = [1.5, 2.0, 1.5, 2.0]
 MIN_SIZE = 10.0
 MIN_MARGIN = 1.2
-FIT_STEPS = 16
 GAP_STEP = 0.7
 MIN_GAP_SCALE = 0.3
 SIGNATURE_STEP = 0.85
@@ -435,19 +434,16 @@ def render(docx_path, work):
     return pdf, pages
 
 
-def fit(spec, out_path, target, work):
-    """Shrink margins, then type and spacing together, the leading, then signatures, until the pages fit."""
+def fit_ladder(spec):
+    """Every fitting step in order, loosest first: margins, then type and spacing, leading, signatures."""
     margins = list(spec.get("page", {}).get("margins_cm", DEFAULT_MARGINS))
     scale = 1.0
     tight = False
     gap_scale = 1.0
     signature_scale = 1.0
     style = Style(spec, scale, margins)
-    for attempt in range(FIT_STEPS):
-        build(spec, out_path, style)
-        pdf, pages = render(out_path, work)
-        if pages <= target:
-            return style, pdf, pages, attempt + 1
+    ladder = [style]
+    while True:
         if margins[0] > MIN_MARGIN or margins[2] > MIN_MARGIN:
             margins = [max(MIN_MARGIN, margins[0] - 0.3), margins[1], max(MIN_MARGIN, margins[2] - 0.3), margins[3]]
         elif style.base * scale > MIN_SIZE:
@@ -459,9 +455,39 @@ def fit(spec, out_path, target, work):
         elif signature_scale > MIN_SIGNATURE_SCALE:
             signature_scale = max(MIN_SIGNATURE_SCALE, signature_scale * SIGNATURE_STEP)
         else:
-            break
+            return ladder
         style = Style(spec, scale, margins, tight, gap_scale, signature_scale)
-    return style, pdf, pages, attempt + 1
+        ladder.append(style)
+
+
+def fit(spec, out_path, target, work):
+    """Finds the loosest step that fits by bisection, since each build runs LibreOffice."""
+    ladder = fit_ladder(spec)
+    builds = 0
+
+    def attempt(index):
+        nonlocal builds
+        builds += 1
+        build(spec, out_path, ladder[index])
+        pdf, pages = render(out_path, work)
+        return pdf, pages
+
+    pdf, pages = attempt(0)
+    if pages <= target:
+        return ladder[0], pdf, pages, builds
+    too_loose, fits = 0, len(ladder) - 1
+    current = None
+    while fits - too_loose > 1:
+        middle = (too_loose + fits) // 2
+        pdf, pages = attempt(middle)
+        current = middle
+        if pages <= target:
+            fits = middle
+        else:
+            too_loose = middle
+    if current != fits:
+        pdf, pages = attempt(fits)
+    return ladder[fits], pdf, pages, builds
 
 
 def validate(out_path):

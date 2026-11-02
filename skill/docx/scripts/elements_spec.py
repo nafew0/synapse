@@ -28,7 +28,7 @@ DATE_INSIDE = re.compile(r"(?:তারিখ|Date\b)", re.IGNORECASE)
 DATE_ONLY = re.compile(r"^[০-৯\d]{1,2}\s+\S+\s+[০-৯\d]{4}(?:\s*\S*)?$")
 LIST_NUMBER = re.compile(r"^\s*([০-৯\d]+(?:\s*[-–]\s*[০-৯\d]+)?\s*[।)]|[০-৯\d]+\.(?=\s)|[ক-হ]\s*[।)]|[•·])\s*(.*)$", re.DOTALL)
 CELL_NUMBER = re.compile(r"\s+(?=[০-৯\d]{1,2}[.।]\s)")
-HANDWRITTEN_DATE = re.compile(r"^[০-৯\d]{1,2}[/.-][০-৯\d]{1,2}[/.-][০-৯\d]{2,4}$")
+HANDWRITTEN_DATE = re.compile(r"[০-৯\d]{1,2}[/.-][০-৯\d]{1,2}[/.-][০-৯\d]{2,4}$")
 SHORT_LINE = 70
 MAX_SIGNATURE_LINES = 5
 PICTURE_TYPES = {"Image", "Figure", "Picture"}
@@ -291,13 +291,17 @@ def line_height(elements):
     return page * DEFAULT_LINE_HEIGHT_SHARE if page else None
 
 
+SIGNATURE_OVERLAP = 0.35
+
+
 def signature_box(element, printed_lines, height):
     """The handwriting's box. The service's box for a signature block starts at the handwriting."""
     box = layout_box(element)
     if not box or not height:
         return None
     x0, y0, x1, y1, width, page_height = box
-    bottom = y1 - printed_lines * height
+    # Handwriting runs down into the printed name, so stop part way into that line.
+    bottom = y1 - printed_lines * height + SIGNATURE_OVERLAP * height
     if bottom <= y0:
         return None
     return {
@@ -433,7 +437,9 @@ class SpecBuilder:
                 if match:
                     right.append(text[match.start() :].strip())
             elif is_date_label(element) or (right and DATE_ONLY.match(text)):
-                right.append(text)
+                # The service can return a second, cut-off read of the same date.
+                if not any(line.startswith(text) for line in right):
+                    right.append(text)
                 date_box = date_box or layout_box(element)
             else:
                 break
@@ -469,7 +475,7 @@ class SpecBuilder:
             line = text_of(self.elements[self.index])
             self.index += 1
             # A handwritten date beside the signature is inside its crop already.
-            if not (HANDWRITTEN_DATE.match(line) and not block["lines"]):
+            if not (HANDWRITTEN_DATE.search(line) and not block["lines"]):
                 block["lines"].append(line)
         if element is not None:
             source = element

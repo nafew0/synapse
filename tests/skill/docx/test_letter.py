@@ -41,6 +41,36 @@ def scan(tmp_path):
     return path
 
 
+def test_fit_bisects_to_the_loosest_step_that_fits(monkeypatch, tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    import letter
+
+    spec = {'page': {'margins_cm': [2.5, 2.5, 2.5, 2.5]}, 'blocks': []}
+    ladder = letter.fit_ladder(spec)
+    fits_from = len(ladder) - 3
+    current = {}
+    monkeypatch.setattr(letter, 'build', lambda _spec, _out, style: current.update(index=ladder.index(style)))
+    monkeypatch.setattr(letter, 'fit_ladder', lambda _spec: ladder)
+    monkeypatch.setattr(letter, 'render', lambda _out, _work: ('p.pdf', 1 if current['index'] >= fits_from else 2))
+
+    style, _, pages, builds = letter.fit(spec, tmp_path / 'o.docx', 1, tmp_path)
+
+    assert (ladder.index(style), pages) == (fits_from, 1)
+    assert builds <= 7 < len(ladder)
+
+
+def test_a_signature_box_grows_up_to_its_ink_and_stops_at_a_gap():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import signature_top
+
+    page = Image.new('L', (300, 300), 255)
+    draw = ImageDraw.Draw(page)
+    draw.line((60, 80, 60, 200), fill=0, width=2)
+    draw.line((40, 40, 200, 40), fill=0, width=2)
+    assert abs(signature_top(page, [20, 150, 280, 220]) - 80) <= 1
+    assert signature_top(Image.new('L', (300, 300), 255), [20, 150, 280, 220]) == 150
+
+
 def test_a_picture_is_not_clipped_by_tight_leading(scan):
     sys.path.insert(0, str(SCRIPTS))
     from docx.enum.text import WD_LINE_SPACING

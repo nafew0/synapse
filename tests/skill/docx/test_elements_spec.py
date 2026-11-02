@@ -158,6 +158,16 @@ def test_real_parse_shape_becomes_the_letter_blocks():
     assert crops[2]["box"][1] == 2490 and crops[2]["box"][3] < 2660
 
 
+def test_a_cut_off_second_read_of_the_date_is_dropped():
+    elements = [
+        {"type": "NarrativeText", "text": "স্মারক নং-চুয়েট/ছাক/২০২৬/০০৬৮ তারিখঃ ০১/০৪/২০২৬ খ্রিঃ।", "metadata": {"page_number": 1}},
+        {"type": "NarrativeText", "text": "তারিখঃ ০১/০", "metadata": {"page_number": 1}},
+    ]
+    spec, _ = convert(elements)
+    memo = next(block for block in spec["blocks"] if block["type"] == "memo")
+    assert memo["right"] == ["তারিখঃ ০১/০৪/২০২৬ খ্রিঃ।"]
+
+
 def test_mostly_short_lines_stay_apart_and_a_heading_is_not_repeated():
     long_line = "ফোন : ০৩১-২৫১৬৩০২, পিবিএক্স : ০৩১-৭১৪৯২০-২২এর (৮৫০০), Email: dsw@cuet.example.bd এবং আরও"
     spec, _ = convert([

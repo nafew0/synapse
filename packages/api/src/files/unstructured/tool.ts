@@ -80,7 +80,7 @@ export const resolveDocumentOcrClientOptions = (
 interface ClassifiedFile {
   file_id?: string;
   filename?: string;
-  metadata?: { preparation?: { scan?: { ocrPages?: number[] } } } | null;
+  metadata?: { preparation?: { scan?: { ocrPages?: number[]; garbledPages?: number[] } } } | null;
 }
 
 /**
@@ -90,22 +90,35 @@ interface ClassifiedFile {
 export function buildDocumentReadContext(files: ClassifiedFile[]): string | undefined {
   const seen = new Set<string | undefined>();
   const lines: string[] = [];
+  const digital: string[] = [];
   for (const file of files) {
-    const pages = file.metadata?.preparation?.scan?.ocrPages;
+    const scan = file.metadata?.preparation?.scan;
+    const pages = scan?.ocrPages;
     if (!pages?.length || seen.has(file.file_id)) {
       continue;
     }
     seen.add(file.file_id);
     lines.push(`- "${file.filename}": pages ${describeRange(pages)}`);
+    if (scan?.garbledPages?.length === pages.length) {
+      digital.push(`"${file.filename}"`);
+    }
   }
   if (lines.length === 0) {
     return undefined;
   }
-  return `These attached files are scanned or have damaged text on these pages, so file_search and pdftotext cannot read them:\n${lines.join('\n')}\nWhen the user wants anything done with one of them, call read_document on it first, before file_search or any skill.`;
+  const reading = `These attached files are scanned or have damaged text on these pages, so file_search and pdftotext cannot read them:\n${lines.join('\n')}\nWhen the user wants anything done with one of them, call read_document on it first, before file_search or any skill.`;
+  if (digital.length === 0) {
+    return reading;
+  }
+  return `${reading}\nException: ${digital.join(', ')} are digital PDFs, not scans. To turn one into Word, use the pdf-to-docx skill without read_document: it repairs the text for free and keeps the original pictures. If its gate fails on the text, do not ask the user: call read_document and follow its note.`;
 }
 
 /** Sandbox names are ASCII and short: a long Bangla file name once broke every sandbox run. */
 const sandboxBase = (file: DocumentFile): string => `document-${file.file_id.slice(0, 8)}`;
+
+/** A PDF whose text was extracted at upload is recorded as text/plain; its stored bytes are the PDF. */
+const isPdf = (file: DocumentFile): boolean =>
+  file.type === 'application/pdf' || /\.pdf$/i.test(file.filename);
 
 const describeRange = (pages: number[]): string => pages.join(', ');
 
@@ -170,7 +183,7 @@ export function createDocumentReadTool(deps: DocumentReadDeps): DynamicStructure
         const names = files.map((candidate) => `"${candidate.filename}"`).join(', ') || 'none';
         return [`No file named "${filename}" in this conversation. Files: ${names}.`, undefined];
       }
-      if (file.type !== 'application/pdf' && !IMAGE_TYPES.test(file.type)) {
+      if (!isPdf(file) && !IMAGE_TYPES.test(file.type)) {
         return [
           `"${file.filename}" is not a PDF or an image, so this tool cannot read it.`,
           undefined,

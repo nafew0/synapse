@@ -25,6 +25,8 @@ RULE_ROW_STEP = 2
 RULE_SEARCH = 16
 RULE_SPREAD = 3
 BLOB_REACH = 3
+INK_GAP_ROWS = 12
+MAX_SIGNATURE_GROWTH = 200
 
 
 def render_pages(source, qa):
@@ -79,6 +81,30 @@ def apply_table_widths(spec, pages, cm_per_pixel):
             block["widths_cm"] = widths
 
 
+def signature_top(image, box):
+    """The service's box varies by read and can start partway down the handwriting."""
+    x0, top, x1, _ = box
+    pixels = image.load()
+    highest = top
+    for y in range(top - 1, max(top - MAX_SIGNATURE_GROWTH, 0) - 1, -1):
+        if any(pixels[x, y] < DARK for x in range(x0, x1)):
+            highest = y
+        elif highest - y >= INK_GAP_ROWS:
+            break
+    return highest
+
+
+def grow_signatures(boxes, page):
+    signatures = [c for c in boxes if c["name"].startswith("sig")]
+    if not signatures:
+        return
+    with Image.open(page) as source:
+        image = ImageOps.grayscale(source)
+    for crop in signatures:
+        x0, _, x1, bottom = crop["box"]
+        crop["box"] = [x0, signature_top(image, crop["box"]), x1, bottom]
+
+
 def run_crops(crops, pages, qa):
     """Cuts every picture that has a box. Returns the crop names that came out."""
     script = Path(__file__).resolve().parent / "crop.py"
@@ -87,6 +113,7 @@ def run_crops(crops, pages, qa):
         boxes = [c for c in crops if c["box"] and c.get("page", 1) == number]
         if not boxes:
             continue
+        grow_signatures(boxes, page)
         args = [f"{c['name']}={','.join(str(v) for v in c['box'])}" for c in boxes]
         result = subprocess.run(
             [sys.executable, str(script), str(page), str(qa), *args], capture_output=True, text=True

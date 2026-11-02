@@ -207,6 +207,23 @@ describe('merge', () => {
 });
 
 describe('buildDocumentReadContext', () => {
+  it('sends a digital PDF with damaged text to the free repair, but not a scan', () => {
+    const context = buildDocumentReadContext([
+      {
+        file_id: 'a',
+        filename: 'digital.pdf',
+        metadata: { preparation: { scan: { ocrPages: [1, 2], garbledPages: [1, 2] } } },
+      },
+      {
+        file_id: 'b',
+        filename: 'mixed.pdf',
+        metadata: { preparation: { scan: { ocrPages: [1, 2], garbledPages: [1] } } },
+      },
+    ]);
+    expect(context).toContain('Exception: "digital.pdf" are digital PDFs');
+    expect(context).not.toContain('Exception: "mixed.pdf"');
+  });
+
   const scanned = (file_id: string, filename: string, ocrPages: number[]) => ({
     file_id,
     filename,
@@ -322,6 +339,16 @@ describe('read_document', () => {
     expect(content).toContain('typed first page');
     expect(content).toContain('<!-- page 2 -->');
     expect(content).not.toContain('garbage');
+  });
+
+  it('reads a PDF recorded as text/plain because its text was extracted at upload', async () => {
+    const bytes = await threePagePdf();
+    const { reader, partition } = build({
+      listFiles: async () => [{ ...pdf, type: 'text/plain' }],
+      readBytes: async () => bytes,
+    });
+    await invoke(reader, 'order.pdf');
+    expect(partition).toHaveBeenCalledTimes(1);
   });
 
   it('stops at the page limit and says which pages were not read', async () => {
