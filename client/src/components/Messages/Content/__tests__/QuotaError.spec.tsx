@@ -1,6 +1,8 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
+import type { TAuthContext } from '~/common';
+import { AuthContext } from '~/hooks/AuthContext';
 import Error, { getErrorSeverity } from '../Error';
 
 jest.mock('~/hooks', () => ({
@@ -140,6 +142,37 @@ describe('quota refusal message', () => {
   it('falls back when the limit code is unrecognised', () => {
     renderError({ type: 'token_quota_exceeded', limitCode: 'SOMETHING_NEW', resetAt });
     expect(screen.getByText('com_error_quota_generic')).toBeInTheDocument();
+  });
+});
+
+describe('administrator contact line', () => {
+  const refusal = JSON.stringify({ type: 'token_quota_exceeded', limitCode: 'WEEKLY_CAP' });
+
+  const renderAs = (user: TAuthContext['user']) =>
+    render(
+      <RecoilRoot>
+        <AuthContext.Provider value={{ user } as TAuthContext}>
+          <Error text={refusal} />
+        </AuthContext.Provider>
+      </RecoilRoot>,
+    );
+
+  it('asks institution members to contact their administrator', () => {
+    renderAs({ id: 'u1', tenantId: 'cuet' } as TAuthContext['user']);
+    expect(
+      screen.getByText('com_error_quota_weekly com_error_quota_contact_admin'),
+    ).toBeInTheDocument();
+  });
+
+  it('leaves it out for individuals, who have no administrator', () => {
+    renderAs({ id: 'u2' } as TAuthContext['user']);
+    expect(screen.getByText('com_error_quota_weekly')).toBeInTheDocument();
+    expect(screen.queryByText(/com_error_quota_contact_admin/)).not.toBeInTheDocument();
+  });
+
+  it('leaves it out on a shared conversation, which has no signed-in user', () => {
+    renderError({ type: 'token_quota_exceeded', limitCode: 'WEEKLY_CAP' });
+    expect(screen.queryByText(/com_error_quota_contact_admin/)).not.toBeInTheDocument();
   });
 });
 

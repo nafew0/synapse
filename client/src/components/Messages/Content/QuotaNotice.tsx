@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { Clock, ImageOff, GaugeCircle } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
 import { SettingsTabValues } from 'librechat-data-provider';
 import type { LocalizeFunction } from '~/common';
+import { AuthContext } from '~/hooks/AuthContext';
 import store from '~/store';
 
 export type TQuotaExceeded = {
@@ -86,6 +87,9 @@ export default function QuotaNotice({
   localize: LocalizeFunction;
 }) {
   const setRequestedSettingsTab = useSetRecoilState(store.requestedSettingsTab);
+  /** Read without `useAuthContext`: shared conversations render outside the auth
+   *  provider, and a stranger viewing a share has no administrator to ask. */
+  const isMember = Boolean(useContext(AuthContext)?.user?.tenantId);
   const code = knownLimitCode(json.limitCode);
   const resetsAt = formatQuotaReset(json.resetAt);
   /** The icon follows the meter that ran out: an image cap is a different fact
@@ -110,7 +114,10 @@ export default function QuotaNotice({
       </div>
       <div className="min-w-0 flex-1">
         <p className="mb-1 text-[15px] font-semibold text-text-primary sm:text-base">{title}</p>
-        <p className="text-sm leading-relaxed text-text-secondary sm:text-[15px]">{message}</p>
+        <p className="text-sm leading-relaxed text-text-secondary sm:text-[15px]">
+          {message}
+          {isMember && ` ${localize('com_error_quota_contact_admin')}`}
+        </p>
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
           {resetsAt != null && (
             <span className="inline-flex items-center gap-1.5 rounded-full bg-surface-tertiary px-3 py-1.5 text-xs text-text-secondary sm:text-[13px]">
