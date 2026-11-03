@@ -65,7 +65,15 @@ Every tool call spends part of a fixed step budget for the whole request. A run 
 
 ## From a scan or photo of a page
 
-A picture of an office order, letter or notice to be turned into Word: read `references/scan.md` (`read_file /mnt/data/skills/docx/references/scan.md`) and follow it. It is about five tool calls with `scripts/crop.py` and `scripts/letter.py`; do not hand-write a docx-js script for it.
+When `read_document` has saved `document-<id>.elements.json` for this request, do not read any reference or transcribe. Run the one command, then read its comparison image:
+
+```bash
+cd /mnt/data && python3 /mnt/data/skills/docx/scripts/scan_to_docx.py document-<id>.elements.json <source file> /mnt/data/<name>.docx
+```
+
+Deliver if the comparison shows every block in place. Only if a block is clearly wrong, make a small `edit_file` to `qa/spec.json` and rerun `python3 /mnt/data/skills/docx/scripts/letter.py qa/spec.json /mnt/data/<name>.docx --source <page image>`. Never rewrite the whole spec, and do not check numbers against the image: tell the user in one line that they should check numbers and anything handwritten.
+
+Otherwise, a picture of an office order, letter or notice to be turned into Word: read `references/scan.md` (`read_file /mnt/data/skills/docx/references/scan.md`) and follow it. It is about five tool calls with `scripts/crop.py` and `scripts/letter.py`; do not hand-write a docx-js script for it.
 
 ## Editing existing documents
 

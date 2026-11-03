@@ -34,6 +34,11 @@ const institutionSchema: Schema<IInstitution> = new Schema<IInstitution>(
       default: 'Asia/Dhaka',
       trim: true,
     },
+    /** Superadmin switch: may this institution's scans be sent to the OCR service. */
+    ocrAccess: {
+      type: Boolean,
+      default: false,
+    },
     usagePolicyVersion: {
       type: Number,
       default: 0,

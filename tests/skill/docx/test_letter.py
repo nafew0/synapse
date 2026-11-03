@@ -41,6 +41,61 @@ def scan(tmp_path):
     return path
 
 
+def test_fit_bisects_to_the_loosest_step_that_fits(monkeypatch, tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    import letter
+
+    spec = {'page': {'margins_cm': [2.5, 2.5, 2.5, 2.5]}, 'blocks': []}
+    ladder = letter.fit_ladder(spec)
+    fits_from = len(ladder) - 3
+    current = {}
+    monkeypatch.setattr(letter, 'build', lambda _spec, _out, style: current.update(index=ladder.index(style)))
+    monkeypatch.setattr(letter, 'fit_ladder', lambda _spec: ladder)
+    monkeypatch.setattr(letter, 'render', lambda _out, _work: ('p.pdf', 1 if current['index'] >= fits_from else 2))
+
+    style, _, pages, builds = letter.fit(spec, tmp_path / 'o.docx', 1, tmp_path)
+
+    assert (ladder.index(style), pages) == (fits_from, 1)
+    assert builds <= 7 < len(ladder)
+
+
+def test_a_signature_box_grows_up_to_its_ink_and_stops_at_a_gap():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import signature_top
+
+    page = Image.new('L', (300, 300), 255)
+    draw = ImageDraw.Draw(page)
+    draw.line((60, 80, 60, 200), fill=0, width=2)
+    draw.line((40, 40, 200, 40), fill=0, width=2)
+    assert abs(signature_top(page, [20, 150, 280, 220]) - 80) <= 1
+    assert signature_top(Image.new('L', (300, 300), 255), [20, 150, 280, 220]) == 150
+
+
+def test_a_picture_is_not_clipped_by_tight_leading(scan):
+    sys.path.insert(0, str(SCRIPTS))
+    from docx.enum.text import WD_LINE_SPACING
+    from docx.shared import Pt
+    from letter import picture
+
+    paragraph = Document().add_paragraph()
+    paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    paragraph.paragraph_format.line_spacing = Pt(12.5)
+    picture(paragraph, scan, 2)
+    assert paragraph.paragraph_format.line_spacing_rule == WD_LINE_SPACING.SINGLE
+
+
+def test_fitting_shrinks_the_signature_but_keeps_its_proportions(scan, tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from letter import Style, build
+
+    spec = {'blocks': [{'type': 'signature', 'image': str(scan), 'image_width_cm': 4, 'lines': ['Name']}]}
+    out = tmp_path / 'out.docx'
+    build(spec, out, Style(spec, signature_scale=0.5))
+    shape = Document(out).tables[0].rows[0].cells[-1].paragraphs[0].runs[0]._r.xpath('.//wp:extent')[0]
+    assert round(int(shape.get('cx')) / 360000, 1) == 2.0
+    assert round(int(shape.get('cy')) / int(shape.get('cx')), 2) == round(800 / 600, 2)
+
+
 def test_crop_trims_to_ink_and_whitens_paper(scan, tmp_path):
     result = run('crop.py', scan, tmp_path / 'qa', 'logo=20,20,120,120', 'sig=280,440,440,540', cwd=tmp_path)
 

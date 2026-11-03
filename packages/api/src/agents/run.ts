@@ -59,6 +59,7 @@ import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/a
 import { isSteeringSupported, isSteerPreemptSupported } from '~/agents/steering/runtime';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { resolveStreamLimits, resolveSubagentMaxTurns } from '~/agents/config';
+import { READ_DOCUMENT_TOOL_NAME } from '~/files/unstructured/definitions';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
 import { buildAgentInitialToolSessions } from '~/agents/codeFilesSession';
 import { getProviderConfig } from '~/endpoints/config/providers';
@@ -1849,6 +1850,7 @@ export async function createRun({
       EDIT_FILE_TOOL_NAME,
       Constants.READ_FILE,
       CHECK_BACKGROUND_TASK_NAME,
+      READ_DOCUMENT_TOOL_NAME,
     ],
     // Derive the Langfuse trace id deterministically from runId so message
     // feedback can be scored against the trace without a lookup (see the

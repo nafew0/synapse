@@ -1922,6 +1922,19 @@ export const ocrSchema = z.object({
   strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),
 });
 
+/** The Office Assistant's document reader. Off unless an assistant and an institution are both listed. */
+export const documentOcrSchema = z.object({
+  apiUrl: z.string().default('https://transform.unstructured.io'),
+  apiKey: z.string(),
+  profile: z.enum(['best', 'balanced']).default('best'),
+  maxPages: z.number().int().min(1).default(50),
+  concurrency: z.number().int().min(1).default(5),
+  agents: z.array(z.string()).default([]),
+  pricePerPageUsd: z.number().nonnegative().default(0.015),
+});
+
+export type TDocumentOcrConfig = z.infer<typeof documentOcrSchema>;
+
 export const balanceSchema = z.object({
   enabled: z.boolean().optional().default(false),
   startBalance: z.number().optional().default(20000),
@@ -2122,6 +2135,7 @@ export const configSchema = z.object({
   version: z.string(),
   cache: z.boolean().default(true),
   ocr: ocrSchema.optional(),
+  documentOcr: documentOcrSchema.optional(),
   webSearch: webSearchSchema.optional(),
   langfuse: langfuseConfigSchema.optional(),
   memory: memorySchema.optional(),
@@ -2666,6 +2680,8 @@ export enum CacheKeys {
    * Key for in-progress flow states.
    */
   FLOWS = 'FLOWS',
+  /** Finished document readings, so a later request on the same file is not charged again. */
+  DOCUMENT_OCR = 'DOCUMENT_OCR',
   /**
    * Key for pending chat requests (concurrency check)
    */

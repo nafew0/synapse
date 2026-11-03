@@ -1,21 +1,42 @@
 import * as fs from 'fs';
 import yauzl from 'yauzl';
-import { megabyte, excelMimeTypes, FileSources } from 'librechat-data-provider';
-import type { TextItem } from 'pdfjs-dist/types/src/display/api';
+import {
+  megabyte,
+  FileSources,
+  excelMimeTypes,
+  defaultAutoPreparation,
+} from 'librechat-data-provider';
+import type { FilePageScan } from 'librechat-data-provider';
 import type { MistralOCRUploadResult } from '~/types';
+import { summarizeScan } from '../scan/classify';
+import { readPdfPages } from '../scan/read';
 import { assertSafeZipSize } from './zipSafety';
 
 type ParsedDocument = {
   text: string;
   /** Pages the parser walked; only PDFs report one, and it decides whether a file reads as a scan. */
   pages?: number;
+  /** Which pages need OCR; PDFs only. */
+  scan?: FilePageScan;
 };
 
-type FileParseFn = (file: Express.Multer.File) => Promise<ParsedDocument>;
+type FileParseFn = (file: Express.Multer.File, minCharsPerPage: number) => Promise<ParsedDocument>;
 
 /** Parser output plus the page count the OCR threshold needs. */
 export interface DocumentParseResult extends MistralOCRUploadResult {
   pages?: number;
+  scan?: FilePageScan;
+}
+
+/** No usable text. A fully scanned PDF lands here, and its page verdicts must still reach the caller. */
+export class EmptyDocumentError extends Error {
+  scan?: FilePageScan;
+
+  constructor(scan?: FilePageScan) {
+    super('No text found in document');
+    this.name = 'EmptyDocumentError';
+    this.scan = scan;
+  }
 }
 
 const DOCUMENT_PARSER_MAX_FILE_SIZE = 15 * megabyte;
@@ -29,8 +50,10 @@ const ODT_MAX_DECOMPRESSED_SIZE = 50 * megabyte;
  */
 export async function parseDocument({
   file,
+  ocrMinCharsPerPage = defaultAutoPreparation.ocrMinCharsPerPage,
 }: {
   file: Express.Multer.File;
+  ocrMinCharsPerPage?: number;
 }): Promise<DocumentParseResult> {
   const parseFn = getParserForMimeType(file.mimetype);
   if (!parseFn) {
@@ -46,10 +69,10 @@ export async function parseDocument({
     );
   }
 
-  const { text, pages } = await parseFn(file);
+  const { text, pages, scan } = await parseFn(file, ocrMinCharsPerPage);
 
   if (!text?.trim()) {
-    throw new Error('No text found in document');
+    throw new EmptyDocumentError(scan);
   }
 
   return {
@@ -59,6 +82,7 @@ export async function parseDocument({
     text,
     images: [],
     pages,
+    scan,
   };
 }
 
@@ -82,26 +106,18 @@ function getParserForMimeType(mimetype: string): FileParseFn | undefined {
   return undefined;
 }
 
-/** Parses PDF, returns text inside. */
-async function pdfToText(file: Express.Multer.File): Promise<ParsedDocument> {
-  // Imported inline so that Jest can test other routes without failing due to loading ESM
-  const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');
-
+/** Parses PDF, returns the text inside and a verdict on each page. */
+async function pdfToText(
+  file: Express.Multer.File,
+  minCharsPerPage: number,
+): Promise<ParsedDocument> {
   const data = new Uint8Array(await fs.promises.readFile(file.path));
-  const pdf = await getDocument({ data }).promise;
-
-  let fullText = '';
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const textContent = await page.getTextContent();
-    const pageText = textContent.items
-      .filter((item): item is TextItem => !('type' in item))
-      .map((item) => item.str)
-      .join(' ');
-    fullText += pageText + '\n';
-  }
-
-  return { text: fullText, pages: pdf.numPages };
+  const { texts, kinds } = await readPdfPages(data, minCharsPerPage);
+  return {
+    text: texts.map((text) => `${text}\n`).join(''),
+    pages: kinds.length,
+    scan: summarizeScan(kinds),
+  };
 }
 
 /** Parses Word document, returns text inside. */

@@ -58,6 +58,20 @@ interface InternalTxDoc {
   readTokens?: number;
 }
 
+/** Same rate as the usage packages: one credit is one millionth of a dollar. */
+const OCR_CREDITS_PER_USD = 1_000_000;
+
+export interface OcrTransactionData {
+  user: string | Types.ObjectId;
+  tenantId?: string;
+  fileId: string;
+  pages: number;
+  contentHash: string;
+  profile: string;
+  pricePerPageUsd: number;
+  now?: Date;
+}
+
 /** Input data for creating a transaction */
 export interface TxData {
   user: string | Types.ObjectId;
@@ -726,7 +740,50 @@ export function createTransactionMethods(
     }
   }
 
+  /**
+   * Records a paid document read. Not a token row: `tokenType: 'credits'` keeps it out of the token
+   * aggregates, and the balance is left alone. The day in the key lets a read after the cache expires
+   * charge again, while a retry of the same read does not.
+   */
+  async function createOcrTransaction({
+    user,
+    tenantId,
+    fileId,
+    pages,
+    contentHash,
+    profile,
+    pricePerPageUsd,
+    now = new Date(),
+  }: OcrTransactionData): Promise<void> {
+    const costUsd = pages * pricePerPageUsd;
+    const modelKey = `unstructured/parse-${profile}`;
+    const day = now.toISOString().slice(0, 10);
+    try {
+      await mongoose.models.Transaction.create({
+        user,
+        tenantId,
+        fileId,
+        pages,
+        costUsd,
+        tokenType: 'credits',
+        tokenValue: -Math.round(costUsd * OCR_CREDITS_PER_USD),
+        context: 'ocr',
+        usageKind: 'ocr',
+        usageUnit: 'operations',
+        model: modelKey,
+        modelKey,
+        providerKey: 'unstructured',
+        requestKey: `ocr:${user}:${contentHash}:${day}`,
+      });
+    } catch (error) {
+      if ((error as { code?: number }).code !== DUPLICATE_KEY_ERROR_CODE) {
+        throw error;
+      }
+    }
+  }
+
   return {
+    createOcrTransaction,
     updateBalance,
     bulkInsertTransactions,
     findBalanceByUser,
