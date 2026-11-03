@@ -285,6 +285,12 @@ export default function useArtifacts() {
 
   const currentIndex = orderedArtifactIds.indexOf(currentArtifactId ?? '');
 
+  /** A file the running reply delivered may still be rebuilt, so its download waits for the reply to end. */
+  const downloadPending =
+    isSubmitting &&
+    currentArtifact?.download != null &&
+    (currentArtifact.messageId == null || currentArtifact.messageId === latestMessageId);
+
   return {
     activeTab,
     setActiveTab,
@@ -292,5 +298,6 @@ export default function useArtifacts() {
     currentArtifact,
     orderedArtifactIds,
     setCurrentArtifactId,
+    downloadPending,
   };
 }
