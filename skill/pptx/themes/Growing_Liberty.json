@@ -1,0 +1,48 @@
+{
+  "name": "Growing_Liberty",
+  "description": "Calm blue and green with leaf shapes and a photo cover. Reports, environment, health, formal talks.",
+  "file": "Growing_Liberty.pptx",
+  "fonts": {
+    "latin": "Noto Sans",
+    "bangla": "Nikosh"
+  },
+  "colors": {
+    "primary": "1E86C1",
+    "accent": "5CC75C",
+    "emphasis": "166A9A",
+    "ink": "1E2A33",
+    "muted": "5F6B73",
+    "tint": "E6F2FA",
+    "chart": [
+      "1E86C1",
+      "5CC75C",
+      "8BD3F7",
+      "2F5F8A",
+      "A6D96A"
+    ]
+  },
+  "layouts": {
+    "cover": {
+      "role": "cover",
+      "dark": true
+    },
+    "content": {},
+    "content_wave": {},
+    "content_dark": {
+      "dark": true
+    },
+    "feature": {},
+    "feature_2": {},
+    "section": {
+      "role": "section",
+      "dark": true
+    },
+    "feature_dark": {
+      "dark": true
+    },
+    "closing": {
+      "role": "closing",
+      "dark": true
+    }
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "name": "Freshes",
+  "description": "Teal sky photography with bold diagonal blocks. Data reports, project updates, science.",
+  "file": "Freshes.pptx",
+  "fonts": {
+    "latin": "Noto Sans",
+    "bangla": "Nikosh"
+  },
+  "colors": {
+    "primary": "0D84A1",
+    "accent": "F26B3A",
+    "emphasis": "0B6E87",
+    "ink": "1F2D33",
+    "muted": "5D6B70",
+    "tint": "E3F3F6",
+    "chart": [
+      "0D84A1",
+      "F26B3A",
+      "7CC6D6",
+      "34495E",
+      "F2B134"
+    ]
+  },
+  "layouts": {
+    "cover": {
+      "role": "cover",
+      "dark": true
+    },
+    "section": {
+      "role": "section",
+      "dark": true
+    },
+    "content_left_bar": {},
+    "content_band": {},
+    "picture_tiles": {
+      "picture": [
+        7.6,
+        1.2,
+        4.9,
+        5.1
+      ]
+    },
+    "chart_dark": {
+      "dark": true
+    },
+    "chart": {},
+    "diagram": {}
+  }
+}

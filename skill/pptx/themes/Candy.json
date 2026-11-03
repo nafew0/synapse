@@ -1,0 +1,89 @@
+{
+  "name": "Candy",
+  "description": "Bright and playful, purple/blue/pink/yellow geometry. Teaching, student events, outreach.",
+  "file": "Candy.pptx",
+  "fonts": {
+    "latin": "Noto Sans",
+    "bangla": "Nikosh"
+  },
+  "colors": {
+    "primary": "7F59AE",
+    "accent": "E54B89",
+    "emphasis": "6A4896",
+    "ink": "222222",
+    "muted": "666666",
+    "tint": "F1ECF7",
+    "chart": [
+      "7F59AE",
+      "60C4E4",
+      "E54B89",
+      "F8B622",
+      "FE7130"
+    ]
+  },
+  "layouts": {
+    "cover": {
+      "role": "cover"
+    },
+    "agenda": {},
+    "section": {
+      "role": "section"
+    },
+    "section_2": {
+      "role": "section"
+    },
+    "section_3": {
+      "role": "section"
+    },
+    "content": {},
+    "four_columns": {
+      "columns": [
+        [
+          0.15,
+          1.75,
+          3.0,
+          4.5
+        ],
+        [
+          3.48,
+          1.75,
+          3.0,
+          4.5
+        ],
+        [
+          6.82,
+          1.75,
+          3.0,
+          4.5
+        ],
+        [
+          10.15,
+          1.75,
+          3.0,
+          4.5
+        ]
+      ],
+      "columns_text": "FFFFFF"
+    },
+    "picture_right": {
+      "picture": [
+        6.85,
+        1.0,
+        5.45,
+        5.55
+      ]
+    },
+    "picture_left": {
+      "picture": [
+        0.0,
+        1.6,
+        4.25,
+        4.3
+      ]
+    },
+    "content_narrow": {},
+    "closing": {
+      "role": "closing"
+    }
+  }
+}
