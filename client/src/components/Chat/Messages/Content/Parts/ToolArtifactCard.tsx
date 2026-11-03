@@ -11,6 +11,7 @@ import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-pro
 import type { Artifact } from '~/common';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
 import { isCodeOnlyArtifact } from '~/utils/artifacts';
+import { PendingDownload, useDownloadReady } from './delivery';
 import { displayFilename } from './attachmentTypes';
 import { useAttachmentLink } from './LogLink';
 import { useLocalize } from '~/hooks';
@@ -69,6 +70,7 @@ interface ToolArtifactCardProps {
  */
 const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) => {
   const localize = useLocalize();
+  const downloadReady = useDownloadReady();
   const claimKey = useId();
   const file = attachment as TFile & TAttachmentMetadata;
   const fileId = file.file_id;
@@ -253,19 +255,23 @@ const ToolArtifactCard = memo(({ attachment, artifact }: ToolArtifactCardProps) 
           </div>
         </div>
       </button>
-      <button
-        type="button"
-        onClick={handleDownload}
-        aria-label={`${localize('com_ui_download')} ${visibleFilename}`}
-        title={localize('com_ui_download')}
-        className={cn(
-          'flex shrink-0 items-center justify-center px-3 transition-colors duration-200',
-          'rounded-r-xl bg-surface-tertiary text-text-secondary hover:bg-surface-hover hover:text-text-primary',
-          'border-l border-border-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
-        )}
-      >
-        <Download className="size-4" aria-hidden="true" />
-      </button>
+      {downloadReady ? (
+        <button
+          type="button"
+          onClick={handleDownload}
+          aria-label={`${localize('com_ui_download')} ${visibleFilename}`}
+          title={localize('com_ui_download')}
+          className={cn(
+            'flex shrink-0 items-center justify-center px-3 transition-colors duration-200',
+            'rounded-r-xl bg-surface-tertiary text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+            'border-l border-border-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
+          )}
+        >
+          <Download className="size-4" aria-hidden="true" />
+        </button>
+      ) : (
+        <PendingDownload />
+      )}
     </div>
   );
 });
