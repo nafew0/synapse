@@ -100,9 +100,8 @@ directly" or "ask them to attend to it":
 3. Final: states what follows if the date passes, only if the user told you what follows.
 
 **Language.** Answer in the language of the letter being replied to, or the one the user wrote in.
-Sinhala, Tamil and Bangla go in the spec as they are; the file names the right fonts for Word. The
-sandbox has no Sinhala or Tamil font, so its page image shows boxes: do not read those renders for
-layout, and say the user should check the file in Word.
+Bangla goes in the spec as it is and is set in Nikosh. Sinhala and Tamil are not supported yet: write
+the document in English and say so.
 
 **Translating or tidying** the user's draft keeps their facts and adds none.
 

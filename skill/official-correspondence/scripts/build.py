@@ -40,8 +40,7 @@ HOUSES = {
 }
 TITLES = {"memo": "MEMORANDUM", "notice": "NOTICE", "meeting": "NOTICE OF MEETING", "order": "Office Order"}
 PLACEHOLDER = re.compile(r"\[[^\]\n]{2,60}\]")
-SCRIPT_FONTS = [(re.compile(r"[ঀ-৿]"), "Nikosh", "bn-BD"), (re.compile(r"[඀-෿]"), "Iskoola Pota", "si-LK"),
-                (re.compile(r"[஀-௿]"), "Latha", "ta-LK")]
+BANGLA = re.compile(r"[\u0980-\u09ff]")
 R_PR_ORDER = ("rStyle rFonts b bCs i iCs caps smallCaps strike dstrike outline shadow emboss imprint noProof snapToGrid "
               "vanish webHidden color spacing w kern position sz szCs highlight u effect bdr shd fitText vertAlign rtl "
               "cs em lang eastAsianLayout specVanish oMath").split()
@@ -138,18 +137,13 @@ class Writer:
             r_pr.insert(0, fonts)
         for slot in ("w:ascii", "w:hAnsi", "w:eastAsia"):
             fonts.set(qn(slot), self.latin)
-        complex_font, language = "Nikosh", None
-        for pattern, font, lang in SCRIPT_FONTS:
-            if pattern.search(str(text)):
-                complex_font, language = font, lang
-                break
-        fonts.set(qn("w:cs"), complex_font)
+        fonts.set(qn("w:cs"), "Nikosh")
         size_cs = OxmlElement("w:szCs")
         size_cs.set(qn("w:val"), str(int(round((size or self.size) * 2))))
         insert_ordered(r_pr, size_cs)
-        if language:
+        if BANGLA.search(str(text)):
             lang = OxmlElement("w:lang")
-            lang.set(qn("w:bidi"), language)
+            lang.set(qn("w:bidi"), "bn-BD")
             insert_ordered(r_pr, lang)
         return run
 

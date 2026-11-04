@@ -135,12 +135,10 @@ def test_a4_times_and_no_invented_logo(tmp_path):
     assert doc.settings.element.find(qn("w:zoom")).get(qn("w:percent")) == "100"
 
 
-@pytest.mark.parametrize("text,font,lang", [("විශ්වවිද්‍යාල", "Iskoola Pota", "si-LK"), ("பல்கலைக்கழகம்", "Latha", "ta-LK"), ("বিশ্ববিদ্যালয়", "Nikosh", "bn-BD")])
-def test_script_gets_complex_font(tmp_path, text, font, lang):
-    spec = {**CIRCULAR, "body": [text]}
-    _, out = run(tmp_path, spec)
+def test_bangla_gets_nikosh_and_its_language(tmp_path):
+    _, out = run(tmp_path, {**CIRCULAR, "body": ["বিশ্ববিদ্যালয়", "English only."]})
     xml = Document(str(out)).element.xml
-    assert f'w:cs="{font}"' in xml and f'w:bidi="{lang}"' in xml
+    assert 'w:cs="Nikosh"' in xml and xml.count('w:bidi="bn-BD"') == 1
 
 
 def test_copies_list_keeps_house_heading_and_ten_copies_do_not_break_numbering(tmp_path):

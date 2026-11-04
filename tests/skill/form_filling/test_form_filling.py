@@ -402,7 +402,8 @@ def test_render_skips_gracefully_without_tools(fillable_pdf, tmp_path, monkeypat
     mapping = write_json(tmp_path / "mapping.json", {"fields": [{"id": "name", "value": "Dr. Rahima Khatun"}]})
     out = tmp_path / "filled.pdf"
     run("fill.py", fillable_pdf, mapping, out, cwd=tmp_path)
-    monkeypatch.setenv("PATH", str(Path(sys.executable).parent))
+    (tmp_path / "empty").mkdir()
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
 
     checked = run("check.py", fillable_pdf, out, mapping, "--render", tmp_path / "qa", cwd=tmp_path)
 

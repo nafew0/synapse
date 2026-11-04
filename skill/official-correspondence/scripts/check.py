@@ -117,8 +117,6 @@ def check_file(spec, path):
         if spec.get(key):
             lines.append(f"{key} used (must come from the user): {spec[key]}")
     lines.append(f"placeholders to list in the reply: {', '.join(placeholders)}" if placeholders else "placeholders: none")
-    if re.search(r"[඀-෿஀-௿]", text):
-        warnings.append("Sinhala or Tamil text is set for Word (Iskoola Pota, Latha); the sandbox has no such font, so its render shows boxes")
     lines += [f"DEFECTS ({len(defects)}):", *(f"  - {d}" for d in defects)] if defects else ["defects: none"]
     if warnings:
         lines += ["warnings:", *(f"  - {w}" for w in warnings)]
