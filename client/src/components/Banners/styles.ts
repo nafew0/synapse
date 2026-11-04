@@ -1,47 +1,31 @@
+import { RefreshCw, TriangleAlert, Wrench } from 'lucide-react';
+import type { ComponentType } from 'react';
 import type { TBanner, TBannerCategory } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks';
+import { NewIcon } from './icons';
+
+export type BannerIcon = ComponentType<{ className?: string }>;
 
 export interface CategoryStyle {
   label: TranslationKeys;
-  /** Bar background. */
-  bar: string;
-  /** Pill on the bar. */
-  chip: string;
-  /** Gradient header on the card. */
-  header: string;
-  /** Category label above the card title. */
-  eyebrow: string;
+  /** Drawn beside the label; omitted for outages, which show a live dot instead. */
+  Icon?: BannerIcon;
+  /** Large faded copy in the card header. */
+  Watermark: BannerIcon;
+  /** Which end of the schedule the bar and card show as a time. */
+  window?: 'until' | 'since';
 }
 
 const CATEGORY_STYLES: Record<TBannerCategory, CategoryStyle> = {
-  feature: {
-    label: 'com_ui_banner_feature',
-    bar: 'lc-banner-feature',
-    chip: 'bg-accent-primary text-text-on-status',
-    header: 'lc-banner-card-feature',
-    eyebrow: 'lc-banner-eyebrow-feature',
-  },
-  update: {
-    label: 'com_ui_banner_update',
-    bar: 'lc-banner-update',
-    chip: 'lc-banner-chip-update',
-    header: 'lc-banner-card-update',
-    eyebrow: 'lc-banner-link',
-  },
+  feature: { label: 'com_ui_banner_feature', Icon: NewIcon, Watermark: NewIcon },
+  update: { label: 'com_ui_banner_update', Icon: RefreshCw, Watermark: RefreshCw },
   maintenance: {
     label: 'com_ui_banner_maintenance',
-    bar: 'bg-status-warning-subtle',
-    chip: 'bg-status-warning-strong text-text-on-status',
-    header: 'lc-banner-card-maintenance',
-    eyebrow: 'text-status-warning',
+    Icon: Wrench,
+    Watermark: Wrench,
+    window: 'until',
   },
-  outage: {
-    label: 'com_ui_banner_outage',
-    bar: 'bg-status-error-subtle',
-    chip: 'bg-status-error-strong text-text-on-status',
-    header: 'lc-banner-card-outage',
-    eyebrow: 'text-status-error',
-  },
+  outage: { label: 'com_ui_banner_outage', Watermark: TriangleAlert, window: 'since' },
 };
 
 export const getCategoryStyle = (category: TBannerCategory): CategoryStyle =>

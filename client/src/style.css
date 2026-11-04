@@ -263,16 +263,24 @@ html {
   --lc-rail-icon: 61 110 110;
   --lc-user-avatar-background: linear-gradient(140deg, #328a8a, #134f54);
   --lc-user-avatar-text: 36 18 6;
-  --lc-banner-feature: linear-gradient(90deg, rgba(50, 138, 138, 0.11), rgba(245, 135, 31, 0.09));
-  --lc-banner-update: rgba(50, 138, 138, 0.09);
-  --lc-banner-rule: linear-gradient(90deg, #328a8a, #f5871f);
-  --lc-banner-chip-update: linear-gradient(135deg, #328a8a, #134f54);
-  --lc-banner-link: 27 102 103;
-  --lc-banner-eyebrow-feature: 194 97 15;
-  --lc-banner-card-feature: linear-gradient(135deg, #328a8a, #134f54);
-  --lc-banner-card-update: linear-gradient(135deg, #3b9696, #1b5f63);
-  --lc-banner-card-maintenance: linear-gradient(135deg, #e08a12, #9a4a0b);
-  --lc-banner-card-outage: linear-gradient(135deg, #e0452f, #8f1d1d);
+  --lc-banner-feature-1: #2b7c7c;
+  --lc-banner-feature-2: #134f54;
+  --lc-banner-feature-tint: rgba(50, 138, 138, 0.1);
+  --lc-banner-feature-fg: #1b6667;
+  --lc-banner-update-1: #1d6a8c;
+  --lc-banner-update-2: #0c3850;
+  --lc-banner-update-tint: rgba(29, 106, 140, 0.09);
+  --lc-banner-update-fg: #17607f;
+  --lc-banner-maintenance-1: #b45309;
+  --lc-banner-maintenance-2: #7c2d06;
+  --lc-banner-maintenance-tint: #fff4e3;
+  --lc-banner-maintenance-fg: #9a4a0b;
+  --lc-banner-outage-1: #c0262d;
+  --lc-banner-outage-2: #7a1414;
+  --lc-banner-outage-tint: #fdeeee;
+  --lc-banner-outage-fg: #b42318;
+  --lc-banner-card-surface: rgb(var(--surface-dialog));
+  --lc-banner-card-depth: drop-shadow(0 26px 34px rgba(5, 35, 35, 0.32));
 }
 .dark {
   --brand-purple: 176 84 160;
@@ -373,33 +381,65 @@ html {
   --lc-footer-body: 117 152 143;
   --lc-rail-icon: 127 176 166;
   --lc-user-avatar-background: linear-gradient(140deg, #ff9a44, #e96e28);
-  --lc-banner-feature: linear-gradient(90deg, rgba(50, 138, 138, 0.28), rgba(247, 148, 30, 0.14));
-  --lc-banner-update: rgba(50, 138, 138, 0.2);
-  --lc-banner-link: 127 211 205;
-  --lc-banner-eyebrow-feature: 251 162 77;
-  --lc-banner-card-feature: linear-gradient(135deg, #1d6a6a, #0a3336);
-  --lc-banner-card-update: linear-gradient(135deg, #1f5f5f, #0b2f31);
-  --lc-banner-card-maintenance: linear-gradient(135deg, #b45309, #5c2a06);
-  --lc-banner-card-outage: linear-gradient(135deg, #b91c1c, #5a1010);
+  --lc-banner-feature-1: #2fa39b;
+  --lc-banner-feature-2: #16716b;
+  --lc-banner-feature-fg: #8fe0d8;
+  --lc-banner-update-1: #2a88b0;
+  --lc-banner-update-2: #145572;
+  --lc-banner-update-fg: #8fd3e6;
+  --lc-banner-maintenance-1: #d9690f;
+  --lc-banner-maintenance-2: #9a3f07;
+  --lc-banner-maintenance-fg: #fbbf6b;
+  --lc-banner-outage-1: #e0373f;
+  --lc-banner-outage-2: #9b1c1c;
+  --lc-banner-outage-fg: #fca5a5;
+  --lc-banner-card-surface: #18403c;
+  --lc-banner-card-depth: drop-shadow(0 0 0.6px rgba(255, 255, 255, 0.45)) drop-shadow(0 28px 36px rgba(0, 0, 0, 0.65));
 }
 .lc-main-surface { background: var(--lc-app-background); }
-/* Announcement banner: brand gradients have no semantic Tailwind role, same as the other lc-* surfaces. */
-.lc-banner-feature { background: var(--lc-banner-feature); }
-.lc-banner-feature::after { content: ''; position: absolute; inset: auto 0 0 0; height: 1px; background: var(--lc-banner-rule); opacity: 0.7; }
-.lc-banner-update { background: var(--lc-banner-update); }
-.lc-banner-chip-update { background: var(--lc-banner-chip-update); color: #ffffff; }
-.lc-banner-link { color: rgb(var(--lc-banner-link)); }
-.lc-banner-eyebrow-feature { color: rgb(var(--lc-banner-eyebrow-feature)); }
-.lc-banner-card-feature { background: var(--lc-banner-card-feature); }
-.lc-banner-card-update { background: var(--lc-banner-card-update); }
-.lc-banner-card-maintenance { background: var(--lc-banner-card-maintenance); }
-.lc-banner-card-outage { background: var(--lc-banner-card-outage); }
-.lc-banner-network-edge { stroke: rgba(255, 255, 255, 0.28); stroke-width: 1; }
-.lc-banner-network-node { fill: rgba(255, 255, 255, 0.75); }
-.lc-banner-network-accent { fill: #f7941e; }
-.lc-banner-network-ring { fill: none; stroke: rgba(247, 148, 30, 0.55); stroke-width: 1.5; }
-.lc-banner-card-close { color: rgba(255, 255, 255, 0.85); }
-.lc-banner-card-close:hover, .lc-banner-card-close:focus-visible { background: rgba(255, 255, 255, 0.16); color: #ffffff; }
+/* Announcement banner. Category colours, the ticket notches and the icon motion have no Tailwind role,
+   so they live here as lc-* rules like the other brand surfaces. The category sets the four variables. */
+.lc-banner[data-category='feature'] { --lc-banner-1: var(--lc-banner-feature-1); --lc-banner-2: var(--lc-banner-feature-2); --lc-banner-tint: var(--lc-banner-feature-tint); --lc-banner-fg: var(--lc-banner-feature-fg); }
+.lc-banner[data-category='update'] { --lc-banner-1: var(--lc-banner-update-1); --lc-banner-2: var(--lc-banner-update-2); --lc-banner-tint: var(--lc-banner-update-tint); --lc-banner-fg: var(--lc-banner-update-fg); }
+.lc-banner[data-category='maintenance'] { --lc-banner-1: var(--lc-banner-maintenance-1); --lc-banner-2: var(--lc-banner-maintenance-2); --lc-banner-tint: var(--lc-banner-maintenance-tint); --lc-banner-fg: var(--lc-banner-maintenance-fg); }
+.lc-banner[data-category='outage'] { --lc-banner-1: var(--lc-banner-outage-1); --lc-banner-2: var(--lc-banner-outage-2); --lc-banner-tint: var(--lc-banner-outage-tint); --lc-banner-fg: var(--lc-banner-outage-fg); }
+.lc-banner-fg { color: var(--lc-banner-fg); }
+.lc-banner-bar { background: var(--lc-banner-tint); border-bottom: 1px solid rgba(19, 79, 84, 0.1); }
+.dark .lc-banner-bar { background: color-mix(in srgb, var(--lc-banner-1) 46%, #0a1f1e); border-bottom-color: color-mix(in srgb, var(--lc-banner-fg) 45%, transparent); box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.7); }
+.lc-banner-block, .lc-banner-band, .lc-banner-go { background: linear-gradient(135deg, var(--lc-banner-1), var(--lc-banner-2)); color: #ffffff; }
+.lc-banner-block { position: relative; overflow: hidden; clip-path: polygon(0 0, 100% 0, calc(100% - 14px) 100%, 0 100%); animation: lc-banner-wipe 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.lc-banner-words { animation: lc-banner-slide 0.6s 0.2s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.lc-banner-cta { border: 1.5px solid var(--lc-banner-fg); color: var(--lc-banner-fg); transition: background-color 150ms, color 150ms; }
+.lc-banner-cta:hover, .lc-banner-cta:focus-visible { background: var(--lc-banner-fg); color: var(--lc-banner-card-surface); }
+.lc-banner-go { transition: filter 150ms; }
+.lc-banner-go:hover, .lc-banner-go:focus-visible { filter: brightness(1.1); }
+.lc-banner-card { filter: var(--lc-banner-card-depth); transform-origin: top center; animation: lc-banner-pin 0.7s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.lc-banner-sheet { background: var(--lc-banner-card-surface); }
+/* Tear line: the two half-circles cut the notches out of the card so its shadow follows them. */
+.lc-banner-perf { position: relative; background: radial-gradient(circle at 0 50%, transparent 9px, var(--lc-banner-card-surface) 9.5px) left / 51% 100% no-repeat, radial-gradient(circle at 100% 50%, transparent 9px, var(--lc-banner-card-surface) 9.5px) right / 51% 100% no-repeat; }
+.lc-banner-perf::before { content: ''; position: absolute; left: 18px; right: 18px; top: 50%; border-top: 2px dashed color-mix(in srgb, rgb(var(--text-primary)) 18%, transparent); }
+.lc-banner-watermark { color: #ffffff; opacity: 0.12; stroke-width: 1.5; }
+.lc-banner-watermark.lc-banner-new-icon { stroke-width: 22; }
+.lc-banner-new-icon { stroke-width: 38; }
+.lc-banner-icon .lc-banner-new-icon { width: 20px; height: 20px; margin: -2px 0; }
+.lc-banner-close { color: rgba(255, 255, 255, 0.88); }
+.lc-banner-close:hover, .lc-banner-close:focus-visible { background: rgba(255, 255, 255, 0.16); color: #ffffff; }
+.lc-banner-live { background: #ffffff; animation: lc-banner-blink 1.2s ease-in-out infinite; }
+/* Each icon makes its own small move every few seconds: the box hops, the arrows turn, the wrench twists. */
+.lc-banner-icon svg { transform-box: fill-box; transform-origin: center; }
+.lc-banner[data-category='feature'] .lc-banner-icon svg { transform-origin: 50% 90%; animation: lc-banner-hop 2.4s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
+.lc-banner[data-category='update'] .lc-banner-icon svg { animation: lc-banner-turn 3s cubic-bezier(0.65, 0, 0.35, 1) infinite; }
+.lc-banner[data-category='maintenance'] .lc-banner-icon svg { transform-origin: 80% 20%; animation: lc-banner-twist 2.4s ease-in-out infinite; }
+@keyframes lc-banner-wipe { from { clip-path: polygon(0 0, 0 0, 0 100%, 0 100%); } }
+@keyframes lc-banner-slide { from { opacity: 0; transform: translateX(-12px); } }
+@keyframes lc-banner-pin { 0% { opacity: 0; transform: translateY(-24px) rotate(-3deg); } 60% { opacity: 1; transform: translateY(3px) rotate(0.6deg); } 100% { transform: none; } }
+@keyframes lc-banner-blink { 50% { opacity: 0.25; } }
+@keyframes lc-banner-hop { 0%, 62%, 100% { transform: none; } 70% { transform: translateY(-3px) rotate(-10deg) scale(1.08); } 80% { transform: rotate(5deg); } 88% { transform: rotate(-2deg); } }
+@keyframes lc-banner-turn { 0%, 60% { transform: rotate(0); } 100% { transform: rotate(360deg); } }
+@keyframes lc-banner-twist { 0%, 58%, 100% { transform: rotate(0); } 66% { transform: rotate(-24deg); } 74% { transform: rotate(16deg); } 82% { transform: rotate(-10deg); } 90% { transform: rotate(4deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .lc-banner-block, .lc-banner-words, .lc-banner-card, .lc-banner-live, .lc-banner-icon svg { animation: none !important; }
+}
 .lc-left-rail { background: var(--lc-left-rail-background); border-right-color: rgba(19, 79, 84, 0.08); }
 .lc-left-rail .lc-rail-icon, .lc-left-rail .lc-rail-icon svg { color: rgb(var(--lc-rail-icon)); }
 .lc-chat-sidebar { background: var(--lc-chat-sidebar-background); border-right: 1px solid rgba(19, 79, 84, 0.08); color: rgb(28 50 48); }
