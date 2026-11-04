@@ -4,7 +4,10 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import BashCall from '../BashCall';
 import store from '~/store';
 
+const mockToolDetails = jest.fn(() => true);
+
 jest.mock('~/hooks', () => ({
+  useToolDetails: () => mockToolDetails(),
   useLocalize:
     () =>
     (key: string): string => {

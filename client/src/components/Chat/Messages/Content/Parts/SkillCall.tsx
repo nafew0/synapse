@@ -35,14 +35,15 @@ export default function SkillCall({
   const skillName = useMemo(() => parseJsonField(args, 'skillName'), [args]);
   const intent = useToolCallIntent(args);
 
-  const { showCode, toggleCode, expandStyle, expandRef, phase, hasOutput } = useToolCallState({
-    initialProgress,
-    isSubmitting,
-    output,
-    hasInput: !!skillName,
-    onExpand,
-    runStepStatus,
-  });
+  const { showCode, toggleCode, expandStyle, expandRef, phase, hasOutput, detailsEnabled } =
+    useToolCallState({
+      initialProgress,
+      isSubmitting,
+      output,
+      hasInput: !!skillName,
+      onExpand,
+      runStepStatus,
+    });
 
   return (
     <>
@@ -70,22 +71,24 @@ export default function SkillCall({
           isExpanded={showCode}
         />
       </div>
-      <div style={expandStyle}>
-        <div className="overflow-hidden" ref={expandRef}>
-          {hasOutput && (
-            <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
-              <div className="bg-surface-primary-alt p-4 text-xs dark:bg-transparent">
-                <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-text-secondary">
-                  {localize('com_ui_output')}
-                </div>
-                <div className="max-h-[200px] overflow-auto text-text-primary">
-                  <Stdout output={output} />
+      {detailsEnabled && (
+        <div style={expandStyle}>
+          <div className="overflow-hidden" ref={expandRef}>
+            {hasOutput && (
+              <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
+                <div className="bg-surface-primary-alt p-4 text-xs dark:bg-transparent">
+                  <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-text-secondary">
+                    {localize('com_ui_output')}
+                  </div>
+                  <div className="max-h-[200px] overflow-auto text-text-primary">
+                    <Stdout output={output} />
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      )}
       {!hideAttachments && attachments && attachments.length > 0 && (
         <AttachmentGroup attachments={attachments} />
       )}

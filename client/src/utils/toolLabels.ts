@@ -8,6 +8,18 @@ import type { TranslationKeys } from '~/hooks';
  * consistently in every surface that renders tool lifecycle.
  */
 
+/** Web search tool ids; `firecrawl_search` is the former id, still stored on older messages. */
+export const WEB_SEARCH_TOOL_NAMES: ReadonlySet<string> = new Set([
+  'search_web',
+  'firecrawl_search',
+]);
+
+/** Web page reading tool ids; `firecrawl_scrape` is the former id, still stored on older messages. */
+export const WEB_READ_TOOL_NAMES: ReadonlySet<string> = new Set([
+  'read_web_page',
+  'firecrawl_scrape',
+]);
+
 /** Native tool id → translation key for a user-readable short name. */
 export const TOOL_FRIENDLY_NAME_KEYS: Record<string, TranslationKeys> = {
   execute_code: 'com_ui_tool_name_code',
@@ -16,9 +28,8 @@ export const TOOL_FRIENDLY_NAME_KEYS: Record<string, TranslationKeys> = {
   bash_tool: 'com_ui_tool_name_code',
   web_search: 'com_ui_tool_name_web_search',
   search_web: 'com_ui_tool_name_web_search',
-  read_web_page: 'com_ui_tool_name_read_web_page',
-  /** Former ids of `search_web` / `read_web_page`, still stored on older messages. */
   firecrawl_search: 'com_ui_tool_name_web_search',
+  read_web_page: 'com_ui_tool_name_read_web_page',
   firecrawl_scrape: 'com_ui_tool_name_read_web_page',
   image_gen_oai: 'com_ui_tool_name_image_gen',
   image_edit_oai: 'com_ui_tool_name_image_edit',
@@ -27,6 +38,10 @@ export const TOOL_FRIENDLY_NAME_KEYS: Record<string, TranslationKeys> = {
   code_interpreter: 'com_ui_tool_name_code_analysis',
   retrieval: 'com_ui_tool_name_file_search',
   ask_user_question: 'com_ui_tool_name_ask_user_question',
+  skill: 'com_ui_tool_name_skill',
+  read_file: 'com_ui_tool_name_read_file',
+  create_file: 'com_ui_tool_name_create_file',
+  edit_file: 'com_ui_tool_name_edit_file',
 };
 
 export interface ParsedToolName {

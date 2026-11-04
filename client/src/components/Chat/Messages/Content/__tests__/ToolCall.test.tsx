@@ -5,7 +5,10 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import ToolCall from '../ToolCall';
 
 // Mock dependencies
+const mockToolDetails = jest.fn(() => true);
+
 jest.mock('~/hooks', () => ({
+  useToolDetails: () => mockToolDetails(),
   useLocalize: () => (key: string, values?: any) => {
     const translations: Record<string, string> = {
       com_assistants_function_use: `Used ${values?.[0]}`,

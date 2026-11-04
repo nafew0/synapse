@@ -4,7 +4,7 @@ import type { PartMetadata } from 'librechat-data-provider';
 import type { ToolCallPhase } from '~/utils/toolCallPhase';
 import { isError } from '~/components/Chat/Messages/Content/ToolOutput';
 import { resolveToolCallPhase } from '~/utils/toolCallPhase';
-import { useProgress, useExpandCollapse } from '~/hooks';
+import { useProgress, useToolDetails, useExpandCollapse } from '~/hooks';
 import store from '~/store';
 
 interface ToolCallState {
@@ -20,6 +20,8 @@ interface ToolCallState {
   phase: ToolCallPhase;
   hasOutput: boolean;
   hasContent: boolean;
+  /** Whether this deployment shows tool code, arguments and output at all (`interface.toolDetails`). */
+  detailsEnabled: boolean;
 }
 
 export interface UseToolCallStateInput {
@@ -55,6 +57,7 @@ export default function useToolCallState({
   extraError = false,
 }: UseToolCallStateInput): ToolCallState {
   const autoExpand = useRecoilValue(store.autoExpandTools);
+  const toolDetails = useToolDetails();
   const hasOutput = output.length > 0;
   const isClosed = runStepStatus != null;
   /**
@@ -89,11 +92,12 @@ export default function useToolCallState({
   });
   const hasContent = hasInput || hasOutput;
   const detailsAvailable = !hideDetailsWhileRunning || phase !== 'running';
-  const canShowDetails = hasContent && detailsAvailable;
+  const canShowDetails = toolDetails && hasContent && detailsAvailable;
   const shouldAutoExpand = autoExpand && autoExpandDetails;
 
   const [showCode, setShowCode] = useState(() => shouldAutoExpand && canShowDetails);
-  const { style: expandStyle, ref: expandRef } = useExpandCollapse(showCode);
+  const visible = toolDetails && showCode;
+  const { style: expandStyle, ref: expandRef } = useExpandCollapse(visible);
 
   useEffect(() => {
     if (shouldAutoExpand && canShowDetails) {
@@ -102,12 +106,13 @@ export default function useToolCallState({
   }, [shouldAutoExpand, canShowDetails]);
 
   return {
-    showCode,
+    showCode: visible,
     toggleCode,
     expandStyle,
     expandRef,
     phase,
     hasOutput,
     hasContent: canShowDetails,
+    detailsEnabled: toolDetails,
   };
 }
