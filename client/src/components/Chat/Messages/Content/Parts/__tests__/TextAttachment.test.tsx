@@ -220,7 +220,7 @@ describe('AttachmentGroup', () => {
     expect(screen.getByTestId('file-container')).toHaveTextContent('output.json');
   });
 
-  it('keeps long grouped text previews clamped until the nested preview is expanded', () => {
+  it('shows two files inline with a clamped text preview and no group toggle', () => {
     setScrollHeight(800);
     const longJson = Array.from({ length: 1000 }, (_, index) => `{"line":${index}}`).join('\n');
     const attachments = [
@@ -238,9 +238,8 @@ describe('AttachmentGroup', () => {
     ] as TAttachment[];
 
     const { container } = render(<AttachmentGroup attachments={attachments} />);
-    const groupToggle = screen.getByRole('button', { name: 'com_ui_show_n_files' });
-    fireEvent.click(groupToggle);
 
+    expect(screen.queryByRole('button', { name: 'com_ui_show_n_files' })).not.toBeInTheDocument();
     expect(screen.getByText('output.json')).toBeInTheDocument();
     const pre = container.querySelector('pre');
     expect(pre).not.toBeNull();

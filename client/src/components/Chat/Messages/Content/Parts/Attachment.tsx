@@ -24,6 +24,8 @@ import { useLocalize, useAttachmentPreviewSync, useExpandCollapse } from '~/hook
 import { cn, getFileType } from '~/utils';
 
 const COLLAPSED_MAX_HEIGHT = 320;
+/** Up to this many generated files show as their own download chips; more fold into one group. */
+const INLINE_FILE_LIMIT = 3;
 
 /**
  * Card-shaped placeholder for a code-execution office file whose
@@ -233,14 +235,15 @@ const FileAttachmentGroup = memo(({ attachments }: { attachments: TAttachment[] 
     return null;
   }
 
-  if (count === 1) {
-    const [attachment] = visibleAttachments;
-    if (!attachment) {
-      return null;
-    }
+  if (count <= INLINE_FILE_LIMIT) {
     return (
       <div className="my-2 flex flex-wrap items-center gap-2.5">
-        <FileAttachment attachment={attachment} key={renderAttachmentKey('file', attachment, 0)} />
+        {visibleAttachments.map((attachment, index) => (
+          <FileAttachment
+            attachment={attachment}
+            key={renderAttachmentKey('file', attachment, index)}
+          />
+        ))}
       </div>
     );
   }
@@ -597,7 +600,7 @@ export function AttachmentGroup({ attachments }: { attachments?: TAttachment[] }
   );
   const textOnlyAttachments = textAttachments.filter((attachment) => !attachment.filepath);
   const groupDownloadableFiles =
-    downloadableFileAttachments.length + downloadableTextAttachments.length > 1;
+    downloadableFileAttachments.length + downloadableTextAttachments.length > INLINE_FILE_LIMIT;
   const groupedFileAttachments = groupDownloadableFiles
     ? [...downloadableFileAttachments, ...downloadableTextAttachments].sort(bySalience)
     : downloadableFileAttachments;
