@@ -67,7 +67,7 @@ def test_exam_maths_become_word_equations(tmp_path):
     result, out = build(tmp_path, spec)
     assert result.returncode == 0, result.stdout
     xml = document_xml(out)
-    assert xml.count('<m:oMath>') >= 1 and '<m:oMathPara' in xml
+    assert xml.count('<m:oMath>') == 2 and '<m:oMathPara' not in xml
     assert '$f(x)' not in xml and '\\int' not in xml
     assert 'equations: 4 of 4 set as Word equations' in result.stdout
     key = out.with_name('paper-answer-key.docx')
@@ -81,3 +81,11 @@ def test_without_pandoc_maths_stay_as_latex_and_are_reported(tmp_path):
     assert result.returncode == 0, result.stdout
     assert 'WARNING: left as LaTeX text (pandoc is not installed)' in result.stdout
     assert '$x^3$' in document_xml(out)
+
+
+@needs_pandoc
+def test_a_display_equation_on_its_own_keeps_its_line(tmp_path):
+    spec = exam_with('Evaluate the integral below.', '$$\\int_0^1 x^2\\,dx = \\frac{1}{3}$$')
+    result, out = build(tmp_path, spec)
+    assert result.returncode == 0, result.stdout
+    assert '<m:oMathPara' in document_xml(out.with_name('paper-answer-key.docx'))

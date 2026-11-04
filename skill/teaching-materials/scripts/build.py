@@ -217,7 +217,7 @@ class Writer:
         for kind, piece in parts:
             element = self.maths.get(piece) if kind == "math" else None
             if element is not None:
-                equations.place(paragraph, element)
+                equations.place(paragraph, element, alone=len(parts) == 1)
                 continue
             source = f"$${piece[0]}$$" if kind == "math" and piece[1] else f"${piece[0]}$" if kind == "math" else piece
             last = self.text_run(paragraph, source, bold, italic, size, mono)

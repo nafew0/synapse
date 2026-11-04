@@ -88,5 +88,8 @@ def convert(found):
     return converted
 
 
-def place(paragraph, element):
+def place(paragraph, element, alone):
+    """A display equation keeps its own line only when it is the whole text; inside a sentence it goes inline."""
+    if not alone and element.tag.endswith("}oMathPara"):
+        element = element.find("m:oMath", NS)
     paragraph._p.append(copy.deepcopy(element))
