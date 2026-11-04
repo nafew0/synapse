@@ -107,7 +107,46 @@ describe('Banner (bar)', () => {
     expect(region).toHaveTextContent('New');
     expect(screen.getByText('Gemini 3.8 Flash is here')).toBeInTheDocument();
     expect(region.querySelector('b')).toHaveTextContent('lower');
-    expect(screen.getByRole('link', { name: 'Try it →' })).toHaveAttribute('href', '/c/new');
+    expect(screen.getByRole('link', { name: 'Try it' })).toHaveAttribute('href', '/c/new');
+  });
+
+  it('marks an external link as opening in a new tab', async () => {
+    mockGetBanner.mockResolvedValue({ ...baseBanner, linkUrl: 'https://status.example.org' });
+    renderBanner(signedIn);
+
+    const link = await screen.findByRole('link', { name: 'Try it (opens in a new tab)' });
+    expect(link).toHaveAttribute('target', '_blank');
+  });
+
+  it('shows when maintenance ends, from the end of its schedule', async () => {
+    mockGetBanner.mockResolvedValue({
+      ...baseBanner,
+      category: 'maintenance',
+      displayTo: '2031-03-05T19:00:00.000Z',
+    });
+    renderBanner(signedIn);
+
+    const region = await screen.findByRole('region', { name: 'Announcement' });
+    expect(region).toHaveTextContent('Maintenance');
+    expect(region).toHaveTextContent(/Until .*2031|Until .*Mar/);
+  });
+
+  it('shows when an outage started, with a live dot instead of an icon', async () => {
+    mockGetBanner.mockResolvedValue({ ...baseBanner, category: 'outage' });
+    renderBanner(signedIn);
+
+    const region = await screen.findByRole('region', { name: 'Announcement' });
+    expect(region).toHaveTextContent(/Since /);
+    expect(region.querySelector('.lc-banner-live')).toBeInTheDocument();
+    expect(region.querySelector('.lc-banner-icon')).not.toBeInTheDocument();
+  });
+
+  it('leaves out the time when maintenance has no end date', async () => {
+    mockGetBanner.mockResolvedValue({ ...baseBanner, category: 'maintenance', displayTo: null });
+    renderBanner(signedIn);
+
+    const region = await screen.findByRole('region', { name: 'Announcement' });
+    expect(region).not.toHaveTextContent('Until');
   });
 
   it('records a signed-in view of a once banner exactly once and keeps it visible', async () => {
