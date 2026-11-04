@@ -6,6 +6,7 @@ Exit codes: 0 pass (warnings may be listed), 2 defects listed, 1 bad spec or arg
 """
 
 import argparse
+import datetime
 import re
 import sys
 from pathlib import Path
@@ -63,9 +64,12 @@ def spec_defects(spec):
     return defects
 
 
-def tone_warnings(spec):
+def tone_warnings(spec, today=None):
     text = " ".join(str(b) for b in spec.get("body") or [] if isinstance(b, str))
     warnings = []
+    today = (today or datetime.date.today()).isoformat()
+    if spec.get("date") and spec["date"] != today:
+        warnings.append(f"date {spec['date']} is not today ({today}): keep it only if the user gave it, else leave date out")
     if CONTRACTIONS.search(text):
         warnings.append(f"contraction in the body: {CONTRACTIONS.search(text).group()!r}; write it in full")
     if INFORMAL.search(text):

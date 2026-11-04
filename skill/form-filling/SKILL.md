@@ -71,10 +71,11 @@ one yourself, fill what the cell holds and mention it in the reply.
 - Fill a checkbox or radio with `true`/`false` or the option text; a choice field with one of its
   listed options.
 
-**3. Ask once, only for what matters.** If required fields have no source, ask in ONE
-`ask_user_question` round, at most 3 questions (group related fields: "date of birth and NID number").
-If the user skips or answers only part, fill what you have and leave the rest blank with the reason
-"not provided". Never ask twice, and never ask about optional fields.
+**3. Do not stop to ask.** Fill every field that has a source, working values out from the
+documents where they are stated another way (a date in another format, a name split across fields).
+A required field with no source stays blank with the reason "not provided", and the reply names
+each one so the user can send them in one go. Ask first only when you cannot tell which form, which
+person on a list or which document to use.
 
 **4. Fill.**
 

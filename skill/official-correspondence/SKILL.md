@@ -23,11 +23,22 @@ one and its source. One call builds the Word file and checks it.
 | A prescribed form filled in, such as an overseas leave form | the `form-filling` skill |
 | A Bangla government document (নথি, পরিপত্র, অফিস আদেশ) | the `govdoc` skill if it is available. Otherwise build here and say the layout is not the Secretariat Instructions one |
 
-## Ask once, or go ahead
+## Work it out, do not ask
 
-If the issuing office, the signer, the recipients or the reference number are missing and you
-cannot tell them from the chat or an uploaded letter, ask once, at most three questions together.
-If they skip or say "you decide", build with visible placeholders. Never ask twice.
+Build straight away. Take the issuing office, signer, recipients, references and dates from the
+request, earlier messages and any uploaded letter (a reply uses the incoming letter's numbers,
+date and addressee). Work out what is not stated:
+
+| Not stated | Use |
+|---|---|
+| The house | The issuer named or implied: UGC Sri Lanka `ugc-lk`; a Sri Lankan ministry `ministry-lk`, or `pa-lk` for Public Administration; a Bangladeshi body `bd`; otherwise `university-lk` |
+| The kind | Many institutions or posts: `circular`. One person or office: `letter`. Staff or students told something: `notice`. Within one institution: `memo`. Granting, appointing or permitting: `order`. Someone's own leave or duty: `leave` |
+| The signer | The post that usually signs for that issuer (Secretary for UGC, Registrar for a university), with the name a placeholder |
+| The body | Written from the request: purpose first, then the action and its date |
+| The date | Today |
+
+Say the layout and anything else you assumed in the reply. Ask only when a wrong guess means
+different work, such as which of two uploaded letters to answer, and then only once.
 
 **Never invent** a name, reference or circular number, meeting number, date of an earlier letter,
 amount, deadline, phone number or email address. A missing one is a placeholder such as `[My No.]`

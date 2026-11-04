@@ -29,18 +29,18 @@ answers to a separate key, checks the result and prints a short report.
 
 The full spec, with one example per kind, is in `references/spec.md`. Read it before writing a spec.
 
-## Ask once, then build
+## Work it out, then build
 
-Ask in **one** message, only for what the request leaves open:
+Do not ask before building. Take the course, level, institution, duration, marks, sections,
+question types and number of questions from the conversation, an attached syllabus, past paper or
+sample. Fill the rest from the request and these defaults, and say what you assumed in one line:
 
-- course code and title, level (year, semester), and the institution, faculty or department for the header;
-- for exams: duration, total marks, sections and question types, number of questions, which
-  sections are "answer all" or "answer any N", and whether they want a Bloom-level spread;
-- for questionnaires: the study's purpose, the target group, and the constructs to measure;
-- for plans: duration, number of participants, and the audience.
+- exams: 2 hours, 100 marks, sections A/B/C, questions spread across the topics named;
+- a quiz or test: as many questions as asked, else 10; 1 mark each; key in its own file;
+- questionnaires: constructs taken from the stated purpose, a 5-point Likert scale;
+- plans: the length and audience the request implies.
 
-If the user skips the questions or says "just make it", build anyway with sensible defaults
-(2 hours, 100 marks, sections A/B/C) and say what you assumed. **Never invent** a course code,
+Ask only when a wrong guess means different work, and then only once. **Never invent** a course code,
 institution, university name, lecturer or venue: leave the field out of the spec, and the paper
 gets a `[Course code]`-style placeholder that the report lists. Write placeholders yourself in the
 same form, e.g. `"[Venue]"`.

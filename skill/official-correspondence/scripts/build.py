@@ -44,6 +44,8 @@ BANGLA = re.compile(r"[\u0980-\u09ff]")
 R_PR_ORDER = ("rStyle rFonts b bCs i iCs caps smallCaps strike dstrike outline shadow emboss imprint noProof snapToGrid "
               "vanish webHidden color spacing w kern position sz szCs highlight u effect bdr shd fitText vertAlign rtl "
               "cs em lang eastAsianLayout specVanish oMath").split()
+TEXT_FIELDS = ("salutation", "subject", "closing", "authority", "my_no", "your_no", "number", "series", "from",
+               "title", "file_no", "address_on_leave", "date_of_meeting", "time", "duration", "venue", "copies_heading")
 TEXT_WIDTH = 16.0
 MARGINS = (2.0, 2.5, 2.0, 2.5)
 
@@ -61,6 +63,10 @@ def load_spec(path):
         raise SpecError(f"kind must be one of {', '.join(KINDS)}")
     if spec.get("house", "university-lk") not in HOUSES:
         raise SpecError(f"house must be one of {', '.join(HOUSES)}")
+    wrong = [key for key in TEXT_FIELDS if key in spec and not isinstance(spec[key], str)]
+    if wrong:
+        hint = ' (the greeting itself, e.g. "Dear Sir/Madam,"; "no_salutation": true for none)' if "salutation" in wrong else ""
+        raise SpecError(f"{', '.join(wrong)} must be text{hint}")
     return spec
 
 

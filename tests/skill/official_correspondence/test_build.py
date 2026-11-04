@@ -193,6 +193,19 @@ def test_check_catches_a_file_that_does_not_match(tmp_path):
     assert result.returncode == 2 and "missing from the file" in result.stdout
 
 
+def test_salutation_true_is_rejected_with_a_hint(tmp_path):
+    spec = {"kind": "letter", "to": ["R"], "salutation": True, "subject": "S", "body": ["B."]}
+    result, _ = run(tmp_path, spec)
+    assert result.returncode == 1 and "Dear Sir/Madam" in result.stdout
+
+
+def test_a_date_other_than_today_is_flagged(tmp_path):
+    result, _ = run(tmp_path, {**CIRCULAR, "date": "2026-01-15"})
+    assert result.returncode == 0 and "is not today" in result.stdout
+    result, _ = run(tmp_path, {key: value for key, value in CIRCULAR.items() if key != "date"})
+    assert "is not today" not in result.stdout
+
+
 def test_bad_inputs_exit_one(tmp_path):
     assert run(tmp_path, {"kind": "poem"})[0].returncode == 1
     assert run(tmp_path, {**CIRCULAR, "house": "mars"})[0].returncode == 1
