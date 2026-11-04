@@ -46,6 +46,7 @@ import tempfile
 from pathlib import Path
 
 from docx import Document
+from docx.enum.section import WD_ORIENT, WD_SECTION
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 from docx.oxml import OxmlElement
@@ -54,6 +55,7 @@ from docx.shared import Cm, Pt
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from office.embed import embed_font  # noqa: E402
 from office.soffice import run_soffice  # noqa: E402
 
 A4 = (21.0, 29.7)
@@ -123,6 +125,7 @@ class Style:
         self.base = float(font.get("size", 12))
         self.scale = scale
         self.margins = margins or list(spec.get("page", {}).get("margins_cm", DEFAULT_MARGINS))
+        self.page_cm = (A4[1], A4[0]) if spec.get("page", {}).get("landscape") else A4
 
     def size(self, value=None):
         return max(MIN_SIZE * 0.85, (float(value) if value else self.base) * self.scale)
@@ -132,7 +135,7 @@ class Style:
 
     @property
     def text_width_cm(self):
-        return A4[0] - self.margins[1] - self.margins[3]
+        return self.page_cm[0] - self.margins[1] - self.margins[3]
 
 
 def set_fonts(run, style, size, bold=False, italic=False, underline=False):
@@ -349,7 +352,7 @@ def data_table(doc, block, style):
             placed.append((row_index, column, down, across, cell))
             column += across
     columns = max((c + 1 for _, c in taken), default=1)
-    widths = block.get("widths_cm") or [style.text_width_cm / columns] * columns
+    widths = block.get("widths_cm") or [section_text_width_cm(doc) / columns] * columns
     table = doc.add_table(rows=len(rows), cols=columns)
     table.style = "Table Grid"
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
@@ -359,6 +362,8 @@ def data_table(doc, block, style):
     for row in table.rows:
         for cell, width in zip(row.cells, widths):
             cell.width = Cm(float(width))
+    for row in table.rows[: block.get("header_rows", 0)]:
+        row._tr.get_or_add_trPr().append(OxmlElement("w:tblHeader"))
     for row_index, column, down, across, cell in placed:
         target = table.cell(row_index, column)
         if down > 1 or across > 1:
@@ -370,10 +375,25 @@ def data_table(doc, block, style):
     gap_after_table(doc, style, block.get("space_after", 4))
 
 
+def section_text_width_cm(doc):
+    section = doc.sections[-1]
+    return (section.page_width - section.left_margin - section.right_margin) / Cm(1)
+
+
+def new_section(doc, landscape):
+    """A new page turned the other way: a scanned annex in landscape after a portrait letter."""
+    section = doc.add_section(WD_SECTION.NEW_PAGE)
+    width, height = (A4[1], A4[0]) if landscape else A4
+    section.orientation = WD_ORIENT.LANDSCAPE if landscape else WD_ORIENT.PORTRAIT
+    section.page_width, section.page_height = Cm(width), Cm(height)
+
+
 def build(spec, out_path, style):
     doc = Document()
     section = doc.sections[0]
-    section.page_width, section.page_height = Cm(A4[0]), Cm(A4[1])
+    section.page_width, section.page_height = Cm(style.page_cm[0]), Cm(style.page_cm[1])
+    if style.page_cm[0] > style.page_cm[1]:
+        section.orientation = WD_ORIENT.LANDSCAPE
     top, right, bottom, left = style.margins
     section.top_margin, section.right_margin = Cm(top), Cm(right)
     section.bottom_margin, section.left_margin = Cm(bottom), Cm(left)
@@ -386,6 +406,10 @@ def build(spec, out_path, style):
 
     for block in spec.get("blocks", []):
         kind = block.get("type")
+        if block.get("section"):
+            new_section(doc, bool(block["section"].get("landscape")))
+        elif block.get("page_break"):
+            doc.add_page_break()
         if block.get("space_before") and (kind in TABLE_BLOCKS or (kind == "letterhead" and block.get("logo"))):
             gap_after_table(doc, style, block["space_before"])
         if kind == "letterhead":
@@ -561,6 +585,7 @@ def main(argv):
         page_png = next(qa.glob(f"{out_path.stem}-page-*1.png"))
         shutil.copy(pdf, qa / f"{out_path.stem}.pdf")
 
+    embedded = BANGLA.search(json.dumps(spec, ensure_ascii=False)) and embed_font(out_path, style.bangla)
     valid, validation = validate(out_path)
     report = [
         f"file: {out_path}",
@@ -568,6 +593,7 @@ def main(argv):
         f"type: {style.base * style.scale:.1f}pt, margins {', '.join(f'{m:.1f}' for m in style.margins)} cm, builds {builds}",
         f"pictures placed: {count_pictures(out_path)}",
         f"fonts missing: {', '.join(missing_fonts(style)) or 'none'}",
+        f"font embedded: {style.bangla if embedded else 'none'}",
         f"validation: {'passed' if valid else 'FAILED ' + validation}",
         f"render: {page_png}",
     ]

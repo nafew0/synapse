@@ -168,6 +168,19 @@ def test_a_cut_off_second_read_of_the_date_is_dropped():
     assert memo["right"] == ["তারিখঃ ০১/০৪/২০২৬ খ্রিঃ।"]
 
 
+def test_a_wide_page_becomes_landscape():
+    elements = [{
+        "type": "NarrativeText",
+        "text": "মন্ত্রণালয়ের নাম: মাধ্যমিক ও উচ্চ শিক্ষা বিভাগ",
+        "metadata": {"page_number": 1, "coordinates": {
+            "points": [[100, 80], [100, 120], [1500, 120], [1500, 80]],
+            "layout_width": 2750, "layout_height": 2125,
+        }},
+    }]
+    spec, _ = convert(elements)
+    assert spec["page"]["landscape"] is True
+
+
 def test_mostly_short_lines_stay_apart_and_a_heading_is_not_repeated():
     long_line = "ফোন : ০৩১-২৫১৬৩০২, পিবিএক্স : ০৩১-৭১৪৯২০-২২এর (৮৫০০), Email: dsw@cuet.example.bd এবং আরও"
     spec, _ = convert([
@@ -343,3 +356,44 @@ def test_list_indent_adds_to_the_hanging_number(letter, tmp_path):
     out = tmp_path / "t.docx"
     letter.build(spec, out, letter.Style(spec))
     assert Document(str(out)).paragraphs[0].paragraph_format.left_indent.cm == pytest.approx(1.7, abs=0.01)
+
+
+def on_page(element, page):
+    element["metadata"]["page_number"] = page
+    return element
+
+
+def wide(x0, y0, x1, y1):
+    return {"coordinates": {
+        "points": [[x0, y0], [x0, y1], [x1, y1], [x1, y0]],
+        "system": "PixelSpace", "layout_width": 3000, "layout_height": 2000,
+    }}
+
+
+def test_a_page_without_positions_still_starts_a_new_page():
+    spec, _ = convert([
+        el("NarrativeText", "x" * 200, **box(300, 100, 1700, 300)),
+        on_page(el("NarrativeText", "পরের পাতার লেখা " * 20), 2),
+    ])
+    assert spec["blocks"][1].get("page_break") is True
+
+
+def test_a_landscape_page_after_a_portrait_one_starts_a_turned_section():
+    spec, _ = convert([
+        el("NarrativeText", "x" * 200, **box(300, 100, 1700, 300)),
+        on_page(el("NarrativeText", "y" * 200, **wide(300, 100, 2700, 300)), 2),
+        on_page(el("NarrativeText", "z" * 200, **wide(300, 100, 2700, 300)), 3),
+    ])
+    first, second, third = spec["blocks"]
+    assert not spec["page"].get("landscape")
+    assert second["section"] == {"landscape": True} and "page_break" not in second
+    assert third.get("page_break") is True and "section" not in third
+
+
+def test_crop_boxes_use_each_page_s_own_scan_size():
+    picture = on_page(el("Image", **wide(0, 0, 1500, 1000)), 2)
+    _, crops = convert(
+        [el("Title", "শিরোনাম", **box(300, 100, 1700, 300)), picture, on_page(el("NarrativeText", "x" * 200), 2)],
+        {1: (2000, 3000), 2: (600, 400)},
+    )
+    assert crops[0]["box"] == [0, 0, 300, 200]

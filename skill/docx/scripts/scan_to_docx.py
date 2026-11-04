@@ -8,8 +8,14 @@ qa/<out>-compare.jpg afterwards. To change anything, edit qa/spec.json and rerun
 """
 
 import json
+import re
+import shutil
 import subprocess
 import sys
+import xml.etree.ElementTree as ElementTree
+from difflib import SequenceMatcher
+from math import sqrt
+from statistics import median
 from pathlib import Path
 
 from PIL import Image, ImageFilter, ImageOps
@@ -19,14 +25,44 @@ from elements_spec import convert  # noqa: E402
 
 RENDER_DPI = 150
 PAGE_WIDTH_CM = 21.0
+PAGE_HEIGHT_CM = 29.7
+MIN_ROTATION_TEXT = 8
 DARK = 170
 RULE_MIN_SHARE = 0.95
 RULE_ROW_STEP = 2
 RULE_SEARCH = 16
 RULE_SPREAD = 3
+MAX_SKEW_DEGREES = 3
+SKEW_STEP_DEGREES = 0.25
+SKEW_SAMPLE_WIDTH = 500
+MIN_COLUMN_CM = 0.4
+FAINT_RULE_REACH_CM = 0.4
+FAINT_RULE_MIN_INK = 8
 BLOB_REACH = 3
 INK_GAP_ROWS = 12
 MAX_SIGNATURE_GROWTH = 200
+HEADING_MATCH = 0.6
+MIN_UPSIDE_DOWN_LINES = 3
+UPSIDE_DOWN_TREND = 0.5
+MIN_BALANCED_COLUMNS = 3
+WORD_CHARACTER_CM = 0.15
+WORD_CHARACTER_SIZE = 10.5
+LONG_TABLE_SIZE = 8.5
+CELL_PADDING_CM = 0.25
+SERIAL = re.compile(r"^\(?([0-9০-৯]{1,3})[.)।]?$")
+BANGLA_DIGITS = str.maketrans("0123456789", "০১২৩৪৫৬৭৮৯")
+LATIN_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
+
+
+def repair_pdf(source, qa):
+    """A copy with its page index rebuilt by qpdf, or None. A PDF that lost its index or its last
+    bytes cannot be opened by pdftoppm, though most of its pages are intact."""
+    if not shutil.which("qpdf"):
+        return None
+    out = qa / "repaired.pdf"
+    # qpdf exits 3 when it repaired the file with warnings.
+    result = subprocess.run(["qpdf", str(source), str(out)], capture_output=True)
+    return out if result.returncode in (0, 3) and out.exists() else None
 
 
 def render_pages(source, qa):
@@ -34,8 +70,55 @@ def render_pages(source, qa):
     if Path(source).suffix.lower() != ".pdf":
         return [Path(source)]
     stem = qa / "page"
-    subprocess.run(["pdftoppm", "-r", str(RENDER_DPI), "-png", str(source), str(stem)], check=True)
+    command = ["pdftoppm", "-r", str(RENDER_DPI), "-png"]
+    if subprocess.run([*command, str(source), str(stem)], capture_output=True).returncode != 0:
+        repaired = repair_pdf(source, qa)
+        if repaired is None:
+            raise SystemExit(f"{source} is damaged and could not be repaired: pdftoppm cannot open it")
+        subprocess.run([*command, str(repaired), str(stem)], check=True)
     return sorted(qa.glob("page-*.png"))
+
+
+def column_sharpness(region):
+    """How strongly ink gathers in single pixel columns: highest when the table's rules stand straight."""
+    return sum((255 - value) ** 2 for value in darkness_profile(region))
+
+
+def darkness_profile(region):
+    """Mean ink per pixel column, 0 to 255."""
+    return [255 - value for value in region.resize((region.width, 1), Image.Resampling.BOX).tobytes()]
+
+
+def faint_rules(region, count, cm_per_pixel):
+    """Rule positions for a scan whose lines are too faint or broken to have ink in every row: the
+    `count` columns that stand out most sharply from the ink around them, at least a column apart."""
+    profile = darkness_profile(region)
+    reach = max(3, int(FAINT_RULE_REACH_CM / cm_per_pixel))
+    gap = int(MIN_COLUMN_CM / cm_per_pixel)
+    sharpness = []
+    for x in range(len(profile)):
+        around = profile[max(0, x - reach):x + reach + 1]
+        sharpness.append(profile[x] - sum(around) / len(around))
+    chosen = []
+    for x in sorted(range(len(profile)), key=lambda column: -sharpness[column]):
+        if sharpness[x] < FAINT_RULE_MIN_INK:
+            break
+        if all(abs(x - other) >= gap for other in chosen):
+            chosen.append(x)
+        if len(chosen) == count:
+            break
+    return sorted(chosen)
+
+
+def skew_angle(region):
+    """The small rotation, in degrees, that stands a tilted scan's ruled lines upright."""
+    sample = region.resize((SKEW_SAMPLE_WIDTH, max(1, region.height * SKEW_SAMPLE_WIDTH // region.width)))
+    steps = int(MAX_SKEW_DEGREES / SKEW_STEP_DEGREES)
+    angles = [step * SKEW_STEP_DEGREES for step in range(-steps, steps + 1)]
+    return max(
+        angles,
+        key=lambda angle: (column_sharpness(sample.rotate(angle, fillcolor=255, resample=Image.Resampling.BILINEAR)), -abs(angle)),
+    )
 
 
 def table_widths(image, box, columns, cm_per_pixel):
@@ -46,6 +129,9 @@ def table_widths(image, box, columns, cm_per_pixel):
     """
     x0, y0, x1, y1 = box
     region = ImageOps.grayscale(image.crop((max(x0 - RULE_SEARCH, 0), y0, x1 + RULE_SEARCH, y1)))
+    angle = skew_angle(region)
+    if angle:
+        region = region.rotate(angle, fillcolor=255, resample=Image.Resampling.BILINEAR)
     width, height = region.size
     pixels = region.load()
     # A rule has ink in almost every row of its narrow band; a column of text does not.
@@ -64,11 +150,24 @@ def table_widths(image, box, columns, cm_per_pixel):
             rules.append((strength, x))
     positions = [x for _, x in rules]
     if len(positions) != columns + 1:
+        positions = faint_rules(region, columns + 1, cm_per_pixel)
+    if len(positions) != columns + 1:
         return None
-    return [round((b - a) * cm_per_pixel, 2) for a, b in zip(positions, positions[1:])]
+    widths = [round((b - a) * cm_per_pixel, 2) for a, b in zip(positions, positions[1:])]
+    return widths if min(widths) >= MIN_COLUMN_CM else None
+
+
+def page_scale(cm_per_pixel, page):
+    """Centimetres per scan pixel on a page: one scale, or one per page number."""
+    if not isinstance(cm_per_pixel, dict):
+        return cm_per_pixel
+    return cm_per_pixel.get(page) or next(iter(cm_per_pixel.values()))
 
 
 def apply_table_widths(spec, pages, cm_per_pixel):
+    """Widths from each table's rules. A table whose rules cannot be read takes the widths found for
+    another table with as many columns: a long table scanned page by page repeats one layout."""
+    found = {}
     for block in spec["blocks"]:
         box = block.pop("box", None)
         page = block.pop("box_page", 1)
@@ -76,9 +175,190 @@ def apply_table_widths(spec, pages, cm_per_pixel):
             continue
         columns = sum(int(cell.get("colspan", 1)) for cell in block["rows"][0])
         with Image.open(pages[page - 1]) as image:
-            widths = table_widths(image.convert("RGB"), box, columns, cm_per_pixel)
+            widths = table_widths(image.convert("RGB"), box, columns, page_scale(cm_per_pixel, page))
         if widths:
             block["widths_cm"] = widths
+            found.setdefault(columns, []).append(widths)
+    shared = {columns: [median(column) for column in zip(*sets)] for columns, sets in found.items()}
+    for block in spec["blocks"]:
+        if block["type"] != "table" or block.get("widths_cm"):
+            continue
+        columns = sum(int(cell.get("colspan", 1)) for cell in block["rows"][0])
+        if columns in shared:
+            block["widths_cm"] = [round(width, 2) for width in shared[columns]]
+
+
+def column_count(block):
+    return sum(int(cell.get("colspan", 1)) for cell in block["rows"][0])
+
+
+def row_text(row):
+    return " ".join(cell.get("text", "") for cell in row)
+
+
+def same_row(a, b):
+    """Two reads of one heading row differ by a few misread letters."""
+    return SequenceMatcher(None, row_text(a), row_text(b)).ratio() >= HEADING_MATCH
+
+
+def heading_count(rows):
+    count = 0
+    while count < len(rows) - 1 and all(cell.get("header") for cell in rows[count]):
+        count += 1
+    return count
+
+
+def join_continued_tables(spec):
+    """A long table scanned page by page comes back as one table per page, each with its heading
+    row. Each would start a new Word page and spill onto the next, leaving pages with a stray row.
+    A table on a new page with the same columns as the table just before continues it: its repeated
+    heading is dropped and the heading repeats on every Word page instead. A table that long is set in
+    smaller type."""
+    blocks = []
+    for block in spec["blocks"]:
+        previous = blocks[-1] if blocks else None
+        if not (
+            block["type"] == "table"
+            and block.get("page_break")
+            and previous is not None
+            and previous["type"] == "table"
+            and column_count(previous) == column_count(block)
+        ):
+            blocks.append(block)
+            continue
+        headings = previous.get("header_rows") or heading_count(previous["rows"])
+        rows = block["rows"]
+        repeated = 0
+        while repeated < headings and repeated < len(rows) and same_row(previous["rows"][repeated], rows[repeated]):
+            repeated += 1
+        if headings:
+            previous["header_rows"] = headings
+        previous["size"] = LONG_TABLE_SIZE
+        previous["rows"] = continue_last_row(previous["rows"], rows[repeated:], headings)
+        if not previous.get("widths_cm") and block.get("widths_cm"):
+            previous["widths_cm"] = block["widths_cm"]
+    spec["blocks"] = blocks
+
+
+def first_text(row):
+    return row[0].get("text", "").strip() if row else ""
+
+
+def joined_text(cell, extra):
+    parts = (cell.get("text", "").strip(), extra.get("text", "").strip())
+    return " ".join(part for part in parts if part)
+
+
+def same_cells(a, b):
+    return [int(cell.get("colspan", 1)) for cell in a] == [int(cell.get("colspan", 1)) for cell in b]
+
+
+def continue_last_row(rows, more, headings):
+    """A record cut by the page edge goes on under the next page's heading with its first cell
+    empty. Where most records carry a first cell (a serial number), that row is the rest of the
+    last record, so its cells are added to that record's. Only the page's first row: an empty
+    first cell further down is a new record whose number the read lost."""
+    body = rows[headings:]
+    numbered = sum(1 for row in body if first_text(row))
+    if not body or not more or first_text(more[0]) or numbered * 2 <= len(body):
+        return rows + more
+    last, rest = body[-1], more[0]
+    if not same_cells(last, rest):
+        return rows + more
+    joined = [{**cell, "text": joined_text(cell, extra)} for cell, extra in zip(last, rest)]
+    return rows[:-1] + [joined] + more[1:]
+
+
+def serial_value(text):
+    match = SERIAL.match(text.replace(" ", ""))
+    return int(match.group(1).translate(LATIN_DIGITS)) if match else None
+
+
+def renumber_serials(spec):
+    """Serial numbers are often written by hand, and a read turns ৬ into ১ or ৮ into 3. Where a
+    table's first column counts its records and most read numbers already sit at their place in
+    the count, every record is numbered by its place, in the digits of the table's text."""
+    for block in spec["blocks"]:
+        if block["type"] != "table":
+            continue
+        rows = block["rows"][block.get("header_rows") or heading_count(block["rows"]) :]
+        start = next((i for i, row in enumerate(rows) if serial_value(first_text(row)) is not None), None)
+        if start is None:
+            continue
+        records = rows[start:]
+        values = [serial_value(first_text(row)) for row in records]
+        read = [value for value in values if value is not None]
+        if len(records) < 3:
+            continue
+        if any(first_text(row) and value is None for row, value in zip(records, values)):
+            continue
+        in_place = sum(1 for place, value in enumerate(values, 1) if value == place)
+        if in_place * 2 <= len(read):
+            continue
+        text = " ".join(cell.get("text", "") for row in records for cell in row)
+        bangla = sum(1 for ch in text if "\u0980" <= ch <= "\u09ff") > sum(1 for ch in text if ch.isascii() and ch.isalpha())
+        for place, row in enumerate(records, 1):
+            number = str(place).translate(BANGLA_DIGITS) if bangla else str(place)
+            row[0] = {**row[0], "text": f"{number}."}
+
+
+def column_text(block):
+    """Characters under the heading and the longest word anywhere, heading included, in each column."""
+    columns = column_count(block)
+    characters, longest = [0] * columns, [0] * columns
+    headings = block.get("header_rows", 0)
+    for index, row in enumerate(block["rows"]):
+        column = 0
+        for cell in row:
+            span = int(cell.get("colspan", 1))
+            text = cell.get("text", "")
+            for covered in range(column, min(column + span, columns)):
+                if index >= headings:
+                    characters[covered] += len(text) / span
+                if span == 1:
+                    longest[covered] = max([longest[covered], *map(len, text.split())])
+            column += span
+    return characters, longest
+
+
+def balance_widths(spec):
+    """Retypeset text is larger than the scan's, so columns sized for the paper squeeze long text to
+    a word a line beside wide empty ones. Half of each width follows the paper and half how much text
+    the column holds; no column is narrower than its longest word, up to its width on the paper.
+    The total width is kept."""
+    for block in spec["blocks"]:
+        widths = block.get("widths_cm")
+        if block["type"] != "table" or not widths or len(widths) < MIN_BALANCED_COLUMNS:
+            continue
+        characters, longest = column_text(block)
+        size = block.get("size") or spec.get("font", {}).get("size") or WORD_CHARACTER_SIZE
+        letter_cm = WORD_CHARACTER_CM * size / WORD_CHARACTER_SIZE
+        weights = [sqrt(count) for count in characters]
+        if not sum(weights):
+            continue
+        total = sum(widths)
+        wanted = [(width + total * weight / sum(weights)) / 2 for width, weight in zip(widths, weights)]
+        floors = [
+            min(width, length * letter_cm + CELL_PADDING_CM) if length else 0
+            for width, length in zip(widths, longest)
+        ]
+        if sum(floors) >= total:
+            continue
+        block["widths_cm"] = [round(width, 2) for width in fit_above_floors(wanted, floors, total)]
+
+
+def fit_above_floors(wanted, floors, total):
+    """Scales the wanted widths to the total; a column pushed under its floor is held there and the
+    rest scaled again, until none is."""
+    held = [False] * len(wanted)
+    while True:
+        free = total - sum(floor for floor, fixed in zip(floors, held) if fixed)
+        share = free / sum(want for want, fixed in zip(wanted, held) if not fixed)
+        widths = [floor if fixed else want * share for want, floor, fixed in zip(wanted, floors, held)]
+        under = [not fixed and width < floor for width, floor, fixed in zip(widths, floors, held)]
+        if not any(under):
+            return widths
+        held = [fixed or low for fixed, low in zip(held, under)]
 
 
 def signature_top(image, box):
@@ -162,8 +442,9 @@ def keep_largest_shape(path):
     image.crop((left, top, right + 1, bottom + 1)).save(path)
 
 
-def place_pictures(spec, made, qa, cm_per_pixel):
-    """Sets each picture to its size on the page. One with no crop is left out and reported."""
+def place_pictures(spec, made, qa, cm_per_pixel, crop_pages=None):
+    """Sets each picture to its size on the page. One with no crop is left out and reported.
+    `crop_pages` gives each crop's page, for a scale that differs by page."""
     kept, missing = [], []
     for block in spec["blocks"]:
         for key, width_key in (("logo", "logo_width_cm"), ("image", "image_width_cm"), ("path", "width_cm")):
@@ -175,7 +456,8 @@ def place_pictures(spec, made, qa, cm_per_pixel):
                 if key == "logo":
                     keep_largest_shape(qa / f"{name}.png")
                 with Image.open(qa / f"{name}.png") as image:
-                    block[width_key] = round(image.width * cm_per_pixel, 2)
+                    scale = page_scale(cm_per_pixel, (crop_pages or {}).get(name, 1))
+                    block[width_key] = round(image.width * scale, 2)
             else:
                 missing.append(name)
                 del block[key]
@@ -183,6 +465,146 @@ def place_pictures(spec, made, qa, cm_per_pixel):
             kept.append(block)
     spec["blocks"] = kept
     return missing
+
+
+def trend(values):
+    """From -1 to 1: how consistently the values rise in order, counted over every pair, so one
+    stamp or note out of place barely moves it."""
+    pairs = [(a, b) for index, a in enumerate(values) for b in values[index + 1:] if a != b]
+    if not pairs:
+        return 0
+    return sum(1 if b > a else -1 for a, b in pairs) / len(pairs)
+
+
+def text_direction(elements):
+    """'clockwise', 'counterclockwise' or 'upside_down' when the page must be turned, else None.
+
+    A table scanned sideways comes back from the service with tall, narrow line boxes. Reading moves
+    from the top of the upright page to its bottom, so the way the lines drift in reading order says
+    which way to turn, and a stamp or note read first does not decide it alone. A page whose lines are
+    wide but run from the bottom of the image upwards was scanned upside down.
+    """
+    lines = []
+    for element in elements:
+        coordinates = (element.get("metadata") or {}).get("coordinates") or {}
+        points = coordinates.get("points")
+        if points and len(element.get("text") or "") >= MIN_ROTATION_TEXT:
+            xs, ys = [p[0] for p in points], [p[1] for p in points]
+            width = coordinates.get("layout_width") or 1
+            height = coordinates.get("layout_height") or 1
+            lines.append((min(xs), min(ys), max(xs), max(ys), width, height))
+    if not lines:
+        return None
+    upright = [line for line in lines if line[2] - line[0] >= line[3] - line[1]]
+    if len(upright) * 2 >= len(lines):
+        down = trend([(line[1] + line[3]) / 2 / line[5] for line in lines])
+        if len(lines) >= MIN_UPSIDE_DOWN_LINES and down <= -UPSIDE_DOWN_TREND:
+            return "upside_down"
+        return None
+    across = trend([(line[0] + line[2]) / 2 / line[4] for line in lines])
+    if across == 0:
+        first = lines[0]
+        across = first[4] / 2 - (first[0] + first[2]) / 2
+    return "clockwise" if across > 0 else "counterclockwise"
+
+
+TURNS = {"clockwise": -90, "counterclockwise": 90, "upside_down": 180}
+
+
+def turn_point(point, width, height, direction):
+    x, y = point
+    if direction == "upside_down":
+        return [width - x, height - y]
+    return [height - y, x] if direction == "clockwise" else [y, width - x]
+
+
+def upright(elements, pages):
+    """Turns sideways and upside-down pages and their element boxes upright, in place."""
+    by_page = {}
+    for element in elements:
+        by_page.setdefault(int((element.get("metadata") or {}).get("page_number") or 1), []).append(element)
+    for number, page_elements in by_page.items():
+        direction = text_direction(page_elements)
+        if direction is None or number > len(pages):
+            continue
+        with Image.open(pages[number - 1]) as image:
+            image.rotate(TURNS[direction], expand=True).save(pages[number - 1])
+        for element in page_elements:
+            coordinates = (element.get("metadata") or {}).get("coordinates") or {}
+            width, height = coordinates.get("layout_width"), coordinates.get("layout_height")
+            if not coordinates.get("points") or not width or not height:
+                continue
+            coordinates["points"] = [turn_point(p, width, height, direction) for p in coordinates["points"]]
+            if direction != "upside_down":
+                coordinates["layout_width"], coordinates["layout_height"] = height, width
+
+
+def tagged(node, name):
+    """Descendants named `name`, whatever their XML namespace."""
+    return [child for child in node.iter() if child.tag.rsplit("}", 1)[-1] == name]
+
+
+def bbox_elements(xhtml, page):
+    """Elements with positions from `pdftotext -bbox-layout`: one per text block, its lines kept."""
+    root = ElementTree.fromstring(xhtml)
+    sheet = next(iter(tagged(root, "page")), None)
+    if sheet is None:
+        return []
+    width, height = float(sheet.get("width")), float(sheet.get("height"))
+    elements = []
+    for block in tagged(sheet, "block"):
+        lines = [" ".join(word.text or "" for word in tagged(line, "word")) for line in tagged(block, "line")]
+        text = "\n".join(line.strip() for line in lines if line.strip())
+        if not text:
+            continue
+        x0, y0, x1, y1 = (float(block.get(key)) for key in ("xMin", "yMin", "xMax", "yMax"))
+        elements.append({
+            "type": "NarrativeText",
+            "text": text,
+            "metadata": {
+                "page_number": page,
+                "coordinates": {
+                    "points": [[x0, y0], [x0, y1], [x1, y1], [x1, y0]],
+                    "layout_width": width,
+                    "layout_height": height,
+                },
+            },
+        })
+    return elements
+
+
+def digital_page_elements(source, page):
+    """A digital page's text blocks with their positions, read from the PDF itself; [] if it fails."""
+    command = ["pdftotext", "-bbox-layout", "-f", str(page), "-l", str(page), str(source), "-"]
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0 or not result.stdout.strip():
+        return []
+    try:
+        return bbox_elements(result.stdout, page)
+    except ElementTree.ParseError:
+        return []
+
+
+def with_digital_pages(elements, source, read=digital_page_elements):
+    """Pages that had good text were not sent for reading, so they arrive as one unbroken run of the
+    parser's text with no position. Their blocks and positions are read from the PDF instead, so
+    they keep their paragraphs, gaps and page breaks."""
+    pages = {
+        int(element["metadata"]["page_number"])
+        for element in elements
+        if (element.get("metadata") or {}).get("source") == "parser"
+    }
+    found = {page: read(source, page) for page in sorted(pages)}
+    merged = []
+    for element in elements:
+        metadata = element.get("metadata") or {}
+        page = metadata.get("page_number")
+        if metadata.get("source") != "parser" or not found.get(page):
+            merged.append(element)
+        elif found[page] is not None:
+            merged.extend(found[page])
+            found[page] = None
+    return merged
 
 
 def main(argv):
@@ -194,14 +616,26 @@ def main(argv):
     qa.mkdir(parents=True, exist_ok=True)
 
     pages = render_pages(source, qa)
-    with Image.open(pages[0]) as first:
-        scan_size = first.size
-    cm_per_pixel = PAGE_WIDTH_CM / scan_size[0]
-
     elements = json.loads(Path(elements_path).read_text(encoding="utf-8"))
-    spec, crops = convert(elements, scan_size, str(qa))
+    if Path(source).suffix.lower() == ".pdf":
+        elements = with_digital_pages(elements, source)
+    upright(elements, pages)
+    scan_sizes = {}
+    for number, page in enumerate(pages, 1):
+        with Image.open(page) as image:
+            scan_sizes[number] = image.size
+    cm_per_pixel = {
+        number: (PAGE_HEIGHT_CM if width > height else PAGE_WIDTH_CM) / width
+        for number, (width, height) in scan_sizes.items()
+    }
+
+    spec, crops = convert(elements, scan_sizes, str(qa))
     apply_table_widths(spec, pages, cm_per_pixel)
-    missing = place_pictures(spec, run_crops(crops, pages, qa), qa, cm_per_pixel)
+    join_continued_tables(spec)
+    renumber_serials(spec)
+    balance_widths(spec)
+    crop_pages = {crop["name"]: crop.get("page", 1) for crop in crops}
+    missing = place_pictures(spec, run_crops(crops, pages, qa), qa, cm_per_pixel, crop_pages)
 
     spec_path = qa / "spec.json"
     spec_path.write_text(json.dumps(spec, ensure_ascii=False, indent=1), encoding="utf-8")

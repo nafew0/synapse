@@ -71,6 +71,185 @@ def test_a_signature_box_grows_up_to_its_ink_and_stops_at_a_gap():
     assert signature_top(Image.new('L', (300, 300), 255), [20, 150, 280, 220]) == 150
 
 
+def test_a_font_is_embedded_where_word_will_find_it(tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from lxml import etree
+    from office.embed import embed_font, obfuscate
+
+    font = tmp_path / 'Nikosh.ttf'
+    font.write_bytes(bytes(range(256)) * 4)
+    out = tmp_path / 'letter.docx'
+    Document().save(out)
+
+    assert embed_font(out, 'Nikosh', path=font)
+    assert embed_font(out, 'Nikosh', path=font)
+
+    with zipfile.ZipFile(out) as package:
+        names = package.namelist()
+        table = etree.fromstring(package.read('word/fontTable.xml'))
+        rels = package.read('word/_rels/fontTable.xml.rels').decode()
+        settings = package.read('word/settings.xml').decode()
+        types = package.read('[Content_Types].xml').decode()
+        stored = package.read('word/fonts/font1.odttf')
+    w = '{http://schemas.openxmlformats.org/wordprocessingml/2006/main}'
+    entry = next(f for f in table if f.get(f'{w}name') == 'Nikosh')
+    embed = entry.find(f'{w}embedRegular')
+    assert names[0] == '[Content_Types].xml'
+    assert [n for n in names if n.startswith('word/fonts/')] == ['word/fonts/font1.odttf']
+    assert obfuscate(stored, embed.get(f'{w}fontKey')) == font.read_bytes()
+    assert 'Target="fonts/font1.odttf"' in rels
+    assert 'embedTrueTypeFonts' in settings
+    assert 'Extension="odttf"' in types
+    Document(str(out))
+
+
+def test_embedding_is_skipped_when_the_font_is_not_installed(tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from office.embed import embed_font
+
+    out = tmp_path / 'letter.docx'
+    Document().save(out)
+    assert not embed_font(out, 'No Such Font Family 123')
+
+
+@pytest.mark.skipif(not shutil.which('qpdf'), reason='needs qpdf, as in the sandbox')
+def test_a_pdf_cut_short_is_repaired(tmp_path):
+    pypdf = pytest.importorskip('pypdf')
+    sys.path.insert(0, str(SCRIPTS))
+    import scan_to_docx
+
+    writer = pypdf.PdfWriter()
+    for _ in range(3):
+        writer.add_blank_page(width=200, height=300)
+    whole = tmp_path / 'whole.pdf'
+    writer.write(str(whole))
+    data = whole.read_bytes()
+    broken = tmp_path / 'broken.pdf'
+    broken.write_bytes(data[: data.rindex(b'xref')])
+
+    repaired = scan_to_docx.repair_pdf(broken, tmp_path)
+    assert len(pypdf.PdfReader(str(repaired), strict=True).pages) == 3
+
+
+def test_a_damaged_pdf_without_qpdf_stops_with_a_clear_message(tmp_path, monkeypatch):
+    sys.path.insert(0, str(SCRIPTS))
+    import scan_to_docx
+
+    monkeypatch.setattr(scan_to_docx.shutil, 'which', lambda _name: None)
+    assert scan_to_docx.repair_pdf(tmp_path / 'broken.pdf', tmp_path) is None
+
+
+def sideways_line(text, x0, y0, x1, y1, page=1):
+    return {
+        'type': 'NarrativeText',
+        'text': text,
+        'metadata': {
+            'page_number': page,
+            'coordinates': {
+                'points': [[x0, y0], [x0, y1], [x1, y1], [x1, y0]],
+                'layout_width': 200,
+                'layout_height': 300,
+            },
+        },
+    }
+
+
+def test_a_sideways_page_and_its_boxes_are_turned_upright(tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import text_direction, upright
+
+    elements = [
+        sideways_line('মন্ত্রণালয়ের নাম: মাধ্যমিক', 10, 150, 20, 280),
+        sideways_line('ক্রম নির্দিষ্ট ফ্ল্যাগশিপ কর্মসূচি', 40, 20, 50, 280),
+    ]
+    page = tmp_path / 'page-1.png'
+    Image.new('L', (200, 300), 255).save(page)
+
+    assert text_direction(elements) == 'clockwise'
+    upright(elements, [page])
+
+    with Image.open(page) as turned:
+        assert turned.size == (300, 200)
+    title = elements[0]['metadata']['coordinates']
+    xs, ys = [p[0] for p in title['points']], [p[1] for p in title['points']]
+    assert (title['layout_width'], title['layout_height']) == (300, 200)
+    assert (min(xs), max(xs), min(ys), max(ys)) == (20, 150, 10, 20)
+
+
+def test_an_upright_page_is_left_alone(tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import text_direction
+
+    assert text_direction([sideways_line('একটি সাধারণ লাইন যা পাশাপাশি', 10, 10, 190, 30)]) is None
+
+
+def test_a_landscape_spec_builds_a_landscape_page(tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from letter import Style, build
+
+    spec = {'page': {'landscape': True, 'margins_cm': [1, 1, 1, 1]}, 'blocks': [{'type': 'paragraph', 'text': 'x'}]}
+    out = tmp_path / 'wide.docx'
+    style = Style(spec)
+    build(spec, out, style)
+    section = Document(out).sections[0]
+    assert round(section.page_width.cm, 1) == 29.7 and round(style.text_width_cm, 1) == 27.7
+
+
+def ruled_table(columns_px, height=400, angle=0.0):
+    page = Image.new('L', (columns_px[-1] + 80, height + 80), 255)
+    draw = ImageDraw.Draw(page)
+    for x in columns_px:
+        draw.line((x, 40, x, 40 + height), fill=0, width=2)
+    for y in (40, 120, 40 + height):
+        draw.line((columns_px[0], y, columns_px[-1], y), fill=0, width=2)
+    return page.rotate(angle, fillcolor=255, resample=Image.Resampling.BILINEAR).convert('RGB')
+
+
+def test_a_tilted_table_still_gives_its_column_widths():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import table_widths
+
+    columns_px = [40, 90, 290, 440, 640]
+    page = ruled_table(columns_px, angle=1.5)
+    widths = table_widths(page, (40, 40, 640, 440), 4, 0.1)
+    assert widths is not None
+    assert all(abs(got - want) <= 0.6 for got, want in zip(widths, [5, 20, 15, 20]))
+
+
+def test_faint_broken_rules_still_give_column_widths():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import table_widths
+
+    columns_px = [40, 90, 290, 440, 640]
+    page = Image.new('L', (720, 480), 255)
+    draw = ImageDraw.Draw(page)
+    for x in columns_px:
+        for y in range(40, 440, 10):
+            draw.line((x, y, x, y + 5), fill=150, width=2)
+    widths = table_widths(page.convert('RGB'), (40, 40, 640, 440), 4, 0.1)
+    assert widths is not None
+    assert all(abs(got - want) <= 0.6 for got, want in zip(widths, [5, 20, 15, 20]))
+
+
+def test_tables_without_readable_rules_share_the_widths_found_elsewhere(tmp_path, monkeypatch):
+    sys.path.insert(0, str(SCRIPTS))
+    import scan_to_docx
+
+    row = [{'text': 'a'}, {'text': 'b'}, {'text': 'c'}]
+    spec = {'blocks': [
+        {'type': 'table', 'rows': [row], 'box': [0, 0, 1, 1], 'box_page': 1},
+        {'type': 'table', 'rows': [row], 'box': [0, 0, 1, 1], 'box_page': 1},
+    ]}
+    found = iter([[1.0, 5.0, 3.0], None])
+    monkeypatch.setattr(scan_to_docx, 'table_widths', lambda *_args: next(found))
+    page = tmp_path / 'page-1.png'
+    Image.new('RGB', (10, 10), 'white').save(page)
+
+    scan_to_docx.apply_table_widths(spec, [page], 0.1)
+
+    assert [block['widths_cm'] for block in spec['blocks']] == [[1.0, 5.0, 3.0], [1.0, 5.0, 3.0]]
+
+
 def test_a_picture_is_not_clipped_by_tight_leading(scan):
     sys.path.insert(0, str(SCRIPTS))
     from docx.enum.text import WD_LINE_SPACING
@@ -196,3 +375,266 @@ def test_letter_shrinks_a_long_order_onto_one_page(scan, tmp_path):
 
     assert 'pages: 1 (target 1)' in result.stdout, result.stdout + result.stderr
     assert 'builds 1' not in result.stdout
+
+
+def header_row(columns, label='heading'):
+    return [{'text': f'{label} {i}', 'header': True} for i in range(columns)]
+
+
+def body_row(columns, text='x'):
+    return [{'text': f'{text}{i}'} for i in range(columns)]
+
+
+def test_a_table_continued_on_the_next_page_joins_the_first_without_its_repeated_heading():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import join_continued_tables
+
+    spec = {'blocks': [
+        {'type': 'table', 'rows': [header_row(3), body_row(3, 'a')], 'widths_cm': [1.0, 2.0, 3.0]},
+        {'type': 'table', 'rows': [header_row(3, 'heeding'), body_row(3, 'b')], 'page_break': True, 'widths_cm': [1.1, 2.1, 3.1]},
+        {'type': 'table', 'rows': [body_row(3, 'c')], 'page_break': True},
+        {'type': 'paragraph', 'text': 'after', 'page_break': True},
+    ]}
+    join_continued_tables(spec)
+    table, after = spec['blocks']
+    assert [row[0]['text'] for row in table['rows']] == ['heading 0', 'a0', 'b0', 'c0']
+    assert table['header_rows'] == 1 and table['widths_cm'] == [1.0, 2.0, 3.0]
+    assert table['size'] < 10
+    assert after['page_break']
+
+
+def test_tables_with_different_columns_stay_apart():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import join_continued_tables
+
+    spec = {'blocks': [
+        {'type': 'table', 'rows': [header_row(3), body_row(3)]},
+        {'type': 'table', 'rows': [header_row(4), body_row(4)], 'page_break': True},
+    ]}
+    join_continued_tables(spec)
+    assert len(spec['blocks']) == 2 and spec['blocks'][1]['page_break']
+    assert 'size' not in spec['blocks'][0]
+
+
+def record(serial, *texts):
+    return [{'text': serial}] + [{'text': text} for text in texts]
+
+
+def test_a_record_cut_at_the_page_edge_goes_on_in_the_same_row():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import join_continued_tables
+
+    spec = {'blocks': [
+        {'type': 'table', 'rows': [header_row(3), record('১.', 'লার্নিং', 'a) প্রশিক্ষিত'), record('২.', 'ভাষা', 'a) মডিউল')]},
+        {'type': 'table', 'page_break': True, 'rows': [
+            header_row(3), record('', '', 'b) মুদ্রিত বই'), record('', 'কারিগরি', 'a) ট্রেড কোর্স')]},
+    ]}
+    join_continued_tables(spec)
+    rows = spec['blocks'][0]['rows']
+    assert [row[0]['text'] for row in rows] == ['heading 0', '১.', '২.', '']
+    assert rows[2][1]['text'] == 'ভাষা' and rows[2][2]['text'] == 'a) মডিউল b) মুদ্রিত বই'
+    assert rows[3][1]['text'] == 'কারিগরি'
+
+
+def test_a_table_without_numbered_records_keeps_the_next_page_rows_apart():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import join_continued_tables
+
+    spec = {'blocks': [
+        {'type': 'table', 'rows': [header_row(2), record('', 'এক'), record('', 'দুই')]},
+        {'type': 'table', 'page_break': True, 'rows': [header_row(2), record('', 'তিন')]},
+    ]}
+    join_continued_tables(spec)
+    assert [row[1]['text'] for row in spec['blocks'][0]['rows']] == ['heading 1', 'এক', 'দুই', 'তিন']
+
+
+def test_misread_serial_numbers_are_counted_again_in_the_table_digits():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import renumber_serials
+
+    serials = ['#', '1.', '২.', '3.', '4.', '৫.', '১.', '7.', '3.', '', '10.']
+    rows = [header_row(2)] + [record(serial, 'বাংলা লেখা') for serial in serials]
+    spec = {'blocks': [{'type': 'table', 'header_rows': 1, 'rows': rows}]}
+    renumber_serials(spec)
+    assert [row[0]['text'] for row in spec['blocks'][0]['rows'][1:]] == [
+        '#', '১.', '২.', '৩.', '৪.', '৫.', '৬.', '৭.', '৮.', '৯.', '১০.']
+
+
+def test_numbers_that_do_not_count_the_records_are_left_as_read():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import renumber_serials
+
+    for serials in (['4.', '9.', '12.', '30.'], ['1.', '2.', 'ক', '4.']):
+        rows = [header_row(2)] + [record(serial, 'text') for serial in serials]
+        spec = {'blocks': [{'type': 'table', 'header_rows': 1, 'rows': rows}]}
+        renumber_serials(spec)
+        assert [row[0]['text'] for row in spec['blocks'][0]['rows'][1:]] == serials
+
+
+def test_wordy_columns_widen_and_empty_ones_narrow_within_the_same_total():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import WORD_CHARACTER_CM, balance_widths
+
+    wordy = 'অনেক লম্বা বাংলা লেখা যা ঘরের ভিতর মোড়ানো হয় ' * 6
+    rows = [header_row(4)] + [[{'text': '১'}, {'text': wordy}, {'text': ''}, {'text': '২০২৬-২৭'}] for _ in range(5)]
+    spec = {'blocks': [{'type': 'table', 'rows': rows, 'header_rows': 1, 'widths_cm': [3.0, 3.0, 3.0, 3.0]}]}
+    balance_widths(spec)
+    widths = spec['blocks'][0]['widths_cm']
+    assert abs(sum(widths) - 12.0) < 0.05
+    assert widths[1] > 4.5 and widths[2] < 3.0
+    assert widths[3] >= len('২০২৬-২৭') * WORD_CHARACTER_CM
+
+
+def test_heading_rows_repeat_on_every_page(tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from letter import Style, build
+
+    spec = {'blocks': [{'type': 'table', 'rows': [header_row(2), body_row(2)], 'header_rows': 1}]}
+    out = tmp_path / 'table.docx'
+    build(spec, out, Style(spec))
+    rows = Document(out).tables[0].rows
+    assert rows[0]._tr.trPr.find('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}tblHeader') is not None
+    assert rows[1]._tr.trPr is None or rows[1]._tr.trPr.find('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}tblHeader') is None
+
+
+def test_no_column_is_scaled_under_its_longest_word():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import fit_above_floors
+
+    widths = fit_above_floors([1.0, 1.0, 8.0], [2.0, 0.5, 0.5], 6.0)
+    assert abs(sum(widths) - 6.0) < 1e-9
+    assert widths[0] == 2.0 and widths[1] >= 0.5 and widths[2] > widths[1]
+
+
+def test_smaller_type_lets_a_column_narrow_to_its_longest_word_at_that_size():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import balance_widths
+
+    rows = [header_row(3)] + [[{'text': 'লক্ষ্যমাত্রা'}, {'text': 'লেখা ' * 80}, {'text': 'x'}] for _ in range(3)]
+
+    def first_width(size):
+        block = {'type': 'table', 'rows': rows, 'header_rows': 1, 'widths_cm': [2.2, 3.0, 3.0], 'size': size}
+        balance_widths({'font': {'size': 10.5}, 'blocks': [block]})
+        return block['widths_cm'][0]
+
+    assert first_width(8.5) < first_width(10.5)
+
+
+def upright_line(text, x0, y0, x1, y1, page=1):
+    line = sideways_line(text, x0, y0, x1, y1, page)
+    line['metadata']['coordinates'].update(layout_width=300, layout_height=200)
+    return line
+
+
+def test_a_sideways_page_turns_by_how_its_lines_run_not_by_a_stamp_read_first():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import text_direction
+
+    elements = [
+        sideways_line('অফিসের সিল ও তারিখ এখানে', 180, 20, 190, 120),
+        sideways_line('মন্ত্রণালয়ের নাম: মাধ্যমিক', 10, 150, 20, 280),
+        sideways_line('ক্রম নির্দিষ্ট ফ্ল্যাগশিপ কর্মসূচি', 40, 20, 50, 280),
+        sideways_line('দ্বিতীয় সারির লেখা এখানে আছে', 70, 20, 80, 280),
+        sideways_line('তৃতীয় সারির লেখা এখানে আছে', 100, 20, 110, 280),
+        sideways_line('চতুর্থ সারির লেখা এখানে আছে', 130, 20, 140, 280),
+    ]
+    assert text_direction(elements) == 'clockwise'
+
+
+def test_an_upside_down_page_and_its_boxes_are_turned_round(tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import text_direction, upright
+
+    elements = [
+        upright_line('মন্ত্রণালয়ের নাম: মাধ্যমিক', 20, 170, 280, 180),
+        upright_line('প্রথম অনুচ্ছেদের লেখা এখানে', 20, 100, 280, 110),
+        upright_line('শেষ লাইনের লেখা এখানে আছে', 20, 20, 280, 30),
+    ]
+    page = tmp_path / 'page-1.png'
+    image = Image.new('L', (300, 200), 255)
+    image.putpixel((0, 0), 0)
+    image.save(page)
+
+    assert text_direction(elements) == 'upside_down'
+    upright(elements, [page])
+
+    with Image.open(page) as turned:
+        assert turned.size == (300, 200) and turned.getpixel((299, 199)) == 0
+    first = elements[0]['metadata']['coordinates']
+    ys = [p[1] for p in first['points']]
+    assert (min(ys), max(ys)) == (20, 30) and first['layout_height'] == 200
+
+
+def test_a_page_read_top_to_bottom_is_left_alone():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import text_direction
+
+    elements = [
+        upright_line('মন্ত্রণালয়ের নাম: মাধ্যমিক', 20, 20, 280, 30),
+        upright_line('প্রথম অনুচ্ছেদের লেখা এখানে', 20, 100, 280, 110),
+        upright_line('শেষ লাইনের লেখা এখানে আছে', 20, 170, 280, 180),
+    ]
+    assert text_direction(elements) is None
+
+
+BBOX = '''<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml"><head><title></title></head><body><doc>
+<page width="595.000000" height="842.000000"><flow>
+<block xMin="72.0" yMin="70.0" xMax="300.0" yMax="100.0">
+<line xMin="72.0" yMin="70.0" xMax="300.0" yMax="84.0"><word xMin="72" yMin="70" xMax="120" yMax="84">বার্ষিক</word><word xMin="125" yMin="70" xMax="300" yMax="84">প্রতিবেদন</word></line>
+<line xMin="72.0" yMin="86.0" xMax="200.0" yMax="100.0"><word xMin="72" yMin="86" xMax="200" yMax="100">২০২৬</word></line>
+</block>
+<block xMin="72.0" yMin="150.0" xMax="520.0" yMax="170.0"><line xMin="72" yMin="150" xMax="520" yMax="170"><word xMin="72" yMin="150" xMax="520" yMax="170">AT&amp;T</word></line></block>
+</flow></page></doc></body></html>'''
+
+
+def test_a_digital_page_s_blocks_keep_their_lines_and_positions():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import bbox_elements
+
+    first, second = bbox_elements(BBOX, 3)
+    assert first['text'] == 'বার্ষিক প্রতিবেদন\n২০২৬' and second['text'] == 'AT&T'
+    coordinates = first['metadata']['coordinates']
+    assert first['metadata']['page_number'] == 3
+    assert (coordinates['layout_width'], coordinates['layout_height']) == (595.0, 842.0)
+    assert coordinates['points'][0] == [72.0, 70.0] and coordinates['points'][2] == [300.0, 100.0]
+
+
+def test_parser_text_pages_are_replaced_by_the_pdf_s_own_blocks():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import with_digital_pages
+
+    scanned = sideways_line('স্ক্যান করা পাতার লেখা', 10, 10, 190, 30, page=1)
+    parser = {'type': 'NarrativeText', 'text': 'flat text', 'metadata': {'page_number': 2, 'source': 'parser'}}
+    unread = {'type': 'NarrativeText', 'text': 'kept', 'metadata': {'page_number': 3, 'source': 'parser'}}
+    blocks = [{'type': 'NarrativeText', 'text': f'block {n}', 'metadata': {'page_number': 2}} for n in (1, 2)]
+    merged = with_digital_pages([scanned, parser, unread], 'x.pdf', read=lambda _source, page: blocks if page == 2 else [])
+    assert [e['text'] for e in merged] == ['স্ক্যান করা পাতার লেখা', 'block 1', 'block 2', 'kept']
+
+
+def test_a_section_turns_the_page_and_default_table_widths_fill_it(tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from letter import Style, build
+
+    spec = {'page': {'margins_cm': [1, 1, 1, 1]}, 'blocks': [
+        {'type': 'paragraph', 'text': 'portrait'},
+        {'type': 'table', 'rows': [body_row(2)], 'section': {'landscape': True}},
+    ]}
+    out = tmp_path / 'mixed.docx'
+    build(spec, out, Style(spec))
+    document = Document(out)
+    portrait, landscape = document.sections
+    assert portrait.page_width < portrait.page_height and landscape.page_width > landscape.page_height
+    width = sum(cell.width.cm for cell in document.tables[0].rows[0].cells)
+    assert abs(width - 27.7) < 0.1
+
+
+def test_picture_widths_use_their_own_page_s_scale(tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    import scan_to_docx
+
+    Image.new('RGB', (100, 50), 'white').save(tmp_path / 'image4.png')
+    spec = {'blocks': [{'type': 'image', 'path': str(tmp_path / 'image4.png')}]}
+    scan_to_docx.place_pictures(spec, {'image4'}, tmp_path, {1: 0.01, 2: 0.03}, {'image4': 2})
+    assert spec['blocks'][0]['width_cm'] == 3.0

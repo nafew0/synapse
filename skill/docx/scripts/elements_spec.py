@@ -253,16 +253,29 @@ def box_of(element, scan_size):
     return [round(min(xs)), round(min(ys)), round(max(xs)), round(max(ys))]
 
 
+def is_landscape(box):
+    return box[4] > box[5]
+
+
+def page_size_cm(elements):
+    """A4 as the scan has it: landscape when the page the service measured is wider than tall."""
+    box = next((box for box in map(layout_box, elements) if box), None)
+    if box and is_landscape(box):
+        return A4_HEIGHT_CM, A4_WIDTH_CM
+    return A4_WIDTH_CM, A4_HEIGHT_CM
+
+
 def page_margins(elements):
     """The page's own margins, so lines wrap and blocks sit where the scan has them."""
     boxes = [box for box in map(layout_box, elements) if box]
     text = [box for box, e in zip(map(layout_box, elements), elements) if box and is_body(e)]
     if not boxes or not text:
         return dict(PAGE)
-    left = min(b[0] / b[4] for b in text) * A4_WIDTH_CM
-    right = min(1 - b[2] / b[4] for b in text) * A4_WIDTH_CM
-    top = min(b[1] / b[5] for b in boxes) * A4_HEIGHT_CM
-    bottom = min(1 - b[3] / b[5] for b in boxes) * A4_HEIGHT_CM
+    width, height = page_size_cm(elements)
+    left = min(b[0] / b[4] for b in text) * width
+    right = min(1 - b[2] / b[4] for b in text) * width
+    top = min(b[1] / b[5] for b in boxes) * height
+    bottom = min(1 - b[3] / b[5] for b in boxes) * height
     clamp = lambda value, low, high: round(min(max(value, low), high), 2)  # noqa: E731
     return {"margins_cm": [
         clamp(top, MIN_TOP_MARGIN_CM, MAX_TOP_MARGIN_CM),
@@ -314,29 +327,49 @@ def signature_box(element, printed_lines, height):
     }
 
 
+def start_page(block, box, previous_page, page, landscape):
+    """A block on a new scan page starts a new Word page, or a new section when the page turns
+    between portrait and landscape. Returns the orientation from here on."""
+    turned = bool(box) and is_landscape(box)
+    if previous_page is None or page is None or page == previous_page:
+        return turned if box and landscape is None else landscape
+    if box and landscape is not None and turned != landscape:
+        block["section"] = {"landscape": turned}
+    else:
+        block["page_break"] = True
+    return turned if box else landscape
+
+
 def place_blocks(blocks, margins, body_line_height):
     """Sets each block's spacing, indent, alignment and size from where it sat on the page.
 
     Blocks stay ordinary paragraphs and tables, so the text still reflows when typed into. Elements
-    returned as one box share its position, so only the first block of a box gets a gap.
+    returned as one box share its position, so only the first block of a box gets a gap. A block
+    with no position still starts its page.
     """
     _, right_margin, _, left_margin = margins
     previous_box = None
     previous_page = None
+    landscape = None
     for block in blocks:
         box = block.pop("_box", None)
         page = block.pop("_page", None)
         date_x = block.pop("_date_x", None)
+        landscape = start_page(block, box, previous_page, page, landscape)
+        if page is not None:
+            previous_page = page
         if not box:
+            previous_box = None
             continue
         x0, y0, x1, y1, width, _ = box
-        cm = A4_WIDTH_CM / width
+        page_width = A4_HEIGHT_CM if is_landscape(box) else A4_WIDTH_CM
+        cm = page_width / width
         pt = cm * POINTS_PER_CM
         kind = block["type"]
         block["space_after"] = 0
-        if previous_box and page == previous_page and box != previous_box:
+        if previous_box and previous_box[6] == page and box != previous_box[:6]:
             block["space_before"] = round(min(max(y0 - previous_box[3], 0) * pt, MAX_GAP_PT), 1)
-        elif previous_box and box == previous_box:
+        elif previous_box and box == previous_box[:6]:
             block["space_before"] = 0
 
         share = (x1 - x0) / width
@@ -352,7 +385,7 @@ def place_blocks(blocks, margins, body_line_height):
             if ratio >= LARGE_TYPE_RATIO:
                 block["size"] = round(min(FONT["size"] * ratio, MAX_TITLE_SIZE), 1)
         left = x0 * cm - left_margin
-        right = A4_WIDTH_CM - right_margin - x1 * cm
+        right = page_width - right_margin - x1 * cm
         if block.get("align") != "center" and kind in ("paragraph", "heading", "title", "list"):
             if left >= MIN_INDENT_CM:
                 block["left_indent_cm"] = round(left, 2)
@@ -362,8 +395,8 @@ def place_blocks(blocks, margins, body_line_height):
             block["left_cm"] = round(max(left, 0), 2)
             block["width_cm"] = round(max((x1 - x0) * cm, MIN_SIGNATURE_BLOCK_CM), 2)
         if kind == "memo" and date_x is not None:
-            block["right_width_cm"] = round(max(A4_WIDTH_CM - right_margin - date_x * A4_WIDTH_CM, MIN_DATE_CM), 2)
-        previous_box, previous_page = box, page
+            block["right_width_cm"] = round(max(page_width - right_margin - date_x * page_width, MIN_DATE_CM), 2)
+        previous_box = (*box, page)
 
 
 class SpecBuilder:
@@ -381,6 +414,8 @@ class SpecBuilder:
     def add(self, block, *elements):
         """Adds a block, remembering where its elements sat so place_blocks can measure from them."""
         boxes = [box for box in map(layout_box, elements) if box]
+        if elements:
+            block["_page"] = int((elements[0].get("metadata") or {}).get("page_number") or 1)
         if boxes:
             block["_box"] = (
                 min(b[0] for b in boxes),
@@ -390,11 +425,16 @@ class SpecBuilder:
                 boxes[0][4],
                 boxes[0][5],
             )
-            block["_page"] = int((elements[0].get("metadata") or {}).get("page_number") or 1)
         self.blocks.append(block)
 
+    def scan_size_of(self, element):
+        """The scan's size for the element's page: one size, or a size per page number."""
+        if not isinstance(self.scan_size, dict):
+            return self.scan_size
+        return self.scan_size.get(int((element.get("metadata") or {}).get("page_number") or 1))
+
     def crop(self, name, element):
-        box = box_of(element, self.scan_size)
+        box = box_of(element, self.scan_size_of(element))
         page = int((element.get("metadata") or {}).get("page_number") or 1)
         self.crops.append({"name": name, "box": box, "page": page})
         return f"{self.crops_dir}/{name}.png"
@@ -529,7 +569,7 @@ class SpecBuilder:
                 html = (element.get("metadata") or {}).get("text_as_html")
                 rows = table_rows(html) if html else []
                 block = {"type": "table", "rows": rows} if rows else {"type": "paragraph", "text": text}
-                box = box_of(element, self.scan_size)
+                box = box_of(element, self.scan_size_of(element))
                 if rows and box:
                     block["box"] = box
                     block["box_page"] = int((element.get("metadata") or {}).get("page_number") or 1)
@@ -560,6 +600,9 @@ class SpecBuilder:
         self.body()
         pages = [int((e.get("metadata") or {}).get("page_number") or 1) for e in self.source] or [1]
         page = page_margins(self.source)
+        page_width, _ = page_size_cm(self.source)
+        if page_width > A4_WIDTH_CM:
+            page["landscape"] = True
         place_blocks(self.blocks, page["margins_cm"], self.line_height)
         return {"pages": max(pages), "page": page, "font": FONT, "blocks": self.blocks}
 

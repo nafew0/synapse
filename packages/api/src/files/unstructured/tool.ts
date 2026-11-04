@@ -262,7 +262,7 @@ export function createDocumentReadTool(deps: DocumentReadDeps): DynamicStructure
       ]);
 
       const notes = [
-        `Read "${file.filename}". Saved as /mnt/data/${elementsRef.name} and /mnt/data/${markdownRef.name} for this request only; on a later request call read_document again, which is free. For Word, load the docx skill and run: cd /mnt/data && python3 /mnt/data/skills/docx/scripts/scan_to_docx.py ${elementsRef.name} <source file> /mnt/data/<name>.docx`,
+        `Read "${file.filename}". Saved as /mnt/data/${elementsRef.name} and /mnt/data/${markdownRef.name} for this request only; on a later request call read_document again, which is free. For Word, load the docx skill and run: cd /mnt/data && python3 /mnt/data/skills/docx/scripts/scan_to_docx.py ${elementsRef.name} <source file> /mnt/data/<name>.docx with the final file name; do not copy or rename it afterwards, because every file in /mnt/data is delivered.`,
       ];
       if (reading.refused) {
         notes.push(
