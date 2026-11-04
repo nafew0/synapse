@@ -74,18 +74,16 @@ def test_long_table_stays_longtable():
     assert any('1 kept as longtable' in note for note in notes)
 
 
-def test_sinhala_body_gets_lualatex_preamble(tmp_path):
+def test_bangla_body_is_reported_not_supported(tmp_path):
     raw = tmp_path / 'raw.tex'
-    raw.write_text('\\documentclass{article}\n\\begin{document}\nශ්‍රී ලංකාව and English.\n'
+    raw.write_text('\\documentclass{article}\n\\begin{document}\nবাংলাদেশ and English.\n'
                    '\\end{document}\n', encoding='utf-8')
-    out = tmp_path / 'si.tex'
+    out = tmp_path / 'bn.tex'
     result = run(raw, out)
-    assert result.returncode == 0, result.stdout
-    assert 'compile with LuaLaTeX' in result.stdout
-    assert 'engine LuaLaTeX' in result.stdout
+    assert result.returncode == 2, result.stdout
+    assert 'Bengali text is not supported' in result.stdout
     text = out.read_text(encoding='utf-8')
-    assert '\\babelfont[sinhala]{rm}{Noto Serif Sinhala}' in text
-    assert '\\usepackage[T1]{fontenc}' not in text
+    assert '\\usepackage[T1]{fontenc}' in text and 'babel' not in text
 
 
 def test_body_without_preamble_and_bad_arguments(tmp_path):

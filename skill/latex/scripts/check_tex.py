@@ -215,25 +215,23 @@ AFTER_HYPERREF_OK = {
 MATH_FONT_PACKAGES = {'newtxmath', 'newpxmath', 'txfonts', 'pxfonts', 'stix', 'stix2', 'kpfonts',
                       'fourier', 'unicode-math', 'mathabx', 'lucimatx', 'mtpro2'}
 SCRIPTS = [
-    ('Sinhala', 0x0D80, 0x0DFF, 'Noto Serif Sinhala'),
-    ('Tamil', 0x0B80, 0x0BFF, 'Noto Serif Tamil'),
-    ('Bengali', 0x0980, 0x09FF, 'Noto Serif Bengali'),
-    ('Devanagari', 0x0900, 0x097F, 'Noto Serif Devanagari'),
-    ('Malayalam', 0x0D00, 0x0D7F, 'Noto Serif Malayalam'),
-    ('Telugu', 0x0C00, 0x0C7F, 'Noto Serif Telugu'),
-    ('Gujarati', 0x0A80, 0x0AFF, 'Noto Serif Gujarati'),
-    ('Gurmukhi', 0x0A00, 0x0A7F, 'Noto Serif Gurmukhi'),
-    ('Arabic', 0x0600, 0x06FF, 'Amiri'),
-    ('Hebrew', 0x0590, 0x05FF, 'Noto Serif Hebrew'),
-    ('Thai', 0x0E00, 0x0E7F, 'Noto Serif Thai'),
-    ('Chinese or Japanese', 0x4E00, 0x9FFF, 'Noto Serif CJK SC'),
-    ('Korean', 0xAC00, 0xD7AF, 'Noto Serif CJK KR'),
+    ('Sinhala', 0x0D80, 0x0DFF),
+    ('Tamil', 0x0B80, 0x0BFF),
+    ('Bengali', 0x0980, 0x09FF),
+    ('Devanagari', 0x0900, 0x097F),
+    ('Malayalam', 0x0D00, 0x0D7F),
+    ('Telugu', 0x0C00, 0x0C7F),
+    ('Gujarati', 0x0A80, 0x0AFF),
+    ('Gurmukhi', 0x0A00, 0x0A7F),
+    ('Arabic', 0x0600, 0x06FF),
+    ('Hebrew', 0x0590, 0x05FF),
+    ('Thai', 0x0E00, 0x0E7F),
+    ('Chinese or Japanese', 0x4E00, 0x9FFF),
+    ('Korean', 0xAC00, 0xD7AF),
 ]
 PDFTEX_UNSAFE = [(0x0370, 0x03FF), (0x2190, 0x21FF), (0x2200, 0x22FF)]
 UNICODE_PACKAGES = {'fontspec', 'unicode-math', 'polyglossia', 'xeCJK'}
 GREEK_PACKAGES = {'textgreek', 'alphabeta', 'newunicodechar', 'upgreek'}
-FONT_COMMANDS = {'setmainfont', 'setsansfont', 'newfontfamily', 'babelfont', 'setotherlanguage',
-                 'setmainlanguage', 'setCJKmainfont', 'fontspec'}
 
 TOKEN = re.compile(r'''
     (?P<cmd>\\(?:[A-Za-z][A-Za-z@]*\*?|[^A-Za-z]))
@@ -527,7 +525,6 @@ class Checker:
         self.tabular_specs = []
         self.questions = []
         self.uses_marks = False
-        self.font_commands = False
         self.external_refs = False
         self.underscore = []
         self.local_class = False
@@ -706,8 +703,6 @@ class Checker:
             return self.end(src, line, text, pos)
         if base in {'left', 'right'}:
             return self.left_right(src, line, base, pos)
-        if base in FONT_COMMANDS:
-            self.font_commands = True
         if base in TEX_DEFS or base == 'let' or base in DEF_GROUPS:
             self.use('cmd', base, src, line)
             return self.definition(src, line, base, text, pos)
@@ -1312,9 +1307,9 @@ class Checker:
                 code = ord(char)
                 if code < 0x370:
                     continue
-                for script, low, high, font in SCRIPTS:
+                for script, low, high in SCRIPTS:
                     if low <= code <= high:
-                        found.setdefault(script, (src, src.line(index), font))
+                        found.setdefault(script, (src, src.line(index)))
                 if any(low <= code <= high for low, high in PDFTEX_UNSAFE):
                     unsafe.setdefault(char, (src, src.line(index)))
         spec = next(((name, src, line) for name, _, src, line in self.packages
@@ -1323,18 +1318,9 @@ class Checker:
             self.error(spec[1], spec[2], f'{spec[0]} needs XeLaTeX or LuaLaTeX, not pdfLaTeX')
         unicode_engine = (self.engine in {'xelatex', 'lualatex'}
                           or (self.engine is None and fontspec))
-        for script, (src, line, font) in found.items():
-            if self.engine == 'pdflatex' or (self.engine is None and not fontspec
-                                              and not self.snippet):
-                self.error(src, line, f'{script} text cannot be typeset by pdfLaTeX: use XeLaTeX '
-                                      rf'with \usepackage{{fontspec}} and a font such as '
-                                      f'\\newfontfamily or \\setmainfont{{{font}}}')
-            elif not fontspec and not self.snippet:
-                self.error(src, line, rf'{script} text needs \usepackage{{fontspec}} and a font '
-                                      f'with {script} glyphs, e.g. {font}')
-            elif not self.font_commands and not self.snippet:
-                self.warn(src, line, f'{script} text but no font is set: add '
-                                     f'\\setmainfont{{{font}}} or \\newfontfamily')
+        for script, (src, line) in found.items():
+            self.error(src, line, f'{script} text is not supported: this skill writes LaTeX in '
+                                  'English only')
         greek_ok = loaded & GREEK_PACKAGES or self.babel_greek()
         if unicode_engine or (self.snippet and self.engine is None):
             return

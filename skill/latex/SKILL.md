@@ -55,7 +55,7 @@ Copy a template with `cat` (skill files are read-only), e.g.
 ```bash
 python3 /mnt/data/skills/latex/scripts/check_tex.py /mnt/data/qa/<name>.tex
 # --bib refs.bib     check \cite keys (found automatically from \bibliography{...} when local)
-# --engine xelatex   the engine the user will use (Sinhala/Tamil/Bangla: lualatex or xelatex)
+# --engine xelatex   the engine the user will use, when it is not pdfLaTeX
 # --snippet          a chapter or fragment: no \documentclass needed, package checks skipped
 ```
 
@@ -117,16 +117,9 @@ The checker enforces most of these; follow all of them.
 - **Exam class**: `\question[marks]`, `\part[marks]`, `\begin{solution}` after each question;
   `\printanswers` in the preamble prints the marking scheme, commented out for the student copy;
   `addpoints` class option for `\numpoints` and `\gradetable`.
-- **Engine and scripts**: pdfLaTeX for English. Sinhala, Tamil or Bangla text needs LuaLaTeX and a
-  font with those glyphs (`onchar` switches fonts automatically, LuaLaTeX only; with XeLaTeX use
-  `\newfontfamily\sinhalafont{...}` and switch explicitly). Run the checker with `--engine lualatex`:
-
-```latex
-\usepackage{fontspec}
-\usepackage[english]{babel}
-\babelprovide[import, onchar=ids fonts]{sinhala}   % tamil, bengali
-\babelfont[sinhala]{rm}{Noto Serif Sinhala}         % Noto Serif Tamil, Noto Serif Bengali
-```
+- **Language**: English only, compiled with pdfLaTeX. Bangla, Sinhala, Tamil and other non-Latin
+  scripts are not supported: say so and offer the document in English, or a Word file with the
+  `docx` skill for Bangla. The checker reports such text as an error.
 
 ## Fixing a pasted error
 
@@ -139,14 +132,14 @@ The checker enforces most of these; follow all of them.
 | `Environment ... undefined` | missing package, or `\newtheorem` not declared |
 | `Extra }, or forgotten \right` / `Missing \right. inserted` | `\left`/`\right` split across `\\`: close each row with `\right.` and reopen with `\left.` |
 | `File '...sty' not found` / `.cls not found` | package not installed, or the user's class file not uploaded next to the `.tex` |
-| `Unicode character ... not set up for use with LaTeX` | Greek or symbols typed directly: write `\alpha`, `\leq`; or Sinhala/Tamil with pdfLaTeX: switch to LuaLaTeX as above |
+| `Unicode character ... not set up for use with LaTeX` | Greek or symbols typed directly: write `\alpha`, `\leq` |
 | `Citation ... undefined` / `Reference ... undefined` | run BibTeX/compile twice; key or label missing (the checker lists them) |
 
 ## Final reply
 
 - One line on what was produced (`exam paper with marking scheme, 3 questions, 30 marks`).
-- The engine: "Compile with pdfLaTeX" — or LuaLaTeX/XeLaTeX when the text is Sinhala, Tamil or Bangla,
-  with the font to install — and "upload to Overleaf or compile with `latexmk`".
+- The engine: "Compile with pdfLaTeX" (or the user's own engine) and "upload to Overleaf or compile
+  with `latexmk`".
 - That it was checked but **not compiled**.
 - Every `% TODO` placeholder and `[citation needed]` the checker's info line lists.
 - No sandbox paths (`/mnt/data/...`), no narration of steps.
@@ -160,6 +153,4 @@ The checker enforces most of these; follow all of them.
   `\keywords{...}`, follow the class. Read its sample `.tex` when one is uploaded.
 - `exam` hides solutions unless `\printanswers` is on: deliver the student copy, and the marking
   scheme only when asked (or both, as two files).
-- Sinhala and Tamil render as empty boxes in sandbox previews (no fonts), which does not matter
-  here: the user's TeX has the fonts. Do not convert the text to images.
 - Pandoc cannot read `.doc`; convert it to `.docx` with the `docx` skill's LibreOffice helper first.

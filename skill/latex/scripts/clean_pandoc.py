@@ -24,8 +24,6 @@ DEFAULT_LABELS = {
     'i': r'\arabic{enumi}.', 'ii': r'(\alph{enumii})', 'iii': r'\roman{enumiii}.',
     'iv': r'\Alph{enumiv}.',
 }
-BABEL_NAMES = {'Sinhala': 'sinhala', 'Tamil': 'tamil', 'Bengali': 'bengali',
-               'Devanagari': 'hindi', 'Malayalam': 'malayalam', 'Telugu': 'telugu'}
 PACKAGE_ORDER = [
     'amsmath', 'amssymb', 'graphicx', 'adjustbox', 'array', 'booktabs', 'longtable', 'multirow',
     'xcolor', 'soul', 'ulem', 'enumitem', 'listings', 'fancyvrb', 'caption', 'subcaption',
@@ -309,9 +307,9 @@ def tidy(body):
 
 def scripts_in(text):
     found = []
-    for name, low, high, font in SCRIPTS:
+    for name, low, high in SCRIPTS:
         if any(low <= ord(char) <= high for char in text):
-            found.append((name, font))
+            found.append(name)
     return found
 
 
@@ -352,22 +350,10 @@ def package_lines(needed):
     return lines
 
 
-def font_lines(scripts):
-    if not scripts:
-        return ['\\usepackage[T1]{fontenc}', '\\usepackage{lmodern}']
-    lines = ['\\usepackage{fontspec}', '\\usepackage[english]{babel}']
-    for name, font in scripts:
-        language = BABEL_NAMES.get(name)
-        if language:
-            lines.append(f'\\babelprovide[import, onchar=ids fonts]{{{language}}}')
-            lines.append(f'\\babelfont[{language}]{{rm}}{{{font}}}')
-    return lines
-
-
 def assemble(preamble, body, doc_class):
     scripts = scripts_in(body)
     lines = [f'\\documentclass[11pt,a4paper]{{{doc_class}}}', '']
-    lines += font_lines(scripts)
+    lines += ['\\usepackage[T1]{fontenc}', '\\usepackage{lmodern}']
     lines.append('\\usepackage[margin=25mm]{geometry}')
     lines += package_lines(needed_packages(body))
     if '\\begin{Shaded}' in body:
@@ -417,7 +403,7 @@ def main(argv=None):
     parser.add_argument('--class', dest='doc_class', choices=['article', 'report', 'book'],
                         help='document class (default: report when there are chapters)')
     parser.add_argument('--engine', choices=['pdflatex', 'xelatex', 'lualatex'],
-                        help='engine for the check (default: LuaLaTeX for non-Latin scripts)')
+                        help='engine for the check (default: pdfLaTeX)')
     args = parser.parse_args(argv)
     if not args.input.is_file():
         print(f'error: no file at {args.input}', file=sys.stderr)
@@ -428,12 +414,11 @@ def main(argv=None):
     text = args.input.read_text(encoding='utf-8', errors='replace')
     output, notes, scripts = clean(text, args.doc_class)
     args.output.write_text(output, encoding='utf-8')
-    engine = args.engine or ('lualatex' if scripts else 'pdflatex')
+    engine = args.engine or 'pdflatex'
     print(f'pandoc clean-up: wrote {args.output.name}')
     print('\n'.join(f'  - {note}' for note in notes))
     if scripts:
-        names = ', '.join(name for name, _ in scripts)
-        print(f'  - {names} text: compile with LuaLaTeX (babel onchar font switching)')
+        print(f'  - {", ".join(scripts)} text is not supported: rewrite it in English')
     report, code = check(args.output, engine=engine)
     print(report)
     return code

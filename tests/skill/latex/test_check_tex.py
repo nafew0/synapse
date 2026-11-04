@@ -339,18 +339,13 @@ def test_cli_bib_and_missing_bibliography(tmp_path):
     assert result.returncode == 0, result.stdout
 
 
-def test_sinhala_needs_unicode_engine_and_font(tmp_path):
-    body = 'ශ්‍රී ලංකාව'
-    report, code = run_check(tmp_path, document(body), engine='pdflatex')
-    assert code == 2 and 'Sinhala text cannot be typeset by pdfLaTeX' in report
-    report, code = run_check(tmp_path, document(body))
-    assert code == 2 and 'Sinhala' in report
-    preamble = ('\\documentclass{article}\n\\usepackage{fontspec}\n'
-                '\\newfontfamily\\sinhalafont{Noto Serif Sinhala}\n')
-    report, code = run_check(tmp_path, document(body, preamble), engine='xelatex')
-    assert code == 0, report
-    assert 'Sinhala' not in report
-    report, code = run_check(tmp_path, document(body, preamble), engine='pdflatex')
+def test_non_latin_scripts_are_not_supported(tmp_path):
+    preamble = '\\documentclass{article}\n\\usepackage{fontspec}\n\\setmainfont{Nikosh}\n'
+    for body, name in (('বাংলাদেশ', 'Bengali'), ('ශ්‍රී ලංකාව', 'Sinhala')):
+        for engine in ('pdflatex', 'lualatex'):
+            report, code = run_check(tmp_path, document(body, preamble if engine == 'lualatex' else None), engine=engine)
+            assert code == 2 and f'{name} text is not supported' in report, report
+    report, code = run_check(tmp_path, document('English.', preamble), engine='pdflatex')
     assert code == 2 and 'fontspec needs XeLaTeX or LuaLaTeX' in report
 
 
