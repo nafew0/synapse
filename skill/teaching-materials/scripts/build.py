@@ -21,6 +21,7 @@ from docx.shared import Cm, Pt, RGBColor
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import check  # noqa: E402
+import equations  # noqa: E402
 from spec import DEFAULT_FONT, DEFAULT_SIZE, LETTERS, PAPERS, Node, SpecError, analyse, bloom_level, fmt, header, load, mcq_letters, scale_of  # noqa: E402
 
 A4 = (21.0, 29.7)
@@ -126,6 +127,7 @@ class Writer:
         self.mono = font.get("mono", "Courier New")
         self.size = float(font.get("size", DEFAULT_SIZE))
         self.labels = {**LABELS, **spec.get("labels", {})}
+        self.maths = equations.for_spec(spec)
         self.doc = Document()
         self.setup(spec)
 
@@ -210,7 +212,19 @@ class Writer:
         return paragraph
 
     def run(self, paragraph, text, bold=False, italic=False, size=None, mono=False):
-        run = paragraph.add_run(str(text))
+        parts = equations.pieces(str(text)) if not mono and "$" in str(text) else [("text", str(text))]
+        last = None
+        for kind, piece in parts:
+            element = self.maths.get(piece) if kind == "math" else None
+            if element is not None:
+                equations.place(paragraph, element)
+                continue
+            source = f"$${piece[0]}$$" if kind == "math" and piece[1] else f"${piece[0]}$" if kind == "math" else piece
+            last = self.text_run(paragraph, source, bold, italic, size, mono)
+        return last
+
+    def text_run(self, paragraph, text, bold, italic, size, mono):
+        run = paragraph.add_run(text)
         run.bold = bold or None
         run.italic = italic or None
         if size:
@@ -831,6 +845,12 @@ def main(argv):
     lines.append(f"key: {key}" if key else "key: none (the spec has no answers)")
     if placeholders:
         lines.append(f"placeholders to fill in: {', '.join(placeholders)}")
+    found, left = equations.fragments(spec), equations.failed(spec)
+    if found:
+        lines.append(f"equations: {len(found) - len(left)} of {len(found)} set as Word equations")
+    if left:
+        reason = "pandoc is not installed" if not equations.shutil.which("pandoc") else "pandoc could not parse them"
+        lines.append(f"WARNING: left as LaTeX text ({reason}): {'; '.join(left[:5])}")
     code, report = check.run(spec, args.out, key, render=not args.no_render, qa_dir=args.qa_dir)
     print("\n".join(lines + report))
     return code

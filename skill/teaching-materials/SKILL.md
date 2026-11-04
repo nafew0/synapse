@@ -124,6 +124,11 @@ than three Bloom levels) do not block delivery; fix them if it is quick, or ment
   For a Bangla document write the content in Bangla and translate the fixed wording with `labels`
   (see `references/spec.md`); Bangla is set in Nikosh automatically. Sinhala and Tamil fonts are not
   installed yet: say so and offer English instead of delivering a file of empty boxes.
+- **Equations**: write every formula, symbol, unit expression and chemical formula as LaTeX
+  between `$...$` in any text field (`$T_2 = T_1 r^{\gamma - 1}$`, `$\eta = 1 - \frac{T_L}{T_H}$`,
+  `$\mathrm{C_6H_{12}O_6}$`, `$300\,\mathrm{K}$`), or `$$...$$` for an equation on its own line.
+  The build turns them into Word equations. Never type maths as plain text (`x^2`, `T2`, `CO2`,
+  `1/2`). Write a literal dollar sign as `\$`.
 - **LaTeX** cannot be compiled here. Deliver Word; if the user insists on LaTeX, also give the
   `.tex` source in the reply and say it has not been compiled.
 
@@ -141,6 +146,10 @@ steps. Do not paste the questions into the chat unless the user asked to see the
 
 ## Gotchas
 
+- Equations do not show in the sandbox's page image (its LibreOffice has no maths module), so
+  they look like gaps there. Trust the report's `equations: N of N set as Word equations` line;
+  never rewrite them as text to make the render look full. A `WARNING: left as LaTeX text` line
+  names fragments to correct.
 - Only files at the top of `/mnt/data` reach the user. Keep the spec and renders in `/mnt/data/qa/`.
 - Run `python3 scripts/...`, never `./scripts/...` (`/mnt/data` is `noexec`).
 - JSON needs `\n` for line breaks and `\"` for quotes inside strings (code snippets, HTML tags).

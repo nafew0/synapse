@@ -26,6 +26,18 @@ turns off the required explanation, and `"explanation_length": "detailed"` lifts
 `labels` overrides any fixed wording (see `LABELS` in `build.py`): use it for a paper in Bangla.
 Text is plain: no Markdown. A `[Bracketed placeholder]` is reported back so the user can fill it in.
 
+## Equations
+
+Any text field (question, option, model answer, marking point, explanation, notes) can hold LaTeX
+maths: `$...$` inline, `$$...$$` on its own line. They become native Word equations in one
+pandoc call. Use `\mathrm{}` for upright text inside maths (units, chemical symbols) and `\$`
+for a literal dollar sign.
+
+```json
+{"text": "Show that $$T_2 = T_1\\left(\\frac{P_2}{P_1}\\right)^{\\frac{\\gamma-1}{\\gamma}}$$ and find $T_2$ for $\\gamma = 1.4$.",
+ "model_answer": "$T_2 = 300 \\times 8^{0.2857} \\approx 543\\,\\mathrm{K}$"}
+```
+
 ## exam, mcq, worksheet
 
 ```json
