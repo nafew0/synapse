@@ -1,0 +1,85 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=25mm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{siunitx}
+\usepackage[hidelinks]{hyperref}
+\usepackage{cleveref}
+
+\title{Title of the Paper}% TODO: title
+\author{First Author\thanks{Department, University. Email: name@example.ac.lk}
+  \and Second Author}% TODO: authors and affiliations
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+  One paragraph of 150--250 words: the problem, the method, the main result and why it matters.
+\end{abstract}
+
+\section{Introduction}
+\label{sec:introduction}
+
+State the problem and the gap.
+Cite only works the user supplied~\cite{surname2023keyword}.
+\Cref{sec:method} describes the method and \cref{sec:results} the results.
+
+\section{Method}
+\label{sec:method}
+
+The model is
+\begin{equation}
+  y_i = \beta_0 + \beta_1 x_i + \varepsilon_i,
+  \qquad \varepsilon_i \sim \mathcal{N}(0, \sigma^2),
+  \label{eq:model}
+\end{equation}
+and the parameters in~\eqref{eq:model} are estimated by least squares:
+\begin{align}
+  \hat{\beta}_1 &= \frac{\sum_{i=1}^{n} (x_i - \bar{x})(y_i - \bar{y})}
+                        {\sum_{i=1}^{n} (x_i - \bar{x})^2}, \label{eq:slope} \\
+  \hat{\beta}_0 &= \bar{y} - \hat{\beta}_1 \bar{x}. \label{eq:intercept}
+\end{align}
+
+\section{Results}
+\label{sec:results}
+
+\Cref{tab:results} lists the estimates and \cref{fig:example} shows the fit.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Parameter estimates (example values: replace them)}
+  \label{tab:results}
+  \begin{tabular}{@{}lS[table-format=2.2]S[table-format=1.2]@{}}
+    \toprule
+    Parameter & {Estimate} & {Std.\ error} \\
+    \midrule
+    $\beta_0$ & 12.40 & 0.85 \\
+    $\beta_1$ & 3.07  & 0.21 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.7\linewidth]{example-image}% TODO: replace with the real figure file
+  \caption{Observed values and the fitted line.}
+  \label{fig:example}
+\end{figure}
+
+The mean temperature was \qty{28.5}{\degreeCelsius} over \numrange{1}{5} sites.
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+Summarise the findings and the limitations.
+
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}

@@ -1,0 +1,21 @@
+{
+  "kind": "lecture-notes",
+  "title": "Lecture notes",
+  "header": {"course_code": "CS 2201", "course_title": "Software Engineering", "department": "Department of Computer Science"},
+  "total_weeks": 2,
+  "weeks": [
+    {"week": 1, "topic": "Introduction to software engineering",
+     "outcomes": ["Define software engineering and explain why it matters.", "Describe the stages of the software life cycle."],
+     "content": [
+       "Software engineering applies systematic, disciplined methods to the development and maintenance of software.",
+       {"heading": "The software life cycle", "text": "Most processes share the same activities.", "points": ["Requirements", "Design", "Implementation", "Testing", "Maintenance"]}
+     ],
+     "activities": ["Group discussion: a software failure you have experienced."],
+     "reading": ["Any standard software engineering textbook, chapter 1."]},
+    {"week": 2, "topic": "Process models",
+     "outcomes": ["Compare the waterfall and iterative process models."],
+     "content": [{"heading": "Waterfall", "text": "Each stage finishes before the next begins."}, {"heading": "Iterative and incremental", "text": "The system grows through repeated short cycles."}],
+     "activities": ["Choose a process model for a given case and justify it."],
+     "reading": ["Course pack, section 2."]}
+  ]
+}

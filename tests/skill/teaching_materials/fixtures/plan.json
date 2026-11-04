@@ -1,0 +1,19 @@
+{
+  "kind": "plan",
+  "title": "Workshop Plan: Using Generative AI Responsibly in Teaching",
+  "details": {"Duration": "3 hours", "Participants": "50 academic staff", "Venue": "[Venue]", "Facilitator": "[Facilitator name]"},
+  "duration_minutes": 180,
+  "aim": "To help academic staff use generative AI tools in their teaching while protecting academic integrity.",
+  "introduction": "Generative AI tools are now widely available to students and staff. This workshop introduces practical ways to use them in course design and assessment.",
+  "objectives": ["Explain what generative AI tools can and cannot do.", "Design an assessment task that remains valid when students have access to AI tools.", "Draft a course-level statement on acceptable AI use."],
+  "timetable": [
+    {"time": "09:00–09:20", "activity": "Welcome and introduction", "details": "Aims of the session; ice-breaker", "resources": "Slides"},
+    {"time": "09:20–10:00", "activity": "What generative AI can do", "details": "Live demonstration and discussion", "resources": "Projector, internet"},
+    {"time": "10:00–10:15", "activity": "Break"},
+    {"time": "10:15–11:15", "activity": "Redesigning assessment", "details": "Group work in tables of five", "resources": "Worksheets"},
+    {"time": "11:15–11:45", "activity": "Drafting an AI-use statement", "details": "Pairs draft and share", "resources": "Template"},
+    {"time": "11:45–12:00", "activity": "Wrap-up and evaluation", "details": "Feedback form", "resources": "Evaluation form"}
+  ],
+  "resources": ["Projector and screen", "Internet access", "Printed worksheets (50 copies)"],
+  "assessment": ["Each group presents one redesigned assessment task.", "Participants complete a short evaluation form."]
+}

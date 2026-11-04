@@ -1,0 +1,61 @@
+{
+  "kind": "mcq",
+  "title": "Web Development Fundamentals: HTML and CSS Quiz",
+  "header": {
+    "course_code": "IT 1203",
+    "course_title": "Web Technologies"
+  },
+  "instructions": [
+    "Choose the single best answer for each question.",
+    "Each question carries one mark."
+  ],
+  "total_marks": 4,
+  "marks_each": 1,
+  "questions": [
+    {
+      "text": "Which HTML element defines the largest heading?",
+      "options": [
+        "<head>",
+        "<h6>",
+        "<h1>",
+        "<header>"
+      ],
+      "answer": "c",
+      "explanation": "A short reason the answer is right."
+    },
+    {
+      "text": "Which CSS property changes the text colour of an element?",
+      "options": [
+        "font-color",
+        "color",
+        "text-color",
+        "foreground"
+      ],
+      "answer": "b",
+      "explanation": "CSS uses the property name color for the foreground text colour."
+    },
+    {
+      "text": "What does the following rule select?",
+      "code": "ul > li:first-child { font-weight: bold; }",
+      "options": [
+        "Every li inside any ul",
+        "The first li that is a direct child of a ul",
+        "The first ul on the page",
+        "All li elements except the first"
+      ],
+      "answer": "b",
+      "explanation": "A short reason the answer is right."
+    },
+    {
+      "text": "Which attribute gives alternative text for an image?",
+      "options": [
+        "title",
+        "alt",
+        "src",
+        "longdesc"
+      ],
+      "answer": "B",
+      "explanation": "A short reason the answer is right."
+    }
+  ]
+}
