@@ -164,7 +164,7 @@ whose CI fails is never deployed. Push a fix to move on.
 ## Admin panel
 
 `https://dev-chat.bdren.ai/adminpanel/` runs from the `bdren-dev` branch of
-`nafew0/synapse-admin` in `/opt/synapse-admin-dev`, deployed by these same
-scripts with `DEV_ROOT=/opt/synapse-admin-dev` (settings in its
+`nafew0/synapse-admin` in `/opt/synapse-dev/admin`, deployed by these same
+scripts with `DEV_ROOT=/opt/synapse-dev/admin` (settings in its
 `shared/deploy.env`, see `deploy.env.example`). Its PM2 config and notes are in
 that repo's `deploy/dev/`. Cron runs a second watcher line for it.
