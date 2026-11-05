@@ -446,7 +446,9 @@ html {
 .lc-composer .text-text-secondary, .lc-composer .text-text-tertiary { color: rgb(76 122 122); }
 .lc-composer textarea::placeholder { color: rgb(125 156 156); }
 .lc-model-pill { background: var(--lc-model-pill-background); border-color: rgba(19, 79, 84, 0.12); box-shadow: 0 0 0 1px rgb(24 101 105 / 0.25); }
-.lc-headline, .lc-headline span { background: var(--lc-headline-color); background-clip: text; -webkit-background-clip: text; color: transparent; }
+/* Clip the gradient to the letters only. SplitText animates each letter with a transform, and a
+ * text-clipped background on a word or line around a moving letter paints as a solid block. */
+.lc-headline:not(:has(span)), .lc-headline span:not(:has(span)) { background: var(--lc-headline-color); background-clip: text; -webkit-background-clip: text; color: transparent; }
 .lc-footer { color: rgb(var(--lc-footer-body)); }
 .lc-footer a { color: rgb(var(--lc-footer-label)); }
 .lc-user-avatar { background: var(--lc-user-avatar-background) !important; color: #ffffff; }
@@ -488,7 +490,6 @@ html:not(.dark) .lc-auth-network-background-light { filter: invert(1) grayscale(
 .dark .lc-composer .text-text-secondary, .dark .lc-composer .text-text-tertiary { color: rgb(182 212 203); }
 .dark .lc-composer textarea::placeholder { color: rgb(127 162 152); }
 .dark .lc-model-pill { background: var(--lc-model-pill-background); border-color: rgba(255, 255, 255, 0.08); box-shadow: 0 0 0 1px rgb(159 214 200 / 0.25); }
-.dark .lc-headline { background: var(--lc-headline-color); background-clip: text; -webkit-background-clip: text; color: transparent; }
 .dark .lc-send-button { background: var(--lc-action-background); color: rgb(var(--lc-on-action)); box-shadow: none; }
 .dark .lc-send-button:disabled { opacity: 0.45; }
 .dark .lc-footer { color: rgb(var(--lc-footer-body)); }
