@@ -56,8 +56,14 @@ sudo loginctl enable-linger bdren
 sudo mkdir -p /opt/synapse-dev && sudo chown bdren:bdren /opt/synapse-dev
 ```
 
-Add the block in [`Caddyfile`](Caddyfile) to `/etc/caddy/Caddyfile`, then
-`sudo systemctl reload caddy`. DNS: `A dev-chat.bdren.ai → 203.96.189.220`.
+Caddy on this VM runs in Docker, in the n8n stack: config
+`/home/imtiaz/Documents/n8n/Caddyfile`, container `caddy`, network
+`n8n_n8n_network` (gateway `172.19.0.1`). Inside the container `127.0.0.1` is
+the container itself, so the app listens on `HOST=172.19.0.1` and the block in
+[`Caddyfile`](Caddyfile) proxies there. Append it to that Caddyfile, then
+`docker exec caddy caddy reload --config /etc/caddy/Caddyfile`.
+Set `HEALTH_URL=http://172.19.0.1:3080/health` in `shared/deploy.env`.
+DNS: `A dev-chat.bdren.ai → 203.96.189.220`.
 
 Log out and back in so the docker group applies.
 

@@ -2,7 +2,7 @@ dev-chat.bdren.ai {
 	request_body {
 		max_size 100MB
 	}
-	reverse_proxy 127.0.0.1:3080 {
+	reverse_proxy 172.19.0.1:3080 {
 		flush_interval -1
 	}
 }
