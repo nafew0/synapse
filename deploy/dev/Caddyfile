@@ -2,7 +2,12 @@ dev-chat.bdren.ai {
 	request_body {
 		max_size 100MB
 	}
-	reverse_proxy 172.19.0.1:3080 {
-		flush_interval -1
+	handle /adminpanel* {
+		reverse_proxy 172.19.0.1:3001
+	}
+	handle {
+		reverse_proxy 172.19.0.1:3080 {
+			flush_interval -1
+		}
 	}
 }
