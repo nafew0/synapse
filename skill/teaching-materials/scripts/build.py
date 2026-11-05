@@ -852,6 +852,10 @@ def main(argv):
         reason = "pandoc is not installed" if not equations.shutil.which("pandoc") else "pandoc could not parse them"
         lines.append(f"WARNING: left as LaTeX text ({reason}): {'; '.join(left[:5])}")
     code, report = check.run(spec, args.out, key, render=not args.no_render, qa_dir=args.qa_dir)
+    fractions = equations.slashed(spec)
+    if fractions:
+        report.append(f"DEFECT: fractions typed with / show as a slash in Word; write \\frac{{a}}{{b}}: {'; '.join(fractions[:6])}")
+        code = max(code, 2)
     print("\n".join(lines + report))
     return code
 

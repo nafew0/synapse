@@ -89,3 +89,17 @@ def test_a_display_equation_on_its_own_keeps_its_line(tmp_path):
     result, out = build(tmp_path, spec)
     assert result.returncode == 0, result.stdout
     assert '<m:oMathPara' in document_xml(out.with_name('paper-answer-key.docx'))
+
+
+@pytest.mark.parametrize('latex,bad', [
+    ('\\eta = 1 - T_C/T_H', True), ('dS = \\delta Q_{rev}/T', True),
+    ('\\eta = 1 - \\frac{T_C}{T_H}', False), ('5.76\\,\\mathrm{J/K}', False), ('8^{2/3} = 4', False),
+])
+def test_slash_fractions_are_flagged_but_units_and_powers_pass(latex, bad):
+    assert bool(equations.slashed({'text': f'${latex}$'})) is bad
+
+
+def test_a_slash_fraction_fails_the_build(tmp_path):
+    spec = exam_with('State $\\eta = 1 - T_C/T_H$.', 'It is $\\eta = 1 - \\frac{300}{400}$.')
+    result, _ = build(tmp_path, spec)
+    assert result.returncode == 2 and 'write \\frac{a}{b}: \\eta = 1 - T_C/T_H' in result.stdout

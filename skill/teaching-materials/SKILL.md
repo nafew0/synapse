@@ -128,7 +128,10 @@ than three Bloom levels) do not block delivery; fix them if it is quick, or ment
   between `$...$` in any text field (`$T_2 = T_1 r^{\gamma - 1}$`, `$\eta = 1 - \frac{T_L}{T_H}$`,
   `$\mathrm{C_6H_{12}O_6}$`, `$300\,\mathrm{K}$`), or `$$...$$` for an equation on its own line.
   The build turns them into Word equations. Never type maths as plain text (`x^2`, `T2`, `CO2`,
-  `1/2`). Write a literal dollar sign as `\$`.
+  `1/2`). Write every fraction as `\frac{a}{b}`: `$\eta = 1 - \frac{T_C}{T_H}$`,
+  `$dS = \frac{\delta Q_{rev}}{T}$`, `$RT\ln\frac{V_2}{V_1}$`. A `/` inside an equation shows as a
+  slash and fails the build; only units (`\mathrm{J/K}`) and powers (`8^{2/3}`) may keep one.
+  Write a literal dollar sign as `\$`.
 - **LaTeX** cannot be compiled here. Deliver Word; if the user insists on LaTeX, also give the
   `.tex` source in the reply and say it has not been compiled.
 

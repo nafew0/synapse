@@ -50,6 +50,18 @@ def fragments(value, found=None):
     return list(found)
 
 
+UPRIGHT = re.compile(r"\\(?:mathrm|text|operatorname|mathit|textrm)\{[^{}]*\}")
+EXPONENT = re.compile(r"\^\{[^{}]*\}")
+
+
+def slashed(spec):
+    """Fragments with a fraction typed as a/b: Word shows the slash, \\frac{a}{b} stacks it.
+
+    A slash in a unit (\\mathrm{J/K}) or an exponent (8^{2/3}) is how those are written, so it passes.
+    """
+    return [latex for latex, _ in fragments(spec) if "/" in EXPONENT.sub("", UPRIGHT.sub("", latex))]
+
+
 def for_spec(spec):
     """Converted fragments for a spec, from one pandoc call however many documents use them."""
     return convert(tuple(fragments(spec)))
