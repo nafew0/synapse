@@ -252,15 +252,24 @@ html {
   --theme-motion-normal: 200ms;
   --switch-unchecked: 0 0% 58%;
   --lc-app-background: #ffffff;
-  --lc-left-rail-background: linear-gradient(190deg, #dceeee 0%, #c3e1e1 55%, #afd3d3 100%);
-  --lc-chat-sidebar-background: #f7fafa;
+  --lc-left-rail-background: #134f54;
+  --lc-chat-sidebar-background: #f8f3ec;
+  --lc-chat-sidebar-hover: rgba(19, 79, 84, 0.07);
+  --lc-rail-label: 214 230 227;
+  --lc-rail-hover: rgba(248, 243, 236, 0.12);
+  --lc-rail-active-background: #f8f3ec;
+  --lc-rail-active-icon: 19 79 84;
+  --lc-icon-accent: 244 121 72;
+  --lc-action-background: #f47948;
+  --lc-action-hover: #f68b60;
+  --lc-on-action: 27 13 6;
   --lc-composer-background: #ffffff;
   --lc-composer-border: linear-gradient(135deg, rgba(50, 138, 138, 0.55), rgba(19, 79, 84, 0.25) 65%, rgba(0, 0, 0, 0.05));
   --lc-model-pill-background: linear-gradient(135deg, rgba(50, 138, 138, 0.12), rgba(19, 79, 84, 0.08));
   --lc-headline-color: linear-gradient(100deg, #328a8a, #134f54);
   --lc-footer-label: 58 92 92;
   --lc-footer-body: 125 156 156;
-  --lc-rail-icon: 61 110 110;
+  --lc-rail-icon: 214 230 227;
   --lc-user-avatar-background: linear-gradient(140deg, #328a8a, #134f54);
   --lc-user-avatar-text: 36 18 6;
   --lc-banner-feature: linear-gradient(90deg, rgba(50, 138, 138, 0.11), rgba(245, 135, 31, 0.09));
@@ -363,15 +372,20 @@ html {
   --text-fixed: var(--gray-800);
   --switch-unchecked: 0 0% 40%;
   --lc-app-background: radial-gradient(700px 500px at 96% 100%, rgba(233, 110, 40, 0.16), transparent 55%), radial-gradient(1300px 900px at 4% 2%, rgba(20, 110, 105, 0.38), transparent 60%), linear-gradient(160deg, #04211f 0%, #03191a 45%, #020a0a 100%);
-  --lc-left-rail-background: linear-gradient(190deg, rgba(20, 110, 105, 0.48), rgba(3, 20, 19, 0.34));
-  --lc-chat-sidebar-background: linear-gradient(180deg, rgba(6, 40, 37, 0.55), rgba(2, 10, 10, 0.55));
+  --lc-left-rail-background: #0a1c20;
+  --lc-chat-sidebar-background: #0f1f24;
+  --lc-chat-sidebar-hover: rgba(127, 208, 204, 0.08);
+  --lc-rail-label: 169 191 187;
+  --lc-rail-hover: rgba(242, 244, 244, 0.08);
+  --lc-rail-active-background: #1d3a40;
+  --lc-rail-active-icon: 127 208 204;
   --lc-composer-border: linear-gradient(135deg, rgba(20, 140, 120, 0.55), rgba(233, 110, 40, 0.35) 65%, rgba(255, 255, 255, 0.06));
   --lc-composer-background: linear-gradient(150deg, #082623, #03110f);
   --lc-model-pill-background: linear-gradient(135deg, rgba(20, 110, 105, 0.35), rgba(233, 110, 40, 0.14));
   --lc-headline-color: linear-gradient(100deg, #eafff5, #8fd9c4 55%, #f0b578);
   --lc-footer-label: 169 205 193;
   --lc-footer-body: 117 152 143;
-  --lc-rail-icon: 127 176 166;
+  --lc-rail-icon: 169 191 187;
   --lc-user-avatar-background: linear-gradient(140deg, #ff9a44, #e96e28);
   --lc-banner-feature: linear-gradient(90deg, rgba(50, 138, 138, 0.28), rgba(247, 148, 30, 0.14));
   --lc-banner-update: rgba(50, 138, 138, 0.2);
@@ -400,12 +414,29 @@ html {
 .lc-banner-network-ring { fill: none; stroke: rgba(247, 148, 30, 0.55); stroke-width: 1.5; }
 .lc-banner-card-close { color: rgba(255, 255, 255, 0.85); }
 .lc-banner-card-close:hover, .lc-banner-card-close:focus-visible { background: rgba(255, 255, 255, 0.16); color: #ffffff; }
-.lc-left-rail { background: var(--lc-left-rail-background); border-right-color: rgba(19, 79, 84, 0.08); }
+.lc-left-rail { background: var(--lc-left-rail-background); border-right-color: transparent; }
+/* Rail items are brand-owned surfaces with no semantic Tailwind role, like the other lc-* rules. */
+.lc-rail-item { color: rgb(var(--lc-rail-label)); }
+.lc-rail-item .lc-rail-indicator { transition: background-color var(--theme-motion-fast) ease; }
+.lc-rail-item:hover .lc-rail-indicator { background: var(--lc-rail-hover); }
+.lc-rail-item[aria-pressed='true'] { color: rgb(var(--lc-rail-label)); font-weight: 600; }
+.lc-rail-item[aria-pressed='true'] .lc-rail-indicator { background: var(--lc-rail-active-background); }
+.lc-rail-item[aria-pressed='true'] .lc-rail-indicator svg { color: rgb(var(--lc-rail-active-icon)); }
+/* Rail chrome sits on the brand teal, which no semantic border/hover role covers. */
+.lc-rail-divider { border-color: rgba(248, 243, 236, 0.18); }
+.lc-rail-toggle:hover { background: var(--lc-rail-hover); }
+.lc-rail-new { background: var(--lc-action-background); color: rgb(var(--lc-on-action)); }
+.lc-rail-new:hover { background: var(--lc-action-hover); }
+.lc-rail-new svg, .lc-rail-new .lc-icon-accent { color: rgb(var(--lc-on-action)); stroke: rgb(var(--lc-on-action)); }
+.lc-task-tile-icon { background: rgba(19, 79, 84, 0.07); color: #134f54; }
+.dark .lc-task-tile-icon { background: rgba(127, 208, 204, 0.1); color: rgb(127 208 204); }
+.lc-icon-accent { stroke: rgb(var(--lc-icon-accent)); }
+.lc-icon-accent-fill { fill: rgb(var(--lc-icon-accent)); stroke: none; }
 .lc-left-rail .lc-rail-icon, .lc-left-rail .lc-rail-icon svg { color: rgb(var(--lc-rail-icon)); }
-.lc-chat-sidebar { background: var(--lc-chat-sidebar-background); border-right: 1px solid rgba(19, 79, 84, 0.08); color: rgb(28 50 48); }
+.lc-chat-sidebar { background: var(--lc-chat-sidebar-background); border-right: 1px solid rgba(19, 79, 84, 0.1); color: rgb(28 50 48); }
 .lc-chat-sidebar .text-text-primary { color: rgb(28 50 48); }
-.lc-chat-sidebar .text-text-secondary { color: rgb(111 143 143); }
-.lc-chat-sidebar button:hover, .lc-chat-sidebar a:hover { background: linear-gradient(90deg, rgba(50, 138, 138, 0.12), rgba(19, 79, 84, 0.05)); }
+.lc-chat-sidebar .text-text-secondary { color: rgb(82 97 95); }
+.lc-chat-sidebar button:hover, .lc-chat-sidebar a:hover { background: var(--lc-chat-sidebar-hover); }
 .lc-composer { position: relative; isolation: isolate; border: 0; background: var(--lc-composer-background); box-shadow: 0 1px 2px rgba(19, 79, 84, 0.08); }
 .lc-composer::before { content: ''; position: absolute; inset: 0; z-index: 1; padding: 1px; border-radius: inherit; background: var(--lc-composer-border); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; pointer-events: none; }
 .lc-composer .text-text-secondary, .lc-composer .text-text-tertiary { color: rgb(76 122 122); }
@@ -417,7 +448,8 @@ html {
 .lc-user-avatar { background: var(--lc-user-avatar-background) !important; color: #ffffff; }
 .lc-logo-dot { background: linear-gradient(140deg, #328a8a, #134f54); }
 .dark .lc-logo-dot { background: linear-gradient(140deg, #328a8a, #134f54); }
-.lc-send-button { background: linear-gradient(135deg, #328a8a, #134f54); color: #ffffff; box-shadow: 0 0 18px rgba(19, 79, 84, 0.5); }
+.lc-send-button { background: var(--lc-action-background); color: rgb(var(--lc-on-action)); box-shadow: none; }
+.lc-send-button:hover { background: var(--lc-action-hover); }
 html:not(.dark) .lc-auth-login-page { background: #ffffff; color: #132321; }
 html:not(.dark) .lc-auth-login-card { border-color: rgba(19, 79, 84, 0.08); background: #ffffff; box-shadow: 0 18px 44px rgba(19, 79, 84, 0.12); }
 html:not(.dark) .lc-auth-brand-panel { background: #f7fafa; border-color: rgba(19, 79, 84, 0.06); }
@@ -426,18 +458,18 @@ html:not(.dark) .lc-auth-submit { background: linear-gradient(135deg, #328a8a, #
 html:not(.dark) .lc-auth-submit:hover { background: linear-gradient(135deg, #3b9696, #186569); }
 html:not(.dark) .lc-auth-network-background-light { filter: invert(1) grayscale(1) sepia(0.18) hue-rotate(125deg) saturate(0.55); }
 .dark .lc-main-surface { background: var(--lc-app-background); }
-.dark .lc-left-rail { background: var(--lc-left-rail-background); backdrop-filter: blur(6px); border-right-color: rgba(255, 255, 255, 0.05); }
+.dark .lc-left-rail { background: var(--lc-left-rail-background); border-right-color: rgba(255, 255, 255, 0.06); }
 .dark .lc-left-rail .lc-rail-icon, .dark .lc-left-rail .lc-rail-icon svg { color: rgb(var(--lc-rail-icon)); }
-.dark .lc-chat-sidebar { background: var(--lc-chat-sidebar-background); backdrop-filter: blur(14px); border-right: 0; color: rgb(216 232 227); }
+.dark .lc-chat-sidebar { background: var(--lc-chat-sidebar-background); border-right: 1px solid rgba(255, 255, 255, 0.06); color: rgb(216 232 227); }
 .dark .lc-chat-sidebar .text-text-primary { color: rgb(255 255 255); }
-.dark .lc-chat-sidebar .text-text-secondary { color: rgb(122 158 148); }
-.dark .lc-chat-sidebar button:hover, .dark .lc-chat-sidebar a:hover { background: linear-gradient(90deg, rgba(233, 110, 40, 0.14), rgba(20, 110, 105, 0.1)); }
+.dark .lc-chat-sidebar .text-text-secondary { color: rgb(169 191 187); }
+.dark .lc-chat-sidebar button:hover, .dark .lc-chat-sidebar a:hover { background: var(--lc-chat-sidebar-hover); }
 .dark .lc-composer { border: 0; background: var(--lc-composer-background); }
 .dark .lc-composer .text-text-secondary, .dark .lc-composer .text-text-tertiary { color: rgb(182 212 203); }
 .dark .lc-composer textarea::placeholder { color: rgb(127 162 152); }
 .dark .lc-model-pill { background: var(--lc-model-pill-background); border-color: rgba(255, 255, 255, 0.08); box-shadow: 0 0 0 1px rgb(159 214 200 / 0.25); }
 .dark .lc-headline { background: var(--lc-headline-color); background-clip: text; -webkit-background-clip: text; color: transparent; }
-.dark .lc-send-button { background: linear-gradient(135deg, #f7941e, #e05a1f); color: #241206; box-shadow: 0 0 18px rgba(233, 110, 40, 0.85); }
+.dark .lc-send-button { background: var(--lc-action-background); color: rgb(var(--lc-on-action)); box-shadow: none; }
 .dark .lc-send-button:disabled { opacity: 0.45; }
 .dark .lc-footer { color: rgb(var(--lc-footer-body)); }
 .dark .lc-footer a { color: rgb(var(--lc-footer-label)); }

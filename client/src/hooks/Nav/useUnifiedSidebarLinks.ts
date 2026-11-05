@@ -1,12 +1,12 @@
 import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { BarChart3, MessagesSquare } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useUserKeyQuery } from 'librechat-data-provider/react-query';
 import { getConfigDefaults, getEndpointField, SystemRoles } from 'librechat-data-provider';
 import type { TEndpointsConfig } from 'librechat-data-provider';
 import type { NavLink } from '~/common';
 import { useGetEndpointsQuery, useGetStartupConfig, useInsightsAccessQuery } from '~/data-provider';
+import { ChatsIcon, InsightsIcon } from '~/components/Brand';
 import ConversationsSection from '~/components/UnifiedSidebar/ConversationsSection';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
 import { useAuthContext } from '~/hooks';
@@ -63,7 +63,7 @@ export default function useUnifiedSidebarLinks() {
     const conversationLink: NavLink = {
       title: 'com_ui_chat_history',
       label: '',
-      icon: MessagesSquare,
+      icon: ChatsIcon,
       id: 'conversations',
       Component: ConversationsSection,
     };
@@ -75,7 +75,7 @@ export default function useUnifiedSidebarLinks() {
     const insightsLink: NavLink = {
       title: 'com_insights_navigation',
       label: '',
-      icon: BarChart3,
+      icon: InsightsIcon,
       id: 'insights',
       onClick: () => {
         if (!location.pathname.startsWith('/insights')) {
