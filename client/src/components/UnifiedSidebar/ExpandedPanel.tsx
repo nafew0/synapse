@@ -60,10 +60,10 @@ const NewChatButton = memo(function NewChatButton({
           data-testid="new-chat-button"
           aria-label={localize('com_ui_new_chat')}
           aria-keyshortcuts={ariaKey}
-          className="lc-rail-item flex w-[72px] flex-col items-center gap-1 rounded-xl pb-1.5 text-xs font-semibold"
+          className="lc-rail-item flex w-[72px] flex-col items-center gap-1 rounded-xl pb-1.5 pt-1 text-xs font-semibold"
           onClick={handleNewChatClick}
         >
-          <span className="lc-rail-new flex size-11 items-center justify-center rounded-xl transition-colors">
+          <span className="lc-rail-new flex h-8 w-[52px] items-center justify-center rounded-full transition-colors">
             <NewChatIcon className="size-5" />
           </span>
           <span aria-hidden="true">{localize('com_nav_rail_new')}</span>
@@ -170,7 +170,7 @@ function ExpandedPanel({
 
   return (
     <div className="lc-left-rail flex h-full w-20 flex-shrink-0 flex-col items-center gap-1 border-r py-3">
-      <Logo className="mb-2 size-10" />
+      <Logo className="mb-3 mt-1 size-7" />
       <NewChatButton setActive={setActive} />
       <div className="lc-rail-divider mx-auto my-2 w-8 border-b" />
       <div className="flex flex-col items-center gap-1 overflow-y-auto">
