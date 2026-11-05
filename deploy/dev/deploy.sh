@@ -20,6 +20,9 @@ KEEP_RELEASES=${KEEP_RELEASES:-3}
 HEALTH_URL=${HEALTH_URL:-http://127.0.0.1:3080/health}
 HEALTH_TIMEOUT=${HEALTH_TIMEOUT:-180}
 SHARED_PATHS=${SHARED_PATHS:-".env uploads logs api/logs client/public/images api/data"}
+INSTALL_CMD=${INSTALL_CMD:-"npm ci --prefer-offline --no-audit --no-fund"}
+BUILD_CMD=${BUILD_CMD:-"npx turbo run build --force"}
+ECOSYSTEM=${ECOSYSTEM:-deploy/dev/ecosystem.config.js}
 PUBLIC_URL=${PUBLIC_URL:-}
 
 MIRROR="$ROOT/repo.git"
@@ -76,8 +79,8 @@ build() {
   git --git-dir="$MIRROR" worktree prune
   git --git-dir="$MIRROR" worktree add --quiet --detach "$release" "$sha" || return 1
   link_shared "$release" || return 1
-  (cd "$release" && npm ci --prefer-offline --no-audit --no-fund) || return 1
-  (cd "$release" && npx turbo run build --force) || return 1
+  (cd "$release" && eval "$INSTALL_CMD") || return 1
+  (cd "$release" && eval "$BUILD_CMD") || return 1
   if [[ -x "$SHARED/post-build.sh" ]]; then
     log "running shared/post-build.sh"
     "$SHARED/post-build.sh" "$release" || return 1
@@ -94,7 +97,7 @@ switch_to() {
 restart() {
   # 9>&- keeps the deploy lock out of the PM2 daemon, which outlives this script.
   pm2 delete "$APP" >/dev/null 2>&1 9>&- || true
-  pm2 start "$CURRENT/deploy/dev/ecosystem.config.js" 9>&-
+  pm2 start "$CURRENT/$ECOSYSTEM" 9>&-
   pm2 save >/dev/null 9>&-
 }
 

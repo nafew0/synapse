@@ -160,3 +160,11 @@ whose CI fails is never deployed. Push a fix to move on.
   before the switch, against the dev database, with the new release's code.
 - The app uses prod RAG and the prod sandbox. See the plan's §4 before testing
   heavy Office runs.
+
+## Admin panel
+
+`https://dev-chat.bdren.ai/adminpanel/` runs from the `bdren-dev` branch of
+`nafew0/synapse-admin` in `/opt/synapse-admin-dev`, deployed by these same
+scripts with `DEV_ROOT=/opt/synapse-admin-dev` (settings in its
+`shared/deploy.env`, see `deploy.env.example`). Its PM2 config and notes are in
+that repo's `deploy/dev/`. Cron runs a second watcher line for it.
