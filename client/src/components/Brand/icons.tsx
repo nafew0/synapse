@@ -147,3 +147,11 @@ export const SheetIcon = createIcon('SheetIcon', [
   { kind: 'path', d: 'M4 9.5h16M10 9.5V20' },
   { kind: 'path', d: 'M13 15h4', accent: true },
 ]);
+
+export const PaperPlaneIcon = createIcon('PaperPlaneIcon', [
+  {
+    kind: 'path',
+    d: 'M20.5 3.5 3.8 10.2a.8.8 0 0 0 0 1.5l6.2 2.3 2.3 6.2a.8.8 0 0 0 1.5 0Z',
+  },
+  { kind: 'path', d: 'm10 14 4.5-4.5' },
+]);
