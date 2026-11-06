@@ -488,7 +488,7 @@ def test_text_left_between_two_pages_of_a_table_stays_as_a_row_across_it():
 
     spec = {'blocks': [
         {'type': 'table', 'rows': [header_row(3), record('১.', 'a', 'b')]},
-        {'type': 'paragraph', 'text': '২. বাধ্যতামূলক তৃতীয় ভাষা'},
+        {'type': 'paragraph', 'text': '২. বাধ্যতামূল ক তৃতীয় ভাষা'},
         {'type': 'paragraph', 'text': '2'},
         {'type': 'table', 'page_break': True, 'rows': [header_row(3), record('৩.', 'c', 'd')]},
     ]}

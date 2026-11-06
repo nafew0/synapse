@@ -27,7 +27,25 @@ DATE_LABEL = re.compile(r"^\s*(?:তারিখ|Date\b)", re.IGNORECASE)
 DATE_INSIDE = re.compile(r"(?:তারিখ|Date\b)", re.IGNORECASE)
 DATE_ONLY = re.compile(r"^[০-৯\d]{1,2}\s+\S+\s+[০-৯\d]{4}(?:\s*\S*)?$")
 LIST_NUMBER = re.compile(r"^\s*([০-৯\d]+(?:\s*[-–]\s*[০-৯\d]+)?\s*[।)]|[০-৯\d]+\.(?=\s)|[ক-হ]\s*[।)]|[•·])\s*(.*)$", re.DOTALL)
-ITEM_START = re.compile(r"^(?:[০-৯\d]{1,2}\s*[.।)]|[a-zA-Z]\s*\)|[ক-হ]\s*[।)]|[•·])")
+ITEM_START = re.compile(r"^(?:[০-৯\d]{1,2}\s*[.।)]|[a-kA-K]\s*\)|[ক-চ]\s*[।)]|[•·])")
+"""A list item: 1. ২) a) ক) •. Letters stop at k and চ, so a word cut as Dropou|t) or দুর্গ|ম) is
+not taken for one."""
+COMBINING = set("\u0981\u0982\u0983\u09bc\u09be\u09bf\u09c0\u09c1\u09c2\u09c3\u09c4\u09c7\u09c8\u09cb\u09cc\u09cd\u09d7")
+BANGLA_PART = re.compile(r"[\u0980-\u09e5\u09f0-\u09ff]")
+LATIN_PART = re.compile(r"[A-Za-z]")
+MAX_WORD_END = 2
+NEVER_FIRST = ("\u09a1\u09bc", "\u09a2\u09bc", "\u09af\u09bc", "\u09dc", "\u09dd", "\u09df", "\u09ce")
+"""ড়, ঢ়, য় (either encoding) and ৎ never begin a Bangla word."""
+LONE_CONSONANT = re.compile(r"(?<=[\u0980-\u09e5\u09f0-\u09ff])\s+([\u0995-\u09b9\u09ce\u09dc\u09dd\u09df](?:\u09bc)?)(?=[\s,;:।)]|$)")
+"""A consonant standing alone after a word: the end of that word, cut off where the paper wrapped it."""
+LONE_LATIN = re.compile(r"(?<=[a-z])\s+([b-hj-z])(?=[\s,;:.)]|$)")
+"""A lowercase letter standing alone after an English word (not a or i): the word's cut-off end."""
+JOINED_PREFIXES = {("উপ", "জেলা")}
+SHORT_WORDS = {
+    "ও", "এ", "কি", "না", "বা", "যে", "সে", "তা", "এর", "এই", "সব", "আর", "পর", "সহ", "মত", "নয়", "হয়", "হবে", "করা",
+    "করে", "জন", "জনে", "দিন", "মাস", "হতে", "যা", "ও।", "a", "an", "of", "to", "in", "on", "or", "and", "the", "for",
+}
+WORD_EDGE = ",;:।.)(\"'‘’"
 CELL_NUMBER = re.compile(r"\s+(?=[০-৯\d]{1,2}[.।]\s)")
 HANDWRITTEN_DATE = re.compile(r"[০-৯\d]{1,2}[/.-][০-৯\d]{1,2}[/.-][০-৯\d]{2,4}$")
 SHORT_LINE = 70
@@ -105,31 +123,81 @@ class TableParser(HTMLParser):
             self.cell["text"] += data
 
 
-def table_rows(html):
+def parsed_rows(html):
     parser = TableParser()
     parser.feed(html)
     parser.finish_cell()
-    rows = even_rows([row for row in parser.rows if row])
+    return [row for row in parser.rows if row]
+
+
+def table_rows(html, inner=None):
+    """Rows of cells from table HTML. `inner` is the words seen inside a printed line anywhere in the
+    document (inner_words); by default, this table's own."""
+    rows = even_rows(parsed_rows(html))
+    inner = inner_words([html]) if inner is None else inner
     for row in rows:
         for cell in row:
-            cell["text"] = reflowed(cell["text"])
+            cell["text"] = reflowed(cell["text"], inner)
             if LIST_NUMBER.match(cell["text"]):
                 cell["text"] = CELL_NUMBER.sub("\n", cell["text"])
     return rows
 
 
-def reflowed(text):
+def reflowed(text, inner=frozenset()):
     """A cell's text without the scan's line wrapping: a reader such as Surya writes a <br> at the
     end of every printed line, which in a Word column of another width breaks lines a word or two
-    long. Lines are joined with spaces; a new line starts only at a list item (a), ১., ২)...)."""
+    long. Lines are joined; a new line starts only at a list item (a), ১., ২)...). Where the paper
+    wrapped a word without a hyphen, its two pieces join without a space (continues_word)."""
     lines = [line.strip() for line in text.split("\n") if line.strip()]
     joined = []
     for line in lines:
         if joined and not ITEM_START.match(line):
-            joined[-1] += " " + line
+            joined[-1] += ("" if continues_word(joined[-1], line, inner) else " ") + line
         else:
             joined.append(line)
-    return "\n".join(joined)
+    return "\n".join(LONE_LATIN.sub(r"\1", LONE_CONSONANT.sub(r"\1", line)) for line in joined)
+
+
+def word_pieces(token):
+    return [piece.strip(WORD_EDGE) for piece in re.split(r"[/]", token) if piece.strip(WORD_EDGE)]
+
+
+def inner_words(htmls):
+    """Words seen inside a printed line (neither first nor last on it), in every table given: those
+    are whole words, never the piece of a word the paper wrapped."""
+    words = set()
+    for html in htmls:
+        for row in parsed_rows(html):
+            for cell in row:
+                for line in cell["text"].split("\n"):
+                    for token in line.split()[1:-1]:
+                        words.update(word_pieces(token))
+    return words
+
+
+def continues_word(before, after, inner):
+    """Whether the line `after` goes on with the word that ends `before`: it starts with a vowel
+    sign, virama, ড়/ঢ়/য়/ৎ or closing punctuation, which cannot start a word; the line breaks
+    after a hyphen or slash (শিক্ষক-শিক্ষিকা, বাস/নৌকা); a known prefix (উপ|জেলা);
+    the two pieces together are a word seen inside a line elsewhere; or the line starts with a
+    short piece (up to MAX_WORD_END letters, not a short word such as ও or কি) in the same script,
+    and neither piece is seen as a whole word inside a line (বাধ্যতামূল|ক, Interactiv|e)."""
+    tail, head = before.split()[-1], after.split()[0]
+    if after[0] in COMBINING or after.startswith(NEVER_FIRST) or after[0] in ")]};,:।":
+        return True
+    if (tail.endswith("-") or tail.endswith("/")) and len(tail) > 1:
+        return True
+    end, start = (word_pieces(tail) or [""])[-1], (word_pieces(head) or [""])[0]
+    if not end or not start or end != tail.split("/")[-1].lstrip(WORD_EDGE) or start != head.split("/")[0].rstrip(WORD_EDGE):
+        return False
+    same_script = (BANGLA_PART.match(end[-1]) and BANGLA_PART.match(start[0])) or (
+        LATIN_PART.match(end[-1]) and LATIN_PART.match(start[0]) and start[0].islower()
+    )
+    if not same_script:
+        return False
+    if end + start in inner or any(end == first and start.startswith(rest) for first, rest in JOINED_PREFIXES):
+        return True
+    return len(start) <= MAX_WORD_END and start not in SHORT_WORDS and end not in inner and start not in inner
 
 
 def row_width(row):
@@ -454,6 +522,9 @@ class SpecBuilder:
         self.crops = []
         self.signatures = 0
         self.index = 0
+        self.inner = inner_words(
+            [(e.get("metadata") or {}).get("text_as_html") for e in elements if (e.get("metadata") or {}).get("text_as_html")]
+        )
 
     def add(self, block, *elements):
         """Adds a block, remembering where its elements sat so place_blocks can measure from them."""
@@ -611,7 +682,7 @@ class SpecBuilder:
                 self.picture(element, position)
             elif kind == "Table":
                 html = (element.get("metadata") or {}).get("text_as_html")
-                rows = table_rows(html) if html else []
+                rows = table_rows(html, self.inner) if html else []
                 block = {"type": "table", "rows": rows} if rows else {"type": "paragraph", "text": text}
                 box = box_of(element, self.scan_size_of(element))
                 if rows and box:

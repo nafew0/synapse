@@ -21,7 +21,7 @@ from pathlib import Path
 from PIL import Image, ImageFilter, ImageOps
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from elements_spec import convert  # noqa: E402
+from elements_spec import convert, reflowed  # noqa: E402
 
 RENDER_DPI = 150
 PAGE_WIDTH_CM = 21.0
@@ -255,7 +255,7 @@ def join_continued_tables(spec):
         if headings:
             last["header_rows"] = headings
         last["size"] = LONG_TABLE_SIZE
-        last["rows"] += [[{"text": note["text"].strip(), "colspan": column_count(last)}] for note in notes]
+        last["rows"] += [[{"text": reflowed(note["text"]), "colspan": column_count(last)}] for note in notes]
         last.setdefault("page_starts", []).append(len(last["rows"]))
         last["rows"] += rows[repeated:]
         if not last.get("widths_cm") and block.get("widths_cm"):

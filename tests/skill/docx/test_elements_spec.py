@@ -105,6 +105,40 @@ def test_a_cell_drops_the_scan_line_wrapping_but_keeps_its_list_items():
     assert table_rows(html)[1][0]["text"] == "a) জাতীয় শিক্ষাক্রমের আওতায় সংখ্যা\nb) প্রশিক্ষণ প্রাপ্ত শিক্ষক\n১. মোট\n২) নতুন"
 
 
+def test_words_the_paper_wrapped_join_without_a_space():
+    lines = [
+        "বাধ্যতামূল<br>ক তৃতীয় ভাষা",
+        "শিক্ষার্থী এনরোলমেন্টে<br>র হার",
+        "জেলা/উপ<br>জেলা",
+        "শিক্ষক-<br>শিক্ষিকা, ছাত্র-<br>ছাত্রী",
+        "(বাস/<br>নৌকা/সাইকেল<br>)",
+        "(দারিদ্র্যপী<br>ড়িত)",
+        "Interactiv e Education Panel",
+        "অবকাঠামো র ধরন",
+        "ঝরে পড়ার (Dropou<br>t) হার",
+        "এলাকা (প্রান্তিক/দুর্গ<br>ম), প্রকল্পের নাম",
+    ]
+    html = "<table><tr><th>x" + "".join(f"<tr><td>{line}" for line in lines) + "</table>"
+    assert [row[0]["text"] for row in table_rows(html)[1:]] == [
+        "বাধ্যতামূলক তৃতীয় ভাষা",
+        "শিক্ষার্থী এনরোলমেন্টের হার",
+        "জেলা/উপজেলা",
+        "শিক্ষক-শিক্ষিকা, ছাত্র-ছাত্রী",
+        "(বাস/নৌকা/সাইকেল)",
+        "(দারিদ্র্যপীড়িত)",
+        "Interactive Education Panel",
+        "অবকাঠামোর ধরন",
+        "ঝরে পড়ার (Dropout) হার",
+        "এলাকা (প্রান্তিক/দুর্গম), প্রকল্পের নাম",
+    ]
+
+
+def test_whole_words_at_a_line_start_keep_their_space():
+    html = "<table><tr><th>x<tr><td>আবাসন ও<br>লাইব্রেরি নির্মাণ<tr><td>শিক্ষামূলক<br>ছবি, ভিডিও<tr><td>মিড-ডে<br>মিল কর্মসূচি<tr><td>প্রশ্ন<br>কি না?<tr><td>is a test</table>"
+    assert [row[0]["text"] for row in table_rows(html)[1:]] == [
+        "আবাসন ও লাইব্রেরি নির্মাণ", "শিক্ষামূলক ছবি, ভিডিও", "মিড-ডে মিল কর্মসূচি", "প্রশ্ন কি না?", "is a test"]
+
+
 def test_rows_under_a_row_span_are_left_as_read():
     html = "<table><tr><th>a<th>b<tr><td rowspan='2'>1<td>2<tr><td>3</table>"
     assert [len(row) for row in table_rows(html)] == [2, 2, 1]
