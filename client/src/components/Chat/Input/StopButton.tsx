@@ -1,7 +1,7 @@
 import { memo } from 'react';
+import { Send } from 'lucide-react';
 import { TooltipAnchor } from '@librechat/client';
 import { useLocalize } from '~/hooks';
-import { PaperPlaneIcon } from '~/components/Brand';
 import { cn } from '~/utils';
 
 export default memo(function StopButton({
@@ -29,7 +29,11 @@ export default memo(function StopButton({
             stop(e);
           }}
         >
-          <PaperPlaneIcon className="lc-stop-plane size-5 [grid-area:1/1]" strokeWidth={2} />
+          <Send
+            className="lc-stop-plane size-5 [grid-area:1/1]"
+            strokeWidth={2}
+            aria-hidden="true"
+          />
           <svg
             width="24"
             height="24"

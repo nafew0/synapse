@@ -252,14 +252,13 @@ html {
   --theme-motion-normal: 200ms;
   --switch-unchecked: 0 0% 58%;
   --lc-app-background: #ffffff;
-  --lc-left-rail-background: #134f54;
+  --lc-left-rail-background: #fbfaf7;
+  --lc-rail-border: #ebe2d5;
   --lc-chat-sidebar-background: #f8f3ec;
   --lc-chat-sidebar-hover: rgba(19, 79, 84, 0.07);
-  --lc-rail-label: 214 230 227;
-  --lc-rail-hover: rgba(248, 243, 236, 0.12);
-  --lc-rail-active-background: #f8f3ec;
+  --lc-rail-hover: rgba(19, 79, 84, 0.07);
+  --lc-rail-active-background: #eef6f5;
   --lc-rail-active-icon: 19 79 84;
-  --lc-icon-accent: 244 121 72;
   --lc-action-background: #f47948;
   --lc-action-hover: #f68b60;
   --lc-on-action: 27 13 6;
@@ -271,7 +270,7 @@ html {
   --lc-headline-color: linear-gradient(100deg, #328a8a, #134f54);
   --lc-footer-label: 58 92 92;
   --lc-footer-body: 125 156 156;
-  --lc-rail-icon: 214 230 227;
+  --lc-rail-icon: 93 107 105;
   --lc-user-avatar-background: linear-gradient(140deg, #328a8a, #134f54);
   --lc-user-avatar-text: 36 18 6;
   --lc-banner-feature: linear-gradient(90deg, rgba(50, 138, 138, 0.11), rgba(245, 135, 31, 0.09));
@@ -375,10 +374,10 @@ html {
   --switch-unchecked: 0 0% 40%;
   --lc-app-background: radial-gradient(700px 500px at 96% 100%, rgba(233, 110, 40, 0.16), transparent 55%), radial-gradient(1300px 900px at 4% 2%, rgba(20, 110, 105, 0.38), transparent 60%), linear-gradient(160deg, #04211f 0%, #03191a 45%, #020a0a 100%);
   --lc-left-rail-background: #0a1c20;
+  --lc-rail-border: rgba(255, 255, 255, 0.06);
   --lc-chat-sidebar-background: #0f1f24;
   --lc-chat-sidebar-hover: rgba(127, 208, 204, 0.08);
-  --lc-rail-label: 169 191 187;
-  --lc-rail-hover: rgba(242, 244, 244, 0.08);
+  --lc-rail-hover: rgba(127, 208, 204, 0.08);
   --lc-rail-active-background: #1d3a40;
   --lc-rail-active-icon: 127 208 204;
   --lc-stop-background: #1d3a40;
@@ -418,25 +417,17 @@ html {
 .lc-banner-network-ring { fill: none; stroke: rgba(247, 148, 30, 0.55); stroke-width: 1.5; }
 .lc-banner-card-close { color: rgba(255, 255, 255, 0.85); }
 .lc-banner-card-close:hover, .lc-banner-card-close:focus-visible { background: rgba(255, 255, 255, 0.16); color: #ffffff; }
-.lc-left-rail { background: var(--lc-left-rail-background); border-right-color: transparent; }
-/* Rail items are brand-owned surfaces with no semantic Tailwind role, like the other lc-* rules. */
-.lc-rail-item { color: rgb(var(--lc-rail-label)); }
-.lc-rail-item .lc-rail-indicator { transition: background-color var(--theme-motion-fast) ease; }
-.lc-rail-item:hover .lc-rail-indicator { background: var(--lc-rail-hover); }
-.lc-rail-item[aria-pressed='true'] { color: rgb(var(--lc-rail-label)); font-weight: 600; }
-.lc-rail-item[aria-pressed='true'] .lc-rail-indicator { background: var(--lc-rail-active-background); }
-.lc-rail-item[aria-pressed='true'] .lc-rail-indicator svg { color: rgb(var(--lc-rail-active-icon)); }
-/* Rail chrome sits on the brand teal, which no semantic border/hover role covers. */
-.lc-rail-divider { border-color: rgba(248, 243, 236, 0.18); }
-.lc-rail-toggle:hover { background: var(--lc-rail-hover); }
+.lc-left-rail { background: var(--lc-left-rail-background); border-right-color: var(--lc-rail-border); }
+/* Rail items sit on a brand surface with no semantic Tailwind role, like the other lc-* rules. */
+.lc-rail-item { color: rgb(var(--lc-rail-icon)); }
+.lc-rail-item:hover { background: var(--lc-rail-hover); color: rgb(var(--lc-rail-active-icon)); }
+.lc-rail-item[aria-pressed='true'] { background: var(--lc-rail-active-background); color: rgb(var(--lc-rail-active-icon)); }
+.lc-rail-item[aria-pressed='true']::before { content: ''; position: absolute; left: -8px; top: 10px; bottom: 10px; width: 3px; border-radius: 3px; background: rgb(var(--lc-rail-active-icon)); }
 .lc-rail-new { background: var(--lc-action-background); color: rgb(var(--lc-on-action)); }
 .lc-rail-new:hover { background: var(--lc-action-hover); }
-.lc-rail-new svg, .lc-rail-new .lc-icon-accent { color: rgb(var(--lc-on-action)); stroke: rgb(var(--lc-on-action)); }
+.lc-rail-new svg { color: rgb(var(--lc-on-action)); }
 .lc-task-tile-icon { background: rgba(19, 79, 84, 0.07); color: #134f54; }
 .dark .lc-task-tile-icon { background: rgba(127, 208, 204, 0.1); color: rgb(127 208 204); }
-.lc-icon-accent { stroke: rgb(var(--lc-icon-accent)); }
-.lc-icon-accent-fill { fill: rgb(var(--lc-icon-accent)); stroke: none; }
-.lc-left-rail .lc-rail-icon, .lc-left-rail .lc-rail-icon svg { color: rgb(var(--lc-rail-icon)); }
 .lc-chat-sidebar { background: var(--lc-chat-sidebar-background); border-right: 1px solid rgba(19, 79, 84, 0.1); color: rgb(28 50 48); }
 .lc-chat-sidebar .text-text-primary { color: rgb(28 50 48); }
 .lc-chat-sidebar .text-text-secondary { color: rgb(82 97 95); }
@@ -456,6 +447,15 @@ html {
 .dark .lc-logo-dot { background: linear-gradient(140deg, #328a8a, #134f54); }
 .lc-send-button { background: var(--lc-action-background); color: rgb(var(--lc-on-action)); box-shadow: none; }
 .lc-send-button:hover { background: var(--lc-action-hover); }
+/* Arrival glow: on a new chat a teal-to-orange light runs once around the composer while a soft
+ * halo swells and fades. Runs once per mount of the class; nothing loops. */
+@property --lc-arrive-angle { syntax: '<angle>'; inherits: false; initial-value: -60deg; }
+.lc-composer-arrive { animation: lc-arrive-halo 1.9s ease-out 250ms backwards; }
+.dark .lc-composer-arrive { animation: none; }
+.lc-composer-arrive::after { content: ''; position: absolute; inset: 0; z-index: 2; border-radius: inherit; padding: 2px; pointer-events: none; background: conic-gradient(from var(--lc-arrive-angle), transparent 0deg, #328a8a 40deg, var(--lc-action-background) 80deg, transparent 120deg); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; opacity: 0; animation: lc-arrive-sweep 1.4s cubic-bezier(0.45, 0, 0.2, 1) 250ms both; }
+@keyframes lc-arrive-sweep { 0% { --lc-arrive-angle: -60deg; opacity: 0; } 12%, 85% { opacity: 1; } 100% { --lc-arrive-angle: 300deg; opacity: 0; } }
+@keyframes lc-arrive-halo { 0% { box-shadow: 0 0 0 0 rgba(50, 138, 138, 0); } 55% { box-shadow: 0 0 0 6px rgba(50, 138, 138, 0.16), 0 8px 28px -6px rgba(50, 138, 138, 0.35); } 100% { box-shadow: 0 0 0 0 rgba(50, 138, 138, 0); } }
+@media (prefers-reduced-motion: reduce) { .lc-composer-arrive, .lc-composer-arrive::after { animation: none; } }
 /* Send/stop motion: keyframed transforms on brand surfaces, no Tailwind animation role exists for them. */
 @property --lc-orbit-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
 .lc-send-button:not(:disabled) .lc-send-plane { animation: lc-plane-float 1.6s ease-in-out infinite; }
@@ -480,8 +480,7 @@ html:not(.dark) .lc-auth-submit { background: linear-gradient(135deg, #328a8a, #
 html:not(.dark) .lc-auth-submit:hover { background: linear-gradient(135deg, #3b9696, #186569); }
 html:not(.dark) .lc-auth-network-background-light { filter: invert(1) grayscale(1) sepia(0.18) hue-rotate(125deg) saturate(0.55); }
 .dark .lc-main-surface { background: var(--lc-app-background); }
-.dark .lc-left-rail { background: var(--lc-left-rail-background); border-right-color: rgba(255, 255, 255, 0.06); }
-.dark .lc-left-rail .lc-rail-icon, .dark .lc-left-rail .lc-rail-icon svg { color: rgb(var(--lc-rail-icon)); }
+.dark .lc-left-rail { background: var(--lc-left-rail-background); border-right-color: var(--lc-rail-border); }
 .dark .lc-chat-sidebar { background: var(--lc-chat-sidebar-background); border-right: 1px solid rgba(255, 255, 255, 0.06); color: rgb(216 232 227); }
 .dark .lc-chat-sidebar .text-text-primary { color: rgb(255 255 255); }
 .dark .lc-chat-sidebar .text-text-secondary { color: rgb(169 191 187); }
