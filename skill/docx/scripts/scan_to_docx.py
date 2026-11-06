@@ -50,6 +50,8 @@ WORD_CHARACTER_SIZE = 10.5
 LONG_TABLE_SIZE = 8.5
 CELL_PADDING_CM = 0.25
 SERIAL = re.compile(r"^\(?([0-9০-৯]{1,3})[.)।]?$")
+SERIAL_OUTSIDE = re.compile(r"^\(?[0-9০-৯]{1,3}[.)।]$")
+PAGE_NUMBER = re.compile(r"^\s*(?:[-–]\s*)?[0-9০-৯]{1,4}(?:\s*[-–])?\s*$")
 BANGLA_DIGITS = str.maketrans("0123456789", "০১২৩৪৫৬৭৮৯")
 LATIN_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
 
@@ -213,19 +215,30 @@ def join_continued_tables(spec):
     row. Each would start a new Word page and spill onto the next, leaving pages with a stray row.
     A table on a new page with the same columns as the table just before continues it: its repeated
     heading is dropped and the heading repeats on every Word page instead. A table that long is set in
-    smaller type."""
-    blocks = []
+    smaller type. A page number read between the two pages (Surya reads each one) does not stop
+    the join, and is dropped with the page it numbered. A record's serial read outside the table
+    goes back into the last row when that row has no serial."""
+    blocks, numbers = [], []
     for block in spec["blocks"]:
+        if not numbers and blocks and takes_serial(blocks[-1], block):
+            blocks[-1]["rows"][-1][0] = {**blocks[-1]["rows"][-1][0], "text": block["text"].strip()}
+            continue
+        if is_page_number(block) and blocks and blocks[-1]["type"] == "table":
+            numbers.append(block)
+            continue
         previous = blocks[-1] if blocks else None
         if not (
             block["type"] == "table"
-            and block.get("page_break")
+            and (block.get("page_break") or any(number.get("page_break") for number in numbers))
             and previous is not None
             and previous["type"] == "table"
             and column_count(previous) == column_count(block)
         ):
+            blocks += numbers
+            numbers = []
             blocks.append(block)
             continue
+        numbers = []
         headings = previous.get("header_rows") or heading_count(previous["rows"])
         rows = block["rows"]
         repeated = 0
@@ -237,7 +250,21 @@ def join_continued_tables(spec):
         previous["rows"] = continue_last_row(previous["rows"], rows[repeated:], headings)
         if not previous.get("widths_cm") and block.get("widths_cm"):
             previous["widths_cm"] = block["widths_cm"]
-    spec["blocks"] = blocks
+    spec["blocks"] = blocks + numbers
+
+
+def takes_serial(table, block):
+    """Whether `block` is a serial number ("13.") the read left outside `table`, whose last row
+    is a record without one."""
+    if table["type"] != "table" or block["type"] != "paragraph" or len(table["rows"]) < 2:
+        return False
+    text = block.get("text", "").strip()
+    last = table["rows"][-1]
+    return bool(SERIAL_OUTSIDE.match(text)) and not first_text(last) and any(cell.get("text") for cell in last)
+
+
+def is_page_number(block):
+    return block["type"] == "paragraph" and bool(PAGE_NUMBER.match(block.get("text", "")))
 
 
 def first_text(row):

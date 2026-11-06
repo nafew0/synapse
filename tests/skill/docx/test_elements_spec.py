@@ -87,6 +87,24 @@ def test_table_html_keeps_spans_and_headers():
     assert [cell["text"] for cell in rows[2]] == ["২"]
 
 
+def test_compact_table_html_without_closing_tags_reads_like_full_html():
+    compact = "<table><tr><th>ক্রম<th>বিবরণ<tr><td>১.<td>প্রথম<br>সারি<tr><td>২.<td>দ্বিতীয়"
+    full = "<table><tr><th>ক্রম</th><th>বিবরণ</th></tr><tr><td>১.</td><td>প্রথম<br>সারি</td></tr><tr><td>২.</td><td>দ্বিতীয়</td></tr></table>"
+    assert table_rows(compact) == table_rows(full)
+    assert table_rows(compact)[1][1]["text"] == "প্রথম\nসারি"
+
+
+def test_rows_missing_or_adding_an_empty_last_cell_take_the_heading_width():
+    html = "<table><tr><th>a<th>b<th>c<tr><td>1<td>2<tr><td>3<td>4<td>5<td><td></table>"
+    rows = table_rows(html)
+    assert [[cell["text"] for cell in row] for row in rows] == [["a", "b", "c"], ["1", "2", ""], ["3", "4", "5"]]
+
+
+def test_rows_under_a_row_span_are_left_as_read():
+    html = "<table><tr><th>a<th>b<tr><td rowspan='2'>1<td>2<tr><td>3</table>"
+    assert [len(row) for row in table_rows(html)] == [2, 2, 1]
+
+
 def test_pages_and_running_heads():
     second = {"type": "Header", "text": "গোপনীয়", "metadata": {"page_number": 2}}
     first = el("Header", "গোপনীয়")

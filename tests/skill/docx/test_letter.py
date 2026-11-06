@@ -403,6 +403,52 @@ def test_a_table_continued_on_the_next_page_joins_the_first_without_its_repeated
     assert after['page_break']
 
 
+def test_page_numbers_between_continued_tables_do_not_stop_the_join():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import join_continued_tables
+
+    spec = {'blocks': [
+        {'type': 'table', 'rows': [header_row(3), body_row(3, 'a')]},
+        {'type': 'paragraph', 'text': '1', 'size': 7},
+        {'type': 'table', 'rows': [header_row(3), body_row(3, 'b')], 'page_break': True},
+        {'type': 'paragraph', 'text': '২'},
+        {'type': 'table', 'rows': [header_row(3), body_row(3, 'c')], 'page_break': True},
+        {'type': 'paragraph', 'text': '3'},
+    ]}
+    join_continued_tables(spec)
+    assert [block['type'] for block in spec['blocks']] == ['table', 'paragraph']
+    assert [row[0]['text'] for row in spec['blocks'][0]['rows']] == ['heading 0', 'a0', 'b0', 'c0']
+
+
+def test_a_serial_read_outside_the_table_goes_back_into_its_record():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import join_continued_tables
+
+    record = [{'text': ''}, {'text': 'record text'}, {'text': ''}]
+    spec = {'blocks': [
+        {'type': 'table', 'rows': [header_row(3), body_row(3, 'a'), record]},
+        {'type': 'paragraph', 'text': '13.'},
+        {'type': 'paragraph', 'text': '11'},
+        {'type': 'table', 'rows': [header_row(3), body_row(3, 'b')], 'page_break': True},
+    ]}
+    join_continued_tables(spec)
+    assert len(spec['blocks']) == 1
+    assert [row[0]['text'] for row in spec['blocks'][0]['rows']] == ['heading 0', 'a0', '13.', 'b0']
+
+
+def test_a_page_number_before_other_text_is_kept():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import join_continued_tables
+
+    spec = {'blocks': [
+        {'type': 'table', 'rows': [header_row(3), body_row(3)]},
+        {'type': 'paragraph', 'text': '1'},
+        {'type': 'paragraph', 'text': 'after', 'page_break': True},
+    ]}
+    join_continued_tables(spec)
+    assert [block.get('text') for block in spec['blocks']] == [None, '1', 'after']
+
+
 def test_tables_with_different_columns_stay_apart():
     sys.path.insert(0, str(SCRIPTS))
     from scan_to_docx import join_continued_tables

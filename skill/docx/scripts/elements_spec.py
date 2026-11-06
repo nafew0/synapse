@@ -63,14 +63,22 @@ FONT = {"latin": "Times New Roman", "bangla": "Nikosh", "size": 10.5}
 
 
 class TableParser(HTMLParser):
-    """Rows of cells from Unstructured's table HTML, keeping spans and header cells."""
+    """Rows of cells from a reader's table HTML, keeping spans and header cells. A cell ends at its
+    closing tag or, in compact HTML that leaves closing tags out (Surya), at the next cell or row."""
 
     def __init__(self):
         super().__init__()
         self.rows = []
         self.cell = None
 
+    def finish_cell(self):
+        if self.cell is not None:
+            self.cell["text"] = re.sub(r"[ \t]+", " ", self.cell["text"]).strip()
+        self.cell = None
+
     def handle_starttag(self, tag, attrs):
+        if tag in ("tr", "td", "th"):
+            self.finish_cell()
         if tag == "tr":
             self.rows.append([])
         elif tag in ("td", "th"):
@@ -88,10 +96,8 @@ class TableParser(HTMLParser):
             self.cell["text"] += "\n"
 
     def handle_endtag(self, tag):
-        if tag in ("td", "th"):
-            if self.cell is not None:
-                self.cell["text"] = re.sub(r"[ \t]+", " ", self.cell["text"]).strip()
-            self.cell = None
+        if tag in ("td", "th", "tr", "table"):
+            self.finish_cell()
 
     def handle_data(self, data):
         if self.cell is not None:
@@ -101,12 +107,34 @@ class TableParser(HTMLParser):
 def table_rows(html):
     parser = TableParser()
     parser.feed(html)
-    rows = [row for row in parser.rows if row]
+    parser.finish_cell()
+    rows = even_rows([row for row in parser.rows if row])
     for row in rows:
         for cell in row:
             if LIST_NUMBER.match(cell["text"]):
                 cell["text"] = CELL_NUMBER.sub("\n", cell["text"])
     return rows
+
+
+def row_width(row):
+    return sum(cell["colspan"] for cell in row)
+
+
+def even_rows(rows):
+    """A reader sometimes leaves out a row's empty last cell or adds one. In a table without row
+    spans every row has its first row's width: a short row gets empty cells at its end, a long
+    row loses empty cells from its end."""
+    if not rows or any(cell["rowspan"] > 1 for row in rows for cell in row):
+        return rows
+    width = row_width(rows[0])
+    evened = []
+    for row in rows:
+        row = list(row)
+        while row_width(row) > width and row[-1]["colspan"] == 1 and not row[-1]["text"]:
+            row.pop()
+        row += [{"text": "", "rowspan": 1, "colspan": 1, "header": False} for _ in range(width - row_width(row))]
+        evened.append(row)
+    return evened
 
 
 def text_of(element):
