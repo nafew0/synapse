@@ -1,6 +1,15 @@
 import { useMemo } from 'react';
 import { MCPIcon, OpenAIMinimalIcon } from '@librechat/client';
-import { Bot, Bookmark, ArrowRightToLine, SlidersHorizontal } from 'lucide-react';
+import {
+  Bot,
+  Zap,
+  Folder,
+  Bookmark,
+  Lightbulb,
+  NotebookText,
+  ArrowRightToLine,
+  SlidersHorizontal,
+} from 'lucide-react';
 import {
   Permissions,
   EModelEndpoint,
@@ -11,7 +20,6 @@ import {
 } from 'librechat-data-provider';
 import type { TInterfaceConfig, TEndpointsConfig } from 'librechat-data-provider';
 import type { NavLink } from '~/common';
-import { SkillsIcon, PromptsIcon, MemoryIcon, FilesIcon } from '~/components/Brand';
 import {
   useAgentCapabilities,
   useMCPServerManager,
@@ -127,7 +135,7 @@ export default function useSideNavLinks({
       links.push({
         title: 'com_ui_skills',
         label: '',
-        icon: SkillsIcon,
+        icon: Zap,
         id: 'skills',
         Component: SkillsAccordion,
       });
@@ -137,7 +145,7 @@ export default function useSideNavLinks({
       links.push({
         title: 'com_ui_prompts',
         label: '',
-        icon: PromptsIcon,
+        icon: NotebookText,
         id: 'prompts',
         Component: PromptsAccordion,
       });
@@ -147,7 +155,7 @@ export default function useSideNavLinks({
       links.push({
         title: 'com_ui_memories',
         label: '',
-        icon: MemoryIcon,
+        icon: Lightbulb,
         id: 'memories',
         Component: MemoryPanel,
       });
@@ -166,7 +174,7 @@ export default function useSideNavLinks({
     links.push({
       title: 'com_sidepanel_attach_files',
       label: '',
-      icon: FilesIcon,
+      icon: Folder,
       id: 'files',
       Component: FilesPanel,
     });

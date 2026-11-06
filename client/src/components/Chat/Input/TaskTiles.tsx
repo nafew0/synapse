@@ -1,7 +1,7 @@
 import { memo, useCallback, useMemo } from 'react';
+import { Sheet, FileText, ScanLine, Presentation } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { TranslationKeys } from '~/hooks';
-import type { BrandIcon } from '~/components/Brand';
-import { ScanIcon, LetterIcon, SlidesIcon, SheetIcon } from '~/components/Brand';
 import { useChatContext, useChatFormContext } from '~/Providers';
 import { useGetStartupConfig } from '~/data-provider';
 import { mainTextareaId } from '~/common';
@@ -9,7 +9,7 @@ import { useLocalize } from '~/hooks';
 
 type Task = {
   id: string;
-  icon: BrandIcon;
+  icon: LucideIcon;
   title: TranslationKeys;
   description: TranslationKeys;
   prompt: TranslationKeys;
@@ -18,28 +18,28 @@ type Task = {
 export const TASKS: Task[] = [
   {
     id: 'scan',
-    icon: ScanIcon,
+    icon: ScanLine,
     title: 'com_ui_task_scan_title',
     description: 'com_ui_task_scan_description',
     prompt: 'com_ui_task_scan_prompt',
   },
   {
     id: 'letter',
-    icon: LetterIcon,
+    icon: FileText,
     title: 'com_ui_task_letter_title',
     description: 'com_ui_task_letter_description',
     prompt: 'com_ui_task_letter_prompt',
   },
   {
     id: 'slides',
-    icon: SlidesIcon,
+    icon: Presentation,
     title: 'com_ui_task_slides_title',
     description: 'com_ui_task_slides_description',
     prompt: 'com_ui_task_slides_prompt',
   },
   {
     id: 'sheet',
-    icon: SheetIcon,
+    icon: Sheet,
     title: 'com_ui_task_sheet_title',
     description: 'com_ui_task_sheet_description',
     prompt: 'com_ui_task_sheet_prompt',
@@ -95,7 +95,7 @@ function TaskTiles() {
             className="flex h-full w-full flex-col items-start gap-2 rounded-xl border border-border-light bg-surface-primary p-3 text-left transition-colors duration-theme-fast hover:border-border-heavy hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
           >
             <span className="lc-task-tile-icon flex size-9 items-center justify-center rounded-lg">
-              <task.icon className="size-5" />
+              <task.icon className="size-5" aria-hidden="true" />
             </span>
             <span className="text-sm font-semibold text-text-primary">{localize(task.title)}</span>
             <span className="hidden text-xs leading-snug text-text-secondary sm:block">

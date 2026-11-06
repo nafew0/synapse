@@ -1,8 +1,8 @@
 import React, { forwardRef } from 'react';
+import { Send } from 'lucide-react';
 import { useWatch } from 'react-hook-form';
 import { TooltipAnchor } from '@librechat/client';
 import type { Control } from 'react-hook-form';
-import { PaperPlaneIcon } from '~/components/Brand';
 import { cn, isSubmittableMessage } from '~/utils';
 import { useLocalize } from '~/hooks';
 
@@ -32,7 +32,7 @@ const SubmitButton = React.memo(
             type="submit"
           >
             <span className="flex items-center justify-center" data-state="closed">
-              <PaperPlaneIcon className="lc-send-plane size-5" strokeWidth={2} />
+              <Send className="lc-send-plane size-5" strokeWidth={2} aria-hidden="true" />
             </span>
           </button>
         }
