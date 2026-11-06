@@ -7,6 +7,8 @@ interface ConvoLinkProps {
   title: string | null;
   onRename: () => void;
   isSmallScreen: boolean;
+  /** While the reply streams, the title itself shimmers in place of a spinner. */
+  isGenerating?: boolean;
   localize: (key: any, options?: any) => string;
   children: React.ReactNode;
 }
@@ -17,6 +19,7 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
   title,
   onRename,
   isSmallScreen,
+  isGenerating = false,
   localize,
   children,
 }) => {
@@ -32,7 +35,10 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
     >
       {children}
       <div
-        className="relative flex-1 grow overflow-hidden whitespace-nowrap"
+        className={cn(
+          'relative flex-1 grow overflow-hidden whitespace-nowrap',
+          isGenerating && 'lc-title-generating',
+        )}
         style={{ textOverflow: 'clip' }}
         onDoubleClick={(e) => {
           if (isSmallScreen) {
@@ -46,6 +52,7 @@ const ConvoLink: React.FC<ConvoLinkProps> = ({
       >
         {title || localize('com_ui_untitled')}
       </div>
+      {isGenerating && <span className="sr-only">{localize('com_ui_generating')}</span>}
     </div>
   );
 };
