@@ -215,42 +215,52 @@ def join_continued_tables(spec):
     row. Each would start a new Word page and spill onto the next, leaving pages with a stray row.
     A table on a new page with the same columns as the table just before continues it: its repeated
     heading is dropped and the heading repeats on every Word page instead. A table that long is set in
-    smaller type. A page number read between the two pages (Surya reads each one) does not stop
-    the join, and is dropped with the page it numbered. A record's serial read outside the table
-    goes back into the last row when that row has no serial."""
-    blocks, numbers = [], []
+    smaller type.
+
+    Between two pages of one table a reader may leave other blocks: a page number (Surya reads each
+    one) is dropped; a record's serial read outside the table ("13.") goes back into the last row
+    when that row has none; other text from the bottom of the page (part of a row the reader took
+    for a caption) stays, as a row across the whole table. Records cut at a page edge are joined
+    once the whole table is known (continue_rows)."""
+    blocks, between = [], []
     for block in spec["blocks"]:
-        if not numbers and blocks and takes_serial(blocks[-1], block):
-            blocks[-1]["rows"][-1][0] = {**blocks[-1]["rows"][-1][0], "text": block["text"].strip()}
+        last = blocks[-1] if blocks else None
+        if not between and last is not None and takes_serial(last, block):
+            last["rows"][-1][0] = {**last["rows"][-1][0], "text": block["text"].strip()}
             continue
-        if is_page_number(block) and blocks and blocks[-1]["type"] == "table":
-            numbers.append(block)
+        if last is not None and last["type"] == "table" and (is_page_number(block) or is_loose_text(block)):
+            between.append(block)
             continue
-        previous = blocks[-1] if blocks else None
         if not (
             block["type"] == "table"
-            and (block.get("page_break") or any(number.get("page_break") for number in numbers))
-            and previous is not None
-            and previous["type"] == "table"
-            and column_count(previous) == column_count(block)
+            and (block.get("page_break") or any(held.get("page_break") for held in between))
+            and last is not None
+            and last["type"] == "table"
+            and column_count(last) == column_count(block)
         ):
-            blocks += numbers
-            numbers = []
+            blocks += between
+            between = []
             blocks.append(block)
             continue
-        numbers = []
-        headings = previous.get("header_rows") or heading_count(previous["rows"])
+        notes = [held for held in between if not is_page_number(held)]
+        between = []
+        headings = last.get("header_rows") or heading_count(last["rows"])
         rows = block["rows"]
         repeated = 0
-        while repeated < headings and repeated < len(rows) and same_row(previous["rows"][repeated], rows[repeated]):
+        while repeated < headings and repeated < len(rows) and same_row(last["rows"][repeated], rows[repeated]):
             repeated += 1
         if headings:
-            previous["header_rows"] = headings
-        previous["size"] = LONG_TABLE_SIZE
-        previous["rows"] = continue_last_row(previous["rows"], rows[repeated:], headings)
-        if not previous.get("widths_cm") and block.get("widths_cm"):
-            previous["widths_cm"] = block["widths_cm"]
-    spec["blocks"] = blocks + numbers
+            last["header_rows"] = headings
+        last["size"] = LONG_TABLE_SIZE
+        last["rows"] += [[{"text": note["text"].strip(), "colspan": column_count(last)}] for note in notes]
+        last.setdefault("page_starts", []).append(len(last["rows"]))
+        last["rows"] += rows[repeated:]
+        if not last.get("widths_cm") and block.get("widths_cm"):
+            last["widths_cm"] = block["widths_cm"]
+    for block in blocks:
+        if block.get("page_starts"):
+            block["rows"] = continue_rows(block["rows"], block.pop("page_starts"), block.get("header_rows", 0))
+    spec["blocks"] = blocks + between
 
 
 def takes_serial(table, block):
@@ -261,6 +271,11 @@ def takes_serial(table, block):
     text = block.get("text", "").strip()
     last = table["rows"][-1]
     return bool(SERIAL_OUTSIDE.match(text)) and not first_text(last) and any(cell.get("text") for cell in last)
+
+
+def is_loose_text(block):
+    """Plain text on the same page as the table above it, such as part of a row read as a caption."""
+    return block["type"] == "paragraph" and not block.get("page_break") and bool(block.get("text", "").strip())
 
 
 def is_page_number(block):
@@ -280,20 +295,23 @@ def same_cells(a, b):
     return [int(cell.get("colspan", 1)) for cell in a] == [int(cell.get("colspan", 1)) for cell in b]
 
 
-def continue_last_row(rows, more, headings):
+def continue_rows(rows, page_starts, headings):
     """A record cut by the page edge goes on under the next page's heading with its first cell
-    empty. Where most records carry a first cell (a serial number), that row is the rest of the
-    last record, so its cells are added to that record's. Only the page's first row: an empty
-    first cell further down is a new record whose number the read lost."""
-    body = rows[headings:]
-    numbered = sum(1 for row in body if first_text(row))
-    if not body or not more or first_text(more[0]) or numbered * 2 <= len(body):
-        return rows + more
-    last, rest = body[-1], more[0]
-    if not same_cells(last, rest):
-        return rows + more
-    joined = [{**cell, "text": joined_text(cell, extra)} for cell, extra in zip(last, rest)]
-    return rows[:-1] + [joined] + more[1:]
+    empty. Where most rows of the whole table, apart from these, carry a first cell (a serial number), that row is
+    the rest of the record above it, so its cells are added to that record's. Only a page's first
+    row: an empty first cell further down is a new record whose number the read lost."""
+    starts = set(page_starts)
+    body = [row for index, row in enumerate(rows) if index >= headings and index not in starts]
+    if sum(1 for row in body if first_text(row)) * 2 <= len(body):
+        return rows
+    rows = list(rows)
+    for start in sorted(page_starts, reverse=True):
+        if start - 1 < headings or start >= len(rows) or first_text(rows[start]):
+            continue
+        last, rest = rows[start - 1], rows[start]
+        if same_cells(last, rest):
+            rows[start - 1:start + 1] = [[{**cell, "text": joined_text(cell, extra)} for cell, extra in zip(last, rest)]]
+    return rows
 
 
 def serial_value(text):

@@ -482,6 +482,37 @@ def test_a_record_cut_at_the_page_edge_goes_on_in_the_same_row():
     assert rows[3][1]['text'] == 'কারিগরি'
 
 
+def test_text_left_between_two_pages_of_a_table_stays_as_a_row_across_it():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import join_continued_tables
+
+    spec = {'blocks': [
+        {'type': 'table', 'rows': [header_row(3), record('১.', 'a', 'b')]},
+        {'type': 'paragraph', 'text': '২. বাধ্যতামূলক তৃতীয় ভাষা'},
+        {'type': 'paragraph', 'text': '2'},
+        {'type': 'table', 'page_break': True, 'rows': [header_row(3), record('৩.', 'c', 'd')]},
+    ]}
+    join_continued_tables(spec)
+    assert len(spec['blocks']) == 1
+    rows = spec['blocks'][0]['rows']
+    assert rows[2] == [{'text': '২. বাধ্যতামূলক তৃতীয় ভাষা', 'colspan': 3}]
+    assert rows[3][0]['text'] == '৩.'
+
+
+def test_an_early_page_edge_record_joins_once_later_pages_show_the_records_are_numbered():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import join_continued_tables
+
+    spec = {'blocks': [
+        {'type': 'table', 'rows': [header_row(3), record('১.', 'a', 'x'), record('', 'b', 'y')]},
+        {'type': 'table', 'page_break': True, 'rows': [header_row(3), record('', '', 'more'), record('৩.', 'c', 'z'), record('৪.', 'd', 'w')]},
+    ]}
+    join_continued_tables(spec)
+    rows = spec['blocks'][0]['rows']
+    assert [row[0]['text'] for row in rows] == ['heading 0', '১.', '', '৩.', '৪.']
+    assert rows[2][2]['text'] == 'y more'
+
+
 def test_a_table_without_numbered_records_keeps_the_next_page_rows_apart():
     sys.path.insert(0, str(SCRIPTS))
     from scan_to_docx import join_continued_tables

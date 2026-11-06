@@ -27,6 +27,7 @@ DATE_LABEL = re.compile(r"^\s*(?:তারিখ|Date\b)", re.IGNORECASE)
 DATE_INSIDE = re.compile(r"(?:তারিখ|Date\b)", re.IGNORECASE)
 DATE_ONLY = re.compile(r"^[০-৯\d]{1,2}\s+\S+\s+[০-৯\d]{4}(?:\s*\S*)?$")
 LIST_NUMBER = re.compile(r"^\s*([০-৯\d]+(?:\s*[-–]\s*[০-৯\d]+)?\s*[।)]|[০-৯\d]+\.(?=\s)|[ক-হ]\s*[।)]|[•·])\s*(.*)$", re.DOTALL)
+ITEM_START = re.compile(r"^(?:[০-৯\d]{1,2}\s*[.।)]|[a-zA-Z]\s*\)|[ক-হ]\s*[।)]|[•·])")
 CELL_NUMBER = re.compile(r"\s+(?=[০-৯\d]{1,2}[.।]\s)")
 HANDWRITTEN_DATE = re.compile(r"[০-৯\d]{1,2}[/.-][০-৯\d]{1,2}[/.-][০-৯\d]{2,4}$")
 SHORT_LINE = 70
@@ -111,9 +112,24 @@ def table_rows(html):
     rows = even_rows([row for row in parser.rows if row])
     for row in rows:
         for cell in row:
+            cell["text"] = reflowed(cell["text"])
             if LIST_NUMBER.match(cell["text"]):
                 cell["text"] = CELL_NUMBER.sub("\n", cell["text"])
     return rows
+
+
+def reflowed(text):
+    """A cell's text without the scan's line wrapping: a reader such as Surya writes a <br> at the
+    end of every printed line, which in a Word column of another width breaks lines a word or two
+    long. Lines are joined with spaces; a new line starts only at a list item (a), ১., ২)...)."""
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    joined = []
+    for line in lines:
+        if joined and not ITEM_START.match(line):
+            joined[-1] += " " + line
+        else:
+            joined.append(line)
+    return "\n".join(joined)
 
 
 def row_width(row):
