@@ -458,6 +458,11 @@ html {
 @keyframes lc-arrive-sweep { 0% { --lc-arrive-angle: -60deg; opacity: 0; } 12%, 85% { opacity: 1; } 100% { --lc-arrive-angle: 300deg; opacity: 0; } }
 @keyframes lc-arrive-halo { 0% { box-shadow: 0 0 0 0 rgba(50, 138, 138, 0); } 55% { box-shadow: 0 0 0 6px rgba(50, 138, 138, 0.16), 0 8px 28px -6px rgba(50, 138, 138, 0.35); } 100% { box-shadow: 0 0 0 0 rgba(50, 138, 138, 0); } }
 @media (prefers-reduced-motion: reduce) { .lc-composer-arrive, .lc-composer-arrive::after { animation: none; } }
+/* Chat list: while a reply streams, a wave dims and restores the title's letters in their own
+ * colour (a moving mask, no added hue) in place of a spinner. */
+.lc-title-generating { -webkit-mask-image: linear-gradient(90deg, #000 0 30%, rgba(0, 0, 0, 0.35) 45%, rgba(0, 0, 0, 0.35) 55%, #000 70% 100%); mask-image: linear-gradient(90deg, #000 0 30%, rgba(0, 0, 0, 0.35) 45%, rgba(0, 0, 0, 0.35) 55%, #000 70% 100%); -webkit-mask-size: 300% 100%; mask-size: 300% 100%; animation: lc-title-wave 1.6s linear infinite; }
+@keyframes lc-title-wave { from { -webkit-mask-position: 100% 0; mask-position: 100% 0; } to { -webkit-mask-position: 0 0; mask-position: 0 0; } }
+@media (prefers-reduced-motion: reduce) { .lc-title-generating { animation: none; -webkit-mask-image: none; mask-image: none; opacity: 0.6; } }
 /* Send/stop motion: keyframed transforms on brand surfaces, no Tailwind animation role exists for them. */
 @property --lc-orbit-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
 .lc-send-button:not(:disabled) .lc-send-plane { animation: lc-plane-float 1.6s ease-in-out infinite; }
