@@ -3,6 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { useLocation } from 'react-router-dom';
 import { PanelLeft, SquarePen } from 'lucide-react';
 import { Skeleton, Button, TooltipAnchor } from '@librechat/client';
+import type { TranslationKeys } from '~/hooks';
 import type { NavLink } from '~/common';
 import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
 import { useActivePanel, resolveActivePanel, DEFAULT_PANEL } from '~/Providers';
@@ -14,8 +15,25 @@ import store from '~/store';
 
 const AccountSettings = lazy(() => import('~/components/Nav/AccountSettings'));
 
+/** One-word names shown under rail icons; the full title stays the tooltip and accessible name. */
+const RAIL_LABELS: Record<string, TranslationKeys> = {
+  conversations: 'com_nav_rail_chats',
+  skills: 'com_ui_skills',
+  prompts: 'com_ui_prompts',
+  memories: 'com_nav_rail_memory',
+  files: 'com_nav_rail_files',
+  agents: 'com_nav_rail_agents',
+  assistants: 'com_nav_rail_assistants',
+  bookmarks: 'com_nav_rail_bookmarks',
+  parameters: 'com_nav_rail_parameters',
+  'mcp-builder': 'com_nav_rail_mcp',
+  insights: 'com_insights_navigation',
+};
+
 const railItemClass =
-  'lc-rail-item relative flex size-10 items-center justify-center rounded-[10px] transition-colors';
+  'lc-rail-item flex w-[58px] flex-col items-center gap-[3px] rounded-[10px] pb-1.5 pt-1 text-[11px] font-medium leading-none';
+const railPillClass =
+  'lc-rail-pill flex h-7 w-10 items-center justify-center rounded-full transition-colors';
 
 const NewChatButton = memo(function NewChatButton({
   setActive,
@@ -45,10 +63,13 @@ const NewChatButton = memo(function NewChatButton({
           data-testid="new-chat-button"
           aria-label={localize('com_ui_new_chat')}
           aria-keyshortcuts={ariaKey}
-          className="lc-rail-new mb-1.5 flex size-9 items-center justify-center rounded-[10px] transition-colors"
+          className="lc-rail-item mb-1.5 flex w-[58px] flex-col items-center gap-[3px] text-[11px] font-semibold leading-none"
           onClick={handleNewChatClick}
         >
-          <SquarePen className="size-[18px]" aria-hidden="true" />
+          <span className="lc-rail-new flex size-9 items-center justify-center rounded-[10px] transition-colors">
+            <SquarePen className="size-[18px]" aria-hidden="true" />
+          </span>
+          <span aria-hidden="true">{localize('com_nav_rail_new')}</span>
         </a>
       }
     />
@@ -112,7 +133,12 @@ const NavIconButton = memo(function NavIconButton({
           className={railItemClass}
           onClick={handleClick}
         >
-          <link.icon className="size-5" aria-hidden="true" />
+          <span className={railPillClass}>
+            <link.icon className="size-5" aria-hidden="true" />
+          </span>
+          <span aria-hidden="true" className="max-w-full truncate whitespace-nowrap px-0.5">
+            {localize(RAIL_LABELS[link.id] ?? link.title)}
+          </span>
         </button>
       }
     />
@@ -146,7 +172,7 @@ function ExpandedPanel({
   const toggleSidebarAriaKey = useShortcutAriaKey('toggleSidebar');
 
   return (
-    <div className="lc-left-rail flex h-full w-14 flex-shrink-0 flex-col items-center gap-1 border-r py-2.5">
+    <div className="lc-left-rail flex h-full w-16 flex-shrink-0 flex-col items-center gap-1 border-r py-2.5">
       <Logo className="mb-2 mt-0.5 size-[26px]" />
       <NewChatButton setActive={setActive} />
       <div className="flex flex-col items-center gap-1 overflow-y-auto">
@@ -182,7 +208,7 @@ function ExpandedPanel({
               aria-label={localize(toggleLabel)}
               aria-expanded={expanded}
               aria-keyshortcuts={toggleSidebarAriaKey}
-              className="lc-rail-item size-10 rounded-[10px]"
+              className="lc-rail-toggle size-10 rounded-[10px]"
               onClick={toggleClick}
             >
               <PanelLeft aria-hidden="true" className="size-5" />
