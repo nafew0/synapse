@@ -45,6 +45,7 @@ jest.mock('../Landing', () => ({ __esModule: true, default: () => <div /> }));
 jest.mock('../Messages/MessagesView', () => ({ __esModule: true, default: () => <div /> }));
 jest.mock('../Input/ChatForm', () => ({ __esModule: true, default: () => <div /> }));
 jest.mock('../Input/ConversationStarters', () => ({ __esModule: true, default: () => <div /> }));
+jest.mock('../Input/TaskTiles', () => ({ __esModule: true, default: () => null }));
 
 describe('ChatView page heading', () => {
   beforeEach(() => {

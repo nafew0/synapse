@@ -16,6 +16,7 @@ import {
 } from '~/hooks';
 import { ChatContext, AddedChatContext, ChatFormProvider, useFileMapContext } from '~/Providers';
 import ConversationStarters from './Input/ConversationStarters';
+import TaskTiles from './Input/TaskTiles';
 import { useGetMessagesByConvoId } from '~/data-provider';
 import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
@@ -171,6 +172,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                         project={isProjectLandingPage ? project : undefined}
                       />
                     )}
+                    {isLandingPage && !isSubagentThreadReadOnly && <TaskTiles />}
                     {!isLandingPage && <Footer />}
                   </div>
                 </div>

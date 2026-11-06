@@ -1,7 +1,8 @@
 import React, { forwardRef } from 'react';
 import { useWatch } from 'react-hook-form';
-import { SendIcon, TooltipAnchor } from '@librechat/client';
+import { TooltipAnchor } from '@librechat/client';
 import type { Control } from 'react-hook-form';
+import { PaperPlaneIcon } from '~/components/Brand';
 import { cn, isSubmittableMessage } from '~/utils';
 import { useLocalize } from '~/hooks';
 
@@ -30,8 +31,8 @@ const SubmitButton = React.memo(
             data-testid="send-button"
             type="submit"
           >
-            <span className="" data-state="closed">
-              <SendIcon size={24} />
+            <span className="flex items-center justify-center" data-state="closed">
+              <PaperPlaneIcon className="lc-send-plane size-5" strokeWidth={2} />
             </span>
           </button>
         }

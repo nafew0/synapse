@@ -230,4 +230,17 @@ describe('ExpandedPanel', () => {
       expect(localStorage.getItem('side:active-panel')).toBe('prompts');
     });
   });
+
+  describe('labelled rail', () => {
+    it('shows a short visible label under each icon and keeps the full title as its name', () => {
+      renderPanel();
+      expect(screen.getByText('com_nav_rail_chats')).toBeInTheDocument();
+      expect(screen.getByText('com_ui_prompts')).toBeInTheDocument();
+      expect(screen.getByText('com_nav_rail_new')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'com_ui_chat_history' })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+    });
+  });
 });
