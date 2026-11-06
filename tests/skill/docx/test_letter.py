@@ -537,6 +537,31 @@ def test_misread_serial_numbers_are_counted_again_in_the_table_digits():
         '#', '১.', '২.', '৩.', '৪.', '৫.', '৬.', '৭.', '৮.', '৯.', '১০.']
 
 
+def test_serials_read_as_letters_count_as_digits():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import renumber_serials, serial_value
+
+    assert [serial_value(text) for text in ('L.', 'l.', 'LO.', 'L7.', "'6.", 'I2)')] == [1, 1, 10, 17, 6, 12]
+    assert serial_value('লার্নিং') is None
+    serials = ['L.', '2.', '3.', 'l.', '5.', '6.', 'L7.', '8.', '9.', 'LO.']
+    rows = [header_row(2)] + [record(serial, 'text') for serial in serials]
+    spec = {'blocks': [{'type': 'table', 'header_rows': 1, 'rows': rows}]}
+    renumber_serials(spec)
+    assert [row[0]['text'] for row in spec['blocks'][0]['rows'][1:]] == [f'{n}.' for n in range(1, 11)]
+
+
+def test_a_record_kept_as_a_full_width_row_counts_and_its_rest_does_not():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import renumber_serials
+
+    rows = [header_row(3), record('L.', 'a', 'b'), [{'text': '২. ভাষা শিক্ষা a) মডিউল', 'colspan': 3}],
+            record('', '', 'f) আরও'), record('3.', 'c', 'd'), record('', 'e', 'f'), record('5.', 'g', 'h')]
+    spec = {'blocks': [{'type': 'table', 'header_rows': 1, 'rows': rows}]}
+    renumber_serials(spec)
+    out = spec['blocks'][0]['rows'][1:]
+    assert [row[0]['text'] for row in out] == ['১.', '২. ভাষা শিক্ষা a) মডিউল', '', '৩.', '৪.', '৫.']
+
+
 def test_numbers_that_do_not_count_the_records_are_left_as_read():
     sys.path.insert(0, str(SCRIPTS))
     from scan_to_docx import renumber_serials

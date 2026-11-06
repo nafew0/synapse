@@ -53,6 +53,9 @@ SERIAL = re.compile(r"^\(?([0-9০-৯]{1,3})[.)।]?$")
 SERIAL_OUTSIDE = re.compile(r"^\(?[0-9০-৯]{1,3}[.)।]$")
 PAGE_NUMBER = re.compile(r"^\s*(?:[-–]\s*)?[0-9০-৯]{1,4}(?:\s*[-–])?\s*$")
 BANGLA_DIGITS = str.maketrans("0123456789", "০১২৩৪৫৬৭৮৯")
+SERIAL_LOOKALIKES = str.maketrans("LlIi|Oo", "1111100")
+SERIAL_MARKS = "'\"`‘’"
+LEADING_SERIAL = re.compile(r"^\(?[0-9০-৯]{1,3}[.)।](?=\s|$)")
 LATIN_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
 
 
@@ -315,14 +318,41 @@ def continue_rows(rows, page_starts, headings):
 
 
 def serial_value(text):
-    match = SERIAL.match(text.replace(" ", ""))
+    """The number a serial cell holds. A handwritten 1 or 0 is often read as a letter (L, l, I, O)
+    and a stroke before it as a quote, so those are read as digits when nothing else is in the cell."""
+    text = text.replace(" ", "")
+    match = SERIAL.match(text) or SERIAL.match(text.lstrip(SERIAL_MARKS).translate(SERIAL_LOOKALIKES))
     return int(match.group(1).translate(LATIN_DIGITS)) if match else None
+
+
+def is_full_width(row):
+    return len(row) == 1 and int(row[0].get("colspan", 1)) > 1
+
+
+def record_places(rows):
+    """Each row's place in the count of records, or None for a row that is not a record of its
+    own: a full-width row of other text, and the rest of a record that a full-width row cut off."""
+    places, place, previous = [], 0, None
+    for row in rows:
+        if is_full_width(row):
+            numbered = LEADING_SERIAL.match(first_text(row))
+            place += 1 if numbered else 0
+            places.append(place if numbered else None)
+        elif not first_text(row) and previous is not None and is_full_width(previous):
+            places.append(None)
+        else:
+            place += 1
+            places.append(place)
+        previous = row
+    return places
 
 
 def renumber_serials(spec):
     """Serial numbers are often written by hand, and a read turns ৬ into ১ or ৮ into 3. Where a
     table's first column counts its records and most read numbers already sit at their place in
-    the count, every record is numbered by its place, in the digits of the table's text."""
+    the count, every record is numbered by its place, in the digits of the table's text. A record
+    kept as a full-width row (part of a row read as a caption) keeps its own text and counts; the
+    rest of that record, in the row after it, does not."""
     for block in spec["blocks"]:
         if block["type"] != "table":
             continue
@@ -331,18 +361,24 @@ def renumber_serials(spec):
         if start is None:
             continue
         records = rows[start:]
-        values = [serial_value(first_text(row)) for row in records]
-        read = [value for value in values if value is not None]
-        if len(records) < 3:
+        places = record_places(records)
+        values = [
+            serial_value((LEADING_SERIAL.match(first_text(row)) or [""])[0]) if is_full_width(row) else serial_value(first_text(row))
+            for row in records
+        ]
+        read = [value for value, place in zip(values, places) if value is not None and place is not None]
+        if sum(1 for place in places if place is not None) < 3:
             continue
-        if any(first_text(row) and value is None for row, value in zip(records, values)):
+        if any(first_text(row) and value is None and not is_full_width(row) for row, value in zip(records, values)):
             continue
-        in_place = sum(1 for place, value in enumerate(values, 1) if value == place)
+        in_place = sum(1 for place, value in zip(places, values) if place is not None and value == place)
         if in_place * 2 <= len(read):
             continue
         text = " ".join(cell.get("text", "") for row in records for cell in row)
         bangla = sum(1 for ch in text if "\u0980" <= ch <= "\u09ff") > sum(1 for ch in text if ch.isascii() and ch.isalpha())
-        for place, row in enumerate(records, 1):
+        for place, row in zip(places, records):
+            if place is None or is_full_width(row):
+                continue
             number = str(place).translate(BANGLA_DIGITS) if bangla else str(place)
             row[0] = {**row[0], "text": f"{number}."}
 
