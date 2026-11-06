@@ -420,9 +420,11 @@ html {
 .lc-left-rail { background: var(--lc-left-rail-background); border-right-color: var(--lc-rail-border); }
 /* Rail items sit on a brand surface with no semantic Tailwind role, like the other lc-* rules. */
 .lc-rail-item { color: rgb(var(--lc-rail-icon)); }
-.lc-rail-item:hover { background: var(--lc-rail-hover); color: rgb(var(--lc-rail-active-icon)); }
-.lc-rail-item[aria-pressed='true'] { background: var(--lc-rail-active-background); color: rgb(var(--lc-rail-active-icon)); }
-.lc-rail-item[aria-pressed='true']::before { content: ''; position: absolute; left: -8px; top: 10px; bottom: 10px; width: 3px; border-radius: 3px; background: rgb(var(--lc-rail-active-icon)); }
+.lc-rail-item:hover .lc-rail-pill { background: var(--lc-rail-hover); color: rgb(var(--lc-rail-active-icon)); }
+.lc-rail-item[aria-pressed='true'] { color: rgb(var(--lc-rail-active-icon)); font-weight: 600; }
+.lc-rail-item[aria-pressed='true'] .lc-rail-pill { background: var(--lc-rail-active-background); }
+.lc-rail-toggle { color: rgb(var(--lc-rail-icon)); }
+.lc-rail-toggle:hover { background: var(--lc-rail-hover); color: rgb(var(--lc-rail-active-icon)); }
 .lc-rail-new { background: var(--lc-action-background); color: rgb(var(--lc-on-action)); }
 .lc-rail-new:hover { background: var(--lc-action-hover); }
 .lc-rail-new svg { color: rgb(var(--lc-on-action)); }

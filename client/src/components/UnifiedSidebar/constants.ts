@@ -1,5 +1,5 @@
-export const COLLAPSED_WIDTH = 56;
-export const EXPANDED_MIN = 356;
+export const COLLAPSED_WIDTH = 64;
+export const EXPANDED_MIN = 364;
 export const TRANSITION_MS = 300;
 export const EASING = 'cubic-bezier(0.2, 0, 0, 1)';
 
