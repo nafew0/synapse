@@ -287,10 +287,10 @@ html {
 }
 .dark {
   --brand-purple: 176 84 160;
-  --presentation: var(--gray-800);
+  --presentation: 23 25 26;
   --text-primary: 255 255 255;
-  --text-secondary: 182 212 203;
-  --text-secondary-alt: 127 162 152;
+  --text-secondary: 166 173 172;
+  --text-secondary-alt: 138 146 145;
   --text-tertiary: var(--gray-400);
   --text-warning: var(--amber-500);
   --text-destructive: var(--red-400);
@@ -306,34 +306,34 @@ html {
   --auth-text: 255 255 255;
   --auth-muted: 184 196 195;
   --auth-decoration: 53 191 186;
-  --header-primary: var(--gray-700);
-  --header-hover: var(--gray-600);
-  --header-button-hover: var(--gray-700);
-  --surface-active: var(--gray-500);
-  --surface-active-alt: var(--gray-700);
-  --surface-hover: var(--gray-650);
-  --surface-hover-alt: var(--gray-600);
-  --surface-composer-hover: var(--gray-600);
-  --surface-primary: 2 10 10;
-  --surface-primary-alt: 3 20 19;
-  --surface-primary-contrast: var(--gray-850);
-  --surface-secondary: 8 38 35;
-  --surface-secondary-alt: 6 40 37;
-  --surface-tertiary: var(--gray-700);
-  --surface-tertiary-alt: var(--gray-700);
-  --surface-dialog: var(--gray-875);
+  --header-primary: 37 41 42;
+  --header-hover: 48 54 58;
+  --header-button-hover: 37 41 42;
+  --surface-active: 58 65 69;
+  --surface-active-alt: 37 41 42;
+  --surface-hover: 42 47 49;
+  --surface-hover-alt: 48 54 58;
+  --surface-composer-hover: 48 54 58;
+  --surface-primary: 23 25 26;
+  --surface-primary-alt: 28 31 32;
+  --surface-primary-contrast: 28 31 32;
+  --surface-secondary: 32 36 37;
+  --surface-secondary-alt: 37 41 42;
+  --surface-tertiary: 37 41 42;
+  --surface-tertiary-alt: 37 41 42;
+  --surface-dialog: 32 36 37;
   --surface-overlay: 0 0 0;
   --surface-submit: 245 135 31;
   --surface-submit-hover: 251 162 77;
   --surface-destructive: var(--red-800);
   --surface-destructive-hover: var(--red-900);
-  --surface-chat: 8 38 35;
+  --surface-chat: 32 36 37;
   --surface-code: var(--presentation);
   --surface-qr: var(--white);
-  --border-light: var(--gray-700);
-  --border-medium-alt: var(--gray-600);
-  --border-medium: var(--gray-600);
-  --border-heavy: var(--gray-500);
+  --border-light: 48 54 58;
+  --border-medium-alt: 58 65 69;
+  --border-medium: 58 65 69;
+  --border-heavy: 78 87 92;
   --border-xheavy: var(--gray-400);
   --border-destructive: var(--red-500);
   --status-success: var(--green-300);
@@ -373,24 +373,27 @@ html {
   --surface-fixed-hover: var(--gray-100);
   --text-fixed: var(--gray-800);
   --switch-unchecked: 0 0% 40%;
-  --lc-app-background: radial-gradient(700px 500px at 96% 100%, rgba(233, 110, 40, 0.16), transparent 55%), radial-gradient(1300px 900px at 4% 2%, rgba(20, 110, 105, 0.38), transparent 60%), linear-gradient(160deg, #04211f 0%, #03191a 45%, #020a0a 100%);
-  --lc-left-rail-background: #0a1c20;
-  --lc-rail-border: rgba(255, 255, 255, 0.06);
-  --lc-chat-sidebar-background: #0f1f24;
-  --lc-chat-sidebar-hover: rgba(127, 208, 204, 0.08);
-  --lc-rail-hover: rgba(127, 208, 204, 0.08);
-  --lc-rail-active-background: #1d3a40;
-  --lc-rail-active-icon: 127 208 204;
+  /* Palette B, graphite: one neutral charcoal family for every surface, stepping lighter as
+   * things rise (app 17191a, rail 131516, panel 1c1f20, raised 202425/25292a, border 30363a);
+   * teal only marks the selected item, orange only marks actions. */
+  --lc-app-background: #17191a;
+  --lc-left-rail-background: #131516;
+  --lc-rail-border: #30363a;
+  --lc-chat-sidebar-background: #1c1f20;
+  --lc-chat-sidebar-hover: rgba(255, 255, 255, 0.05);
+  --lc-rail-hover: rgba(255, 255, 255, 0.06);
+  --lc-rail-active-background: #203a39;
+  --lc-rail-active-icon: 108 196 188;
   --lc-action-icon: 244 121 72;
-  --lc-stop-background: #1d3a40;
-  --lc-on-stop: 127 208 204;
-  --lc-composer-border: linear-gradient(135deg, rgba(20, 140, 120, 0.55), rgba(233, 110, 40, 0.35) 65%, rgba(255, 255, 255, 0.06));
-  --lc-composer-background: linear-gradient(150deg, #082623, #03110f);
-  --lc-model-pill-background: linear-gradient(135deg, rgba(20, 110, 105, 0.35), rgba(233, 110, 40, 0.14));
-  --lc-headline-color: linear-gradient(100deg, #eafff5, #8fd9c4 55%, #f0b578);
-  --lc-footer-label: 169 205 193;
-  --lc-footer-body: 117 152 143;
-  --lc-rail-icon: 169 191 187;
+  --lc-stop-background: #203a39;
+  --lc-on-stop: 108 196 188;
+  --lc-composer-border: linear-gradient(#30363a, #30363a);
+  --lc-composer-background: #202425;
+  --lc-model-pill-background: #1c1f20;
+  --lc-headline-color: linear-gradient(100deg, #f2f4f4, #8fd3cc);
+  --lc-footer-label: 166 173 172;
+  --lc-footer-body: 138 146 145;
+  --lc-rail-icon: 160 168 167;
   --lc-user-avatar-background: linear-gradient(140deg, #ff9a44, #e96e28);
   --lc-banner-feature: linear-gradient(90deg, rgba(50, 138, 138, 0.28), rgba(247, 148, 30, 0.14));
   --lc-banner-update: rgba(50, 138, 138, 0.2);
@@ -433,7 +436,7 @@ html {
 .lc-rail-new-icon { color: rgb(var(--lc-action-icon)); }
 .lc-rail-item:hover .lc-rail-new-icon { background: var(--lc-rail-hover); }
 .lc-task-tile-icon { background: rgba(19, 79, 84, 0.07); color: #134f54; }
-.dark .lc-task-tile-icon { background: rgba(127, 208, 204, 0.1); color: rgb(127 208 204); }
+.dark .lc-task-tile-icon { background: rgba(108, 196, 188, 0.12); color: rgb(108 196 188); }
 .lc-chat-sidebar { background: var(--lc-chat-sidebar-background); border-right: 1px solid rgba(19, 79, 84, 0.1); color: rgb(28 50 48); }
 .lc-chat-sidebar .text-text-primary { color: rgb(28 50 48); }
 .lc-chat-sidebar .text-text-secondary { color: rgb(82 97 95); }
@@ -496,14 +499,14 @@ html:not(.dark) .lc-auth-submit:hover { background: linear-gradient(135deg, #3b9
 html:not(.dark) .lc-auth-network-background-light { filter: invert(1) grayscale(1) sepia(0.18) hue-rotate(125deg) saturate(0.55); }
 .dark .lc-main-surface { background: var(--lc-app-background); }
 .dark .lc-left-rail { background: var(--lc-left-rail-background); border-right-color: var(--lc-rail-border); }
-.dark .lc-chat-sidebar { background: var(--lc-chat-sidebar-background); border-right: 1px solid rgba(255, 255, 255, 0.06); color: rgb(216 232 227); }
+.dark .lc-chat-sidebar { background: var(--lc-chat-sidebar-background); border-right: 1px solid var(--lc-rail-border); color: rgb(236 238 238); }
 .dark .lc-chat-sidebar .text-text-primary { color: rgb(255 255 255); }
-.dark .lc-chat-sidebar .text-text-secondary { color: rgb(169 191 187); }
+.dark .lc-chat-sidebar .text-text-secondary { color: rgb(166 173 172); }
 .dark .lc-chat-sidebar button:hover, .dark .lc-chat-sidebar a:hover { background: var(--lc-chat-sidebar-hover); }
 .dark .lc-composer { border: 0; background: var(--lc-composer-background); }
-.dark .lc-composer .text-text-secondary, .dark .lc-composer .text-text-tertiary { color: rgb(182 212 203); }
-.dark .lc-composer textarea::placeholder { color: rgb(127 162 152); }
-.dark .lc-model-pill { background: var(--lc-model-pill-background); border-color: rgba(255, 255, 255, 0.08); box-shadow: 0 0 0 1px rgb(159 214 200 / 0.25); }
+.dark .lc-composer .text-text-secondary, .dark .lc-composer .text-text-tertiary { color: rgb(166 173 172); }
+.dark .lc-composer textarea::placeholder { color: rgb(138 146 145); }
+.dark .lc-model-pill { background: var(--lc-model-pill-background); border-color: #30363a; box-shadow: none; }
 .dark .lc-footer { color: rgb(var(--lc-footer-body)); }
 .dark .lc-footer a { color: rgb(var(--lc-footer-label)); }
 .dark .lc-user-avatar { background: var(--lc-user-avatar-background) !important; color: rgb(var(--lc-user-avatar-text)); }
@@ -1544,7 +1547,7 @@ html {
 .dark body,
 .dark html {
   --tw-bg-opacity: 1;
-  background-color: rgba(23, 23, 23, var(--tw-bg-opacity));
+  background-color: rgb(var(--presentation) / var(--tw-bg-opacity));
 }
 
 #__next,
@@ -1731,7 +1734,7 @@ html {
 .dark body,
 .dark html {
   --tw-bg-opacity: 1;
-  background-color: rgba(33, 33, 33, var(--tw-bg-opacity));
+  background-color: rgb(var(--presentation) / var(--tw-bg-opacity));
 }
 #__next,
 #root {
