@@ -97,7 +97,6 @@ const ChatForm = memo(function ChatForm({
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
   const centerFormOnLanding = useRecoilValue(store.centerFormOnLanding);
-  const isTemporary = useRecoilValue(store.isTemporary);
 
   const [badges, setBadges] = useRecoilState(store.chatBadges);
   const [isEditingBadges, setIsEditingBadges] = useRecoilState(store.isEditingBadges);
@@ -556,10 +555,8 @@ const ChatForm = memo(function ChatForm({
               className={cn(
                 'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl border pb-4 text-text-primary transition-all duration-200 sm:rounded-3xl sm:pb-0',
                 isTextAreaFocused ? 'shadow-lg' : 'shadow-md',
-                isTemporary
-                  ? 'border-violet-800/60 bg-violet-950/10'
-                  : 'lc-composer border-border-light bg-surface-chat',
-                !isTemporary && conversationId === Constants.NEW_CONVO && 'lc-composer-arrive',
+                'lc-composer border-border-light bg-surface-chat',
+                conversationId === Constants.NEW_CONVO && 'lc-composer-arrive',
               )}
             >
               {project ? <ProjectLandingChip project={project} /> : null}

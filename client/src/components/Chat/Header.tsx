@@ -8,6 +8,7 @@ import ExportAndShareMenu from './ExportAndShareMenu';
 import SubagentThreadLink from './SubagentThreadLink';
 import BookmarkMenu from './Menus/BookmarkMenu';
 import { TemporaryChat } from './TemporaryChat';
+import TemporaryChatStrip from './TemporaryChatStrip';
 import AddMultiConvo from './AddMultiConvo';
 import { useHasAccess } from '~/hooks';
 import { cn } from '~/utils';
@@ -55,49 +56,54 @@ function Header({
   const hiddenBehindNav = navVisible === true && 'max-md:hidden';
 
   return (
-    <div className="absolute top-0 z-10 flex h-[52px] w-full items-center gap-2 bg-gradient-to-b from-presentation via-presentation/70 to-transparent p-2 font-semibold text-text-primary md:from-presentation/80 md:via-presentation/50 2xl:from-presentation/0 2xl:via-transparent">
-      <div className="flex flex-shrink-0 items-center md:hidden">
-        <OpenSidebar testId="header-open-sidebar-button" />
-      </div>
+    <>
+      <div className="absolute top-0 z-10 flex h-[52px] w-full items-center gap-2 bg-gradient-to-b from-presentation via-presentation/70 to-transparent p-2 font-semibold text-text-primary md:from-presentation/80 md:via-presentation/50 2xl:from-presentation/0 2xl:via-transparent">
+        <div className="flex flex-shrink-0 items-center md:hidden">
+          <OpenSidebar testId="header-open-sidebar-button" />
+        </div>
 
-      <div
-        className={cn(
-          'flex min-w-0 flex-1 items-center gap-2 md:pl-3 md:transition-all md:duration-200 md:ease-in-out',
-          hiddenBehindNav,
-        )}
-      >
-        {parentConversationId != null && (
-          <SubagentThreadLink
-            threadId={parentConversationId}
-            relation="parent"
-            labelClassName="hidden lg:inline"
-          />
-        )}
-        {!readOnly && <ModelSelector startupConfig={startupConfig} />}
-        {!readOnly && interfaceConfig.presets === true && interfaceConfig.modelSelect === true && (
-          <PresetsMenu />
-        )}
-        {hasAccessToBookmarks === true && (
-          <div className="hidden items-center md:flex">
-            <BookmarkMenu />
-          </div>
-        )}
-        {hasAccessToMultiConvo === true && (
-          <div className="hidden items-center md:flex">
-            <AddMultiConvo />
-          </div>
-        )}
-      </div>
+        <div
+          className={cn(
+            'flex min-w-0 flex-1 items-center gap-2 md:pl-3 md:transition-all md:duration-200 md:ease-in-out',
+            hiddenBehindNav,
+          )}
+        >
+          {parentConversationId != null && (
+            <SubagentThreadLink
+              threadId={parentConversationId}
+              relation="parent"
+              labelClassName="hidden lg:inline"
+            />
+          )}
+          {!readOnly && <ModelSelector startupConfig={startupConfig} />}
+          {!readOnly &&
+            interfaceConfig.presets === true &&
+            interfaceConfig.modelSelect === true && <PresetsMenu />}
+          {hasAccessToBookmarks === true && (
+            <div className="hidden items-center md:flex">
+              <BookmarkMenu />
+            </div>
+          )}
+          {hasAccessToMultiConvo === true && (
+            <div className="hidden items-center md:flex">
+              <AddMultiConvo />
+            </div>
+          )}
+        </div>
 
-      <div className={cn('flex flex-shrink-0 items-center gap-2', hiddenBehindNav)}>
-        <NewChat className="md:hidden" />
-        <HeaderMenu startupConfig={startupConfig} className="md:hidden" />
-        <div className="hidden items-center gap-2 md:flex">
-          <ExportAndShareMenu isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false} />
-          {hasAccessToTemporaryChat === true && <TemporaryChat />}
+        <div className={cn('flex flex-shrink-0 items-center gap-2', hiddenBehindNav)}>
+          <NewChat className="md:hidden" />
+          <HeaderMenu startupConfig={startupConfig} className="md:hidden" />
+          <div className="hidden items-center gap-2 md:flex">
+            <ExportAndShareMenu
+              isSharedButtonEnabled={startupConfig?.sharedLinksEnabled ?? false}
+            />
+            {hasAccessToTemporaryChat === true && <TemporaryChat />}
+          </div>
         </div>
       </div>
-    </div>
+      {hasAccessToTemporaryChat === true && <TemporaryChatStrip />}
+    </>
   );
 }
 
