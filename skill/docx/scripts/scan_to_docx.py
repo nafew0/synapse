@@ -22,6 +22,7 @@ from PIL import Image, ImageFilter, ImageOps
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from elements_spec import PAGE_NUMBER, SHARED_BOX_SHARE, TEXT_TYPES, convert, looks_handwritten, reflowed  # noqa: E402
+from straighten import page_tilt, turn_about_center, word_direction  # noqa: E402
 
 RENDER_DPI = 150
 PAGE_WIDTH_CM = 21.0
@@ -78,6 +79,7 @@ TYPE_BODY_CHARS = 40
 MIN_TYPE_SIZE = 7.0
 MAX_TYPE_SIZE = 24.0
 MIN_UPSIDE_DOWN_LINES = 3
+MIN_TILT = 0.5
 UPSIDE_DOWN_TREND = 0.5
 MIN_BALANCED_COLUMNS = 3
 WORD_CHARACTER_CM = 0.15
@@ -790,14 +792,8 @@ def trend(values):
     return sum(1 if b > a else -1 for a, b in pairs) / len(pairs)
 
 
-def text_direction(elements):
-    """'clockwise', 'counterclockwise' or 'upside_down' when the page must be turned, else None.
-
-    A table scanned sideways comes back from the service with tall, narrow line boxes. Reading moves
-    from the top of the upright page to its bottom, so the way the lines drift in reading order says
-    which way to turn, and a stamp or note read first does not decide it alone. A page whose lines are
-    wide but run from the bottom of the image upwards was scanned upside down.
-    """
+def rotation_lines(elements):
+    """Boxes of the lines long enough to show which way the text runs."""
     lines = []
     for element in elements:
         coordinates = (element.get("metadata") or {}).get("coordinates") or {}
@@ -807,6 +803,18 @@ def text_direction(elements):
             width = coordinates.get("layout_width") or 1
             height = coordinates.get("layout_height") or 1
             lines.append((min(xs), min(ys), max(xs), max(ys), width, height))
+    return lines
+
+
+def text_direction(elements):
+    """'clockwise', 'counterclockwise' or 'upside_down' when the page must be turned, else None.
+
+    A table scanned sideways comes back from the service with tall, narrow line boxes. Reading moves
+    from the top of the upright page to its bottom, so the way the lines drift in reading order says
+    which way to turn, and a stamp or note read first does not decide it alone. A page whose lines are
+    wide but run from the bottom of the image upwards was scanned upside down.
+    """
+    lines = rotation_lines(elements)
     if not lines:
         return None
     upright = [line for line in lines if line[2] - line[0] >= line[3] - line[1]]
@@ -1035,25 +1043,66 @@ def place_shared_lines(elements, pages):
     return result
 
 
+def page_direction(elements, image):
+    """How a page must be turned: from the read's line boxes, or, where the page has too few long
+    lines for them to tell, from the scan's word shapes when those are clear."""
+    direction = text_direction(elements)
+    if len(rotation_lines(elements)) >= MIN_UPSIDE_DOWN_LINES:
+        return direction
+    guess, sure = word_direction(image)
+    return guess if sure else direction
+
+
+def turn_boxes(elements, direction):
+    for element in elements:
+        coordinates = (element.get("metadata") or {}).get("coordinates") or {}
+        width, height = coordinates.get("layout_width"), coordinates.get("layout_height")
+        if not coordinates.get("points") or not width or not height:
+            continue
+        coordinates["points"] = [turn_point(p, width, height, direction) for p in coordinates["points"]]
+        if direction != "upside_down":
+            coordinates["layout_width"], coordinates["layout_height"] = height, width
+
+
+def tilt_boxes(elements, angle):
+    """Moves each box's center as the page turns by `angle`, keeping its size: the box the reader
+    drew round a leaning line already covers the line once it stands straight."""
+    for element in elements:
+        coordinates = (element.get("metadata") or {}).get("coordinates") or {}
+        width, height = coordinates.get("layout_width"), coordinates.get("layout_height")
+        points = coordinates.get("points")
+        if not points or not width or not height:
+            continue
+        xs, ys = [p[0] for p in points], [p[1] for p in points]
+        cx, cy = turn_about_center(((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2), angle, width, height)
+        dx, dy = cx - (min(xs) + max(xs)) / 2, cy - (min(ys) + max(ys)) / 2
+        coordinates["points"] = [[x + dx, y + dy] for x, y in points]
+
+
 def upright(elements, pages):
-    """Turns sideways and upside-down pages and their element boxes upright, in place."""
+    """Turns sideways and upside-down pages upright and straightens a crooked scan, moving the
+    element boxes with them, in place."""
     by_page = {}
     for element in elements:
         by_page.setdefault(int((element.get("metadata") or {}).get("page_number") or 1), []).append(element)
     for number, page_elements in by_page.items():
-        direction = text_direction(page_elements)
-        if direction is None or number > len(pages):
+        if number > len(pages):
             continue
-        with Image.open(pages[number - 1]) as image:
-            image.rotate(TURNS[direction], expand=True).save(pages[number - 1])
-        for element in page_elements:
-            coordinates = (element.get("metadata") or {}).get("coordinates") or {}
-            width, height = coordinates.get("layout_width"), coordinates.get("layout_height")
-            if not coordinates.get("points") or not width or not height:
-                continue
-            coordinates["points"] = [turn_point(p, width, height, direction) for p in coordinates["points"]]
-            if direction != "upside_down":
-                coordinates["layout_width"], coordinates["layout_height"] = height, width
+        with Image.open(pages[number - 1]) as opened:
+            image = opened.copy()
+        changed = False
+        direction = page_direction(page_elements, image)
+        if direction is not None:
+            image = image.rotate(TURNS[direction], expand=True)
+            turn_boxes(page_elements, direction)
+            changed = True
+        tilt = page_tilt(image)
+        if tilt is not None and abs(tilt) >= MIN_TILT:
+            image = image.rotate(-tilt, fillcolor="white", resample=Image.Resampling.BICUBIC)
+            tilt_boxes(page_elements, -tilt)
+            changed = True
+        if changed:
+            image.save(pages[number - 1])
 
 
 def tagged(node, name):
