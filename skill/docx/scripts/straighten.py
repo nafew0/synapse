@@ -25,6 +25,8 @@ COARSE_STEP = 0.5
 FINE_STEP = 0.05
 WORD_WIDTH = 1600
 RULE_SHARE = 15
+LONG_RULE_SHARE = 1 / 3
+MIN_RULES = 2
 MIN_WORD_ROWS = 8
 MIN_WORD_AREA = MIN_WORD_ROWS * 3
 WORD_SHAPE = 1.8
@@ -32,17 +34,40 @@ MIN_WORDS = 20
 HEADLINE_MARGIN = 0.08
 
 
-def ink(image, width):
-    """White ink on black at a working width, without a table's ruled lines, which otherwise
-    outweigh the text."""
+def binary_ink(image, width):
+    """White ink on black at a working width."""
     gray = np.asarray(image.convert("L"))
     scale = width / gray.shape[1]
     small = cv2.resize(gray, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
     _, binary = cv2.threshold(small, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    return binary
+
+
+def rules(binary):
+    """The straight runs of ink across and down: a table's ruled lines (and a few headlines)."""
     height, width = binary.shape
     across = cv2.morphologyEx(binary, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (max(width // RULE_SHARE, 3), 1)))
     down = cv2.morphologyEx(binary, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (1, max(height // RULE_SHARE, 3))))
+    return across, down
+
+
+def ink(image, width):
+    """The ink without a table's ruled lines, which otherwise outweigh the text."""
+    binary = binary_ink(image, width)
+    across, down = rules(binary)
     return cv2.subtract(binary, cv2.bitwise_or(across, down))
+
+
+def long_rules(across):
+    """Only the ruled lines that run a good part of the page's width, or None when there are too
+    few to trust. A slightly tilted rule survives the straight opening as touching steps, so it is
+    still one piece; a word's headline is far shorter."""
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(across, connectivity=8)
+    width = across.shape[1]
+    keep = [index for index in range(1, count) if stats[index][2] >= width * LONG_RULE_SHARE]
+    if len(keep) < MIN_RULES:
+        return None
+    return np.where(np.isin(labels, keep), 255, 0).astype(np.uint8)
 
 
 def rotated(binary, angle):
@@ -63,10 +88,14 @@ def best_angle(binary, angles):
 
 def page_tilt(image):
     """Degrees the page's lines lean counterclockwise (turning the picture by minus that much
-    straightens it), or None without OpenCV."""
+    straightens it), or None without OpenCV. A ruled table is measured by its rules: the text in
+    its narrow cells does not share baselines across columns and can lean the wrong way."""
     if cv2 is None:
         return None
-    binary = ink(image, TILT_WIDTH)
+    binary = binary_ink(image, TILT_WIDTH)
+    across, down = rules(binary)
+    ruled = long_rules(across)
+    binary = ruled if ruled is not None else cv2.subtract(binary, cv2.bitwise_or(across, down))
     coarse = best_angle(binary, np.arange(-MAX_TILT, MAX_TILT + 1e-9, COARSE_STEP))
     fine = best_angle(binary, np.arange(coarse - COARSE_STEP, coarse + COARSE_STEP + 1e-9, FINE_STEP))
     return -round(float(fine), 2)

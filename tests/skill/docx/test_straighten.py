@@ -29,6 +29,16 @@ def test_a_tilted_page_measures_its_tilt_and_a_straight_one_none():
     assert straighten.page_tilt(tilted) == pytest.approx(2.5, abs=0.3)
 
 
+
+def test_a_ruled_table_takes_its_tilt_from_its_rules_not_its_cell_text():
+    page = letter_page().rotate(1.2, fillcolor='white', resample=Image.Resampling.BICUBIC)
+    draw = ImageDraw.Draw(page)
+    for y in range(60, 1160, 110):
+        draw.line([(30, y), (1370, y)], fill='black', width=3)
+    assert straighten.page_tilt(page) == pytest.approx(0, abs=0.15)
+    tilted = page.rotate(1.5, fillcolor='white', resample=Image.Resampling.BICUBIC)
+    assert straighten.page_tilt(tilted) == pytest.approx(1.5, abs=0.2)
+
 @pytest.mark.parametrize('turn, direction', [(0, None), (90, 'clockwise'), (180, 'upside_down'), (270, 'counterclockwise')])
 def test_word_shapes_tell_how_a_page_was_turned(turn, direction):
     page = letter_page().rotate(turn, expand=True, fillcolor='white')
