@@ -58,6 +58,7 @@ jest.mock('~/data-provider', () => ({
 }));
 
 jest.mock('../Input/ConversationStarters', () => () => null);
+jest.mock('../Input/TaskTiles', () => () => null);
 jest.mock('../Messages/MessagesView', () => () => <div data-testid="messages" />);
 jest.mock('../Presentation', () => ({ children }: { children: React.ReactNode }) => (
   <>{children}</>

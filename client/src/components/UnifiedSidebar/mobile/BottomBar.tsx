@@ -8,6 +8,7 @@ import { useShortcutAriaKey } from '~/hooks/useKeyboardShortcuts';
 import SearchBar from '~/components/Nav/SearchBar';
 import useNewChat from '~/hooks/Chat/useNewChat';
 import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 import store from '~/store';
 
 /**
@@ -72,7 +73,10 @@ function BottomBar({
       )}
       <Button
         asChild
-        className={showSearch ? 'h-11 flex-shrink-0 gap-2 rounded-full px-5' : 'h-11 w-full gap-2'}
+        className={cn(
+          'lc-rail-new',
+          showSearch ? 'h-11 flex-shrink-0 gap-2 rounded-full px-5' : 'h-11 w-full gap-2',
+        )}
       >
         <a
           href="/c/new"

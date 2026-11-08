@@ -3,7 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { Link2, Pin } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import { Constants } from 'librechat-data-provider';
-import { Spinner, useToastContext, useMediaQuery } from '@librechat/client';
+import { useToastContext, useMediaQuery } from '@librechat/client';
 import type { TConversation } from 'librechat-data-provider';
 import { useGetStartupConfig, useUpdateConversationMutation } from '~/data-provider';
 import { useNavigateToConvo, useLocalize, useShiftKey } from '~/hooks';
@@ -184,16 +184,10 @@ function Conversation({
     isShiftHeld: isActiveConvo ? isShiftHeld : false,
   };
 
-  const generatingSpinner = (
-    <span role="img" aria-label={localize('com_ui_generating')}>
-      <Spinner className="h-5 w-5 flex-shrink-0 text-text-primary" />
-    </span>
-  );
-
   let actionVisibilityClassName =
     'pointer-events-none max-w-0 scale-x-0 opacity-0 group-focus-within:pointer-events-auto group-focus-within:max-w-[60px] group-focus-within:scale-x-100 group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:max-w-[60px] group-hover:scale-x-100 group-hover:opacity-100';
   if (isGenerating) {
-    actionVisibilityClassName = 'pointer-events-none w-5 scale-x-100 opacity-100';
+    actionVisibilityClassName = 'pointer-events-none w-0 scale-x-0 opacity-0';
   } else if (isPopoverActive || isActiveConvo || isSmallScreen) {
     /** Touch has no hover, so a reveal-on-hover menu is unreachable there. */
     actionVisibilityClassName = 'pointer-events-auto scale-x-100 opacity-100';
@@ -207,9 +201,7 @@ function Conversation({
   }
 
   let actionContent: React.ReactNode = null;
-  if (isGenerating) {
-    actionContent = generatingSpinner;
-  } else if (!renaming) {
+  if (!isGenerating && !renaming) {
     actionContent = <ConvoActions {...convoOptionsProps} hasInteracted={hasInteracted} />;
   }
 
@@ -275,6 +267,7 @@ function Conversation({
           title={title}
           onRename={handleRename}
           isSmallScreen={isSmallScreen}
+          isGenerating={isGenerating}
           localize={localize}
         >
           <ConversationEndpointIcon

@@ -559,6 +559,7 @@ const ChatForm = memo(function ChatForm({
                 isTemporary
                   ? 'border-violet-800/60 bg-violet-950/10'
                   : 'lc-composer border-border-light bg-surface-chat',
+                !isTemporary && conversationId === Constants.NEW_CONVO && 'lc-composer-arrive',
               )}
             >
               {project ? <ProjectLandingChip project={project} /> : null}

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { BarChart3, MessagesSquare } from 'lucide-react';
+import { BarChart3, MessageCircle } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useUserKeyQuery } from 'librechat-data-provider/react-query';
 import { getConfigDefaults, getEndpointField, SystemRoles } from 'librechat-data-provider';
@@ -63,7 +63,7 @@ export default function useUnifiedSidebarLinks() {
     const conversationLink: NavLink = {
       title: 'com_ui_chat_history',
       label: '',
-      icon: MessagesSquare,
+      icon: MessageCircle,
       id: 'conversations',
       Component: ConversationsSection,
     };

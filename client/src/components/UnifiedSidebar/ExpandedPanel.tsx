@@ -1,18 +1,39 @@
 import { memo, useCallback, lazy, Suspense } from 'react';
 import { useRecoilValue } from 'recoil';
-import { SquarePen } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
-import { Skeleton, Sidebar, Button, TooltipAnchor } from '@librechat/client';
+import { PanelLeft, SquarePen } from 'lucide-react';
+import { Skeleton, Button, TooltipAnchor } from '@librechat/client';
+import type { TranslationKeys } from '~/hooks';
 import type { NavLink } from '~/common';
 import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
 import { useActivePanel, resolveActivePanel, DEFAULT_PANEL } from '~/Providers';
 import { CLOSE_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
+import { Logo } from '~/components/Brand';
 import useNewChat from '~/hooks/Chat/useNewChat';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 import store from '~/store';
 
 const AccountSettings = lazy(() => import('~/components/Nav/AccountSettings'));
+
+/** One-word names shown under rail icons; the full title stays the tooltip and accessible name. */
+const RAIL_LABELS: Record<string, TranslationKeys> = {
+  conversations: 'com_nav_rail_chats',
+  skills: 'com_ui_skills',
+  prompts: 'com_ui_prompts',
+  memories: 'com_nav_rail_memory',
+  files: 'com_nav_rail_files',
+  agents: 'com_nav_rail_agents',
+  assistants: 'com_nav_rail_assistants',
+  bookmarks: 'com_nav_rail_bookmarks',
+  parameters: 'com_nav_rail_parameters',
+  'mcp-builder': 'com_nav_rail_mcp',
+  insights: 'com_insights_navigation',
+};
+
+const railItemClass =
+  'lc-rail-item flex w-[58px] flex-col items-center gap-[3px] rounded-[10px] pb-1.5 pt-1 text-[11px] font-medium leading-none';
+const railPillClass =
+  'lc-rail-pill flex h-7 w-10 items-center justify-center rounded-full transition-colors';
 
 const NewChatButton = memo(function NewChatButton({
   setActive,
@@ -42,10 +63,13 @@ const NewChatButton = memo(function NewChatButton({
           data-testid="new-chat-button"
           aria-label={localize('com_ui_new_chat')}
           aria-keyshortcuts={ariaKey}
-          className="lc-rail-icon flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-surface-hover"
+          className="lc-rail-item mb-1.5 flex w-[58px] flex-col items-center gap-[3px] text-[11px] font-semibold leading-none"
           onClick={handleNewChatClick}
         >
-          <SquarePen className="h-5 w-5 text-text-primary" />
+          <span className="lc-rail-new-icon flex h-7 w-10 items-center justify-center rounded-full transition-colors">
+            <SquarePen className="size-5" aria-hidden="true" />
+          </span>
+          <span aria-hidden="true">{localize('com_nav_rail_new')}</span>
         </a>
       }
     />
@@ -101,20 +125,21 @@ const NavIconButton = memo(function NavIconButton({
       description={localize(link.title)}
       side="right"
       render={
-        <Button
-          size="icon"
-          variant="ghost"
+        <button
+          type="button"
           aria-label={localize(link.title)}
           aria-pressed={isActive}
           data-testid={`nav-panel-${link.id}`}
-          className={cn(
-            'lc-rail-icon h-9 w-9 rounded-lg',
-            isActive ? 'bg-surface-active-alt text-text-primary' : 'text-text-secondary',
-          )}
+          className={railItemClass}
           onClick={handleClick}
         >
-          <link.icon className="h-5 w-5" aria-hidden="true" />
-        </Button>
+          <span className={railPillClass}>
+            <link.icon className="size-5" aria-hidden="true" />
+          </span>
+          <span aria-hidden="true" className="max-w-full truncate whitespace-nowrap px-0.5">
+            {localize(RAIL_LABELS[link.id] ?? link.title)}
+          </span>
+        </button>
       }
     />
   );
@@ -147,29 +172,10 @@ function ExpandedPanel({
   const toggleSidebarAriaKey = useShortcutAriaKey('toggleSidebar');
 
   return (
-    <div className="lc-left-rail flex h-full flex-shrink-0 flex-col gap-2 border-r border-border-light bg-surface-primary-alt px-2 py-2">
-      <TooltipAnchor
-        side="right"
-        description={toggleSidebarHint}
-        render={
-          <Button
-            id={expanded ? CLOSE_SIDEBAR_ID : undefined}
-            data-testid={expanded ? 'close-sidebar-button' : 'open-sidebar-button'}
-            size="icon"
-            variant="ghost"
-            aria-label={localize(toggleLabel)}
-            aria-expanded={expanded}
-            aria-keyshortcuts={toggleSidebarAriaKey}
-            className="lc-rail-icon h-9 w-9 rounded-lg"
-            onClick={toggleClick}
-          >
-            <Sidebar aria-hidden="true" className="h-5 w-5 text-text-primary" />
-          </Button>
-        }
-      />
+    <div className="lc-left-rail flex h-full w-16 flex-shrink-0 flex-col items-center gap-1 border-r py-2.5">
+      <Logo className="mb-2 mt-0.5 size-[26px]" />
       <NewChatButton setActive={setActive} />
-      <div className="mx-2 border-b border-border-light" />
-      <div className="flex flex-col gap-1 overflow-y-auto">
+      <div className="flex flex-col items-center gap-1 overflow-y-auto">
         {links.map((link) => (
           <NavIconButton
             key={link.id}
@@ -189,7 +195,26 @@ function ExpandedPanel({
         ))}
       </div>
 
-      <div className="mt-auto">
+      <div className="mt-auto flex flex-col items-center gap-2">
+        <TooltipAnchor
+          side="right"
+          description={toggleSidebarHint}
+          render={
+            <Button
+              id={expanded ? CLOSE_SIDEBAR_ID : undefined}
+              data-testid={expanded ? 'close-sidebar-button' : 'open-sidebar-button'}
+              size="icon"
+              variant="ghost"
+              aria-label={localize(toggleLabel)}
+              aria-expanded={expanded}
+              aria-keyshortcuts={toggleSidebarAriaKey}
+              className="lc-rail-toggle size-10 rounded-[10px]"
+              onClick={toggleClick}
+            >
+              <PanelLeft aria-hidden="true" className="size-5" />
+            </Button>
+          }
+        />
         <Suspense fallback={<Skeleton className="h-9 w-9 rounded-lg" />}>
           <AccountSettings collapsed />
         </Suspense>
