@@ -265,6 +265,8 @@ html {
   --lc-user-bubble: #eef6f5;
   --lc-temp-strip: #eef6f5;
   --lc-temp-text: 19 79 84;
+  --lc-temp-box: #f3f9f8;
+  --lc-temp-ring: 50 138 138;
   --lc-action-background: #f47948;
   --lc-action-hover: #f68b60;
   --lc-on-action: 27 13 6;
@@ -393,6 +395,8 @@ html {
   --lc-user-bubble: rgb(37 41 42);
   --lc-temp-strip: #203a39;
   --lc-temp-text: 108 196 188;
+  --lc-temp-box: #1d2a2a;
+  --lc-temp-ring: 108 196 188;
   --lc-stop-background: #203a39;
   --lc-on-stop: 108 196 188;
   --lc-composer-border: linear-gradient(#30363a, #30363a);
@@ -521,6 +525,13 @@ html:not(.dark) .lc-auth-network-background-light { filter: invert(1) grayscale(
 .dark .lc-composer { border: 0; background: var(--lc-composer-background); }
 .dark .lc-composer .text-text-secondary, .dark .lc-composer .text-text-tertiary { color: rgb(166 173 172); }
 .dark .lc-composer textarea::placeholder { color: rgb(138 146 145); }
+/* Temporary chat marks the box itself: a light mint fill and a solid teal ring (dark: teal-tinted
+ * graphite), both fading in and out so switching modes never jumps. */
+.lc-composer { transition: background-color 250ms ease, box-shadow 250ms ease; }
+.lc-composer::before { transition: opacity 250ms ease; }
+.lc-composer.lc-composer-temp, .dark .lc-composer.lc-composer-temp { background: var(--lc-temp-box); box-shadow: inset 0 0 0 1.5px rgb(var(--lc-temp-ring)); }
+.lc-composer.lc-composer-temp::before { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .lc-composer, .lc-composer::before { transition: none; } }
 .dark .lc-model-pill { background: var(--lc-model-pill-background); border-color: #30363a; box-shadow: none; }
 .dark .lc-footer { color: rgb(var(--lc-footer-body)); }
 .dark .lc-footer a { color: rgb(var(--lc-footer-label)); }
