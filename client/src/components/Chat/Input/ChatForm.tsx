@@ -92,6 +92,7 @@ const ChatForm = memo(function ChatForm({
   const [backupBadges, setBackupBadges] = useState<Pick<BadgeItem, 'id'>[]>([]);
 
   const SpeechToText = useRecoilValue(store.speechToText);
+  const isTemporary = useRecoilValue(store.isTemporary);
   const TextToSpeech = useRecoilValue(store.textToSpeech);
   const chatDirection = useRecoilValue(store.chatDirection);
   const automaticPlayback = useRecoilValue(store.automaticPlayback);
@@ -556,6 +557,7 @@ const ChatForm = memo(function ChatForm({
                 'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl border pb-4 text-text-primary transition-all duration-200 sm:rounded-3xl sm:pb-0',
                 isTextAreaFocused ? 'shadow-lg' : 'shadow-md',
                 'lc-composer border-border-light bg-surface-chat',
+                isTemporary && 'lc-composer-temp',
                 conversationId === Constants.NEW_CONVO && 'lc-composer-arrive',
               )}
             >
