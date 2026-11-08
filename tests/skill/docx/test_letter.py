@@ -638,3 +638,248 @@ def test_picture_widths_use_their_own_page_s_scale(tmp_path):
     spec = {'blocks': [{'type': 'image', 'path': str(tmp_path / 'image4.png')}]}
     scan_to_docx.place_pictures(spec, {'image4'}, tmp_path, {1: 0.01, 2: 0.03}, {'image4': 2})
     assert spec['blocks'][0]['width_cm'] == 3.0
+
+
+def test_a_straight_table_is_not_tilted():
+    sys.path.insert(0, str(SCRIPTS))
+    from PIL import ImageOps
+    from scan_to_docx import skew_angle
+
+    page = ruled_table([40, 90, 290, 440, 640])
+    assert skew_angle(ImageOps.grayscale(page.crop((24, 40, 656, 440)))) == 0
+
+
+def test_rules_that_cover_only_part_of_the_table_give_no_widths():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import table_widths
+
+    page = ruled_table([40, 90, 140, 190])
+    assert table_widths(page, (40, 40, 640, 440), 3, 0.1) is None
+
+
+def width_spec(*boxes, margins=(1.0, 1.5, 1.0, 1.5)):
+    row = [{'text': 'a'}, {'text': 'b'}, {'text': 'c'}]
+    return {'page': {'margins_cm': list(margins)}, 'blocks': [
+        {'type': 'table', 'rows': [row], 'box': list(box), 'box_page': 1} for box in boxes
+    ]}
+
+
+def blank_page(tmp_path, width=700):
+    page = tmp_path / 'page-1.png'
+    Image.new('RGB', (width, 1000), 'white').save(page)
+    return page
+
+
+def test_measured_widths_are_scaled_to_the_table_s_width_on_the_page(tmp_path, monkeypatch):
+    sys.path.insert(0, str(SCRIPTS))
+    import scan_to_docx
+
+    spec = width_spec((50, 100, 550, 400))
+    monkeypatch.setattr(scan_to_docx, 'table_widths', lambda *_args: [1.0, 2.0, 1.0])
+    scan_to_docx.apply_table_widths(spec, [blank_page(tmp_path)], 0.03)
+    assert spec['blocks'][0]['widths_cm'] == [3.75, 7.5, 3.75]
+
+
+def test_a_table_is_never_wider_than_the_page_s_text(tmp_path, monkeypatch):
+    sys.path.insert(0, str(SCRIPTS))
+    import scan_to_docx
+
+    spec = width_spec((0, 100, 700, 400))
+    monkeypatch.setattr(scan_to_docx, 'table_widths', lambda *_args: [1.0, 1.0, 1.0])
+    scan_to_docx.apply_table_widths(spec, [blank_page(tmp_path)], 0.03)
+    assert abs(sum(spec['blocks'][0]['widths_cm']) - 18.0) < 0.02
+
+
+def test_a_table_with_no_readable_rules_fills_its_width_evenly(tmp_path, monkeypatch):
+    sys.path.insert(0, str(SCRIPTS))
+    import scan_to_docx
+
+    spec = width_spec((50, 100, 650, 400))
+    monkeypatch.setattr(scan_to_docx, 'table_widths', lambda *_args: None)
+    scan_to_docx.apply_table_widths(spec, [blank_page(tmp_path)], 0.03)
+    assert spec['blocks'][0]['widths_cm'] == [6.0, 6.0, 6.0]
+
+
+def bangla_font(size):
+    from PIL import ImageFont
+
+    found = subprocess.run(['fc-match', '-f', '%{file}', 'Nikosh'], capture_output=True, text=True).stdout
+    if 'nikosh' not in found.lower():
+        pytest.skip('Nikosh is not installed')
+    return ImageFont.truetype(found, size)
+
+
+BODY_LINE = 'সংশ্লিষ্ট সকলকে জানানো যাচ্ছে যে বিশ্ববিদ্যালয়ের অধীনে পরীক্ষার আবেদন'
+
+
+def typed_page(lines, size=(1400, 1400)):
+    """A white page with each (text, x, y, px, bold) line drawn in Nikosh; bold is a 1 px outline."""
+    page = Image.new('RGB', size, 'white')
+    draw = ImageDraw.Draw(page)
+    for text, x, y, px, bold in lines:
+        draw.text((x, y), text, fill='black', font=bangla_font(px), stroke_width=1 if bold else 0, stroke_fill='black')
+    return page
+
+
+def ink_box(page, top, bottom):
+    from PIL import ImageOps
+
+    gray = ImageOps.grayscale(page.crop((0, top, page.width, bottom)))
+    xs = [x for x in range(gray.width) if any(gray.getpixel((x, y)) < 160 for y in range(gray.height))]
+    return [min(xs) - 4, top, max(xs) + 4, bottom]
+
+
+def test_a_larger_line_measures_taller_and_a_bold_one_heavier():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import measure_type
+
+    page = typed_page([(BODY_LINE, 40, 40, 30, False), ('সংশোধিত বিজ্ঞপ্তি', 40, 200, 48, False), (BODY_LINE, 40, 400, 30, True)])
+    body = measure_type(page, ink_box(page, 30, 100))
+    large = measure_type(page, ink_box(page, 190, 290))
+    bold = measure_type(page, ink_box(page, 390, 460))
+    assert large['height'] / body['height'] > 1.4
+    assert abs(bold['height'] / body['height'] - 1) < 0.15
+    assert bold['stroke'] / body['stroke'] > 1.25
+
+
+def test_two_wrapped_lines_measure_as_one_line_high():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import measure_type
+
+    page = typed_page([(BODY_LINE, 40, 40, 30, False), (BODY_LINE, 40, 90, 30, False), (BODY_LINE, 40, 300, 30, False)])
+    two = measure_type(page, ink_box(page, 30, 150))
+    one = measure_type(page, ink_box(page, 290, 360))
+    assert abs(two['height'] / one['height'] - 1) < 0.15
+
+
+def test_size_and_bold_follow_the_scan_not_the_block_s_kind(tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import apply_type
+
+    page = typed_page([
+        ('সংশোধিত বিজ্ঞপ্তি', 40, 40, 48, True),
+        ('একটি সাধারণ শিরোনাম লাইন', 40, 160, 30, False),
+        (BODY_LINE, 40, 260, 30, False),
+        (BODY_LINE, 40, 310, 30, False),
+        ('০৯। বিবিধঃ', 40, 420, 30, True),
+        ('১০। সাধারণ তালিকার লাইন', 40, 500, 30, False),
+    ])
+    path = tmp_path / 'page-1.png'
+    page.save(path)
+    spec = {'font': {'size': 10.5}, 'blocks': [
+        {'type': 'paragraph', 'text': 'সংশোধিত বিজ্ঞপ্তি', 'type_box': ink_box(page, 30, 130), 'type_page': 1},
+        {'type': 'title', 'text': 'একটি সাধারণ শিরোনাম লাইন', 'type_box': ink_box(page, 150, 220), 'type_page': 1},
+        {'type': 'paragraph', 'text': BODY_LINE * 2, 'type_box': ink_box(page, 250, 370), 'type_page': 1},
+        {'type': 'list', 'items': [['০৯।', 'বিবিধঃ'], ['১০।', 'সাধারণ তালিকার লাইন']], 'item_boxes': [
+            {'type_box': ink_box(page, 410, 480), 'type_page': 1},
+            {'type_box': ink_box(page, 490, 560), 'type_page': 1},
+        ]},
+    ]}
+    apply_type(spec, [path])
+    large, title, body, items = spec['blocks']
+    assert large['size'] > 14 and large['bold'] is True
+    assert title['size'] == 10.5 and title['bold'] is False
+    assert 'size' not in body and not body.get('bold')
+    assert [style['bold'] for style in items['item_styles']] == [True, False]
+    assert not any('type_box' in block or 'item_boxes' in block for block in spec['blocks'])
+
+
+def test_a_list_item_s_own_style_is_used(tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from letter import Style, build
+
+    spec = {'blocks': [{'type': 'list', 'items': [['১।', 'এক'], ['২।', 'দুই']], 'item_styles': [{'bold': True}, {}]}]}
+    out = tmp_path / 'list.docx'
+    build(spec, out, Style(spec))
+    first, second = [p for p in Document(out).paragraphs if p.text.strip()]
+    assert all(run.bold for run in first.runs if run.text.strip())
+    assert not any(run.bold for run in second.runs if run.text.strip())
+
+
+def test_a_line_that_cannot_be_matched_to_its_band_is_not_measured():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import measure_type
+
+    page = typed_page([(BODY_LINE, 40, 40, 30, False), (BODY_LINE, 40, 120, 30, False), (BODY_LINE, 40, 200, 30, False)])
+    assert measure_type(page, ink_box(page, 30, 260), [1, 3]) is not None
+    assert measure_type(page, ink_box(page, 30, 260), [1, 5]) is None
+
+
+def test_a_logo_crop_keeps_the_emblem_not_its_caption(tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import keep_largest_shape
+
+    page = Image.new('RGB', (400, 300), 'white')
+    draw = ImageDraw.Draw(page)
+    draw.rectangle((160, 10, 230, 110), outline='black', width=6)
+    draw.text((20, 150), 'বাংলাদেশ বিশ্ববিদ্যালয় মঞ্জুরী কমিশন', fill='black', font=bangla_font(30))
+    draw.text((20, 200), 'বিশ্ববিদ্যালয় মঞ্জুরী কমিশন বাংলাদেশ', fill='black', font=bangla_font(30))
+    path = tmp_path / 'logo.png'
+    page.save(path)
+    keep_largest_shape(path)
+    with Image.open(path) as kept:
+        assert kept.height > kept.width * 0.8
+
+
+SHARED_LINES = [
+    ('কর্তৃপক্ষের অনুমোদনক্রমে,', 760, 60),
+    ('তাহমিনা রহমান', 800, 110),
+    ('যুগ্মসচিব', 830, 150),
+    ('প্রকৌ. মোহাম্মদ জিয়াউর রহমান', 60, 190),
+    ('অতিরিক্ত পরিচালক', 60, 230),
+    ('স্মারক নং- ইউজিসি/প্রশা/৩৩২/০৬', 60, 330),
+    ('তারিখ : ০১ আশ্বিন ১৪৩৩', 800, 330),
+    ('১। সচিব, ইউজিসি, ঢাকা।', 60, 430),
+    ('২। পরিচালক, আইসিটি বিভাগ, ইউজিসি, ঢাকা।', 60, 470),
+]
+
+
+def shared_page(tmp_path):
+    page = typed_page([(text, x, y, 28, False) for text, x, y in SHARED_LINES], size=(1200, 600))
+    path = tmp_path / 'page-1.png'
+    page.save(path)
+    element = {
+        'type': 'NarrativeText',
+        'text': '\n'.join(text for text, _, _ in SHARED_LINES),
+        'metadata': {'page_number': 1, 'coordinates': {
+            'points': [[40, 40], [40, 520], [1160, 520], [1160, 40]], 'layout_width': 1200, 'layout_height': 600,
+        }},
+    }
+    return element, path
+
+
+def test_lines_sharing_one_wide_box_get_their_own_place_on_the_page(tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import place_shared_lines
+
+    element, path = shared_page(tmp_path)
+    placed = place_shared_lines([element], [path])
+    assert [e['text'] for e in placed] == [text for text, _, _ in SHARED_LINES]
+    for (text, x, y), found in zip(SHARED_LINES, placed):
+        points = found['metadata']['coordinates']['points']
+        x0, y0 = min(p[0] for p in points), min(p[1] for p in points)
+        assert abs(x0 - x) < 30 and abs(y0 - y) < 30, text
+
+
+def test_a_shared_box_that_cannot_be_matched_is_left_as_it_was(tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import place_shared_lines
+
+    element, path = shared_page(tmp_path)
+    element = {**element, 'text': 'একেবারে অন্য লেখা\nযা পাতায় নেই\nএবং মিলবে না\nকোনোভাবেই না এখানে'}
+    assert place_shared_lines([element], [path]) == [element]
+
+
+def test_handwriting_in_a_shared_box_gets_no_box_and_the_print_is_still_placed(tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import place_shared_lines
+
+    element, path = shared_page(tmp_path)
+    lines = [text for text, _, _ in SHARED_LINES]
+    element = {**element, 'text': '\n'.join([lines[0], 'Tahmina Rahman', '16.09.26', *lines[1:]])}
+    placed = place_shared_lines([element], [path])
+    by_text = {e['text']: e for e in placed}
+    assert 'coordinates' not in by_text['Tahmina Rahman']['metadata']
+    assert 'coordinates' not in by_text['16.09.26']['metadata']
+    points = by_text['যুগ্মসচিব']['metadata']['coordinates']['points']
+    assert abs(min(p[0] for p in points) - 830) < 30

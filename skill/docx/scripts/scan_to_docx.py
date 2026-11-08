@@ -14,14 +14,14 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ElementTree
 from difflib import SequenceMatcher
-from math import sqrt
+from math import log, sqrt
 from statistics import median
 from pathlib import Path
 
 from PIL import Image, ImageFilter, ImageOps
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from elements_spec import convert  # noqa: E402
+from elements_spec import SHARED_BOX_SHARE, TEXT_TYPES, convert, looks_handwritten  # noqa: E402
 
 RENDER_DPI = 150
 PAGE_WIDTH_CM = 21.0
@@ -36,12 +36,47 @@ MAX_SKEW_DEGREES = 3
 SKEW_STEP_DEGREES = 0.25
 SKEW_SAMPLE_WIDTH = 500
 MIN_COLUMN_CM = 0.4
+MIN_RULE_SPAN = 0.85
 FAINT_RULE_REACH_CM = 0.4
 FAINT_RULE_MIN_INK = 8
 BLOB_REACH = 3
+LOGO_MAX_ASPECT = 3
 INK_GAP_ROWS = 12
 MAX_SIGNATURE_GROWTH = 200
 HEADING_MATCH = 0.6
+SHARED_MIN_LINES = 3
+PROSE_LINE_CHARS = 60
+SEGMENT_GAP = 2.5
+TALL_PIECE_LINES = 1.8
+BLOCK_GAP = 0.8
+MAX_WRAP = 4
+SKIP_COST = 0.8
+MISS_COST = 1.5
+WRAP_COST = 0.2
+MIN_MATCHED_LINES = 0.7
+MAX_SKIPPED_PIECES = 0.3
+HANDWRITING_PIECES = 2
+MAX_WIDTH_ERROR = 0.35
+MAX_LINE_ERROR = 1.0
+TYPICAL_CHAR_SHARE = 0.4
+MAX_CHAR_SCALE = 1.8
+TYPE_DARK = 160
+TYPE_ROW_INK = 0.004
+TYPE_BAND_GAP = 0.2
+TYPE_ROW_SHARE = 0.15
+TYPE_ROW_QUANTILE = 0.75
+TYPE_RULE_ROWS = 0.15
+TYPE_RULE_INK = 0.3
+TYPE_RULE_SHARE = 0.9
+TYPE_MIN_BAND = 0.35
+TYPE_SIZE_CHANGE = 0.2
+TYPE_SHRINK_CHANGE = 0.3
+MIN_BOLD_HEIGHT_PX = 16
+TYPE_BOLD_RATIO = 1.25
+TYPE_BLUR_PX = 1.0
+TYPE_BODY_CHARS = 40
+MIN_TYPE_SIZE = 7.0
+MAX_TYPE_SIZE = 24.0
 MIN_UPSIDE_DOWN_LINES = 3
 UPSIDE_DOWN_TREND = 0.5
 MIN_BALANCED_COLUMNS = 3
@@ -81,7 +116,7 @@ def render_pages(source, qa):
 
 def column_sharpness(region):
     """How strongly ink gathers in single pixel columns: highest when the table's rules stand straight."""
-    return sum((255 - value) ** 2 for value in darkness_profile(region))
+    return sum(ink**2 for ink in darkness_profile(region))
 
 
 def darkness_profile(region):
@@ -151,7 +186,8 @@ def table_widths(image, box, columns, cm_per_pixel):
     positions = [x for _, x in rules]
     if len(positions) != columns + 1:
         positions = faint_rules(region, columns + 1, cm_per_pixel)
-    if len(positions) != columns + 1:
+    # Rules picked from text strokes bunch together; a table's own rules reach both of its edges.
+    if len(positions) != columns + 1 or positions[-1] - positions[0] < MIN_RULE_SPAN * (x1 - x0):
         return None
     widths = [round((b - a) * cm_per_pixel, 2) for a, b in zip(positions, positions[1:])]
     return widths if min(widths) >= MIN_COLUMN_CM else None
@@ -164,28 +200,224 @@ def page_scale(cm_per_pixel, page):
     return cm_per_pixel.get(page) or next(iter(cm_per_pixel.values()))
 
 
+def table_span_cm(spec, box, page_width_px, scale):
+    """How wide the table sat on the scan, no wider than the page's text."""
+    margins = spec.get("page", {}).get("margins_cm") or [0, 0, 0, 0]
+    text_width = page_width_px * scale - margins[1] - margins[3]
+    return min((box[2] - box[0]) * scale, text_width)
+
+
+def fit_to_span(widths, span):
+    """The widths scaled to add up to the table's own width. A box too small to hold its columns
+    says nothing about the width, so the widths are left as measured."""
+    if span < MIN_COLUMN_CM * len(widths):
+        return widths
+    total = sum(widths)
+    return [round(width * span / total, 2) for width in widths]
+
+
 def apply_table_widths(spec, pages, cm_per_pixel):
-    """Widths from each table's rules. A table whose rules cannot be read takes the widths found for
-    another table with as many columns: a long table scanned page by page repeats one layout."""
-    found = {}
+    """Widths from each table's rules, scaled to the width the table had on the page: the rules give
+    the columns' proportions, the table's box its size. A table whose rules cannot be read takes the
+    proportions found for another table with as many columns, as a long table scanned page by page
+    repeats one layout, or else equal columns."""
+    found, spans = {}, {}
     for block in spec["blocks"]:
         box = block.pop("box", None)
         page = block.pop("box_page", 1)
         if block["type"] != "table" or not box or page > len(pages):
             continue
-        columns = sum(int(cell.get("colspan", 1)) for cell in block["rows"][0])
+        columns = column_count(block)
+        scale = page_scale(cm_per_pixel, page)
         with Image.open(pages[page - 1]) as image:
-            widths = table_widths(image.convert("RGB"), box, columns, page_scale(cm_per_pixel, page))
+            widths = table_widths(image.convert("RGB"), box, columns, scale)
+            spans[id(block)] = table_span_cm(spec, box, image.width, scale)
         if widths:
-            block["widths_cm"] = widths
+            block["widths_cm"] = fit_to_span(widths, spans[id(block)])
             found.setdefault(columns, []).append(widths)
     shared = {columns: [median(column) for column in zip(*sets)] for columns, sets in found.items()}
     for block in spec["blocks"]:
-        if block["type"] != "table" or block.get("widths_cm"):
+        if block["type"] != "table" or block.get("widths_cm") or id(block) not in spans:
             continue
-        columns = sum(int(cell.get("colspan", 1)) for cell in block["rows"][0])
-        if columns in shared:
-            block["widths_cm"] = [round(width, 2) for width in shared[columns]]
+        columns = column_count(block)
+        proportions = shared.get(columns) or [1.0] * columns
+        widths = fit_to_span(proportions, spans[id(block)])
+        if columns in shared or widths is not proportions:
+            block["widths_cm"] = [round(width, 2) for width in widths]
+
+
+def row_ink(gray):
+    """Ink per pixel row. A row that is one unbroken stroke across most of the text's width is a rule
+    or an underline, not text, and counts as empty: text rows have gaps between words."""
+    width, height = gray.size
+    pixels = gray.load()
+    rows = [[pixels[x, y] < TYPE_DARK for x in range(width)] for y in range(height)]
+    columns = [x for x in range(width) if any(row[x] for row in rows)]
+    span = columns[-1] - columns[0] + 1 if columns else width
+    counts = []
+    for row in rows:
+        run = longest = 0
+        for dark in row:
+            run = run + 1 if dark else 0
+            longest = max(longest, run)
+        counts.append(0 if longest >= TYPE_RULE_SHARE * span else sum(row))
+    return counts
+
+
+def runs_of(rows, start, least):
+    """[first, last] row of each run of rows holding at least `least` ink, offset by `start`, with
+    the small gap a Bangla vowel sign leaves above or under its letter joined over."""
+    bands = []
+    for offset, count in enumerate(rows):
+        if count < least:
+            continue
+        y = start + offset
+        if bands and y - bands[-1][1] <= 1:
+            bands[-1][1] = y
+        else:
+            bands.append([y, y])
+    darkest = max(rows, default=0)
+    joined, previous = [], 0
+    for band in bands:
+        height = band[1] - band[0] + 1
+        if joined:
+            # Against the pieces themselves, not what has been joined so far, or lines snowball.
+            tallest = max(previous, height)
+            # A thin strip inked edge to edge under a line is its underline: a vowel sign under a
+            # letter is thin too, but sparse.
+            ink = sum(rows[band[0] - start:band[1] - start + 1]) / height
+            if height <= TYPE_RULE_ROWS * tallest and ink >= TYPE_RULE_INK * darkest:
+                continue
+            if band[0] - joined[-1][1] - 1 <= TYPE_BAND_GAP * tallest:
+                joined[-1][1] = band[1]
+                previous = tallest
+                continue
+        joined.append(band)
+        previous = height
+    return joined
+
+
+def split_touching(counts, first, last, least):
+    """[first, last] cut where closely set lines touch: at the faintest row between two runs of
+    well-inked rows. The threshold only finds the cuts, so each line keeps the vowel signs above
+    its headline and the tails below it."""
+    rows = counts[first:last + 1]
+    inked = sorted(count for count in rows if count)
+    cores = runs_of(rows, first, max(least, TYPE_ROW_SHARE * inked[int(len(inked) * TYPE_ROW_QUANTILE)]))
+    if len(cores) <= 1:
+        return [[first, last]]
+    cuts = [min(range(a[1] + 1, b[0]), key=lambda y: counts[y]) for a, b in zip(cores, cores[1:]) if b[0] > a[1] + 1]
+    edges = [first - 1, *cuts, last + 1]
+    lines = []
+    for start, stop in zip(edges, edges[1:]):
+        inside = [y for y in range(start + 1, stop) if counts[y] >= least]
+        if inside:
+            lines.append([inside[0], inside[-1]])
+    return lines
+
+
+def ink_bands(gray):
+    """The text lines in a region, split first at blank rows and then where closely set lines
+    touch. Specks are dropped."""
+    counts = row_ink(gray)
+    least = max(1, int(gray.size[0] * TYPE_ROW_INK))
+    lines = []
+    for first, last in runs_of(counts, 0, least):
+        lines.extend(split_touching(counts, first, last, least))
+    if not lines:
+        return []
+    usual = median(b[1] - b[0] + 1 for b in lines)
+    return [b for b in lines if b[1] - b[0] + 1 >= TYPE_MIN_BAND * usual]
+
+
+def stroke_width(gray, band):
+    """Median length of the short horizontal ink runs in a line: the thickness of its upright
+    strokes. Long runs are the headline (matra) or a rule, not strokes."""
+    width, _ = gray.size
+    pixels = gray.load()
+    longest = (band[1] - band[0] + 1) * 0.6
+    runs = []
+    for y in range(band[0], band[1] + 1):
+        run = 0
+        for x in range(width + 1):
+            if x < width and pixels[x, y] < TYPE_DARK:
+                run += 1
+                continue
+            if 0 < run <= longest:
+                runs.append(run)
+            run = 0
+    return median(runs) if runs else 0
+
+
+def measure_type(image, box, line=None):
+    """How tall a block's lines of text are and how thick their strokes, both in scan pixels. `line` [index, count] picks one line of a box that holds several. None when the
+    box holds no readable line."""
+    x0, y0, x1, y1 = (int(value) for value in box)
+    gray = ImageOps.grayscale(image.crop((max(x0, 0), max(y0, 0), x1, y1)))
+    bands = ink_bands(gray)
+    if line:
+        # Handwriting or a stamp in the box adds bands; then no band is surely this line.
+        if len(bands) != line[1]:
+            return None
+        bands = [bands[line[0]]]
+    if not bands:
+        return None
+    height = median(b[1] - b[0] + 1 for b in bands)
+    strokes = [stroke_width(gray, band) for band in bands]
+    return {"height": height, "stroke": median(strokes)}
+
+
+def type_targets(spec):
+    """Every place a measured size and weight can go: (style, box holder, text length, is body)."""
+    for block in spec["blocks"]:
+        kind = block["type"]
+        if kind in ("title", "heading", "paragraph") and "type_box" in block:
+            yield block, block, len(block.get("text", "")), kind == "paragraph"
+        elif kind == "letterhead":
+            for line in block.get("lines", []):
+                if "type_box" in line:
+                    yield line, line, len(line.get("text", "")), False
+        elif kind == "list" and "item_boxes" in block:
+            styles = block.setdefault("item_styles", [{} for _ in block["item_boxes"]])
+            for style, holder, (_, text) in zip(styles, block["item_boxes"], block["items"]):
+                yield style, holder, len(text), True
+
+
+def apply_type(spec, pages, cm_per_pixel=1.0):
+    """Sets each text block's size and bold from its lines on the scan, compared with the page's
+    body text: a block the service called a title is not made larger or bold unless it looks so.
+    Blocks with no box, or a document with no body text to compare with, keep what they have."""
+    measured = []
+    for style, holder, length, body in list(type_targets(spec)):
+        box, page, line = holder.pop("type_box", None), holder.pop("type_page", 1), holder.pop("type_line", None)
+        if not box or page > len(pages):
+            continue
+        with Image.open(pages[page - 1]) as image:
+            found = measure_type(image.convert("RGB"), box, line)
+        if found:
+            height = found["height"] * page_scale(cm_per_pixel, page)
+            measured.append((style, height, found, body and length >= TYPE_BODY_CHARS))
+    for block in spec["blocks"]:
+        block.pop("item_boxes", None)
+    body = [(height, found) for _, height, found, is_body in measured if is_body]
+    if not body:
+        return
+    body_height = median(height for height, _ in body)
+    # Stroke grows with type size; the scanner's blur adds about a pixel whatever the size.
+    weight = median((found["stroke"] - TYPE_BLUR_PX) / found["height"] for _, found in body)
+    base = float(spec.get("font", {}).get("size", 10.5))
+    for style, height, found, _ in measured:
+        ratio = height / body_height
+        # Short lines vary in height with their letters, so a smaller size needs clearer evidence.
+        if ratio - 1 >= TYPE_SIZE_CHANGE or 1 - ratio >= TYPE_SHRINK_CHANGE:
+            style["size"] = min(max(round(base * ratio * 2) / 2, MIN_TYPE_SIZE), MAX_TYPE_SIZE)
+        elif "size" in style or style.get("type") == "title":
+            style["size"] = base
+        if found["height"] < MIN_BOLD_HEIGHT_PX:
+            # A stroke one or two pixels wide cannot tell bold from regular.
+            continue
+        regular = weight * found["height"] + TYPE_BLUR_PX
+        style["bold"] = found["stroke"] >= TYPE_BOLD_RATIO * regular
 
 
 def column_count(block):
@@ -361,12 +593,13 @@ def fit_above_floors(wanted, floors, total):
         held = [fixed or low for fixed, low in zip(held, under)]
 
 
-def signature_top(image, box):
-    """The service's box varies by read and can start partway down the handwriting."""
+def signature_top(image, box, ceiling=0):
+    """The service's box varies by read and can start partway down the handwriting. It grows no
+    higher than `ceiling`, the bottom of the line above the signature."""
     x0, top, x1, _ = box
     pixels = image.load()
     highest = top
-    for y in range(top - 1, max(top - MAX_SIGNATURE_GROWTH, 0) - 1, -1):
+    for y in range(top - 1, max(top - MAX_SIGNATURE_GROWTH, ceiling, 0) - 1, -1):
         if any(pixels[x, y] < DARK for x in range(x0, x1)):
             highest = y
         elif highest - y >= INK_GAP_ROWS:
@@ -382,7 +615,7 @@ def grow_signatures(boxes, page):
         image = ImageOps.grayscale(source)
     for crop in signatures:
         x0, _, x1, bottom = crop["box"]
-        crop["box"] = [x0, signature_top(image, crop["box"]), x1, bottom]
+        crop["box"] = [x0, signature_top(image, crop["box"], crop.get("ceiling") or 0), x1, bottom]
 
 
 def run_crops(crops, pages, qa):
@@ -409,7 +642,8 @@ def keep_largest_shape(path):
     """Clears what a loose box caught beside a logo, such as a handwritten note or a piece of text.
 
     Only for logos, which are one solid shape. A signature is many separate strokes, so this would
-    delete parts of it.
+    delete parts of it. A line of text is wide and flat, so a compact shape is preferred over it:
+    the caption under an emblem can hold more ink than the emblem.
     """
     with Image.open(path) as opened:
         image = opened.convert("RGB")
@@ -418,7 +652,7 @@ def keep_largest_shape(path):
     width, height = small.size
     ink = small.load()
     seen = set()
-    best = None
+    shapes = []
     for sx in range(width):
         for sy in range(height):
             if not ink[sx, sy] or (sx, sy) in seen:
@@ -434,11 +668,11 @@ def keep_largest_shape(path):
                     if 0 <= nx < width and 0 <= ny < height and ink[nx, ny] and (nx, ny) not in seen:
                         seen.add((nx, ny))
                         stack.append((nx, ny))
-            if best is None or count > best[0]:
-                best = (count, min(xs), min(ys), max(xs), max(ys))
-    if best is None:
+            shapes.append((count, min(xs), min(ys), max(xs), max(ys)))
+    compact = [s for s in shapes if s[3] - s[1] + 1 <= LOGO_MAX_ASPECT * (s[4] - s[2] + 1)]
+    if not shapes:
         return
-    _, left, top, right, bottom = best
+    _, left, top, right, bottom = max(compact or shapes)
     image.crop((left, top, right + 1, bottom + 1)).save(path)
 
 
@@ -516,6 +750,209 @@ def turn_point(point, width, height, direction):
     if direction == "upside_down":
         return [width - x, height - y]
     return [height - y, x] if direction == "clockwise" else [y, width - x]
+
+
+def ink_shapes(mask, width, height):
+    """Bounding boxes [x0, y0, x1, y1] of the 4-connected shapes in a set of inked (x, y)."""
+    seen, shapes = set(), []
+    for start in mask:
+        if start in seen:
+            continue
+        seen.add(start)
+        stack, xs, ys = [start], [], []
+        while stack:
+            x, y = stack.pop()
+            xs.append(x)
+            ys.append(y)
+            for near in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                if near in mask and near not in seen:
+                    seen.add(near)
+                    stack.append(near)
+        shapes.append([min(xs), min(ys), max(xs), max(ys)])
+    return shapes
+
+
+def line_pieces(gray):
+    """The printed pieces of text in a region: runs of words on one line, split where a gap wider
+    than a few letters runs through, as between side-by-side columns. Bangla words hang from their
+    headline, so a word is one shape about a line high; closing the gaps between words along each
+    row joins them into pieces. Handwriting crossing several lines stays a tall piece of its own,
+    where cutting the region at blank rows finds none. [x0, y0, x1, y1] in the region's pixels."""
+    width, height = gray.size
+    pixels = gray.load()
+    ink = {(x, y) for y in range(height) for x in range(width) if pixels[x, y] < TYPE_DARK}
+    words = [w for w in ink_shapes(ink, width, height) if w[3] - w[1] >= 2 and w[2] - w[0] >= 2]
+    if not words:
+        return []
+    line = median(w[3] - w[1] + 1 for w in words if w[2] - w[0] >= w[3] - w[1])
+    gap = int(SEGMENT_GAP * line)
+    joined = set(ink)
+    for y in range(height):
+        row = [x for x in range(width) if (x, y) in ink]
+        for left, right in zip(row, row[1:]):
+            if 1 < right - left <= gap:
+                joined.update((x, y) for x in range(left + 1, right))
+    return [p for p in ink_shapes(joined, width, height) if p[3] - p[1] + 1 >= TYPE_MIN_BAND * line]
+
+
+def reading_order(pieces):
+    """Pieces grouped into blocks of lines that sit one under another, the blocks read from the top
+    and, when they start level, from the left: a signature on the right that starts higher than the
+    addressee on the left comes first, as the service reads them. Returns (piece, block) pairs."""
+    blocks = []
+    for piece in sorted(pieces, key=lambda p: (p[1], p[0])):
+        height = piece[3] - piece[1] + 1
+        home = next(
+            (
+                block for block in blocks
+                if 0 <= piece[1] - block[-1][3] <= BLOCK_GAP * height + 1
+                and piece[0] <= block[-1][2] and block[-1][0] <= piece[2]
+            ),
+            None,
+        )
+        if home is None:
+            blocks.append([piece])
+        else:
+            home.append(piece)
+    level = median(p[3] - p[1] + 1 for p in pieces)
+    blocks.sort(key=lambda block: (round(block[0][1] / level), block[0][0]))
+    return [(piece, index) for index, block in enumerate(blocks) for piece in block]
+
+
+def match_lines(lines, ordered, handwritten=None):
+    """Each text line's pieces, in order, by how wide its letters would print. A long line may wrap
+    over several pieces of one block; a piece no line explains, such as handwriting, is skipped.
+    A printed line never takes a piece much taller than a line: that is handwriting, alone or run
+    into the print under it. Returns one list of piece indexes per line, empty for a line not
+    found, and the mean width error of the lines found."""
+    handwritten = handwritten or [False] * len(lines)
+    line_height = median(piece[3] - piece[1] + 1 for piece, _ in ordered)
+    tall = [piece[3] - piece[1] + 1 > TALL_PIECE_LINES * line_height for piece, _ in ordered]
+    widths = [piece[2] - piece[0] + 1 for piece, _ in ordered]
+    per_char = sum(widths) / max(sum(len(line) for line in lines), 1)
+    count, pieces = len(lines), len(ordered)
+    cost = [[float("inf")] * (pieces + 1) for _ in range(count + 1)]
+    step = [[None] * (pieces + 1) for _ in range(count + 1)]
+    cost[0][0] = 0.0
+    for i in range(count + 1):
+        for j in range(pieces + 1):
+            here = cost[i][j]
+            if here == float("inf"):
+                continue
+            moves = []
+            if j < pieces:
+                moves.append((i, j + 1, here + SKIP_COST, ("skip",)))
+            if i < count:
+                moves.append((i + 1, j, here + MISS_COST, ("miss",)))
+                for k in range(1, MAX_WRAP + 1):
+                    if j + k > pieces or ordered[j + k - 1][1] != ordered[j][1]:
+                        break
+                    if tall[j + k - 1] and not handwritten[i]:
+                        break
+                    printed = sum(widths[j:j + k])
+                    expected = max(len(lines[i]), 1) * per_char
+                    error = abs(log(expected / printed))
+                    if error > MAX_LINE_ERROR:
+                        continue
+                    moves.append((i + 1, j + k, here + error + WRAP_COST * (k - 1), ("take", k)))
+            for ni, nj, value, move in moves:
+                if value < cost[ni][nj]:
+                    cost[ni][nj], step[ni][nj] = value, (i, j, move)
+    taken = [[] for _ in lines]
+    i, j = count, pieces
+    while (i, j) != (0, 0):
+        pi, pj, move = step[i][j]
+        if move[0] == "take":
+            taken[pi] = list(range(pj, pj + move[1]))
+        i, j = pi, pj
+    errors = [
+        abs(log(max(len(line), 1) * per_char / sum(widths[index] for index in indexes)))
+        for line, indexes in zip(lines, taken)
+        if indexes
+    ]
+    error = sum(errors) / len(errors) if errors else float("inf")
+    # Letter width scaled from these lines alone fits any text on average; a letter is about
+    # 0.4 of a line high, so text that is not on the page gives a scale far from that.
+    usual = TYPICAL_CHAR_SHARE * median(piece[3] - piece[1] + 1 for piece, _ in ordered)
+    if not 1 / MAX_CHAR_SCALE <= per_char / usual <= MAX_CHAR_SCALE:
+        error = float("inf")
+    return taken, error
+
+
+def line_element(element, text, box, scale):
+    """One line of a shared element, with its own box back in the service's coordinates."""
+    x0, y0, x1, y1 = (value / factor for value, factor in zip(box, (*scale, *scale)))
+    coordinates = {**element["metadata"]["coordinates"], "points": [[x0, y0], [x0, y1], [x1, y1], [x1, y0]]}
+    return {**element, "text": text, "metadata": {**element["metadata"], "coordinates": coordinates}}
+
+
+def place_lines(element, image):
+    """The element as one element per line placed where it printed, or None when its lines cannot
+    be matched to the page well enough."""
+    coordinates = element["metadata"]["coordinates"]
+    scale = (image.width / coordinates["layout_width"], image.height / coordinates["layout_height"])
+    points = coordinates["points"]
+    x0, y0 = min(p[0] for p in points) * scale[0], min(p[1] for p in points) * scale[1]
+    x1, y1 = max(p[0] for p in points) * scale[0], max(p[1] for p in points) * scale[1]
+    gray = ImageOps.grayscale(image.crop((int(x0), int(y0), int(x1) + 1, int(y1) + 1)))
+    pieces = line_pieces(gray)
+    lines = [line.strip() for line in element["text"].split("\n") if line.strip()]
+    if not pieces:
+        return None
+    ordered = reading_order(pieces)
+    if len({block for _, block in ordered}) < 2:
+        # One block of lines is a paragraph that wraps: its lines must stay one paragraph.
+        return None
+    # Handwriting read as text has no order or width to match by; it goes into a signature's
+    # picture, which is cut between the printed lines around it, so it needs no box of its own.
+    handwritten = [looks_handwritten({"text": line}) for line in lines]
+    printed = [line for line, hand in zip(lines, handwritten) if not hand]
+    found_printed, error = match_lines(printed, ordered)
+    matches = iter(found_printed)
+    taken = [[] if hand else next(matches) for hand in handwritten]
+    used = sum(len(indexes) for indexes in taken)
+    found = sum(1 for indexes in taken if indexes)
+    if (
+        found < MIN_MATCHED_LINES * len(printed)
+        or len(pieces) - used > MAX_SKIPPED_PIECES * len(pieces) + HANDWRITING_PIECES * sum(handwritten)
+        or error > MAX_WIDTH_ERROR
+    ):
+        return None
+    placed = []
+    for text, indexes in zip(lines, taken):
+        if not indexes:
+            placed.append({**element, "text": text, "metadata": {k: v for k, v in element["metadata"].items() if k != "coordinates"}})
+            continue
+        boxes = [ordered[index][0] for index in indexes]
+        box = [
+            x0 + min(b[0] for b in boxes), y0 + min(b[1] for b in boxes),
+            x0 + max(b[2] for b in boxes) + 1, y0 + max(b[3] for b in boxes) + 1,
+        ]
+        placed.append(line_element(element, text, box, scale))
+    return placed
+
+
+def place_shared_lines(elements, pages):
+    """The service can return half a page, signature, addressee and copy list, as one element with
+    one box. Its lines are found on the scan and given their own boxes, so they are placed, sized
+    and recognised (a signature on the right, a memo row) like any other line."""
+    result = []
+    for element in elements:
+        metadata = element.get("metadata") or {}
+        coordinates = metadata.get("coordinates") or {}
+        points, width = coordinates.get("points"), coordinates.get("layout_width")
+        page = int(metadata.get("page_number") or 1)
+        lines = [line for line in (element.get("text") or "").split("\n") if line.strip()]
+        wide = bool(points and width) and (max(p[0] for p in points) - min(p[0] for p in points)) / width > SHARED_BOX_SHARE
+        # Long lines are a paragraph wrapping across the box; its lines must stay one paragraph.
+        prose = bool(lines) and median(len(line) for line in lines) >= PROSE_LINE_CHARS
+        if element.get("type") not in TEXT_TYPES or len(lines) < SHARED_MIN_LINES or not wide or prose or page > len(pages):
+            result.append(element)
+            continue
+        with Image.open(pages[page - 1]) as image:
+            placed = place_lines(element, image.convert("RGB"))
+        result.extend(placed or [element])
+    return result
 
 
 def upright(elements, pages):
@@ -620,6 +1057,7 @@ def main(argv):
     if Path(source).suffix.lower() == ".pdf":
         elements = with_digital_pages(elements, source)
     upright(elements, pages)
+    elements = place_shared_lines(elements, pages)
     scan_sizes = {}
     for number, page in enumerate(pages, 1):
         with Image.open(page) as image:
@@ -634,6 +1072,7 @@ def main(argv):
     join_continued_tables(spec)
     renumber_serials(spec)
     balance_widths(spec)
+    apply_type(spec, pages, cm_per_pixel)
     crop_pages = {crop["name"]: crop.get("page", 1) for crop in crops}
     missing = place_pictures(spec, run_crops(crops, pages, qa), qa, cm_per_pixel, crop_pages)
 

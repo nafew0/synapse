@@ -397,3 +397,87 @@ def test_crop_boxes_use_each_page_s_own_scan_size():
         {1: (2000, 3000), 2: (600, 400)},
     )
     assert crops[0]["box"] == [0, 0, 300, 200]
+
+
+def test_a_spaced_visarga_joins_its_word_or_becomes_a_colon():
+    spec, _ = convert([
+        el("Title", "০৪। অনার্স পাঠ্যসূচী (Syllabus) ঃ"),
+        el("NarrativeText", "তারিখ ঃ ০৩/১১/২০২৬ খ্রিঃ, জনাব মোঃ মাহবুব আলম, বিঃ দ্রঃ " + "লেখা " * 30),
+    ])
+    title, body = spec["blocks"]
+    assert title["text"].endswith("(Syllabus) :")
+    assert body["text"].startswith("তারিখঃ ০৩/১১/২০২৬ খ্রিঃ, জনাব মোঃ মাহবুব আলম, বিঃ দ্রঃ")
+
+
+def test_a_table_cell_s_spaced_visarga_joins_its_word():
+    rows = table_rows("<table><tr><td>ফোন ঃ ০২-৯৯৬৬৯</td><td>মোঃ করিম</td><td>০৮ ঃ</td></tr></table>")
+    assert [cell["text"] for cell in rows[0]] == ["ফোনঃ ০২-৯৯৬৬৯", "মোঃ করিম", "০৮ :"]
+
+
+def test_text_blocks_carry_their_scan_box_for_type_measuring():
+    spec, _ = convert([
+        el("Title", "জাতীয় বিশ্ববিদ্যালয়\nবাংলাদেশ", **box(500, 100, 1500, 300)),
+        el("Title", "অফিস আদেশ", **box(800, 400, 1200, 460)),
+        el("NarrativeText", "লেখা " * 60, **box(300, 500, 1700, 700)),
+        el("ListItem", "১। প্রথম কাজ", **box(300, 720, 1700, 760)),
+    ], (2000, 3000))
+    letterhead = spec["blocks"][0]
+    assert [line["type_box"] for line in letterhead["lines"]] == [[500, 100, 1500, 300]] * 2
+    assert [line["type_line"] for line in letterhead["lines"]] == [[0, 2], [1, 2]]
+    body = next(b for b in spec["blocks"] if b["type"] == "paragraph")
+    assert body["type_box"] == [300, 500, 1700, 700] and body["type_page"] == 1
+    items = next(b for b in spec["blocks"] if b["type"] == "list")
+    assert items["item_boxes"][0]["type_box"] == [300, 720, 1700, 760]
+
+
+def test_no_scan_means_no_type_boxes():
+    spec, _ = convert([el("NarrativeText", "লেখা " * 60, **box(300, 500, 1700, 700))])
+    assert "type_box" not in spec["blocks"][0]
+
+
+def test_lines_from_one_wide_box_are_not_centred_by_that_box():
+    """A read that returns half a page as one element gives every line the same box. Its middle
+    is not where any one line sits, so the lines must not be centred or indented from it."""
+    block_text = "কর্তৃপক্ষের অনুমোদনক্রমে,\nতাহমিনা রহমান\nযুগ্মসচিব\nপ্রকৌ. মোহাম্মদ জিয়াউর রহমান"
+    spec, _ = convert([
+        el("NarrativeText", "লেখা " * 60, **box(180, 400, 1700, 600)),
+        el("NarrativeText", block_text, **box(240, 900, 1760, 2100)),
+    ], (2000, 3000))
+    shared = [b for b in spec["blocks"] if b.get("text") in block_text.split("\n")]
+    assert len(shared) == 4
+    assert not any(b.get("align") == "center" or b.get("left_indent_cm") for b in shared)
+
+
+def test_handwriting_beside_a_signature_goes_into_its_picture_not_the_text():
+    """A read returned a signature's handwriting as text: a note, a name in Latin letters and a
+    date. On a Bangla page those lines are the signature itself."""
+    spec, crops = convert([
+        el("NarrativeText", "বাংলাদেশ হাই-টেক পার্ক কর্তৃপক্ষ কর্তৃক বাস্তবায়নাধীন প্রকল্পে কর্মরত " * 3, **box(180, 300, 1700, 500)),
+        el("NarrativeText", "কর্তৃপক্ষের অনুমোদনক্রমে,", **box(1300, 560, 1650, 600)),
+        el("NarrativeText", "১৯.০৯.২৫", **box(1350, 620, 1500, 660)),
+        el("NarrativeText", "Tahmina Rahman", **box(1250, 640, 1650, 760)),
+        el("NarrativeText", "16.09.26", **box(1500, 740, 1650, 780)),
+        el("NarrativeText", "তাহমিনা রহমান", **box(1380, 800, 1600, 840)),
+        el("NarrativeText", "যুগ্মসচিব", **box(1420, 850, 1560, 890)),
+        el("NarrativeText", "প্রকৌ. মোহাম্মদ জিয়াউর রহমান", **box(200, 900, 700, 940)),
+    ], (2000, 3000))
+    texts = [b.get("text", "") for b in spec["blocks"]] + [l for b in spec["blocks"] for l in b.get("lines", [])]
+    assert not any(t in ("Tahmina Rahman", "16.09.26", "১৯.০৯.২৫") for t in texts)
+    signature = next(b for b in spec["blocks"] if b["type"] == "signature")
+    assert signature["intro"] == "কর্তৃপক্ষের অনুমোদনক্রমে," and signature["lines"] == ["তাহমিনা রহমান", "যুগ্মসচিব"]
+    crop = next(c for c in crops if c["name"].startswith("sig"))
+    assert crop["box"][1] <= 620 and crop["box"][3] <= 800 and crop["box"][0] >= 1200
+    assert any(b.get("text") == "প্রকৌ. মোহাম্মদ জিয়াউর রহমান" for b in spec["blocks"])
+
+
+def test_short_latin_lines_on_an_english_page_are_kept_as_text():
+    spec, _ = convert([
+        el("NarrativeText", "The commission has approved the posting of the officer named below. " * 3, **box(180, 300, 1700, 500)),
+        el("NarrativeText", "By order,", **box(1300, 560, 1650, 600)),
+        el("NarrativeText", "Tahmina Rahman", **box(1380, 800, 1600, 840)),
+        el("NarrativeText", "Joint Secretary", **box(1420, 850, 1560, 890)),
+    ], (2000, 3000))
+    signature = next(b for b in spec["blocks"] if b["type"] == "signature")
+    assert "Tahmina Rahman" in [signature.get("intro"), *signature["lines"]] or any(
+        b.get("text") == "Tahmina Rahman" for b in spec["blocks"]
+    )

@@ -28,11 +28,24 @@ DATE_INSIDE = re.compile(r"(?:তারিখ|Date\b)", re.IGNORECASE)
 DATE_ONLY = re.compile(r"^[০-৯\d]{1,2}\s+\S+\s+[০-৯\d]{4}(?:\s*\S*)?$")
 LIST_NUMBER = re.compile(r"^\s*([০-৯\d]+(?:\s*[-–]\s*[০-৯\d]+)?\s*[।)]|[০-৯\d]+\.(?=\s)|[ক-হ]\s*[।)]|[•·])\s*(.*)$", re.DOTALL)
 CELL_NUMBER = re.compile(r"\s+(?=[০-৯\d]{1,2}[.।]\s)")
+# Visarga is a mark that needs a letter under it. Typed as a colon after a space or bracket, as old
+# Bijoy-era notices do ("তারিখ ঃ"), Word draws it on a dotted circle. Joined to the word before it,
+# it draws as itself; with no Bangla letter to join, a colon looks the same on paper.
+BANGLA_BASE = "\u0981\u0982\u0985-\u09b9\u09bc-\u09cc\u09ce\u09d7\u09dc-\u09df\u09e0-\u09e3"
+SPACED_VISARGA = re.compile(rf"(?<=[{BANGLA_BASE}])[ \u00a0]+\u0983")
+LOOSE_VISARGA = re.compile(rf"(?<![{BANGLA_BASE}])\u0983")
+BANGLA_LETTER = re.compile(r"[\u0985-\u09b9\u09dc-\u09df]")
+LATIN_LETTER = re.compile(r"[A-Za-z]")
+CONTACT = re.compile(r"@|www\.|https?:|\.(?:com|org|gov|edu|bd)\b", re.IGNORECASE)
+MAX_HANDWRITTEN_CHARS = 25
+SIGNATURE_LINES_ABOVE = 3
+MAX_SIGNATURE_LINES_ABOVE = 6
 HANDWRITTEN_DATE = re.compile(r"[০-৯\d]{1,2}[/.-][০-৯\d]{1,2}[/.-][০-৯\d]{2,4}$")
 SHORT_LINE = 70
 MAX_SIGNATURE_LINES = 5
 PICTURE_TYPES = {"Image", "Figure", "Picture"}
 DROPPED_TYPES = {"PageBreak", "PageNumber"}
+TYPE_MEASURED = {"title", "heading", "paragraph"}
 TEXT_TYPES = {"NarrativeText", "UncategorizedText", "ListItem", "Form"}
 MIN_PICTURE_SHARE = 0.002
 RIGHT_SIDE_SHARE = 0.55
@@ -50,6 +63,7 @@ POINTS_PER_CM = 28.35
 MAX_GAP_PT = 60
 MIN_INDENT_CM = 0.25
 CENTERED_MAX_WIDTH = 0.8
+SHARED_BOX_SHARE = 0.5
 LARGE_TYPE_RATIO = 1.2
 MAX_TITLE_SIZE = 18
 MIN_SIGNATURE_BLOCK_CM = 5.0
@@ -90,7 +104,7 @@ class TableParser(HTMLParser):
     def handle_endtag(self, tag):
         if tag in ("td", "th"):
             if self.cell is not None:
-                self.cell["text"] = re.sub(r"[ \t]+", " ", self.cell["text"]).strip()
+                self.cell["text"] = with_colons(re.sub(r"[ \t]+", " ", self.cell["text"]).strip())
             self.cell = None
 
     def handle_data(self, data):
@@ -109,8 +123,34 @@ def table_rows(html):
     return rows
 
 
+def with_colons(text):
+    return LOOSE_VISARGA.sub(":", SPACED_VISARGA.sub("\u0983", text))
+
+
+def is_bangla_page(elements):
+    """Whether most of the letters on the page are Bangla."""
+    text = " ".join(text_of(e) for e in elements)
+    return len(BANGLA_LETTER.findall(text)) > len(LATIN_LETTER.findall(text))
+
+
+def looks_handwritten(element):
+    """On a Bangla page, a line beside a signature that is only a date, or a few Latin letters with
+    no email or website, is the signer's hand the service read as text: a name, a date, a note."""
+    text = text_of(element)
+    if not text or element.get("type") in PICTURE_TYPES:
+        return False
+    if re.fullmatch(r"[০-৯\d]{1,2}[/.-][০-৯\d]{1,2}[/.-][০-৯\d]{2,4}", text):
+        return True
+    return (
+        len(text) <= MAX_HANDWRITTEN_CHARS
+        and not BANGLA_LETTER.search(text)
+        and bool(LATIN_LETTER.search(text))
+        and not CONTACT.search(text)
+    )
+
+
 def text_of(element):
-    return (element.get("text") or "").strip()
+    return with_colons(element.get("text") or "").strip()
 
 
 def is_memo(element):
@@ -214,7 +254,27 @@ def split_element(element):
         else:
             paragraph.append(line)
     flush()
+    box = layout_box(element)
+    if len(blocks) > 1 and box and (box[2] - box[0]) / box[4] > SHARED_BOX_SHARE:
+        # One wide box for several blocks says where none of them sits on its own; a narrow one,
+        # such as a signature with its date, still puts all of them on its side of the page.
+        blocks = [{**block, "_shared": True} for block in blocks]
+    if all_short and len(blocks) == len(lines) > 1:
+        # Remember which line each is, so its own type can be measured.
+        blocks = [{**block, "_line": [index, len(lines)]} for index, block in enumerate(blocks)]
     return blocks
+
+
+def line_elements(elements):
+    """One element per printed line. A line returned with others in one box keeps its place in the
+    box, so its own size can be measured there."""
+    lines = []
+    for element in elements:
+        parts = [part.strip() for part in text_of(element).split("\n") if part.strip()]
+        for index, part in enumerate(parts):
+            place = element.get("_line") or ([index, len(parts)] if len(parts) > 1 else None)
+            lines.append({**element, "text": part, "_line": place})
+    return lines
 
 
 def prepare(elements):
@@ -232,13 +292,25 @@ def is_speck(element):
 
 
 def is_centered(element):
+    if element.get("_shared"):
+        return False
     box = layout_box(element)
     return bool(box) and abs((box[0] + box[2]) / 2 / box[4] - 0.5) <= CENTER_TOLERANCE
 
 
 def is_right_side(element):
+    if element.get("_shared"):
+        return False
     box = layout_box(element)
     return bool(box) and box[0] / box[4] >= RIGHT_SIDE_SHARE
+
+
+def same_side(first, other):
+    """Whether two lines sit on the same side of the page: the lines under a signature on the right
+    do not run on into an addressee printed on the left. Lines with no position count as alike."""
+    if not layout_box(first) or not layout_box(other):
+        return True
+    return is_right_side(first) == is_right_side(other)
 
 
 def box_of(element, scan_size):
@@ -307,6 +379,43 @@ def line_height(elements):
 SIGNATURE_OVERLAP = 0.35
 
 
+def above_printed(hand, printed, height, above=None):
+    """The handwriting's box when each line has its own: from the top of the handwriting on the
+    printed lines' side, or a few lines up when there is none, down to the first printed line. It
+    never reaches above the line before the signature, or more than a few lines up: a handwritten
+    line the service misplaced would otherwise pull in the text above."""
+    boxes = [layout_box(p) for p in printed if layout_box(p)]
+    x0, x1 = min(b[0] for b in boxes), max(b[2] for b in boxes)
+    width, page_height = boxes[0][4], boxes[0][5]
+    # Printed lines above the first placed one, such as a name run into the handwriting, sit a line
+    # each above it.
+    unplaced = next(index for index, p in enumerate(printed) if layout_box(p))
+    top_of_print = boxes[0][1] - unplaced * (height or 0)
+    reach = (x1 - x0) * 0.5
+    beside = [
+        b for b in map(layout_box, hand)
+        if b and b[3] <= top_of_print + height and b[2] >= x0 - reach and b[0] <= x1 + reach
+    ]
+    top = min((b[1] for b in beside), default=top_of_print - SIGNATURE_LINES_ABOVE * (height or 0))
+    top = max(top, top_of_print - MAX_SIGNATURE_LINES_ABOVE * (height or 0))
+    ceiling = layout_box(above) if above else None
+    page = (printed[0].get("metadata") or {}).get("page_number")
+    limit = None
+    if ceiling and ceiling[3] < top_of_print and (above.get("metadata") or {}).get("page_number") == page:
+        top = max(top, ceiling[3])
+        limit = ceiling[3]
+    left, right = min([x0, *(b[0] for b in beside)]), max([x1, *(b[2] for b in beside)])
+    return {
+        "ceiling": limit,
+        "page_number": page,
+        "coordinates": {
+            "points": [[left, top], [left, top_of_print], [right, top_of_print], [right, top]],
+            "layout_width": width,
+            "layout_height": page_height,
+        },
+    }
+
+
 def signature_box(element, printed_lines, height):
     """The handwriting's box. The service's box for a signature block starts at the handwriting."""
     box = layout_box(element)
@@ -355,6 +464,7 @@ def place_blocks(blocks, margins, body_line_height):
         box = block.pop("_box", None)
         page = block.pop("_page", None)
         date_x = block.pop("_date_x", None)
+        shared = block.pop("_shared", False)
         landscape = start_page(block, box, previous_page, page, landscape)
         if page is not None:
             previous_page = page
@@ -373,7 +483,7 @@ def place_blocks(blocks, margins, body_line_height):
             block["space_before"] = 0
 
         share = (x1 - x0) / width
-        centered = abs((x0 + x1) / 2 / width - 0.5) <= CENTER_TOLERANCE and share < CENTERED_MAX_WIDTH
+        centered = not shared and abs((x0 + x1) / 2 / width - 0.5) <= CENTER_TOLERANCE and share < CENTERED_MAX_WIDTH
         if kind in ("title", "heading") or (kind == "paragraph" and "align" not in block):
             short = len(block.get("text", "")) <= SHORT_LINE
             if centered and (kind != "paragraph" or short):
@@ -386,7 +496,7 @@ def place_blocks(blocks, margins, body_line_height):
                 block["size"] = round(min(FONT["size"] * ratio, MAX_TITLE_SIZE), 1)
         left = x0 * cm - left_margin
         right = page_width - right_margin - x1 * cm
-        if block.get("align") != "center" and kind in ("paragraph", "heading", "title", "list"):
+        if not shared and block.get("align") != "center" and kind in ("paragraph", "heading", "title", "list"):
             if left >= MIN_INDENT_CM:
                 block["left_indent_cm"] = round(left, 2)
             if kind == "paragraph" and right >= MIN_INDENT_CM * 2 and len(block.get("text", "")) > SHORT_LINE:
@@ -410,9 +520,14 @@ class SpecBuilder:
         self.crops = []
         self.signatures = 0
         self.index = 0
+        self.bangla = is_bangla_page(self.elements)
 
     def add(self, block, *elements):
         """Adds a block, remembering where its elements sat so place_blocks can measure from them."""
+        if block["type"] in TYPE_MEASURED and elements:
+            self.type_mark(block, *elements)
+        if any(element.get("_shared") for element in elements):
+            block["_shared"] = True
         boxes = [box for box in map(layout_box, elements) if box]
         if elements:
             block["_page"] = int((elements[0].get("metadata") or {}).get("page_number") or 1)
@@ -433,10 +548,29 @@ class SpecBuilder:
             return self.scan_size
         return self.scan_size.get(int((element.get("metadata") or {}).get("page_number") or 1))
 
+    def type_mark(self, target, *elements):
+        """Notes where the text sat on the scan, so its size and weight can be measured there. A line
+        sharing a wide box with others, and with no place in it, has nothing of its own to measure."""
+        if any(e.get("_shared") and not e.get("_line") for e in elements):
+            return target
+        boxes = [box for box in (box_of(e, self.scan_size_of(e)) for e in elements) if box]
+        if boxes:
+            target["type_box"] = [min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)]
+            target["type_page"] = int((elements[0].get("metadata") or {}).get("page_number") or 1)
+            if len(elements) == 1 and elements[0].get("_line"):
+                target["type_line"] = elements[0]["_line"]
+        return target
+
     def crop(self, name, element):
+        metadata = element.get("metadata") or {}
         box = box_of(element, self.scan_size_of(element))
-        page = int((element.get("metadata") or {}).get("page_number") or 1)
-        self.crops.append({"name": name, "box": box, "page": page})
+        page = int(metadata.get("page_number") or 1)
+        crop = {"name": name, "box": box, "page": page}
+        if metadata.get("ceiling") is not None and box:
+            # How high the crop may grow: the bottom of the line above, in the scan's pixels.
+            scan_height = self.scan_size_of(element)[1]
+            crop["ceiling"] = round(metadata["ceiling"] * scan_height / metadata["coordinates"]["layout_height"])
+        self.crops.append(crop)
         return f"{self.crops_dir}/{name}.png"
 
     def letterhead(self):
@@ -454,12 +588,13 @@ class SpecBuilder:
                     break
                 run.append(element)
             run = run[:-1] if len(run) >= 2 else []
-        lines = [text_of(e) for e in run if e.get("type") not in PICTURE_TYPES and text_of(e)]
+        texts = [e for e in run if e.get("type") not in PICTURE_TYPES and text_of(e)]
         pictures = [e for e in run if e.get("type") in PICTURE_TYPES]
-        if lines or pictures:
+        if texts or pictures:
             block = {"type": "letterhead", "lines": [], "logo_width_cm": LOGO_WIDTH_CM}
-            for index, line in enumerate(lines):
-                block["lines"].append({"text": line, "size": 14 if index == 0 else 11, "bold": index == 0})
+            for index, element in enumerate(line_elements(texts)):
+                line = {"text": text_of(element), "size": 14 if index == 0 else 11, "bold": index == 0}
+                block["lines"].append(self.type_mark(line, element))
             if pictures:
                 block["logo"] = self.crop("logo", pictures[0])
             self.add(block, *run)
@@ -496,14 +631,18 @@ class SpecBuilder:
     def signature(self, element=None):
         """A signature and the short printed lines under it. The line just above is its intro.
 
-        The service often returns no picture for the handwriting, so the crop may need a box.
+        The service often returns no picture for the handwriting, so the crop may need a box. On a
+        Bangla page it can also return the handwriting as text; those lines go into the crop.
         """
         self.signatures += 1
         block = {"type": "signature", "image": "", "image_width_cm": SIGNATURE_WIDTH_CM, "lines": []}
+        above = self.elements[self.index - 1] if self.index > 0 else None
+        hand = self.handwriting()
         first = self.elements[self.index] if self.index < len(self.elements) else {}
         previous = self.blocks[-1] if self.blocks else None
         if previous and previous.get("type") == "paragraph" and len(previous["text"]) <= SHORT_LINE:
             block["intro"] = self.blocks.pop()["text"]
+        printed = []
         while (
             self.index < len(self.elements)
             and len(block["lines"]) < MAX_SIGNATURE_LINES
@@ -511,23 +650,48 @@ class SpecBuilder:
             and is_short(self.elements[self.index])
             and not is_memo(self.elements[self.index])
             and not is_date_label(self.elements[self.index])
+            and (
+                same_side(first, self.elements[self.index])
+                or (self.bangla and looks_handwritten(self.elements[self.index]))
+            )
         ):
-            line = text_of(self.elements[self.index])
+            current = self.elements[self.index]
+            line = text_of(current)
             self.index += 1
+            if self.bangla and looks_handwritten(current):
+                if len(printed) == 1 and not hand and "intro" not in block:
+                    # The line above the handwriting introduces the signature.
+                    block["intro"] = block["lines"].pop()
+                    above = printed.pop()
+                hand.append(current)
+                continue
             # A handwritten date beside the signature is inside its crop already.
             if not (HANDWRITTEN_DATE.search(line) and not block["lines"]):
                 block["lines"].append(line)
+                printed.append(current)
         if element is not None:
             source = element
+        elif printed and all(p.get("metadata") is not first.get("metadata") for p in printed[1:]) and (
+            hand or len(printed) > 1
+        ) and any(layout_box(p) for p in printed):
+            source = {"metadata": above_printed(hand, printed, self.line_height, above)}
         else:
-            printed = len(block["lines"]) + sum(
+            count = len(block["lines"]) + sum(
                 1
                 for following in self.elements[self.index :]
                 if following.get("metadata") is first.get("metadata") and is_date_label(following)
             )
-            source = {"metadata": signature_box(first, printed, self.line_height) or {}}
+            source = {"metadata": signature_box(first, count, self.line_height) or {}}
         block["image"] = self.crop(f"sig{self.signatures}", source)
-        self.add(block, element if element is not None else first)
+        self.add(block, element if element is not None else (printed[0] if printed else first))
+
+    def handwriting(self):
+        """The handwritten lines, read as text, that start a signature on a Bangla page."""
+        hand = []
+        while self.bangla and self.index < len(self.elements) and looks_handwritten(self.elements[self.index]):
+            hand.append(self.elements[self.index])
+            self.index += 1
+        return hand
 
     def picture(self, element, position):
         """A picture low on the page beside text is a signature; anything else stays a picture."""
@@ -538,14 +702,19 @@ class SpecBuilder:
         self.add({"type": "image", "path": self.crop(f"image{position}", element)}, element)
 
     def list_items(self):
-        items = []
+        items, boxes = [], []
         first = self.elements[self.index]
         while self.index < len(self.elements) and self.elements[self.index].get("type") == "ListItem":
-            text = text_of(self.elements[self.index])
+            element = self.elements[self.index]
+            text = text_of(element)
             match = LIST_NUMBER.match(text)
             items.append([match.group(1).strip(), match.group(2).strip()] if match else ["•", text])
+            boxes.append(self.type_mark({}, element))
             self.index += 1
-        self.add({"type": "list", "items": items, "hanging_cm": 0.7}, first)
+        block = {"type": "list", "items": items, "hanging_cm": 0.7}
+        if any(boxes):
+            block["item_boxes"] = boxes
+        self.add(block, first)
 
     def body(self):
         titled = any(block["type"] == "title" for block in self.blocks)
@@ -559,7 +728,9 @@ class SpecBuilder:
                 continue
             if text and (is_memo(element) or is_date_label(element)) and self.memo():
                 continue
-            if kind in ("NarrativeText", "UncategorizedText") and is_short(element) and is_right_side(element):
+            if kind in ("NarrativeText", "UncategorizedText") and is_short(element) and (
+                is_right_side(element) or (self.bangla and looks_handwritten(element))
+            ):
                 self.signature()
                 continue
             self.index += 1

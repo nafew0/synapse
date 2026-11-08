@@ -328,14 +328,16 @@ TABLE_BLOCKS = {"memo", "signature", "table"}
 
 def numbered_list(doc, block, style):
     hanging = Cm(float(block.get("hanging_cm", 1.4)))
-    for number, text in block.get("items", []):
-        paragraph = shape(doc.add_paragraph(), style, block, align="justify", after=1)
+    styles = block.get("item_styles") or []
+    for index, (number, text) in enumerate(block.get("items", [])):
+        item = {**block, **(styles[index] if index < len(styles) else {})}
+        paragraph = shape(doc.add_paragraph(), style, item, align="justify", after=1)
         fmt = paragraph.paragraph_format
         start = Cm(float(block.get("left_indent_cm", 0))) + hanging
         fmt.left_indent = start
         fmt.first_line_indent = -hanging
         fmt.tab_stops.add_tab_stop(start)
-        add_text(paragraph, f"{number}\t{text}", style, block)
+        add_text(paragraph, f"{number}\t{text}", style, item)
 
 
 def data_table(doc, block, style):
