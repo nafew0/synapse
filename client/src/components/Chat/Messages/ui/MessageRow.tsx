@@ -96,7 +96,7 @@ export default function MessageRow({
             className={cn(
               'flex min-h-[20px] max-w-full flex-grow flex-col gap-0',
               isCreatedByUser && !isEditing
-                ? 'w-fit rounded-theme-surface rounded-br-theme-control bg-surface-tertiary px-theme-normal py-2.5'
+                ? 'lc-user-bubble w-fit rounded-theme-surface rounded-br-theme-control bg-surface-tertiary px-theme-normal py-2.5'
                 : 'w-full',
             )}
             data-testid="message-body"
