@@ -259,6 +259,7 @@ html {
   --lc-rail-hover: rgba(19, 79, 84, 0.07);
   --lc-rail-active-background: #eef6f5;
   --lc-rail-active-icon: 19 79 84;
+  --lc-rail-new-icon: 217 95 47;
   --lc-action-background: #f47948;
   --lc-action-hover: #f68b60;
   --lc-on-action: 27 13 6;
@@ -380,6 +381,7 @@ html {
   --lc-rail-hover: rgba(127, 208, 204, 0.08);
   --lc-rail-active-background: #1d3a40;
   --lc-rail-active-icon: 127 208 204;
+  --lc-rail-new-icon: 244 121 72;
   --lc-stop-background: #1d3a40;
   --lc-on-stop: 127 208 204;
   --lc-composer-border: linear-gradient(135deg, rgba(20, 140, 120, 0.55), rgba(233, 110, 40, 0.35) 65%, rgba(255, 255, 255, 0.06));
@@ -428,6 +430,8 @@ html {
 .lc-rail-new { background: var(--lc-action-background); color: rgb(var(--lc-on-action)); }
 .lc-rail-new:hover { background: var(--lc-action-hover); }
 .lc-rail-new svg { color: rgb(var(--lc-on-action)); }
+.lc-rail-new-icon { color: rgb(var(--lc-rail-new-icon)); }
+.lc-rail-item:hover .lc-rail-new-icon { background: var(--lc-rail-hover); }
 .lc-task-tile-icon { background: rgba(19, 79, 84, 0.07); color: #134f54; }
 .dark .lc-task-tile-icon { background: rgba(127, 208, 204, 0.1); color: rgb(127 208 204); }
 .lc-chat-sidebar { background: var(--lc-chat-sidebar-background); border-right: 1px solid rgba(19, 79, 84, 0.1); color: rgb(28 50 48); }
