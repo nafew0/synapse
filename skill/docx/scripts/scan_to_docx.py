@@ -21,7 +21,7 @@ from pathlib import Path
 from PIL import Image, ImageFilter, ImageOps
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from elements_spec import SHARED_BOX_SHARE, TEXT_TYPES, convert, looks_handwritten  # noqa: E402
+from elements_spec import SHARED_BOX_SHARE, TEXT_TYPES, convert, looks_handwritten, reflowed  # noqa: E402
 
 RENDER_DPI = 150
 PAGE_WIDTH_CM = 21.0
@@ -85,7 +85,12 @@ WORD_CHARACTER_SIZE = 10.5
 LONG_TABLE_SIZE = 8.5
 CELL_PADDING_CM = 0.25
 SERIAL = re.compile(r"^\(?([0-9০-৯]{1,3})[.)।]?$")
+SERIAL_OUTSIDE = re.compile(r"^\(?[0-9০-৯]{1,3}[.)।]$")
+PAGE_NUMBER = re.compile(r"^\s*(?:[-–]\s*)?[0-9০-৯]{1,4}(?:\s*[-–])?\s*$")
 BANGLA_DIGITS = str.maketrans("0123456789", "০১২৩৪৫৬৭৮৯")
+SERIAL_LOOKALIKES = str.maketrans("LlIi|Oo", "1111100")
+SERIAL_MARKS = "'\"`‘’"
+LEADING_SERIAL = re.compile(r"^\(?[0-9০-৯]{1,3}[.)।](?=\s|$)")
 LATIN_DIGITS = str.maketrans("০১২৩৪৫৬৭৮৯", "0123456789")
 
 
@@ -445,31 +450,71 @@ def join_continued_tables(spec):
     row. Each would start a new Word page and spill onto the next, leaving pages with a stray row.
     A table on a new page with the same columns as the table just before continues it: its repeated
     heading is dropped and the heading repeats on every Word page instead. A table that long is set in
-    smaller type."""
-    blocks = []
+    smaller type.
+
+    Between two pages of one table a reader may leave other blocks: a page number (Surya reads each
+    one) is dropped; a record's serial read outside the table ("13.") goes back into the last row
+    when that row has none; other text from the bottom of the page (part of a row the reader took
+    for a caption) stays, as a row across the whole table. Records cut at a page edge are joined
+    once the whole table is known (continue_rows)."""
+    blocks, between = [], []
     for block in spec["blocks"]:
-        previous = blocks[-1] if blocks else None
+        last = blocks[-1] if blocks else None
+        if not between and last is not None and takes_serial(last, block):
+            last["rows"][-1][0] = {**last["rows"][-1][0], "text": block["text"].strip()}
+            continue
+        if last is not None and last["type"] == "table" and (is_page_number(block) or is_loose_text(block)):
+            between.append(block)
+            continue
         if not (
             block["type"] == "table"
-            and block.get("page_break")
-            and previous is not None
-            and previous["type"] == "table"
-            and column_count(previous) == column_count(block)
+            and (block.get("page_break") or any(held.get("page_break") for held in between))
+            and last is not None
+            and last["type"] == "table"
+            and column_count(last) == column_count(block)
         ):
+            blocks += between
+            between = []
             blocks.append(block)
             continue
-        headings = previous.get("header_rows") or heading_count(previous["rows"])
+        notes = [held for held in between if not is_page_number(held)]
+        between = []
+        headings = last.get("header_rows") or heading_count(last["rows"])
         rows = block["rows"]
         repeated = 0
-        while repeated < headings and repeated < len(rows) and same_row(previous["rows"][repeated], rows[repeated]):
+        while repeated < headings and repeated < len(rows) and same_row(last["rows"][repeated], rows[repeated]):
             repeated += 1
         if headings:
-            previous["header_rows"] = headings
-        previous["size"] = LONG_TABLE_SIZE
-        previous["rows"] = continue_last_row(previous["rows"], rows[repeated:], headings)
-        if not previous.get("widths_cm") and block.get("widths_cm"):
-            previous["widths_cm"] = block["widths_cm"]
-    spec["blocks"] = blocks
+            last["header_rows"] = headings
+        last["size"] = LONG_TABLE_SIZE
+        last["rows"] += [[{"text": reflowed(note["text"]), "colspan": column_count(last)}] for note in notes]
+        last.setdefault("page_starts", []).append(len(last["rows"]))
+        last["rows"] += rows[repeated:]
+        if not last.get("widths_cm") and block.get("widths_cm"):
+            last["widths_cm"] = block["widths_cm"]
+    for block in blocks:
+        if block.get("page_starts"):
+            block["rows"] = continue_rows(block["rows"], block.pop("page_starts"), block.get("header_rows", 0))
+    spec["blocks"] = blocks + between
+
+
+def takes_serial(table, block):
+    """Whether `block` is a serial number ("13.") the read left outside `table`, whose last row
+    is a record without one."""
+    if table["type"] != "table" or block["type"] != "paragraph" or len(table["rows"]) < 2:
+        return False
+    text = block.get("text", "").strip()
+    last = table["rows"][-1]
+    return bool(SERIAL_OUTSIDE.match(text)) and not first_text(last) and any(cell.get("text") for cell in last)
+
+
+def is_loose_text(block):
+    """Plain text on the same page as the table above it, such as part of a row read as a caption."""
+    return block["type"] == "paragraph" and not block.get("page_break") and bool(block.get("text", "").strip())
+
+
+def is_page_number(block):
+    return block["type"] == "paragraph" and bool(PAGE_NUMBER.match(block.get("text", "")))
 
 
 def first_text(row):
@@ -485,31 +530,61 @@ def same_cells(a, b):
     return [int(cell.get("colspan", 1)) for cell in a] == [int(cell.get("colspan", 1)) for cell in b]
 
 
-def continue_last_row(rows, more, headings):
+def continue_rows(rows, page_starts, headings):
     """A record cut by the page edge goes on under the next page's heading with its first cell
-    empty. Where most records carry a first cell (a serial number), that row is the rest of the
-    last record, so its cells are added to that record's. Only the page's first row: an empty
-    first cell further down is a new record whose number the read lost."""
-    body = rows[headings:]
-    numbered = sum(1 for row in body if first_text(row))
-    if not body or not more or first_text(more[0]) or numbered * 2 <= len(body):
-        return rows + more
-    last, rest = body[-1], more[0]
-    if not same_cells(last, rest):
-        return rows + more
-    joined = [{**cell, "text": joined_text(cell, extra)} for cell, extra in zip(last, rest)]
-    return rows[:-1] + [joined] + more[1:]
+    empty. Where most rows of the whole table, apart from these, carry a first cell (a serial number), that row is
+    the rest of the record above it, so its cells are added to that record's. Only a page's first
+    row: an empty first cell further down is a new record whose number the read lost."""
+    starts = set(page_starts)
+    body = [row for index, row in enumerate(rows) if index >= headings and index not in starts]
+    if sum(1 for row in body if first_text(row)) * 2 <= len(body):
+        return rows
+    rows = list(rows)
+    for start in sorted(page_starts, reverse=True):
+        if start - 1 < headings or start >= len(rows) or first_text(rows[start]):
+            continue
+        last, rest = rows[start - 1], rows[start]
+        if same_cells(last, rest):
+            rows[start - 1:start + 1] = [[{**cell, "text": joined_text(cell, extra)} for cell, extra in zip(last, rest)]]
+    return rows
 
 
 def serial_value(text):
-    match = SERIAL.match(text.replace(" ", ""))
+    """The number a serial cell holds. A handwritten 1 or 0 is often read as a letter (L, l, I, O)
+    and a stroke before it as a quote, so those are read as digits when nothing else is in the cell."""
+    text = text.replace(" ", "")
+    match = SERIAL.match(text) or SERIAL.match(text.lstrip(SERIAL_MARKS).translate(SERIAL_LOOKALIKES))
     return int(match.group(1).translate(LATIN_DIGITS)) if match else None
+
+
+def is_full_width(row):
+    return len(row) == 1 and int(row[0].get("colspan", 1)) > 1
+
+
+def record_places(rows):
+    """Each row's place in the count of records, or None for a row that is not a record of its
+    own: a full-width row of other text, and the rest of a record that a full-width row cut off."""
+    places, place, previous = [], 0, None
+    for row in rows:
+        if is_full_width(row):
+            numbered = LEADING_SERIAL.match(first_text(row))
+            place += 1 if numbered else 0
+            places.append(place if numbered else None)
+        elif not first_text(row) and previous is not None and is_full_width(previous):
+            places.append(None)
+        else:
+            place += 1
+            places.append(place)
+        previous = row
+    return places
 
 
 def renumber_serials(spec):
     """Serial numbers are often written by hand, and a read turns ৬ into ১ or ৮ into 3. Where a
     table's first column counts its records and most read numbers already sit at their place in
-    the count, every record is numbered by its place, in the digits of the table's text."""
+    the count, every record is numbered by its place, in the digits of the table's text. A record
+    kept as a full-width row (part of a row read as a caption) keeps its own text and counts; the
+    rest of that record, in the row after it, does not."""
     for block in spec["blocks"]:
         if block["type"] != "table":
             continue
@@ -518,18 +593,24 @@ def renumber_serials(spec):
         if start is None:
             continue
         records = rows[start:]
-        values = [serial_value(first_text(row)) for row in records]
-        read = [value for value in values if value is not None]
-        if len(records) < 3:
+        places = record_places(records)
+        values = [
+            serial_value((LEADING_SERIAL.match(first_text(row)) or [""])[0]) if is_full_width(row) else serial_value(first_text(row))
+            for row in records
+        ]
+        read = [value for value, place in zip(values, places) if value is not None and place is not None]
+        if sum(1 for place in places if place is not None) < 3:
             continue
-        if any(first_text(row) and value is None for row, value in zip(records, values)):
+        if any(first_text(row) and value is None and not is_full_width(row) for row, value in zip(records, values)):
             continue
-        in_place = sum(1 for place, value in enumerate(values, 1) if value == place)
+        in_place = sum(1 for place, value in zip(places, values) if place is not None and value == place)
         if in_place * 2 <= len(read):
             continue
         text = " ".join(cell.get("text", "") for row in records for cell in row)
         bangla = sum(1 for ch in text if "\u0980" <= ch <= "\u09ff") > sum(1 for ch in text if ch.isascii() and ch.isalpha())
-        for place, row in enumerate(records, 1):
+        for place, row in zip(places, records):
+            if place is None or is_full_width(row):
+                continue
             number = str(place).translate(BANGLA_DIGITS) if bangla else str(place)
             row[0] = {**row[0], "text": f"{number}."}
 

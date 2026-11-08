@@ -403,6 +403,52 @@ def test_a_table_continued_on_the_next_page_joins_the_first_without_its_repeated
     assert after['page_break']
 
 
+def test_page_numbers_between_continued_tables_do_not_stop_the_join():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import join_continued_tables
+
+    spec = {'blocks': [
+        {'type': 'table', 'rows': [header_row(3), body_row(3, 'a')]},
+        {'type': 'paragraph', 'text': '1', 'size': 7},
+        {'type': 'table', 'rows': [header_row(3), body_row(3, 'b')], 'page_break': True},
+        {'type': 'paragraph', 'text': '২'},
+        {'type': 'table', 'rows': [header_row(3), body_row(3, 'c')], 'page_break': True},
+        {'type': 'paragraph', 'text': '3'},
+    ]}
+    join_continued_tables(spec)
+    assert [block['type'] for block in spec['blocks']] == ['table', 'paragraph']
+    assert [row[0]['text'] for row in spec['blocks'][0]['rows']] == ['heading 0', 'a0', 'b0', 'c0']
+
+
+def test_a_serial_read_outside_the_table_goes_back_into_its_record():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import join_continued_tables
+
+    record = [{'text': ''}, {'text': 'record text'}, {'text': ''}]
+    spec = {'blocks': [
+        {'type': 'table', 'rows': [header_row(3), body_row(3, 'a'), record]},
+        {'type': 'paragraph', 'text': '13.'},
+        {'type': 'paragraph', 'text': '11'},
+        {'type': 'table', 'rows': [header_row(3), body_row(3, 'b')], 'page_break': True},
+    ]}
+    join_continued_tables(spec)
+    assert len(spec['blocks']) == 1
+    assert [row[0]['text'] for row in spec['blocks'][0]['rows']] == ['heading 0', 'a0', '13.', 'b0']
+
+
+def test_a_page_number_before_other_text_is_kept():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import join_continued_tables
+
+    spec = {'blocks': [
+        {'type': 'table', 'rows': [header_row(3), body_row(3)]},
+        {'type': 'paragraph', 'text': '1'},
+        {'type': 'paragraph', 'text': 'after', 'page_break': True},
+    ]}
+    join_continued_tables(spec)
+    assert [block.get('text') for block in spec['blocks']] == [None, '1', 'after']
+
+
 def test_tables_with_different_columns_stay_apart():
     sys.path.insert(0, str(SCRIPTS))
     from scan_to_docx import join_continued_tables
@@ -436,6 +482,37 @@ def test_a_record_cut_at_the_page_edge_goes_on_in_the_same_row():
     assert rows[3][1]['text'] == 'কারিগরি'
 
 
+def test_text_left_between_two_pages_of_a_table_stays_as_a_row_across_it():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import join_continued_tables
+
+    spec = {'blocks': [
+        {'type': 'table', 'rows': [header_row(3), record('১.', 'a', 'b')]},
+        {'type': 'paragraph', 'text': '২. বাধ্যতামূল ক তৃতীয় ভাষা'},
+        {'type': 'paragraph', 'text': '2'},
+        {'type': 'table', 'page_break': True, 'rows': [header_row(3), record('৩.', 'c', 'd')]},
+    ]}
+    join_continued_tables(spec)
+    assert len(spec['blocks']) == 1
+    rows = spec['blocks'][0]['rows']
+    assert rows[2] == [{'text': '২. বাধ্যতামূলক তৃতীয় ভাষা', 'colspan': 3}]
+    assert rows[3][0]['text'] == '৩.'
+
+
+def test_an_early_page_edge_record_joins_once_later_pages_show_the_records_are_numbered():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import join_continued_tables
+
+    spec = {'blocks': [
+        {'type': 'table', 'rows': [header_row(3), record('১.', 'a', 'x'), record('', 'b', 'y')]},
+        {'type': 'table', 'page_break': True, 'rows': [header_row(3), record('', '', 'more'), record('৩.', 'c', 'z'), record('৪.', 'd', 'w')]},
+    ]}
+    join_continued_tables(spec)
+    rows = spec['blocks'][0]['rows']
+    assert [row[0]['text'] for row in rows] == ['heading 0', '১.', '', '৩.', '৪.']
+    assert rows[2][2]['text'] == 'y more'
+
+
 def test_a_table_without_numbered_records_keeps_the_next_page_rows_apart():
     sys.path.insert(0, str(SCRIPTS))
     from scan_to_docx import join_continued_tables
@@ -458,6 +535,31 @@ def test_misread_serial_numbers_are_counted_again_in_the_table_digits():
     renumber_serials(spec)
     assert [row[0]['text'] for row in spec['blocks'][0]['rows'][1:]] == [
         '#', '১.', '২.', '৩.', '৪.', '৫.', '৬.', '৭.', '৮.', '৯.', '১০.']
+
+
+def test_serials_read_as_letters_count_as_digits():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import renumber_serials, serial_value
+
+    assert [serial_value(text) for text in ('L.', 'l.', 'LO.', 'L7.', "'6.", 'I2)')] == [1, 1, 10, 17, 6, 12]
+    assert serial_value('লার্নিং') is None
+    serials = ['L.', '2.', '3.', 'l.', '5.', '6.', 'L7.', '8.', '9.', 'LO.']
+    rows = [header_row(2)] + [record(serial, 'text') for serial in serials]
+    spec = {'blocks': [{'type': 'table', 'header_rows': 1, 'rows': rows}]}
+    renumber_serials(spec)
+    assert [row[0]['text'] for row in spec['blocks'][0]['rows'][1:]] == [f'{n}.' for n in range(1, 11)]
+
+
+def test_a_record_kept_as_a_full_width_row_counts_and_its_rest_does_not():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import renumber_serials
+
+    rows = [header_row(3), record('L.', 'a', 'b'), [{'text': '২. ভাষা শিক্ষা a) মডিউল', 'colspan': 3}],
+            record('', '', 'f) আরও'), record('3.', 'c', 'd'), record('', 'e', 'f'), record('5.', 'g', 'h')]
+    spec = {'blocks': [{'type': 'table', 'header_rows': 1, 'rows': rows}]}
+    renumber_serials(spec)
+    out = spec['blocks'][0]['rows'][1:]
+    assert [row[0]['text'] for row in out] == ['১.', '২. ভাষা শিক্ষা a) মডিউল', '', '৩.', '৪.', '৫.']
 
 
 def test_numbers_that_do_not_count_the_records_are_left_as_read():
