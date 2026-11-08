@@ -259,7 +259,7 @@ html {
   --lc-rail-hover: rgba(19, 79, 84, 0.07);
   --lc-rail-active-background: #eef6f5;
   --lc-rail-active-icon: 19 79 84;
-  --lc-rail-new-icon: 217 95 47;
+  --lc-action-icon: 217 95 47;
   --lc-action-background: #f47948;
   --lc-action-hover: #f68b60;
   --lc-on-action: 27 13 6;
@@ -381,7 +381,7 @@ html {
   --lc-rail-hover: rgba(127, 208, 204, 0.08);
   --lc-rail-active-background: #1d3a40;
   --lc-rail-active-icon: 127 208 204;
-  --lc-rail-new-icon: 244 121 72;
+  --lc-action-icon: 244 121 72;
   --lc-stop-background: #1d3a40;
   --lc-on-stop: 127 208 204;
   --lc-composer-border: linear-gradient(135deg, rgba(20, 140, 120, 0.55), rgba(233, 110, 40, 0.35) 65%, rgba(255, 255, 255, 0.06));
@@ -430,7 +430,7 @@ html {
 .lc-rail-new { background: var(--lc-action-background); color: rgb(var(--lc-on-action)); }
 .lc-rail-new:hover { background: var(--lc-action-hover); }
 .lc-rail-new svg { color: rgb(var(--lc-on-action)); }
-.lc-rail-new-icon { color: rgb(var(--lc-rail-new-icon)); }
+.lc-rail-new-icon { color: rgb(var(--lc-action-icon)); }
 .lc-rail-item:hover .lc-rail-new-icon { background: var(--lc-rail-hover); }
 .lc-task-tile-icon { background: rgba(19, 79, 84, 0.07); color: #134f54; }
 .dark .lc-task-tile-icon { background: rgba(127, 208, 204, 0.1); color: rgb(127 208 204); }
@@ -451,8 +451,10 @@ html {
 .lc-user-avatar { background: var(--lc-user-avatar-background) !important; color: #ffffff; }
 .lc-logo-dot { background: linear-gradient(140deg, #328a8a, #134f54); }
 .dark .lc-logo-dot { background: linear-gradient(140deg, #328a8a, #134f54); }
-.lc-send-button { background: var(--lc-action-background); color: rgb(var(--lc-on-action)); box-shadow: none; }
-.lc-send-button:hover { background: var(--lc-action-hover); }
+/* Send is an orange icon on no fill, like the rail's New; empty composer shows it grey and faded. */
+.lc-send-button { background: transparent; color: rgb(var(--lc-action-icon)); box-shadow: none; }
+.lc-send-button:hover:not(:disabled) { background: var(--lc-rail-hover); }
+button.lc-send-button:disabled { color: rgb(var(--lc-rail-icon)); opacity: 0.45; }
 /* Arrival glow: on a new chat a teal-to-orange light runs once around the composer while a soft
  * halo swells and fades. Runs once per mount of the class; nothing loops. */
 @property --lc-arrive-angle { syntax: '<angle>'; inherits: false; initial-value: -60deg; }
@@ -500,8 +502,6 @@ html:not(.dark) .lc-auth-network-background-light { filter: invert(1) grayscale(
 .dark .lc-composer .text-text-secondary, .dark .lc-composer .text-text-tertiary { color: rgb(182 212 203); }
 .dark .lc-composer textarea::placeholder { color: rgb(127 162 152); }
 .dark .lc-model-pill { background: var(--lc-model-pill-background); border-color: rgba(255, 255, 255, 0.08); box-shadow: 0 0 0 1px rgb(159 214 200 / 0.25); }
-.dark .lc-send-button { background: var(--lc-action-background); color: rgb(var(--lc-on-action)); box-shadow: none; }
-.dark .lc-send-button:disabled { opacity: 0.45; }
 .dark .lc-footer { color: rgb(var(--lc-footer-body)); }
 .dark .lc-footer a { color: rgb(var(--lc-footer-label)); }
 .dark .lc-user-avatar { background: var(--lc-user-avatar-background) !important; color: rgb(var(--lc-user-avatar-text)); }
