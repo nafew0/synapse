@@ -2245,6 +2245,8 @@
   "com_ui_table_error_description": "The table failed to load. Refresh the page or try again.",
   "com_ui_teach_or_explain": "Learning",
   "com_ui_temporary": "Temporary Chat",
+  "com_ui_temporary_strip": "Temporary chat: not saved to your history",
+  "com_ui_temporary_turn_off": "Turn off",
   "com_ui_terms_accept_error": "Couldn't accept the terms. Please try again.",
   "com_ui_terms_and_conditions": "Terms and Conditions",
   "com_ui_terms_of_service": "Terms of service",
