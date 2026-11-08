@@ -66,8 +66,8 @@ const NewChatButton = memo(function NewChatButton({
           className="lc-rail-item mb-1.5 flex w-[58px] flex-col items-center gap-[3px] text-[11px] font-semibold leading-none"
           onClick={handleNewChatClick}
         >
-          <span className="lc-rail-new flex size-9 items-center justify-center rounded-[10px] transition-colors">
-            <SquarePen className="size-[18px]" aria-hidden="true" />
+          <span className="lc-rail-new-icon flex h-7 w-10 items-center justify-center rounded-full transition-colors">
+            <SquarePen className="size-5" aria-hidden="true" />
           </span>
           <span aria-hidden="true">{localize('com_nav_rail_new')}</span>
         </a>
