@@ -538,3 +538,16 @@ def test_short_latin_lines_on_an_english_page_are_kept_as_text():
     assert "Tahmina Rahman" in [signature.get("intro"), *signature["lines"]] or any(
         b.get("text") == "Tahmina Rahman" for b in spec["blocks"]
     )
+
+
+def test_a_page_number_at_the_right_edge_is_not_a_signature():
+    table = "<table><tr><th>ক্রম</th><th>কর্মসূচি</th></tr><tr><td>১</td><td>লার্নিং</td></tr></table>"
+    spec, _ = convert([
+        on_page(el("Table", "x", text_as_html=table, **wide(200, 200, 2800, 1700)), 12),
+        on_page(el("NarrativeText", "12", **wide(2850, 1900, 2890, 1950)), 12),
+        on_page(el("Table", "x", text_as_html=table, **wide(200, 200, 2800, 1700)), 13),
+        on_page(el("NarrativeText", "5", **wide(2850, 1900, 2890, 1950)), 13),
+    ])
+    kinds = [block["type"] for block in spec["blocks"]]
+    assert "signature" not in kinds
+    assert [block["text"] for block in spec["blocks"] if block["type"] == "paragraph"] == ["12", "5"]

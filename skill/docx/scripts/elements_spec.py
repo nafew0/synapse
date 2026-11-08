@@ -63,6 +63,7 @@ HANDWRITTEN_DATE = re.compile(r"[০-৯\d]{1,2}[/.-][০-৯\d]{1,2}[/.-][০-�
 SHORT_LINE = 70
 MAX_SIGNATURE_LINES = 5
 PICTURE_TYPES = {"Image", "Figure", "Picture"}
+PAGE_NUMBER = re.compile(r"^\s*(?:[-–]\s*)?[0-9০-৯]{1,4}(?:\s*[-–])?\s*$")
 DROPPED_TYPES = {"PageBreak", "PageNumber"}
 TYPE_MEASURED = {"title", "heading", "paragraph"}
 TEXT_TYPES = {"NarrativeText", "UncategorizedText", "ListItem", "Form"}
@@ -392,6 +393,12 @@ def line_elements(elements):
 def prepare(elements):
     elements = [e for e in elements if e.get("type") not in DROPPED_TYPES and not is_speck(e)]
     return [block for element in without_echoes(elements) for block in split_element(element)]
+
+
+def is_page_number_line(element):
+    """A line that is only a page number: at the page edge it is short and on the right, like the
+    lines under a signature, but it never belongs to one."""
+    return bool(PAGE_NUMBER.match(text_of(element)))
 
 
 def is_speck(element):
@@ -763,6 +770,7 @@ class SpecBuilder:
             and len(block["lines"]) < MAX_SIGNATURE_LINES
             and self.elements[self.index].get("type") in ("NarrativeText", "UncategorizedText")
             and is_short(self.elements[self.index])
+            and not is_page_number_line(self.elements[self.index])
             and not is_memo(self.elements[self.index])
             and not is_date_label(self.elements[self.index])
             and (
@@ -843,7 +851,7 @@ class SpecBuilder:
                 continue
             if text and (is_memo(element) or is_date_label(element)) and self.memo():
                 continue
-            if kind in ("NarrativeText", "UncategorizedText") and is_short(element) and (
+            if kind in ("NarrativeText", "UncategorizedText") and is_short(element) and not is_page_number_line(element) and (
                 is_right_side(element) or (self.bangla and looks_handwritten(element))
             ):
                 self.signature()

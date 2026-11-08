@@ -21,7 +21,7 @@ from pathlib import Path
 from PIL import Image, ImageFilter, ImageOps
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from elements_spec import SHARED_BOX_SHARE, TEXT_TYPES, convert, looks_handwritten, reflowed  # noqa: E402
+from elements_spec import PAGE_NUMBER, SHARED_BOX_SHARE, TEXT_TYPES, convert, looks_handwritten, reflowed  # noqa: E402
 
 RENDER_DPI = 150
 PAGE_WIDTH_CM = 21.0
@@ -86,7 +86,6 @@ LONG_TABLE_SIZE = 8.5
 CELL_PADDING_CM = 0.25
 SERIAL = re.compile(r"^\(?([0-9০-৯]{1,3})[.)।]?$")
 SERIAL_OUTSIDE = re.compile(r"^\(?[0-9০-৯]{1,3}[.)।]$")
-PAGE_NUMBER = re.compile(r"^\s*(?:[-–]\s*)?[0-9০-৯]{1,4}(?:\s*[-–])?\s*$")
 BANGLA_DIGITS = str.maketrans("0123456789", "০১২৩৪৫৬৭৮৯")
 SERIAL_LOOKALIKES = str.maketrans("LlIi|Oo", "1111100")
 SERIAL_MARKS = "'\"`‘’"
