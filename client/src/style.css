@@ -68,7 +68,8 @@
   --blue-800: 30 64 175;
   --blue-900: 30 58 138;
   --blue-950: 23 37 84;
-  --brand-purple: 154 39 142;
+  /* Upstream token name kept for the shared theme contract; Synapse maps it to brand teal. */
+  --brand-purple: 24 101 105;
   --gizmo-gray-500: 153 153 153;
   --gizmo-gray-600: 102 102 102;
   --gizmo-gray-950: 15 15 15;
@@ -147,7 +148,8 @@
 }
 
 html {
-  --brand-purple: 154 39 142;
+  /* Upstream token name kept for the shared theme contract; Synapse maps it to brand teal. */
+  --brand-purple: 24 101 105;
   --presentation: var(--white);
   --text-primary: 19 35 33;
   --text-secondary: var(--gray-600);
@@ -158,8 +160,8 @@ html {
   --link: var(--blue-600);
   --link-hover: var(--blue-700);
   --link-visited: 147 51 234;
-  --accent-primary: 245 135 31;
-  --accent-primary-hover: 232 115 12;
+  --accent-primary: 194 80 31;
+  --accent-primary-hover: 175 69 25;
   --auth-background: 255 255 255;
   --auth-surface: 255 255 255;
   --auth-surface-alt: 247 250 250;
@@ -185,8 +187,8 @@ html {
   --surface-tertiary-alt: var(--white);
   --surface-dialog: var(--white);
   --surface-overlay: var(--gray-500);
-  --surface-submit: 245 135 31;
-  --surface-submit-hover: 232 115 12;
+  --surface-submit: 194 80 31;
+  --surface-submit-hover: 175 69 25;
   --surface-destructive: var(--red-700);
   --surface-destructive-hover: var(--red-800);
   --surface-chat: var(--white);
@@ -260,6 +262,7 @@ html {
   --lc-rail-active-background: #eef6f5;
   --lc-rail-active-icon: 19 79 84;
   --lc-action-icon: 217 95 47;
+  --lc-user-bubble: #eef6f5;
   --lc-action-background: #f47948;
   --lc-action-hover: #f68b60;
   --lc-on-action: 27 13 6;
@@ -276,7 +279,7 @@ html {
   --lc-user-avatar-text: 36 18 6;
   --lc-banner-feature: linear-gradient(90deg, rgba(50, 138, 138, 0.11), rgba(245, 135, 31, 0.09));
   --lc-banner-update: rgba(50, 138, 138, 0.09);
-  --lc-banner-rule: linear-gradient(90deg, #328a8a, #f5871f);
+  --lc-banner-rule: linear-gradient(90deg, #328a8a, #f47948);
   --lc-banner-chip-update: linear-gradient(135deg, #328a8a, #134f54);
   --lc-banner-link: 27 102 103;
   --lc-banner-eyebrow-feature: 194 97 15;
@@ -286,7 +289,7 @@ html {
   --lc-banner-card-outage: linear-gradient(135deg, #e0452f, #8f1d1d);
 }
 .dark {
-  --brand-purple: 176 84 160;
+  --brand-purple: 108 196 188;
   --presentation: 23 25 26;
   --text-primary: 255 255 255;
   --text-secondary: 166 173 172;
@@ -297,8 +300,8 @@ html {
   --link: var(--blue-400);
   --link-hover: var(--blue-300);
   --link-visited: 192 132 252;
-  --accent-primary: 245 135 31;
-  --accent-primary-hover: 251 162 77;
+  --accent-primary: 244 121 72;
+  --accent-primary-hover: 246 139 96;
   --auth-background: 1 19 24;
   --auth-surface: 3 25 30;
   --auth-surface-alt: 7 32 37;
@@ -323,8 +326,8 @@ html {
   --surface-tertiary-alt: 37 41 42;
   --surface-dialog: 32 36 37;
   --surface-overlay: 0 0 0;
-  --surface-submit: 245 135 31;
-  --surface-submit-hover: 251 162 77;
+  --surface-submit: 194 80 31;
+  --surface-submit-hover: 175 69 25;
   --surface-destructive: var(--red-800);
   --surface-destructive-hover: var(--red-900);
   --surface-chat: 32 36 37;
@@ -385,6 +388,7 @@ html {
   --lc-rail-active-background: #203a39;
   --lc-rail-active-icon: 108 196 188;
   --lc-action-icon: 244 121 72;
+  --lc-user-bubble: rgb(37 41 42);
   --lc-stop-background: #203a39;
   --lc-on-stop: 108 196 188;
   --lc-composer-border: linear-gradient(#30363a, #30363a);
@@ -435,6 +439,8 @@ html {
 .lc-rail-new svg { color: rgb(var(--lc-on-action)); }
 .lc-rail-new-icon { color: rgb(var(--lc-action-icon)); }
 .lc-rail-item:hover .lc-rail-new-icon { background: var(--lc-rail-hover); }
+/* Your own messages sit on the brand mint (light) / graphite raised (dark), not upstream grey. */
+.lc-user-bubble { background-color: var(--lc-user-bubble); }
 .lc-task-tile-icon { background: rgba(19, 79, 84, 0.07); color: #134f54; }
 .dark .lc-task-tile-icon { background: rgba(108, 196, 188, 0.12); color: rgb(108 196 188); }
 .lc-chat-sidebar { background: var(--lc-chat-sidebar-background); border-right: 1px solid rgba(19, 79, 84, 0.1); color: rgb(28 50 48); }
