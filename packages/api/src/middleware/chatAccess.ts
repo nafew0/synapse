@@ -1,4 +1,5 @@
 import { ErrorTypes } from 'librechat-data-provider';
+import type { TUserChatAccess } from 'librechat-data-provider';
 import type { NextFunction, Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 
@@ -34,5 +35,35 @@ export function createChatAccessGuard(deny: DenyRequest) {
       return;
     }
     await deny(req, res, denial);
+  };
+}
+
+const CONTACT_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Whether `value` is an empty contact, an email address, or an http(s) link. */
+export function isChatAccessContact(value: string): boolean {
+  const contact = value.trim();
+  if (!contact || CONTACT_EMAIL.test(contact)) {
+    return true;
+  }
+  try {
+    const url = new URL(contact);
+    return url.protocol === 'https:' || url.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+/** What the signed-in user is told about their institution's chat access: nothing while it is open. */
+export function toUserChatAccess(
+  access?: NonNullable<ServerRequest['institution']>['chatAccess'],
+): TUserChatAccess | undefined {
+  if (!access?.ended) {
+    return undefined;
+  }
+  return {
+    ended: true,
+    ...(access.message?.trim() && { message: access.message.trim() }),
+    ...(access.contact?.trim() && { contact: access.contact.trim() }),
   };
 }

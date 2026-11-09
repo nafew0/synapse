@@ -3,6 +3,7 @@ const { logger, getTenantId, webSearchKeys } = require('@librechat/data-schemas'
 const {
   getNewS3URL,
   needsRefresh,
+  toUserChatAccess,
   GenerationJobManager,
   MCPOAuthHandler,
   MCPTokenStorage,
@@ -71,6 +72,10 @@ const getUserController = async (req, res) => {
   const appConfig = req.config ?? (await getAppConfig(getAppConfigOptionsFromUser(req.user)));
   /** @type {IUser} */
   const userData = sanitizeUserForResponse(req.user);
+  const chatAccess = toUserChatAccess(req.institution?.chatAccess);
+  if (chatAccess) {
+    userData.chatAccess = chatAccess;
+  }
   if (appConfig.fileStrategy === FileSources.s3 && userData.avatar) {
     const avatarNeedsRefresh = needsRefresh(userData.avatar, 3600);
     if (!avatarNeedsRefresh) {

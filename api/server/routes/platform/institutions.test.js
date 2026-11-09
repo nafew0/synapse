@@ -536,11 +536,16 @@ describe('platform institutions route', () => {
       expect(mockSetInstitutionChatAccess).toHaveBeenCalledWith('learn', {
         ended: true,
         message,
+        contact: '',
         changedBy: 'platform-admin-1',
       });
       const [entry] = mockRecordAuditEntry.mock.calls[0];
       expect(entry.action).toBe('institution.updated');
-      expect(entry.metadata).toEqual({ operation: 'chat_access_ended', message });
+      expect(entry.metadata).toEqual({
+        operation: 'chat_access_ended',
+        message,
+        contact: undefined,
+      });
     });
 
     it('audits restoring access as its own operation', async () => {
@@ -561,10 +566,35 @@ describe('platform institutions route', () => {
       expect(mockRecordAuditEntry.mock.calls[0][0].metadata).toEqual({
         operation: 'chat_access_restored',
         message: undefined,
+        contact: undefined,
       });
     });
 
+    it('saves a contact for members to ask for more usage', async () => {
+      mockSetInstitutionChatAccess.mockResolvedValue({
+        tenantId: 'learn',
+        name: 'LEARN',
+        chatAccess: { ended: true, message, contact: 'help@learn.ac.lk' },
+      });
+
+      const response = await invokeRoute({
+        path: '/:tenantId/chat-access',
+        method: 'put',
+        params: { tenantId: 'learn' },
+        body: { ended: true, message, contact: 'help@learn.ac.lk' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockSetInstitutionChatAccess).toHaveBeenCalledWith(
+        'learn',
+        expect.objectContaining({ contact: 'help@learn.ac.lk' }),
+      );
+      expect(mockRecordAuditEntry.mock.calls[0][0].metadata.contact).toBe('help@learn.ac.lk');
+    });
+
     it.each([
+      ['a contact that is neither an email nor a link', { ended: true, contact: 'call LEARN' }],
+      ['a script link as contact', { ended: true, contact: 'javascript:alert(1)' }],
       ['a missing flag', { message }],
       ['a non-boolean flag', { ended: 'yes' }],
       ['a message that is not text', { ended: true, message: 42 }],

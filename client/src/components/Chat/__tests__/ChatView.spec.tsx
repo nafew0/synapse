@@ -5,6 +5,7 @@ import ChatView from '../ChatView';
 
 const mockParams = jest.fn();
 const mockConversation = jest.fn();
+const mockUser = jest.fn();
 
 jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
@@ -19,6 +20,7 @@ jest.mock('~/hooks/AuthContext', () => ({
 
 jest.mock('~/data-provider', () => ({
   useGetMessagesByConvoId: () => ({ data: null, isLoading: false, isFetching: false }),
+  useGetUserQuery: () => ({ data: mockUser() }),
 }));
 
 /**
@@ -45,7 +47,10 @@ jest.mock('../Landing', () => ({ __esModule: true, default: () => <div /> }));
 jest.mock('../Messages/MessagesView', () => ({ __esModule: true, default: () => <div /> }));
 jest.mock('../Input/ChatForm', () => ({ __esModule: true, default: () => <div /> }));
 jest.mock('../Input/ConversationStarters', () => ({ __esModule: true, default: () => <div /> }));
-jest.mock('../Input/TaskTiles', () => ({ __esModule: true, default: () => null }));
+jest.mock('../Input/TaskTiles', () => ({
+  __esModule: true,
+  default: () => <div data-testid="task-tiles" />,
+}));
 
 describe('ChatView page heading', () => {
   beforeEach(() => {
@@ -129,5 +134,25 @@ describe('ChatView composer column', () => {
     expect(composerColumn).not.toBeNull();
     expect(composerColumn).not.toHaveClass('overflow-y-auto');
     expect(composerColumn).not.toHaveClass('scrollbar-gutter-stable');
+  });
+});
+
+describe('ChatView task tiles', () => {
+  beforeEach(() => {
+    mockParams.mockReturnValue({});
+    mockConversation.mockReturnValue(null);
+  });
+
+  test('offers task tiles on the landing page', () => {
+    mockUser.mockReturnValue({ id: 'u1' });
+    render(<ChatView />);
+    expect(screen.getByTestId('task-tiles')).toBeInTheDocument();
+  });
+
+  /** Tiles start a chat the institution has closed; the docked notice stands alone. */
+  test('hides them once chat access has ended', () => {
+    mockUser.mockReturnValue({ id: 'u1', chatAccess: { ended: true } });
+    render(<ChatView />);
+    expect(screen.queryByTestId('task-tiles')).not.toBeInTheDocument();
   });
 });
