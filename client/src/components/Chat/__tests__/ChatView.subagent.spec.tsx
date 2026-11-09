@@ -50,6 +50,7 @@ jest.mock('~/Providers', () => {
 });
 
 jest.mock('~/data-provider', () => ({
+  useGetUserQuery: () => ({ data: undefined }),
   useGetMessagesByConvoId: () => ({
     data: [{ messageId: 'message-1' }],
     isLoading: false,

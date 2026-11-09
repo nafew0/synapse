@@ -5,7 +5,12 @@ import { createModels, createMethods } from '@librechat/data-schemas';
 import type { AllMethods } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
-import { createChatAccessGuard, getChatAccessDenial } from './chatAccess';
+import {
+  toUserChatAccess,
+  getChatAccessDenial,
+  isChatAccessContact,
+  createChatAccessGuard,
+} from './chatAccess';
 import { validateActiveInstitution } from './institution';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -128,4 +133,48 @@ describe('createChatAccessGuard', () => {
     expect(next).toHaveBeenCalledTimes(1);
     expect(deny).not.toHaveBeenCalled();
   });
+});
+
+describe('toUserChatAccess', () => {
+  it('tells the user nothing while access is open', async () => {
+    expect(toUserChatAccess((await requestFor('bdren')).institution?.chatAccess)).toBeUndefined();
+  });
+
+  it('carries the message and contact once access has ended', async () => {
+    await methods.setInstitutionChatAccess('learn', {
+      ended: true,
+      message,
+      contact: ' help@learn.ac.lk ',
+    });
+
+    expect(toUserChatAccess((await requestFor('learn')).institution?.chatAccess)).toEqual({
+      ended: true,
+      message,
+      contact: 'help@learn.ac.lk',
+    });
+  });
+
+  it('leaves out an empty message and contact', async () => {
+    await methods.setInstitutionChatAccess('learn', { ended: true });
+
+    expect(toUserChatAccess((await requestFor('learn')).institution?.chatAccess)).toEqual({
+      ended: true,
+    });
+  });
+});
+
+describe('isChatAccessContact', () => {
+  it.each(['', 'help@learn.ac.lk', 'https://learn.ac.lk/contact', 'http://learn.ac.lk'])(
+    'accepts %p',
+    (value) => {
+      expect(isChatAccessContact(value)).toBe(true);
+    },
+  );
+
+  it.each(['learn', 'javascript:alert(1)', 'ftp://learn.ac.lk', 'help@learn'])(
+    'refuses %p',
+    (value) => {
+      expect(isChatAccessContact(value)).toBe(false);
+    },
+  );
 });

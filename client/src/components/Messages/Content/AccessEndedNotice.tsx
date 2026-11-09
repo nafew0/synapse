@@ -1,5 +1,8 @@
+import { useEffect } from 'react';
 import { Lock } from 'lucide-react';
-import { ErrorTypes } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+import { ErrorTypes, QueryKeys } from 'librechat-data-provider';
+import type { TUser } from 'librechat-data-provider';
 import { useLocalize } from '~/hooks';
 import { extractJson } from '~/utils/json';
 
@@ -26,6 +29,16 @@ export function parseAccessEnded(text: string): { info?: string } | undefined {
  */
 export default function AccessEndedNotice({ info }: { info?: string }) {
   const localize = useLocalize();
+  const queryClient = useQueryClient();
+
+  /** A refusal can arrive mid-session, before the user record knew; refresh it so the composer docks. */
+  useEffect(() => {
+    const user = queryClient.getQueryData<TUser>([QueryKeys.user]);
+    if (user != null && user.chatAccess?.ended !== true) {
+      void queryClient.invalidateQueries([QueryKeys.user]);
+    }
+  }, [queryClient]);
+
   return (
     <div
       role="status"

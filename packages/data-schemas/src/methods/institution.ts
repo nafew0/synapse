@@ -45,7 +45,7 @@ export interface InstitutionMethods {
   reactivateInstitution: (tenantId: string) => Promise<IInstitution | null>;
   setInstitutionChatAccess: (
     tenantId: string,
-    access: { ended: boolean; message?: string; changedBy?: string },
+    access: { ended: boolean; message?: string; contact?: string; changedBy?: string },
   ) => Promise<IInstitution | null>;
   closeInstitution: (tenantId: string) => Promise<IInstitution | null>;
 }
@@ -169,7 +169,7 @@ export function createInstitutionMethods(mongoose: typeof import('mongoose')): I
 
   async function setInstitutionChatAccess(
     tenantId: string,
-    access: { ended: boolean; message?: string; changedBy?: string },
+    access: { ended: boolean; message?: string; contact?: string; changedBy?: string },
   ): Promise<IInstitution | null> {
     return await getModel()
       .findOneAndUpdate(
@@ -179,6 +179,7 @@ export function createInstitutionMethods(mongoose: typeof import('mongoose')): I
             chatAccess: {
               ended: access.ended,
               message: access.message?.trim() ?? '',
+              contact: access.contact?.trim() ?? '',
               changedAt: new Date(),
               changedBy: access.changedBy ?? null,
             },
