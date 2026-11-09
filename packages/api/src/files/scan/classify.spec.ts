@@ -2,7 +2,7 @@ import os from 'os';
 import path from 'path';
 import * as fs from 'fs';
 import sharp from 'sharp';
-import { classifyPage, isGarbled, summarizeScan } from './classify';
+import { classifyPage, isGarbled, measureOperators, summarizeScan } from './classify';
 import { EmptyDocumentError, parseDocument } from '../documents/crud';
 
 /**
@@ -90,7 +90,10 @@ function buildPdf(pages: PageSpec[]): Buffer {
     let content = '';
     let xobject = '';
     if (text) {
-      content += `BT /F1 9 Tf ${invisible ? '3 Tr ' : ''}40 780 Td (${literal(text)}) Tj ET\n`;
+      const lines = (text.match(/[^]{1,90}/g) ?? [])
+        .map((line) => `(${literal(line)}) '`)
+        .join(' ');
+      content += `BT /F1 9 Tf 11 TL ${invisible ? '3 Tr ' : ''}40 790 Td ${lines} ET\n`;
     }
     if (image) {
       const width = PAGE[0] * imageScale;
@@ -226,7 +229,7 @@ describe('scan classifier', () => {
   });
 
   describe('classifyPage', () => {
-    const page = { text: '', imageCoverage: 0, hiddenText: false, pathCount: 0 };
+    const page = { text: '', imageCoverage: 0, hiddenText: false, pathCount: 0, glyphCount: 0 };
 
     it('treats a page of outlined text as a scan', () => {
       expect(classifyPage({ ...page, pathCount: 500 }, MIN_CHARS)).toBe('scan');
@@ -241,6 +244,54 @@ describe('scan classifier', () => {
       expect(classifyPage(caption, MIN_CHARS)).toBe('scan');
       const designed = { ...page, text: 'x'.repeat(2000), imageCoverage: 1 };
       expect(classifyPage(designed, MIN_CHARS)).toBe('text');
+    });
+  });
+
+  describe('a page that draws text it never gives', () => {
+    /* A UGC notice: Bijoy header fragments read, the body's 900-odd glyphs mapped to nothing. */
+    const notice = {
+      text: 'evsjv‡`k wek¦we`¨vjq gÄyix Kwgkb '.repeat(6),
+      imageCoverage: 0.015,
+      hiddenText: false,
+      pathCount: 104,
+      glyphCount: 1146,
+    };
+
+    it('needs reading as a scan, not repairing as garbled text', () => {
+      expect(isGarbled(notice.text)).toBe(true);
+      expect(classifyPage(notice, MIN_CHARS)).toBe('scan');
+    });
+
+    it('leaves a readable page alone, though spaces and conjuncts are glyphs too', () => {
+      const bangla = { ...notice, text: 'ক'.repeat(620), glyphCount: 1000 };
+      expect(classifyPage(bangla, MIN_CHARS)).toBe('text');
+      const cover = { ...notice, text: 'x'.repeat(10), glyphCount: 99 };
+      expect(classifyPage(cover, MIN_CHARS)).toBe('text');
+    });
+
+    it('counts drawn glyphs, not the spacing numbers between them', () => {
+      const ops = {
+        save: 1,
+        restore: 2,
+        transform: 3,
+        paintFormXObjectBegin: 4,
+        paintFormXObjectEnd: 5,
+        paintImageXObject: 6,
+        paintInlineImageXObject: 7,
+        paintImageMaskXObject: 8,
+        setTextRenderingMode: 9,
+        showText: 10,
+        showSpacedText: 11,
+        constructPath: 12,
+      };
+      const glyph = { unicode: '', fontChar: 'a' };
+      const measured = measureOperators({
+        fnArray: [ops.showText, ops.showSpacedText],
+        argsArray: [[[glyph, glyph, glyph]], [[glyph, -120, glyph, null]]],
+        ops,
+        pageArea: PAGE[0] * PAGE[1],
+      });
+      expect(measured.glyphCount).toBe(5);
     });
   });
 

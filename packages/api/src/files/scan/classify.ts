@@ -12,6 +12,8 @@ export interface PageSignals {
   hiddenText: boolean;
   /** Vector paths on the page; text converted to outlines has hundreds and no characters. */
   pathCount: number;
+  /** Glyphs the page draws as text, spaces included, whether or not they map to characters. */
+  glyphCount: number;
 }
 
 /** The subset of pdf.js `OPS` the measurement reads. */
@@ -38,6 +40,13 @@ const THIN_PAGE_IMAGE_COVERAGE = 0.25;
 const MOSTLY_IMAGE_MAX_CHARS = 500;
 const OUTLINED_TEXT_MIN_PATHS = 200;
 const INVISIBLE_TEXT_MODES = new Set([3, 7]);
+/**
+ * Below this many characters read per glyph drawn, most of the page's text has no characters behind
+ * it, as when a font maps its glyphs to nothing. Readable PDFs measured 0.62 or more over 1,725 pages
+ * (spaces and conjuncts make it below 1); a notice whose body was lost measured 0.18.
+ */
+const MIN_CHARS_PER_GLYPH = 0.4;
+const LOST_TEXT_MIN_GLYPHS = 100;
 
 /** Share of a page's characters that must be damaged before it counts as unreadable. */
 const GARBLED_MIN_SHARE = 0.02;
@@ -79,15 +88,19 @@ export function isGarbled(text: string): boolean {
 
 /** Sorts a page by whether its text can be used as it is. Order matters: see each rule. */
 export function classifyPage(signals: PageSignals, minChars: number): PageKind {
-  const { text, imageCoverage, hiddenText, pathCount } = signals;
+  const { text, imageCoverage, hiddenText, pathCount, glyphCount } = signals;
   /* However many characters it has, this is a scanner's guess at the picture on top of it. */
   if (hiddenText && imageCoverage >= FULL_PAGE_COVERAGE) {
+    return 'scan';
+  }
+  const chars = text.replace(/\s/g, '').length;
+  /* What text it gives may also be garbled, but no repair can bring back what it never gives. */
+  if (glyphCount >= LOST_TEXT_MIN_GLYPHS && chars / glyphCount < MIN_CHARS_PER_GLYPH) {
     return 'scan';
   }
   if (isGarbled(text)) {
     return 'garbled';
   }
-  const chars = text.replace(/\s/g, '').length;
   if (chars < minChars) {
     /* A cover or separator page is short with nothing to read in it; do not pay to OCR those. */
     const hasPicture = imageCoverage >= THIN_PAGE_IMAGE_COVERAGE;
@@ -95,6 +108,15 @@ export function classifyPage(signals: PageSignals, minChars: number): PageKind {
   }
   return imageCoverage >= MOSTLY_IMAGE_COVERAGE && chars < MOSTLY_IMAGE_MAX_CHARS ? 'scan' : 'text';
 }
+
+/** pdf.js passes a shown string as glyph objects, with numbers between them for spacing. */
+const countGlyphs = (glyphs: unknown): number =>
+  Array.isArray(glyphs)
+    ? glyphs.reduce<number>(
+        (count, glyph) => (glyph && typeof glyph === 'object' ? count + 1 : count),
+        0,
+      )
+    : 0;
 
 const multiply = (m: Matrix, n: Matrix): Matrix => [
   m[0] * n[0] + m[2] * n[1],
@@ -116,7 +138,7 @@ export function measureOperators({
   argsArray: unknown[][];
   ops: PageOps;
   pageArea: number;
-}): Pick<PageSignals, 'imageCoverage' | 'hiddenText' | 'pathCount'> {
+}): Omit<PageSignals, 'text'> {
   const images = new Set([
     ops.paintImageXObject,
     ops.paintInlineImageXObject,
@@ -126,6 +148,7 @@ export function measureOperators({
   let ctm: Matrix = [1, 0, 0, 1, 0, 0];
   let imageArea = 0;
   let pathCount = 0;
+  let glyphCount = 0;
   let textMode = 0;
   let textShown = false;
   let hiddenText = false;
@@ -147,6 +170,7 @@ export function measureOperators({
     } else if (fn === ops.showText || fn === ops.showSpacedText) {
       textShown = true;
       hiddenText = hiddenText || INVISIBLE_TEXT_MODES.has(textMode);
+      glyphCount += countGlyphs(args?.[0]);
     } else if (fn === ops.constructPath) {
       pathCount++;
     } else if (images.has(fn)) {
@@ -156,7 +180,7 @@ export function measureOperators({
     }
   }
 
-  return { imageCoverage: Math.min(imageArea / pageArea, 1), hiddenText, pathCount };
+  return { imageCoverage: Math.min(imageArea / pageArea, 1), hiddenText, pathCount, glyphCount };
 }
 
 /** The record stored with a file: 1-based pages that need OCR, and which of those are garbled. */

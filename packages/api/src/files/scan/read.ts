@@ -15,7 +15,7 @@ async function measurePage(page: PDFPageProxy, ops: PageOps): Promise<Omit<PageS
     const [x0, y0, x1, y1] = page.view;
     return measureOperators({ fnArray, argsArray, ops, pageArea: (x1 - x0) * (y1 - y0) });
   } catch {
-    return { imageCoverage: 1, hiddenText: false, pathCount: 0 };
+    return { imageCoverage: 1, hiddenText: false, pathCount: 0, glyphCount: 0 };
   }
 }
 
