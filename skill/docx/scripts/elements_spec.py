@@ -551,12 +551,17 @@ def above_printed(hand, printed, height, above=None):
     ceiling = layout_box(above) if above else None
     page = (printed[0].get("metadata") or {}).get("page_number")
     limit = None
-    if ceiling and ceiling[3] < top_of_print and (above.get("metadata") or {}).get("page_number") == page:
+    left, right = min([x0, *(b[0] for b in beside)]), max([x1, *(b[2] for b in beside)])
+    # Only a line over the signature stops it growing up; a line beside it on the left does not.
+    over = ceiling and ceiling[0] < right and left < ceiling[2]
+    if over and ceiling[3] < top_of_print and (above.get("metadata") or {}).get("page_number") == page:
         top = max(top, ceiling[3])
         limit = ceiling[3]
-    left, right = min([x0, *(b[0] for b in beside)]), max([x1, *(b[2] for b in beside)])
+    # Where the unplaced printed lines are thought to sit, to paint out of the picture.
+    unplaced_band = [[x0, top_of_print, x1, boxes[0][1]]] if unplaced else []
     return {
         "ceiling": limit,
+        "unplaced_band": unplaced_band,
         "page_number": page,
         "coordinates": {
             "points": [[left, top], [left, top_of_print], [right, top_of_print], [right, top]],
@@ -750,6 +755,10 @@ class SpecBuilder:
                 block["lines"].append(self.type_mark(line, element))
             if pictures:
                 block["logo"] = self.crop("logo", pictures[0])
+                # The crop keeps the emblem alone; the words printed under it come back as text.
+                caption = [line.strip() for line in text_of(pictures[0]).split("\n") if line.strip()]
+                if caption:
+                    block["logo_caption"] = caption
             self.add(block, *run)
         self.index = len(run)
 
@@ -793,8 +802,11 @@ class SpecBuilder:
         hand = self.handwriting()
         first = self.elements[self.index] if self.index < len(self.elements) else {}
         previous = self.blocks[-1] if self.blocks else None
+        intro_box = None
         if previous and previous.get("type") == "paragraph" and len(previous["text"]) <= SHORT_LINE:
-            block["intro"] = self.blocks.pop()["text"]
+            intro = self.blocks.pop()
+            block["intro"] = intro["text"]
+            intro_box = intro.get("_box")
         printed = []
         while (
             self.index < len(self.elements)
@@ -838,7 +850,21 @@ class SpecBuilder:
             )
             source = {"metadata": signature_box(first, count, self.line_height) or {}}
         block["image"] = self.crop(f"sig{self.signatures}", source)
+        masks = [box_of(e, self.scan_size_of(e)) for e in [*printed, *([above] if "intro" in block and above else [])]]
+        coordinates = (source.get("metadata") or {}).get("coordinates")
+        for band in (source.get("metadata") or {}).get("unplaced_band") or []:
+            x0, y0, x1, y1 = band
+            points = [[x0, y0], [x0, y1], [x1, y1], [x1, y0]]
+            masks.append(box_of({"metadata": {"coordinates": {**coordinates, "points": points}}}, self.scan_size_of(first)))
+        self.crops[-1]["mask"] = [box for box in masks if box]
         self.add(block, element if element is not None else (printed[0] if printed else first))
+        # The block starts at its intro or its handwriting, not at the printed name under them, so
+        # the gap above it is measured from there.
+        if intro_box is None and "intro" in block and above:
+            intro_box = layout_box(above)
+        tops = [b[1] for b in (intro_box, layout_box(source)) if b and block.get("_box") and b[4:6] == block["_box"][4:6]]
+        if tops and block.get("_box"):
+            block["_box"] = (block["_box"][0], min([block["_box"][1], *tops]), *block["_box"][2:])
 
     def handwriting(self):
         """The handwritten lines, read as text, that start a signature on a Bangla page."""

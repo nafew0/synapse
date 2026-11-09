@@ -24,6 +24,9 @@ INK = 200
 # Vision models downsample past this, and read_file refuses images over 1 MB.
 READ_EDGE = 1568
 WHITE = 225
+# A photo's paper is grey, often darker than WHITE: whiten from a little under its own level.
+PAPER_SHARE = 0.8
+PAPER_MARGIN = 25
 GRID_STEP = 100
 MIN_CUT_PIXELS = 2
 
@@ -48,10 +51,23 @@ def clamp_box(box, width, height):
     )
 
 
+def paper_level(gray):
+    """The paper's grey: most of a crop is paper, so a high share of its pixels are this light."""
+    histogram = gray.histogram()
+    wanted = PAPER_SHARE * sum(histogram)
+    seen = 0
+    for value, count in enumerate(histogram):
+        seen += count
+        if seen >= wanted:
+            return value
+    return 255
+
+
 def whiten(region):
     """Paper tone and scanner grain become white; ink keeps its colour."""
     gray = ImageOps.grayscale(region)
-    mask = gray.point(lambda v: 255 if v >= WHITE else 0)
+    threshold = min(WHITE, paper_level(gray) - PAPER_MARGIN)
+    mask = gray.point(lambda v: 255 if v >= threshold else 0)
     white = Image.new("RGB", region.size, "white")
     return Image.composite(white, region, mask)
 

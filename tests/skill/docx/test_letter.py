@@ -985,3 +985,80 @@ def test_handwriting_in_a_shared_box_gets_no_box_and_the_print_is_still_placed(t
     assert 'coordinates' not in by_text['16.09.26']['metadata']
     points = by_text['যুগ্মসচিব']['metadata']['coordinates']['points']
     assert abs(min(p[0] for p in points) - 830) < 30
+
+
+# Line pieces of a photographed UGC order's signature region, in its pixels, and the lengths of the
+# lines Parse read there. The handwriting under the intro comes out as two short pieces.
+ORDER_PIECES = [[[382, 0, 390, 9], 0], [[308, 38, 406, 119], 0], [[419, 2, 530, 15], 1], [[429, 29, 553, 48], 1], [[508, 48, 569, 58], 1], [[262, 13, 319, 59], 2], [[362, 10, 381, 23], 3], [[342, 24, 359, 36], 4], [[305, 37, 333, 53], 5], [[389, 35, 394, 37], 6], [[392, 45, 409, 49], 7], [[441, 57, 508, 68], 8], [[456, 74, 492, 87], 8], [[410, 91, 537, 102], 8], [[13, 85, 149, 95], 9], [[13, 102, 92, 111], 9], [[13, 118, 76, 128], 9], [[13, 134, 176, 147], 9], [[7, 159, 304, 180], 9], [[319, 133, 323, 136], 10], [[475, 157, 549, 167], 11], [[430, 168, 556, 177], 11], [[472, 175, 557, 185], 12], [[5, 198, 320, 213], 13], [[47, 215, 137, 228], 13], [[6, 232, 563, 245], 13], [[47, 248, 562, 262], 13], [[47, 266, 562, 279], 13], [[46, 282, 151, 295], 13], [[46, 299, 395, 313], 13], [[46, 316, 312, 328], 13], [[4, 332, 364, 345], 13], [[45, 349, 266, 361], 13], [[4, 366, 125, 377], 13], [[6, 219, 16, 226], 14], [[5, 302, 22, 309], 15], [[5, 319, 15, 326], 16], [[399, 329, 525, 411], 17], [[420, 417, 513, 427], 17], [[4, 353, 15, 359], 18], [[533, 361, 541, 367], 19]]
+ORDER_LINE_LENGTHS = [25, 23, 13, 9, 21, 29, 16, 12, 38, 54, 22, 18, 74, 22, 363, 71, 60, 77, 52, 28, 8, 15, 19]
+ORDER_HANDWRITTEN = [False, True, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, False, True, False, False]
+
+
+def test_a_handwritten_line_takes_its_pieces_so_the_printed_intro_keeps_one_row():
+    """With the handwriting left out of the matching, the intro wrapped over its two pieces, so
+    the signature's picture started at the intro and the handwriting had no place of its own."""
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import match_lines
+
+    lines = ['ক' * length for length in ORDER_LINE_LENGTHS]
+    ordered = [(piece, block) for piece, block in ORDER_PIECES]
+    taken, _ = match_lines(lines, ordered, ORDER_HANDWRITTEN)
+    assert taken[:3] == [[2], [3, 4], [11]]
+
+
+def test_a_handwritten_line_with_no_ink_of_its_own_takes_nothing():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import match_lines
+
+    pieces = [[0, 0, 111, 13], [22, 20, 89, 31]]
+    taken, _ = match_lines(['কর্তৃপক্ষের অনুমোদনক্রমে,', 'Tahmina Rahman', 'তাহমিনা রহমান'], [(p, 0) for p in pieces], [False, True, False])
+    assert taken == [[0], [], [1]]
+
+
+def test_crop_whitens_the_grey_paper_of_a_phone_photo(tmp_path):
+    page = Image.new('RGB', (300, 200), (196, 192, 184))
+    ImageDraw.Draw(page).line((60, 120, 120, 80, 200, 130), fill=(40, 40, 70), width=4)
+    page.save(tmp_path / 'photo.png')
+    result = run('crop.py', tmp_path / 'photo.png', tmp_path / 'qa', 'sig=40,60,230,150', cwd=tmp_path)
+
+    assert result.returncode == 0, result.stdout
+    sig = Image.open(tmp_path / 'qa' / 'sig.png')
+    assert sig.getpixel((0, 0)) == (255, 255, 255)
+
+
+def test_printed_lines_beside_a_signature_are_painted_out_before_cropping(tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import without_print
+
+    page = Image.new('RGB', (200, 100), 'white')
+    ImageDraw.Draw(page).rectangle((20, 60, 120, 70), fill='black')
+    page.save(tmp_path / 'page.png')
+    masked = without_print(tmp_path / 'page.png', [{'name': 'sig1', 'box': [0, 0, 200, 70], 'mask': [[20, 60, 120, 70]]}], tmp_path)
+
+    assert Image.open(masked).getpixel((70, 65)) == (255, 255, 255)
+    assert without_print(tmp_path / 'page.png', [{'name': 'logo', 'box': [0, 0, 50, 50]}], tmp_path) == tmp_path / 'page.png'
+
+
+def test_a_crop_is_enlarged_smoothly_and_keeps_its_shape(tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import ENLARGE, enlarge
+
+    Image.new('RGB', (40, 20), 'white').save(tmp_path / 'sig.png')
+    enlarge(tmp_path / 'sig.png')
+    assert Image.open(tmp_path / 'sig.png').size == (40 * ENLARGE, 20 * ENLARGE)
+
+
+@needs_office
+def test_the_words_under_a_logo_print_under_it(scan, tmp_path):
+    run('crop.py', scan, tmp_path / 'qa', 'logo=20,20,120,120', 'sig=280,440,440,540', cwd=tmp_path)
+    spec = spec_for(tmp_path)
+    spec['blocks'][0]['logo_caption'] = ['বাংলাদেশ', 'বিশ্ববিদ্যালয় মঞ্জুরী কমিশন']
+    (tmp_path / 'spec.json').write_text(json.dumps(spec, ensure_ascii=False), encoding='utf-8')
+
+    result = run('letter.py', 'spec.json', 'order.docx', '--source', scan, cwd=tmp_path)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    table = Document(str(tmp_path / 'order.docx')).tables[0]
+    logo_cell = table.rows[0].cells[0].text
+    assert 'বিশ্ববিদ্যালয় মঞ্জুরী কমিশন' in logo_cell
+    assert 'বাংলাদেশ বিশ্ববিদ্যালয় মঞ্জুরী কমিশন' in table.rows[0].cells[1].text
