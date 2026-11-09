@@ -102,21 +102,35 @@ export const resolveDocumentOcrClientOptions = (
 interface ClassifiedFile {
   file_id?: string;
   filename?: string;
+  type?: string;
   metadata?: { preparation?: { scan?: { ocrPages?: number[]; garbledPages?: number[] } } } | null;
 }
 
+const IMAGE_NOTE =
+  'These attached images can be read with read_document when they show a page of text, such as a scanned or photographed letter or order. The model sees them only as pictures, without their names:';
+
 /**
- * Tells the assistant which attached files the upload's classifier found need OCR. Without this it
- * cannot know a PDF is a scan, and searches it first (seen in a real run).
+ * Tells the assistant which attached files need OCR: PDF pages the upload's classifier flagged,
+ * and images, which are not classified. Without this it cannot know a PDF is a scan, and searches
+ * it first; nor the name of an image, which it then retypes by eye (both seen in real runs).
  */
 export function buildDocumentReadContext(files: ClassifiedFile[]): string | undefined {
   const seen = new Set<string | undefined>();
   const lines: string[] = [];
+  const images: string[] = [];
   const digital: string[] = [];
   for (const file of files) {
+    if (seen.has(file.file_id)) {
+      continue;
+    }
+    if (file.type && IMAGE_TYPES.test(file.type)) {
+      seen.add(file.file_id);
+      images.push(`- "${file.filename}"`);
+      continue;
+    }
     const scan = file.metadata?.preparation?.scan;
     const pages = scan?.ocrPages;
-    if (!pages?.length || seen.has(file.file_id)) {
+    if (!pages?.length) {
       continue;
     }
     seen.add(file.file_id);
@@ -125,10 +139,19 @@ export function buildDocumentReadContext(files: ClassifiedFile[]): string | unde
       digital.push(`"${file.filename}"`);
     }
   }
-  if (lines.length === 0) {
+  const sections: string[] = [];
+  if (lines.length > 0) {
+    sections.push(
+      `These attached files are scanned or have damaged text on these pages, so file_search and pdftotext cannot read them:\n${lines.join('\n')}`,
+    );
+  }
+  if (images.length > 0) {
+    sections.push(`${IMAGE_NOTE}\n${images.join('\n')}`);
+  }
+  if (sections.length === 0) {
     return undefined;
   }
-  const reading = `These attached files are scanned or have damaged text on these pages, so file_search and pdftotext cannot read them:\n${lines.join('\n')}\nWhen the user wants anything done with one of them, call read_document on it first, before file_search or any skill.`;
+  const reading = `${sections.join('\n')}\nWhen the user wants anything done with one of them, call read_document on it first, before file_search or any skill.`;
   if (digital.length === 0) {
     return reading;
   }
@@ -287,7 +310,7 @@ export function createDocumentReadTool(deps: DocumentReadDeps): DynamicStructure
       ]);
 
       const notes = [
-        `Read "${file.filename}". Saved as /mnt/data/${elementsRef.name} and /mnt/data/${markdownRef.name} for this request only; on a later request call read_document again, which is free. For Word, load the docx skill and run: cd /mnt/data && python3 /mnt/data/skills/docx/scripts/scan_to_docx.py ${elementsRef.name} <source file> /mnt/data/<name>.docx with the final file name; do not copy or rename it afterwards, because every file in /mnt/data is delivered.`,
+        `Read "${file.filename}". Saved as /mnt/data/${elementsRef.name} and /mnt/data/${markdownRef.name} for this request only; on a later request call read_document again, which is free. For Word, load the docx skill and run: cd /mnt/data && python3 /mnt/data/skills/docx/scripts/scan_to_docx.py ${elementsRef.name} <source file> /mnt/data/<name>.docx with the final file name; do not copy or rename it afterwards, because every file in /mnt/data is delivered. "Doc" and "Word" both mean this .docx: never convert it to .doc, which drops the embedded Bangla font.`,
       ];
       if (reading.refused) {
         notes.push(
