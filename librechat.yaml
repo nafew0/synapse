@@ -603,6 +603,9 @@ endpoints:
       - 'tools'
       - 'context'
       - 'ask_user_question'
+      # Each tool call carries a short model-written label ("Converting the PDF to Word"),
+      # shown as the step's line in the collapsed activity block. No extra model call.
+      - 'tool_intents'
       # Required before automatic preparation may send a scanned document to OCR.
       # Without it, uploads that need text recognition fail with
       # "OCR capability is not enabled for Agents".

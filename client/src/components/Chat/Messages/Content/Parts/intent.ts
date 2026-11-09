@@ -1,4 +1,6 @@
 import { useMemo } from 'react';
+import { Tools, Constants } from 'librechat-data-provider';
+import { WEB_READ_TOOL_NAMES, WEB_SEARCH_TOOL_NAMES } from '~/utils/toolLabels';
 import { unescapeJsonString } from './parseJsonField';
 
 /**
@@ -64,21 +66,60 @@ function boundIntentLabel(label: string): string | undefined {
  * state (the shimmer stopping), not a tense change (see `applyOutcome` in
  * `@librechat/agents` for why there is deliberately no rewrite).
  */
-/** The model-written label a tool call carries as its first `intent` arg, if any. */
-export function getToolCallIntent(args?: string | Record<string, unknown>): string | undefined {
+/**
+ * Tools whose `intent` argument is only ever the step label. The SDK's own
+ * tools declare it after their other arguments, so for these a settled call's
+ * label is read wherever it sits; any other tool keeps the first-key rule.
+ */
+const LABEL_INTENT_TOOLS: ReadonlySet<string> = new Set<string>([
+  Tools.execute_code,
+  Tools.bash_tool,
+  String(Constants.PROGRAMMATIC_TOOL_CALLING),
+  String(Constants.BASH_PROGRAMMATIC_TOOL_CALLING),
+  Tools.web_search,
+  'read_file',
+  'skill',
+  'create_file',
+  'edit_file',
+  ...WEB_SEARCH_TOOL_NAMES,
+  ...WEB_READ_TOOL_NAMES,
+]);
+
+function settledIntent(args: string | Record<string, unknown>): string | undefined {
+  if (typeof args === 'object') {
+    return typeof args.intent === 'string' ? boundIntentLabel(args.intent) : undefined;
+  }
+  if (!args.trimEnd().endsWith('}')) {
+    return undefined;
+  }
+  try {
+    const parsed: unknown = JSON.parse(args);
+    const value = (parsed as { intent?: unknown } | null)?.intent;
+    return typeof value === 'string' ? boundIntentLabel(value) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The model-written label a tool call carries in its `intent` arg, if any. */
+export function getToolCallIntent(
+  args?: string | Record<string, unknown>,
+  toolName?: string,
+): string | undefined {
   if (args == null) {
     return undefined;
   }
+  const anywhere = toolName != null && LABEL_INTENT_TOOLS.has(toolName);
   if (typeof args === 'object') {
     if (Object.keys(args)[0] !== 'intent') {
-      return undefined;
+      return anywhere ? settledIntent(args) : undefined;
     }
     const value = args.intent;
     return typeof value === 'string' ? boundIntentLabel(value) : undefined;
   }
   const match = INTENT_PREFIX_REGEX.exec(args.slice(0, INTENT_SCAN_CHARS));
   if (!match) {
-    return undefined;
+    return anywhere ? settledIntent(args) : undefined;
   }
   /** A captured closing quote means the value is settled: decode it
    *  without the stream-edge hold-backs, so a value genuinely ending in
@@ -86,6 +127,9 @@ export function getToolCallIntent(args?: string | Record<string, unknown>): stri
   return boundIntentLabel(unescapeJsonString(match[1], match[2] !== '"'));
 }
 
-export function useToolCallIntent(args?: string | Record<string, unknown>): string | undefined {
-  return useMemo(() => getToolCallIntent(args), [args]);
+export function useToolCallIntent(
+  args?: string | Record<string, unknown>,
+  toolName?: string,
+): string | undefined {
+  return useMemo(() => getToolCallIntent(args, toolName), [args, toolName]);
 }
