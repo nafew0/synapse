@@ -46,8 +46,8 @@ master:
 
     ## Web search
 
-    You can search the web with firecrawl_search and read a web page or online PDF with
-    firecrawl_scrape. Use them yourself when the user asks a question that needs current or
+    You can search the web with search_web and read a web page or online PDF with
+    read_web_page. Use them yourself when the user asks a question that needs current or
     published information (news, prices, rules, recent research, facts about an organisation)
     or asks about a URL, and the answer is given in chat with no file to produce. Do not answer
     such questions from memory, and do not hand them to a specialist.
@@ -63,7 +63,7 @@ master:
     again only when the first finds nothing useful. Read only the pages that directly answer
     the question, at most three, chosen from the titles and snippets; skip job notices,
     recruitment circulars, tenders and PDFs unless the user gave them or they are the main
-    source. For a URL the user gives, read it directly with firecrawl_scrape, using the URL
+    source. For a URL the user gives, read it directly with read_web_page, using the URL
     exactly as written. When a tool says the budget is reached, stop calling it and answer with
     what you have.
 
@@ -146,7 +146,7 @@ master:
   provider: OpenRouter
   model: anthropic/claude-haiku-4.5
   model_parameters: {}
-  tools: [ask_user_question, firecrawl_search, firecrawl_scrape]
+  tools: [ask_user_question, search_web, read_web_page]
   subagents: { enabled: true, allowSelf: false }
   orchestrationOnly: false
   # A handed-off run shares this budget: the specialist's build, render and fix
@@ -187,9 +187,9 @@ specialists:
       document, answer in the language of the user's own words quoted in the task. This covers
       your reply and any new text you write into a file.
 
-      Web sources. When the task gives a URL, read it with firecrawl_scrape before writing
+      Web sources. When the task gives a URL, read it with read_web_page before writing
       anything, using the URL exactly as given. When the task needs current or published
-      information, such as the latest research on a topic, search with firecrawl_search
+      information, such as the latest research on a topic, search with search_web
       first. Every search and every page read costs money: one well-phrased search is usually
       enough, so search again only when the first finds nothing useful. Read only the pages
       that directly answer the request, at most five; three is usually enough. Choose them
@@ -263,7 +263,7 @@ specialists:
     provider: OpenRouter
     model: openai/gpt-6-luna
     model_parameters: { useResponsesApi: true }
-    tools: [ask_user_question, execute_code, file_search, firecrawl_search, firecrawl_scrape]
+    tools: [ask_user_question, execute_code, file_search, search_web, read_web_page]
     orchestrationOnly: true
     skills_enabled: true
     recursion_limit: 120
@@ -370,9 +370,9 @@ specialists:
       document, answer in the language of the user's own words quoted in the task. This covers
       your reply and any new text you write into a file.
 
-      Web sources. When the task gives a URL, read it with firecrawl_scrape before writing
+      Web sources. When the task gives a URL, read it with read_web_page before writing
       anything, using the URL exactly as given. When the task needs current or published
-      information, such as the latest research on a topic, search with firecrawl_search
+      information, such as the latest research on a topic, search with search_web
       first. Every search and every page read costs money: one well-phrased search is usually
       enough, so search again only when the first finds nothing useful. Read only the pages
       that directly answer the request, at most five; three is usually enough. Choose them
@@ -449,7 +449,7 @@ specialists:
     provider: OpenRouter
     model: openai/gpt-6-luna
     model_parameters: { useResponsesApi: true }
-    tools: [ask_user_question, execute_code, file_search, firecrawl_search, firecrawl_scrape]
+    tools: [ask_user_question, execute_code, file_search, search_web, read_web_page]
     orchestrationOnly: true
     skills_enabled: true
     recursion_limit: 120
