@@ -1,4 +1,5 @@
 const express = require('express');
+const { isChatAccessContact } = require('@librechat/api');
 const { logger, runAsSystem, INSTITUTION_ADMIN_ROLE } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const requirePlatformSuperadmin = require('~/server/middleware/platformAdmin');
@@ -891,7 +892,7 @@ const CHAT_ACCESS_MESSAGE_MAX = 500;
  */
 router.put('/:tenantId/chat-access', async (req, res) => {
   const { tenantId } = req.params;
-  const { ended, message = '' } = req.body ?? {};
+  const { ended, message = '', contact = '' } = req.body ?? {};
   if (typeof ended !== 'boolean') {
     return res.status(400).json({ error: 'ended must be a boolean' });
   }
@@ -900,12 +901,16 @@ router.put('/:tenantId/chat-access', async (req, res) => {
       .status(400)
       .json({ error: `message must be text of at most ${CHAT_ACCESS_MESSAGE_MAX} characters` });
   }
+  if (typeof contact !== 'string' || contact.trim().length > 200 || !isChatAccessContact(contact)) {
+    return res.status(400).json({ error: 'contact must be an email address or an http(s) link' });
+  }
 
   try {
     const institution = await runAsSystem(() =>
       db.setInstitutionChatAccess(tenantId, {
         ended,
         message,
+        contact,
         changedBy: req.user.id ?? req.user._id?.toString(),
       }),
     );
@@ -920,6 +925,7 @@ router.put('/:tenantId/chat-access', async (req, res) => {
       metadata: {
         operation: ended ? 'chat_access_ended' : 'chat_access_restored',
         message: institution.chatAccess?.message || undefined,
+        contact: institution.chatAccess?.contact || undefined,
       },
     });
 

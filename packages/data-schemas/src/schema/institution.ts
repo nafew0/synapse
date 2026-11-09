@@ -97,6 +97,7 @@ const institutionSchema: Schema<IInstitution> = new Schema<IInstitution>(
       type: {
         ended: { type: Boolean, default: false },
         message: { type: String, trim: true, maxlength: 500, default: '' },
+        contact: { type: String, trim: true, maxlength: 200, default: '' },
         changedAt: { type: Date, default: null },
         changedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
         _id: false,

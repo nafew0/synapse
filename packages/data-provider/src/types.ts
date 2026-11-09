@@ -279,6 +279,13 @@ export type TBackupCode = {
   usedAt: Date | null;
 };
 
+export type TUserChatAccess = {
+  ended: boolean;
+  message?: string;
+  /** An email address or https link for asking the institution for more usage. */
+  contact?: string;
+};
+
 export type TUser = {
   id: string;
   username: string;
@@ -288,6 +295,8 @@ export type TUser = {
   role: string;
   provider: string;
   tenantId?: string;
+  /** Present only while the user's institution has ended chat access. */
+  chatAccess?: TUserChatAccess;
   plugins?: string[];
   twoFactorEnabled?: boolean;
   backupCodes?: TBackupCode[];

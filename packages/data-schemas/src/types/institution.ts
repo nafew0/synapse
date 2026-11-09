@@ -35,6 +35,8 @@ export interface IInstitution extends Document {
   chatAccess?: {
     ended: boolean;
     message?: string;
+    /** An email address or https link members can use to ask for more usage. */
+    contact?: string;
     changedAt?: Date | null;
     changedBy?: Types.ObjectId | string | null;
   } | null;

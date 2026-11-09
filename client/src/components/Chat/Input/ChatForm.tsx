@@ -29,7 +29,7 @@ import AskUserQuestionPopover from './AskUserQuestionPopover';
 import InterruptSteerButton from './InterruptSteerButton';
 import DuringRunSendButton from './DuringRunSendButton';
 import ProjectLandingChip from '../ProjectLandingChip';
-import { useGetStartupConfig } from '~/data-provider';
+import { useGetStartupConfig, useGetUserQuery } from '~/data-provider';
 import { mainTextareaId, BadgeItem } from '~/common';
 import PendingSteerChips from './PendingSteerChips';
 import PendingQuoteChips from './PendingQuoteChips';
@@ -44,6 +44,7 @@ import AudioRecorder from './AudioRecorder';
 import CollapseChat from './CollapseChat';
 import QuoteButton from './QuoteButton';
 import StreamAudio from './StreamAudio';
+import AccessEnded from './AccessEnded';
 import TokenUsage from './TokenUsage';
 import StopButton from './StopButton';
 import SendButton from './SendButton';
@@ -801,6 +802,11 @@ function ChatFormWrapper({
   const stableStop = useCallback(() => {
     void stopRef.current();
   }, []);
+
+  const { data: user } = useGetUserQuery();
+  if (user?.chatAccess?.ended === true) {
+    return <AccessEnded access={user.chatAccess} className="sm:mb-10" />;
+  }
 
   return (
     <ChatForm
