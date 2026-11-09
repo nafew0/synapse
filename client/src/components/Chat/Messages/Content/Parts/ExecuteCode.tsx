@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { SquareTerminal } from 'lucide-react';
+import { Tools } from 'librechat-data-provider';
 import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import { parseBackgroundHandle, splitBackgroundAttachments } from './handle';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
@@ -14,6 +15,7 @@ import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
 import Stdout from './Stdout';
 import { cn } from '~/utils';
+import StepRow from './StepRow';
 
 interface ParsedArgs {
   lang?: string;
@@ -84,7 +86,7 @@ export default function ExecuteCode({
   const { lang = 'py', code } = useParseArgs(args) ?? ({} as ParsedArgs);
   /** Model-authored live label, streamed as the first args key; persists as
    *  the settled label (completion is a UI state, not a tense change). */
-  const intent = useToolCallIntent(args);
+  const intent = useToolCallIntent(args, Tools.execute_code);
   const sandboxStarting = useRecoilValue(sandboxStartingByToolCallId(toolCallId ?? ''));
 
   const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
@@ -130,7 +132,7 @@ export default function ExecuteCode({
 
   return (
     <>
-      <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
+      <StepRow>
         <ProgressText
           phase={phase}
           onClick={toggleCode}
@@ -164,7 +166,7 @@ export default function ExecuteCode({
           hasInput={!!code?.length}
           isExpanded={showCode}
         />
-      </div>
+      </StepRow>
       {detailsEnabled && (
         <div style={expandStyle}>
           <div className="overflow-hidden" ref={expandRef}>

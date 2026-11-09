@@ -21,6 +21,7 @@ import {
 import { useLocalize, useExpandCollapse, scheduleMessageContentLayoutReconcile } from '~/hooks';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { getToolCallIntent } from './Parts/intent';
+import { DenseStepsContext } from './Parts/StepRow';
 import parseJsonField from './Parts/parseJsonField';
 import { isBashProgrammaticToolCall } from './routing';
 import { ASK_USER_QUESTION } from '~/utils/approval';
@@ -247,7 +248,7 @@ export default function ToolCallGroup({
     }
     for (let i = parts.length - 1; i >= 0; i--) {
       if (parts[i].part.type === ContentTypes.TOOL_CALL) {
-        return getToolCallIntent(getStepArgs(parts[i].part));
+        return getToolCallIntent(getStepArgs(parts[i].part), getToolMeta(parts[i].part)?.name);
       }
     }
     return undefined;
@@ -458,11 +459,18 @@ export default function ToolCallGroup({
       >
         {shouldRenderBody && (
           <div className="overflow-hidden" ref={expandRef}>
-            <div className="py-0.5 pl-4">
-              {parts.map(({ part, idx }) =>
-                renderPart(part, idx, isLast && idx === lastContentIdx, handleToolExpand),
-              )}
-            </div>
+            <DenseStepsContext.Provider value={compact}>
+              <div
+                className={cn(
+                  'py-0.5',
+                  compact ? 'ml-2 border-l border-border-light pl-3' : 'pl-4',
+                )}
+              >
+                {parts.map(({ part, idx }) =>
+                  renderPart(part, idx, isLast && idx === lastContentIdx, handleToolExpand),
+                )}
+              </div>
+            </DenseStepsContext.Provider>
           </div>
         )}
       </div>

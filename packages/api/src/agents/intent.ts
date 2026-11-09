@@ -39,6 +39,10 @@ import {
   warnUnmatchedSelectionNames,
   synthesizeSelectionToolOptions,
 } from './selection';
+import {
+  FIRECRAWL_SEARCH_TOOL_NAME,
+  FIRECRAWL_SCRAPE_TOOL_NAME,
+} from '../tools/firecrawl/definitions';
 import { SET_MEMORY_TOOL_NAME, DELETE_MEMORY_TOOL_NAME } from './memory';
 import { ASK_USER_QUESTION_TOOL_NAME } from './hitl/askUserQuestionTool';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from './tools';
@@ -57,6 +61,8 @@ const INTENT_SELECTION_LABEL = '[intent] describeIntent';
  */
 export const NATIVE_INTENT_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
   Tools.web_search,
+  FIRECRAWL_SEARCH_TOOL_NAME,
+  FIRECRAWL_SCRAPE_TOOL_NAME,
   CREATE_FILE_TOOL_NAME,
   EDIT_FILE_TOOL_NAME,
   SET_MEMORY_TOOL_NAME,

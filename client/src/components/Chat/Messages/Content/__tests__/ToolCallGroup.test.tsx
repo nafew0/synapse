@@ -4,6 +4,7 @@ import { Tools, Constants, ContentTypes } from 'librechat-data-provider';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import { scheduleMessageContentLayoutReconcile } from '~/hooks';
+import { DenseStepsContext } from '../Parts/StepRow';
 import ToolCallGroup from '../ToolCallGroup';
 
 jest.mock('~/hooks', () => ({
@@ -663,6 +664,17 @@ describe('ToolCallGroup in compact mode', () => {
     });
 
     expect(screen.getByRole('status')).toHaveTextContent('Working…');
+  });
+
+  it('lays the steps out as a dense timeline when expanded', () => {
+    const DenseProbe = () => (
+      <span data-testid="dense">{String(React.useContext(DenseStepsContext))}</span>
+    );
+    renderGroup({ ...props, renderPart: (_p, idx) => <DenseProbe key={idx} /> });
+    fireEvent.click(screen.getByRole('button'));
+
+    expect(screen.getAllByTestId('dense')[0]).toHaveTextContent('true');
+    expect(screen.getAllByTestId('dense')[0].parentElement).toHaveClass('border-l');
   });
 
   it('uses the singular for one step', () => {
