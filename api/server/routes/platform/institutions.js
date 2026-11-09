@@ -427,6 +427,59 @@ router.get('/:tenantId', async (req, res) => {
   }
 });
 
+/** Whether this institution's scanned documents may be sent to the OCR service. */
+router.get('/:tenantId/ocr-access', async (req, res) => {
+  try {
+    const institution = await runAsSystem(() =>
+      db.getInstitutionByTenantId(req.params.tenantId, 'ocrAccess'),
+    );
+    if (!institution) {
+      return res.status(404).json({ error: 'Institution not found' });
+    }
+    return res.status(200).json({ enabled: institution.ocrAccess === true });
+  } catch (error) {
+    logger.error('[platform/institutions] Failed to load OCR access', error);
+    return res.status(500).json({ error: 'Failed to load OCR access' });
+  }
+});
+
+router.patch('/:tenantId/ocr-access', async (req, res) => {
+  const { tenantId } = req.params;
+  const { enabled } = req.body ?? {};
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ error: 'enabled must be a boolean' });
+  }
+
+  try {
+    const before = await runAsSystem(() =>
+      models.Institution.findOneAndUpdate(
+        { tenantId: tenantId.trim() },
+        { $set: { ocrAccess: enabled } },
+        { new: false, projection: { ocrAccess: 1, name: 1 } },
+      )
+        .lean()
+        .exec(),
+    );
+    if (!before) {
+      return res.status(404).json({ error: 'Institution not found' });
+    }
+    await recordPlatformAudit(req, {
+      action: 'institution.updated',
+      severity: 'warning',
+      target: { type: 'institution', id: tenantId, name: before.name },
+      metadata: {
+        operation: enabled ? 'ocr_access_granted' : 'ocr_access_revoked',
+        before: before.ocrAccess === true,
+        after: enabled,
+      },
+    });
+    return res.status(200).json({ enabled });
+  } catch (error) {
+    logger.error('[platform/institutions] Failed to update OCR access', error);
+    return res.status(500).json({ error: 'Failed to update OCR access' });
+  }
+});
+
 function sendAgentAccessError(res, error, fallback) {
   if (error instanceof HttpError || error instanceof TenantAgentAccessError) {
     return res.status(error.statusCode).json({ error: error.message });

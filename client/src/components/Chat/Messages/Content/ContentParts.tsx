@@ -19,7 +19,9 @@ import PendingSkillCall from './Parts/PendingSkillCall';
 import ActivityPhaseGroup from './ActivityPhaseGroup';
 import { hasPendingApprovalInPart } from '~/utils';
 import EditContentParts from './EditContentParts';
-import { EmptyText, AgentUpdate } from './Parts';
+import { EmptyText, AgentUpdate, AttachmentGroup } from './Parts';
+import { displayFilename } from './Parts/attachmentTypes';
+import { DeliveryProvider } from './Parts/delivery';
 import ApprovalProvider from './ApprovalContext';
 import GeneratedImageArtifacts, { isGeneratedImageAttachment } from './GeneratedImageArtifacts';
 import Sources from '~/components/Web/Sources';
@@ -68,6 +70,20 @@ const getToolGroupId = (parts: PartWithIndex[], fallbackScope: number): string =
    *  index rather than the block's first part, which shifts when reasoning is
    *  absorbed. Only a block with no tool call at all falls back to `parts[0]`. */
   return `fallback:${fallbackScope}:${firstToolIdx ?? firstPart.idx}`;
+};
+
+/** A file rebuilt during the run is delivered again under the same name; offer only its last version. */
+const latestDeliveries = (attachments?: TAttachment[]): TAttachment[] => {
+  const latest = new Map<string, TAttachment>();
+  for (const attachment of attachments ?? []) {
+    if (!attachment?.toolCallId) {
+      continue;
+    }
+    const key = displayFilename(attachment.filename) || attachment.toolCallId;
+    latest.delete(key);
+    latest.set(key, attachment);
+  }
+  return Array.from(latest.values());
 };
 
 type PartWithContextProps = {
@@ -188,7 +204,7 @@ type ContentPartsProps = {
  * For 90% of messages (single-agent, no parallel execution), this renders sequentially.
  * For multi-agent parallel execution, it uses ParallelContentRenderer to show columns.
  */
-const ContentParts = memo(function ContentParts({
+const ContentPartsBody = memo(function ContentPartsBody({
   edit,
   isLast,
   content: storedContent,
@@ -220,6 +236,13 @@ const ContentParts = memo(function ContentParts({
     () => hideOfficeWorkNotes(model, storedContent, effectiveIsSubmitting),
     [model, storedContent, effectiveIsSubmitting],
   );
+  /** A tool's files are the reply's result, and text often follows the call that made them, so
+   *  they are shown once after the whole reply. Parallel columns keep their own. */
+  const filesAtEnd = useMemo(
+    () => content?.some((part) => part?.groupId != null) !== true,
+    [content],
+  );
+  const deliveredFiles = useMemo(() => latestDeliveries(attachments), [attachments]);
   const localToolGroupExpansionRef = useRef(new Map<string, ToolCallGroupExpansionState>());
   const expansionState = toolGroupExpansionState ?? localToolGroupExpansionRef.current;
   const fallbackScopeRef = useRef({ messageId, scope: 0 });
@@ -353,6 +376,7 @@ const ContentParts = memo(function ContentParts({
             getPartAgentId(part),
           )}
           messageAttachments={attachments}
+          hideAttachments={filesAtEnd}
         />
       );
     },
@@ -360,6 +384,7 @@ const ContentParts = memo(function ContentParts({
       attachmentMap,
       attachments,
       content,
+      filesAtEnd,
       contentIndexOffset,
       localIndexByAbsolute,
       conversationId,
@@ -515,7 +540,7 @@ const ContentParts = memo(function ContentParts({
       key: string,
     ) => {
       return (
-        <ContentParts
+        <ContentPartsBody
           key={key}
           content={segmentContent}
           messageId={messageId}
@@ -578,6 +603,9 @@ const ContentParts = memo(function ContentParts({
                 `phase-adjacent-${index}`,
               )
             ),
+          )}
+          {filesAtEnd && deliveredFiles.length > 0 && (
+            <AttachmentGroup attachments={deliveredFiles} />
           )}
           {/* Rendered after the phases so a multi-step run reads chronologically:
               the reasoning and handoffs that produced the image come first. */}
@@ -696,7 +724,7 @@ const ContentParts = memo(function ContentParts({
               }
               renderPart={renderGroupedPart}
               lastContentIdx={lastContentIdx}
-              groupAttachments={group.groupAttachments}
+              groupAttachments={filesAtEnd ? undefined : group.groupAttachments}
               initialExpansionState={expansionState.get(groupId)}
               onExpansionChange={(state) => handleGroupExpansionChange(groupId, state)}
               labelPart={group.labelPart}
@@ -705,6 +733,10 @@ const ContentParts = memo(function ContentParts({
           );
           return nodes;
         })}
+      {!nestedActivityPhase &&
+        filesAtEnd &&
+        deliveredFiles.length > 0 &&
+        !awaitingGeneratedImage && <AttachmentGroup attachments={deliveredFiles} />}
       {!nestedActivityPhase && imageAfterContent && (
         <GeneratedImageArtifacts attachments={attachments} />
       )}
@@ -714,6 +746,16 @@ const ContentParts = memo(function ContentParts({
     return sequentialContent;
   }
   return <ApprovalProvider>{sequentialContent}</ApprovalProvider>;
+});
+
+/** Delivered files keep no download while the reply runs: checks may still rebuild them. */
+const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
+  const running = props.isLatestMessage === true && props.isSubmitting;
+  return (
+    <DeliveryProvider value={!running}>
+      <ContentPartsBody {...props} />
+    </DeliveryProvider>
+  );
 });
 
 export default ContentParts;

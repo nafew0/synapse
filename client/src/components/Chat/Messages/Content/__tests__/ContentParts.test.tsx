@@ -42,6 +42,17 @@ jest.mock('../Parts', () => ({
   AgentUpdate: ({ currentAgentId }: { currentAgentId: string }) => (
     <div data-testid="post-steer-agent-update" data-agent-id={currentAgentId} />
   ),
+  AttachmentGroup: function MockAttachmentGroup({ attachments }: { attachments?: TAttachment[] }) {
+    const { useDownloadReady } = jest.requireActual('../Parts/delivery');
+    const downloadReady = useDownloadReady();
+    return attachments && attachments.length > 0 ? (
+      <div
+        data-testid="delivered-files"
+        data-names={attachments.map((attachment) => attachment.filepath).join(',')}
+        data-download-ready={String(downloadReady)}
+      />
+    ) : null;
+  },
 }));
 
 jest.mock('../MemoryArtifacts', () => ({
@@ -120,8 +131,20 @@ jest.mock('../Container', () => ({
 
 jest.mock('../Part', () => ({
   __esModule: true,
-  default: ({ part, idx }: { part: TMessageContentParts; idx: number }) => (
-    <div data-testid={`real-part-${part.type}`} data-index={idx} />
+  default: ({
+    part,
+    idx,
+    hideAttachments,
+  }: {
+    part: TMessageContentParts;
+    idx: number;
+    hideAttachments?: boolean;
+  }) => (
+    <div
+      data-testid={`real-part-${part.type}`}
+      data-index={idx}
+      data-hide-attachments={String(hideAttachments === true)}
+    />
   ),
 }));
 
@@ -652,5 +675,113 @@ describe('ContentParts — image model replies', () => {
     );
 
     expect(screen.getByTestId('generating-image')).toBeInTheDocument();
+  });
+});
+
+describe('ContentParts delivered files', () => {
+  const toolThenText = [
+    {
+      type: ContentTypes.TOOL_CALL,
+      tool_call: { id: 'call-1', name: 'bash_tool', args: '{}', output: 'ok' },
+    },
+    { type: ContentTypes.TEXT, text: 'Here is your file.' },
+  ] as TMessageContentParts[];
+  const docx: TAttachment = {
+    filename: 'notice.docx',
+    filepath: '/uploads/u/notice.docx',
+    conversationId: 'c1',
+    messageId: 'm1',
+    toolCallId: 'call-1',
+  };
+
+  beforeEach(() => {
+    jest
+      .mocked(groupSequentialToolCalls)
+      .mockImplementation((parts) => parts.map((part) => ({ type: 'single' as const, part })));
+  });
+
+  it('shows a tool file once, after the text that follows the tool call', () => {
+    render(
+      <ContentParts
+        content={toolThenText}
+        messageId="m1"
+        isCreatedByUser={false}
+        isLast={true}
+        isSubmitting={false}
+        isLatestMessage={true}
+        attachments={[docx]}
+      />,
+    );
+
+    const files = screen.getByTestId('delivered-files');
+    expect(files).toHaveAttribute('data-names', '/uploads/u/notice.docx');
+    const text = screen.getByTestId('real-part-text');
+    expect(text.compareDocumentPosition(files) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByTestId('real-part-tool_call')).toHaveAttribute(
+      'data-hide-attachments',
+      'true',
+    );
+  });
+
+  it('leaves out files no tool produced, which have their own slots', () => {
+    render(
+      <ContentParts
+        content={toolThenText}
+        messageId="m1"
+        isCreatedByUser={false}
+        isLast={true}
+        isSubmitting={false}
+        isLatestMessage={true}
+        attachments={[{ ...docx, toolCallId: '' }]}
+      />,
+    );
+
+    expect(screen.queryByTestId('delivered-files')).toBeNull();
+  });
+
+  const renderReply = (props: { isSubmitting: boolean; attachments: TAttachment[] }) =>
+    render(
+      <ContentParts
+        content={toolThenText}
+        messageId="m1"
+        isCreatedByUser={false}
+        isLast={true}
+        isLatestMessage={true}
+        {...props}
+      />,
+    );
+
+  it('holds the download while the reply is still running', () => {
+    renderReply({ isSubmitting: true, attachments: [docx] });
+
+    expect(screen.getByTestId('delivered-files')).toHaveAttribute('data-download-ready', 'false');
+  });
+
+  it('offers the download once the reply has finished', () => {
+    const { rerender } = renderReply({ isSubmitting: true, attachments: [docx] });
+    rerender(
+      <ContentParts
+        content={toolThenText}
+        messageId="m1"
+        isCreatedByUser={false}
+        isLast={true}
+        isLatestMessage={true}
+        isSubmitting={false}
+        attachments={[docx]}
+      />,
+    );
+
+    expect(screen.getByTestId('delivered-files')).toHaveAttribute('data-download-ready', 'true');
+  });
+
+  it('offers only the last version of a file rebuilt during the run', () => {
+    const rebuilt = { ...docx, filepath: '/uploads/u/notice.docx?v=2', toolCallId: 'call-2' };
+    const memo = { ...docx, filename: 'memo.docx', filepath: '/uploads/u/memo.docx' };
+    renderReply({ isSubmitting: false, attachments: [docx, memo, rebuilt] });
+
+    expect(screen.getByTestId('delivered-files')).toHaveAttribute(
+      'data-names',
+      '/uploads/u/memo.docx,/uploads/u/notice.docx?v=2',
+    );
   });
 });

@@ -48,6 +48,7 @@ import {
   stripIntentLabelsFromToolDefinitions,
   INTENT_ARG,
 } from './intent';
+import { READ_DOCUMENT_TOOL_NAME } from '~/files/unstructured/definitions';
 import { logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
 import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
 import { parseFrontmatter } from '../skills/import';
@@ -3852,6 +3853,11 @@ function buildToolCallConfig(
    * session (no per-conversation isolation). */
   if (tc.runtimeSessionHint != null && tc.runtimeSessionHint !== '') {
     toolCallConfig._runtime_session_hint = tc.runtimeSessionHint;
+  }
+
+  /* read_document adds files to the session, so it needs the session's id; it runs no code. */
+  if (tc.codeSessionContext && tc.name === READ_DOCUMENT_TOOL_NAME) {
+    toolCallConfig.session_id = tc.codeSessionContext.session_id;
   }
 
   if (tc.codeSessionContext && isCodeSessionAwareToolCall(tc.name, mergedConfigurable)) {

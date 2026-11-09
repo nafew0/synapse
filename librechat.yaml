@@ -295,6 +295,22 @@ fileConfig:
 #   baseURL: 'https://api.mistral.ai/v1'
 #   mistralModel: 'mistral-ocr-latest'
 
+# The Office Assistant's document reader (tool `read_document`). Sends scanned pages to Unstructured
+# (Parse API). Each institution stays off until a superadmin switches on "Document reading".
+documentOcr:
+  apiUrl: 'https://transform.unstructured.io'
+  apiKey: '${UNSTRUCTURED_API_KEY}'
+  profile: 'best'
+  maxPages: 50
+  concurrency: 5
+  agents: ['agent_office_assistant']
+  pricePerPageUsd: 0.015
+  # Labels each read line's role with a vision model (about $0.0005 a page) so the scan-to-Word
+  # rebuild never makes a page number, addressee or letterhead line into a signature.
+  # structure:
+  #   apiKey: '${OPENROUTER_KEY}'
+  #   model: 'google/gemini-2.5-flash-lite'
+
 speech:
   stt:
     openai:
