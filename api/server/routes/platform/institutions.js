@@ -307,10 +307,27 @@ router.post('/', async (req, res) => {
         createdBy: req.user.id ?? req.user._id,
       });
       if (packageId) {
-        const pkg = await models.InstitutionPackage.findOne({ id: packageId, active: true }).lean().exec();
+        const pkg = await models.InstitutionPackage.findOne({ id: packageId, active: true })
+          .lean()
+          .exec();
         if (!pkg) throw new HttpError(400, 'Active institution package not found');
-        const effectiveLimit = Number.isInteger(monthlyTokenLimit) && monthlyTokenLimit > 0 ? monthlyTokenLimit : pkg.monthlyTokenLimit;
-        created.packageAssignment = { packageId: pkg.id, packageSnapshot: { name: pkg.name, description: pkg.description, price: pkg.price, currency: pkg.currency, monthlyTokenLimit: pkg.monthlyTokenLimit }, monthlyTokenLimit: effectiveLimit, assignedAt: new Date(), assignedBy: req.user.id ?? req.user._id };
+        const effectiveLimit =
+          Number.isInteger(monthlyTokenLimit) && monthlyTokenLimit > 0
+            ? monthlyTokenLimit
+            : pkg.monthlyTokenLimit;
+        created.packageAssignment = {
+          packageId: pkg.id,
+          packageSnapshot: {
+            name: pkg.name,
+            description: pkg.description,
+            price: pkg.price,
+            currency: pkg.currency,
+            monthlyTokenLimit: pkg.monthlyTokenLimit,
+          },
+          monthlyTokenLimit: effectiveLimit,
+          assignedAt: new Date(),
+          assignedBy: req.user.id ?? req.user._id,
+        };
         await created.save();
       }
       return created;
@@ -496,11 +513,44 @@ router.post('/:tenantId/package', async (req, res) => {
   try {
     const institution = await runAsSystem(() => db.getInstitutionByTenantId(req.params.tenantId));
     if (!institution) return res.status(404).json({ error: 'Institution not found' });
-    const pkg = await runAsSystem(() => models.InstitutionPackage.findOne({ id: req.body?.packageId, active: true }).lean().exec());
+    const pkg = await runAsSystem(() =>
+      models.InstitutionPackage.findOne({ id: req.body?.packageId, active: true }).lean().exec(),
+    );
     if (!pkg) return res.status(400).json({ error: 'Active institution package not found' });
-    const monthlyTokenLimit = Number.isInteger(req.body?.monthlyTokenLimit) && req.body.monthlyTokenLimit > 0 ? req.body.monthlyTokenLimit : pkg.monthlyTokenLimit;
-    const updated = await runAsSystem(() => models.Institution.findOneAndUpdate({ tenantId: req.params.tenantId }, { $set: { packageAssignment: { packageId: pkg.id, packageSnapshot: { name: pkg.name, description: pkg.description, price: pkg.price, currency: pkg.currency, monthlyTokenLimit: pkg.monthlyTokenLimit }, monthlyTokenLimit, assignedAt: new Date(), assignedBy: req.user.id ?? req.user._id } } }, { new: true }).lean().exec());
-    await recordPlatformAudit(req, { action: 'institution.updated', target: { type: 'institution', id: req.params.tenantId }, metadata: { packageId: pkg.id, monthlyTokenLimit } });
+    const monthlyTokenLimit =
+      Number.isInteger(req.body?.monthlyTokenLimit) && req.body.monthlyTokenLimit > 0
+        ? req.body.monthlyTokenLimit
+        : pkg.monthlyTokenLimit;
+    const updated = await runAsSystem(() =>
+      models.Institution.findOneAndUpdate(
+        { tenantId: req.params.tenantId },
+        {
+          $set: {
+            packageAssignment: {
+              packageId: pkg.id,
+              packageSnapshot: {
+                name: pkg.name,
+                description: pkg.description,
+                price: pkg.price,
+                currency: pkg.currency,
+                monthlyTokenLimit: pkg.monthlyTokenLimit,
+              },
+              monthlyTokenLimit,
+              assignedAt: new Date(),
+              assignedBy: req.user.id ?? req.user._id,
+            },
+          },
+        },
+        { new: true },
+      )
+        .lean()
+        .exec(),
+    );
+    await recordPlatformAudit(req, {
+      action: 'institution.updated',
+      target: { type: 'institution', id: req.params.tenantId },
+      metadata: { packageId: pkg.id, monthlyTokenLimit },
+    });
     return res.json({ institution: updated });
   } catch (error) {
     logger.error('[platform/institutions] package assignment failed', error);
@@ -777,6 +827,53 @@ router.post('/:tenantId/reactivate', async (req, res) => {
   } catch (error) {
     logger.error('[platform/institutions] reactivate failed', error);
     return res.status(500).json({ error: 'Failed to reactivate institution' });
+  }
+});
+
+const CHAT_ACCESS_MESSAGE_MAX = 500;
+
+/**
+ * Ends or restores chat for every member of an institution, e.g. when a free trial is over.
+ * Members can still sign in and read their chats; new turns are refused with `message`.
+ */
+router.put('/:tenantId/chat-access', async (req, res) => {
+  const { tenantId } = req.params;
+  const { ended, message = '' } = req.body ?? {};
+  if (typeof ended !== 'boolean') {
+    return res.status(400).json({ error: 'ended must be a boolean' });
+  }
+  if (typeof message !== 'string' || message.trim().length > CHAT_ACCESS_MESSAGE_MAX) {
+    return res
+      .status(400)
+      .json({ error: `message must be text of at most ${CHAT_ACCESS_MESSAGE_MAX} characters` });
+  }
+
+  try {
+    const institution = await runAsSystem(() =>
+      db.setInstitutionChatAccess(tenantId, {
+        ended,
+        message,
+        changedBy: req.user.id ?? req.user._id?.toString(),
+      }),
+    );
+    if (!institution) {
+      return res.status(404).json({ error: 'Institution not found' });
+    }
+
+    await recordPlatformAudit(req, {
+      action: 'institution.updated',
+      severity: 'warning',
+      target: { type: 'institution', id: tenantId, name: institution.name },
+      metadata: {
+        operation: ended ? 'chat_access_ended' : 'chat_access_restored',
+        message: institution.chatAccess?.message || undefined,
+      },
+    });
+
+    return res.status(200).json({ institution });
+  } catch (error) {
+    logger.error('[platform/institutions] chat access update failed', error);
+    return res.status(500).json({ error: 'Failed to update chat access' });
   }
 });
 

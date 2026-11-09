@@ -1,4 +1,4 @@
-import { PublicErrorCodes } from 'librechat-data-provider';
+import { ErrorTypes, PublicErrorCodes } from 'librechat-data-provider';
 import { getErrorInfo } from '~/utils/errors';
 
 type TErrorEnvelope = {
@@ -27,11 +27,32 @@ function unwrapPayload(payload: unknown): unknown {
   return payload;
 }
 
+/** The institution's message on a `chat_access_ended` refusal: written by a platform admin, not a provider. */
+function accessEndedInfo(raw: unknown): string | undefined {
+  let body = raw;
+  if (typeof raw === 'string') {
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      return undefined;
+    }
+  }
+  const info = (body as { info?: unknown } | null)?.info;
+  return typeof info === 'string' && info.trim() ? info : undefined;
+}
+
 /**
  * Reduces any error payload (HTTP body, SSE event, thrown error, legacy raw text) to the
- * JSON text `{"type": code, "requestId"?}` that the chat error box renders. Raw text never passes.
+ * JSON text `{"type": code, "requestId"?}` that the chat error box renders. Raw text never passes;
+ * the one extra field is the admin-written `info` of a `chat_access_ended` refusal.
  */
 export function toErrorText(payload: unknown): string {
-  const { code, requestId } = getErrorInfo(unwrapPayload(payload));
-  return JSON.stringify(requestId != null ? { type: code, requestId } : { type: code });
+  const raw = unwrapPayload(payload);
+  const { code, requestId } = getErrorInfo(raw);
+  const info = code === ErrorTypes.CHAT_ACCESS_ENDED ? accessEndedInfo(raw) : undefined;
+  return JSON.stringify({
+    type: code,
+    ...(requestId != null && { requestId }),
+    ...(info != null && { info }),
+  });
 }

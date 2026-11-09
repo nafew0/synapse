@@ -419,6 +419,8 @@
   "com_error_invalid_base_url": "The base URL you provided targets a restricted address. Please use a valid external URL and try again.",
   "com_error_invalid_request_error": "The request couldn't be completed. Please try again or start a new chat.",
   "com_error_invalid_user_key": "Invalid key provided. Please provide a valid key and try again.",
+  "com_error_access_ended": "Your institution's access to Synapse has ended. Please contact your institution to continue.",
+  "com_error_access_ended_title": "Chat access ended",
   "com_error_message_limit": "You've reached the message limit for now. Please try again later.",
   "com_error_missing_model": "No model selected for {{0}}. Please select a model and try again.",
   "com_error_model_not_found": "The selected model is unavailable from this provider. Select a different model or ask an administrator to verify the provider configuration.",
