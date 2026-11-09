@@ -14,6 +14,7 @@ import { groupActivityPhases, lastVisibleContentIdx } from '~/utils/activityLabe
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import MemoryArtifacts, { hasMemoryArtifacts } from './MemoryArtifacts';
 import { MessageContext, SearchContext } from '~/Providers';
+import useToolDetails from '~/hooks/Config/useToolDetails';
 import PendingSkillCall from './Parts/PendingSkillCall';
 import ActivityPhaseGroup from './ActivityPhaseGroup';
 import { hasPendingApprovalInPart } from '~/utils';
@@ -229,6 +230,8 @@ const ContentPartsBody = memo(function ContentPartsBody({
 }: ContentPartsProps) {
   const attachmentMap = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
   const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
+  /** Without tool details, a turn's activity folds into one collapsed block. */
+  const compactActivity = !useToolDetails();
   const content = useMemo(
     () => hideOfficeWorkNotes(model, storedContent, effectiveIsSubmitting),
     [model, storedContent, effectiveIsSubmitting],
@@ -469,7 +472,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
 
   const groupedParts = useMemo(
     () =>
-      groupSequentialToolCalls(sequentialParts).map((group) => {
+      groupSequentialToolCalls(sequentialParts, { compact: compactActivity }).map((group) => {
         if (group.type === 'single') {
           return group;
         }
@@ -481,7 +484,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
         );
         return { ...group, groupId, groupAttachments };
       }),
-    [sequentialParts, attachmentMap, fallbackScope],
+    [sequentialParts, attachmentMap, fallbackScope, compactActivity],
   );
 
   /** The re-attribution node for a part resuming after a steer block, shared
@@ -725,6 +728,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
               initialExpansionState={expansionState.get(groupId)}
               onExpansionChange={(state) => handleGroupExpansionChange(groupId, state)}
               labelPart={group.labelPart}
+              compact={compactActivity}
             />,
           );
           return nodes;

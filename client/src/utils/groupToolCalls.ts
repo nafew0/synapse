@@ -2,6 +2,7 @@ import { Constants, ContentTypes, ToolCallTypes } from 'librechat-data-provider'
 import type { TMessageContentParts, Agents } from 'librechat-data-provider';
 import type { PartWithIndex } from '~/components/Chat/Messages/Content/ParallelContent';
 import { getBatchActivityLabelPart, getActivityLabelText } from '~/utils/activityLabels';
+import { ASK_USER_QUESTION } from '~/utils/approval';
 
 export type GroupedPart =
   | { type: 'single'; part: PartWithIndex }
@@ -50,6 +51,40 @@ function isGroupableToolCall(part: TMessageContentParts): boolean {
   return true;
 }
 
+function getToolCallName(part: TMessageContentParts): string | undefined {
+  if (part.type !== ContentTypes.TOOL_CALL) {
+    return undefined;
+  }
+  return (part[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.name;
+}
+
+/**
+ * A step a compact activity block folds away: any tool call, handoffs included,
+ * except a question the user still has to answer.
+ */
+function isActivityStep(part: TMessageContentParts): boolean {
+  const name = getToolCallName(part);
+  return part.type === ContentTypes.TOOL_CALL && name !== ASK_USER_QUESTION;
+}
+
+function lastActivityStepPosition(parts: PartWithIndex[]): number {
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (isActivityStep(parts[i].part)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+export interface GroupOptions {
+  /**
+   * Fold a turn's thinking, tool steps, handoffs and in-between notes into one
+   * collapsed block, as Claude and ChatGPT do. Text after the last step is the
+   * answer and stays outside. Ignored when the server sends activity labels.
+   */
+  compact?: boolean;
+}
+
 /**
  * True when the label covers ANY `transfer_to_*` handoff call. Transfer
  * parts are never groupable, so the flush at the handoff card leaves such a
@@ -88,8 +123,14 @@ function coversTransferCall(labelPart: TMessageContentParts, allParts: PartWithI
  * THINK parts render standalone in their original positions and only runs
  * of >= 2 tool calls group.
  */
-export function groupSequentialToolCalls(parts: PartWithIndex[]): GroupedPart[] {
+export function groupSequentialToolCalls(
+  parts: PartWithIndex[],
+  { compact = false }: GroupOptions = {},
+): GroupedPart[] {
   const result: GroupedPart[] = [];
+  const compactBlocks =
+    compact && !parts.some(({ part }) => part.type === ContentTypes.ACTIVITY_LABEL);
+  const lastStep = compactBlocks ? lastActivityStepPosition(parts) : -1;
   let currentBlock: PartWithIndex[] = [];
   /** Position in `currentBlock` just past the most recent BLANK label. A
    *  filled label may only claim parts after it (its own batch); everything
@@ -97,6 +138,12 @@ export function groupSequentialToolCalls(parts: PartWithIndex[]): GroupedPart[] 
   let claimStart = 0;
 
   const flushWithoutLabel = () => {
+    if (compactBlocks && currentBlock.some(({ part }) => isActivityStep(part))) {
+      result.push({ type: 'tool-group', parts: currentBlock });
+      currentBlock = [];
+      claimStart = 0;
+      return;
+    }
     let toolRun: PartWithIndex[] = [];
     const flushToolRun = () => {
       if (toolRun.length >= 2) {
@@ -121,11 +168,23 @@ export function groupSequentialToolCalls(parts: PartWithIndex[]): GroupedPart[] 
     claimStart = 0;
   };
 
-  for (const item of parts) {
+  for (let position = 0; position < parts.length; position++) {
+    const item = parts[position];
     const isCommentary =
       item.part.type === ContentTypes.TEXT &&
-      (item.part as { phase?: string }).phase === 'commentary';
-    if (isGroupableToolCall(item.part) || item.part.type === ContentTypes.THINK || isCommentary) {
+      ((item.part as { phase?: string }).phase === 'commentary' ||
+        (compactBlocks && position < lastStep));
+    if (compactBlocks && getToolCallName(item.part) === ASK_USER_QUESTION) {
+      flushWithoutLabel();
+      result.push({ type: 'single', part: item });
+      continue;
+    }
+    const isBlockPart =
+      isGroupableToolCall(item.part) ||
+      (compactBlocks && isActivityStep(item.part)) ||
+      item.part.type === ContentTypes.THINK ||
+      isCommentary;
+    if (isBlockPart) {
       currentBlock.push(item);
       continue;
     }

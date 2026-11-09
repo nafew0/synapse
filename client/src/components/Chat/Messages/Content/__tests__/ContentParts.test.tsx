@@ -12,6 +12,11 @@ jest.mock('~/utils', () => ({
   hasPendingApprovalInPart: jest.requireActual('~/utils/groupToolCalls').hasPendingApprovalInPart,
 }));
 
+jest.mock('~/hooks/Config/useToolDetails', () => ({
+  __esModule: true,
+  default: () => true,
+}));
+
 jest.mock('~/Providers', () => {
   const react = jest.requireActual<typeof import('react')>('react');
   return {
