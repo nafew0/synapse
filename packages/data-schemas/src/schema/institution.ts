@@ -88,6 +88,16 @@ const institutionSchema: Schema<IInstitution> = new Schema<IInstitution>(
       ref: 'User',
       default: null,
     },
+    chatAccess: {
+      type: {
+        ended: { type: Boolean, default: false },
+        message: { type: String, trim: true, maxlength: 500, default: '' },
+        changedAt: { type: Date, default: null },
+        changedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+        _id: false,
+      },
+      default: null,
+    },
   },
   { timestamps: true },
 );

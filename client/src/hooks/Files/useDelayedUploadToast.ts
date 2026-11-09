@@ -24,7 +24,7 @@ export const useDelayedUploadToast = () => {
       const message = localize('com_ui_upload_delay', { 0: fileName });
       showToast({
         message,
-        status: 'warning',
+        status: 'info',
         duration: 10000,
       });
     }, delay);

@@ -2863,6 +2863,10 @@ export enum ErrorTypes {
    * SSE stream 404 — job completed, expired, or was deleted before the subscriber connected
    */
   STREAM_EXPIRED = 'stream_expired',
+  /**
+   * The user's institution has ended chat access (e.g. a free trial is over).
+   */
+  CHAT_ACCESS_ENDED = 'chat_access_ended',
 }
 
 /**

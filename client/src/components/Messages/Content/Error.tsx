@@ -54,6 +54,7 @@ const errorKeys: Record<string, TranslationKeys> = {
   insufficient_quota: 'com_error_model_unavailable',
   concurrent: 'com_error_concurrent',
   message_limit: 'com_error_message_limit',
+  [ErrorTypes.CHAT_ACCESS_ENDED]: 'com_error_access_ended',
   [UNFINISHED_ERROR_CODE]: 'com_error_response_incomplete',
 };
 
