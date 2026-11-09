@@ -477,6 +477,10 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
   const { handleImageUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id, endpoint } = metadata;
 
+  /* Before storing: local image storage converts the upload and deletes the temp file. */
+  const sandboxMetadata = returnFile
+    ? undefined
+    : await getImageSandboxMetadata({ req, file, metadata });
   const { filepath, bytes, width, height, storageKey, storageRegion } = await handleImageUpload({
     req,
     file,
@@ -484,9 +488,6 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
     endpoint,
   });
   const storageMetadata = getStorageMetadata({ filepath, source, storageKey, storageRegion });
-  const sandboxMetadata = returnFile
-    ? undefined
-    : await getImageSandboxMetadata({ req, file, metadata });
 
   const result = await db.createFile(
     {

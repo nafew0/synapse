@@ -238,6 +238,18 @@ describe('buildDocumentReadContext', () => {
     expect(context).not.toContain('typed.pdf');
   });
 
+  it('names an attached image, which has no pages classified at upload', () => {
+    /* A photographed office order reached the model as a picture with no name, so the model
+     * could not call read_document and typed the order out by eye. */
+    const context = buildDocumentReadContext([
+      { file_id: 'i', filename: 'office-order.jpg', type: 'image/png' },
+      { file_id: 'w', filename: 'sticker.webp', type: 'image/webp' },
+    ]);
+    expect(context).toContain('- "office-order.jpg"');
+    expect(context).toContain('read_document');
+    expect(context).not.toContain('sticker.webp');
+  });
+
   it('says nothing when no file needs OCR', () => {
     expect(buildDocumentReadContext([scanned('b', 'typed.pdf', []), {}])).toBeUndefined();
   });
