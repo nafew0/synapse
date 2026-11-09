@@ -30,6 +30,13 @@ export interface IInstitution extends Document {
     activeMembers?: number;
   };
   createdBy?: Types.ObjectId | string;
+  /** Set by a platform superadmin to stop new chats, e.g. when a free trial is over. */
+  chatAccess?: {
+    ended: boolean;
+    message?: string;
+    changedAt?: Date | null;
+    changedBy?: Types.ObjectId | string | null;
+  } | null;
   suspendedAt?: Date | null;
   suspendedBy?: Types.ObjectId | string | null;
   createdAt?: Date;

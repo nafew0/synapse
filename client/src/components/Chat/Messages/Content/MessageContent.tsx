@@ -3,6 +3,9 @@ import { useRecoilValue } from 'recoil';
 import { Alert, DelayedRender } from '@librechat/client';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageContentProps, TDisplayProps } from '~/common';
+import AccessEndedNotice, {
+  parseAccessEnded,
+} from '~/components/Messages/Content/AccessEndedNotice';
 import { CONNECTION_ERROR_TEXT, LEGACY_CONNECTION_ERROR_TEXT } from '~/hooks/SSE/errors';
 import Error, { UNFINISHED_ERROR_CODE } from '~/components/Messages/Content/Error';
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
@@ -78,6 +81,15 @@ export const ErrorMessage = ({
 }: Pick<TDisplayProps, 'text' | 'className'> & { message?: TMessage }) => {
   if (connectionErrorTexts.has(text)) {
     return <ConnectionError message={message} />;
+  }
+
+  const accessEnded = parseAccessEnded(text);
+  if (accessEnded) {
+    return (
+      <Container message={message}>
+        <AccessEndedNotice info={accessEnded.info} />
+      </Container>
+    );
   }
 
   return (

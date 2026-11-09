@@ -2,10 +2,13 @@ import mongoose from 'mongoose';
 import { InstitutionStatuses, type IInstitution, logger } from '@librechat/data-schemas';
 import type { Model } from 'mongoose';
 
+/** The institution fields read on every authenticated request, reused downstream via `req.institution`. */
+export type GatedInstitution = Pick<IInstitution, 'tenantId' | 'status' | 'name' | 'chatAccess'>;
+
 export type InstitutionValidationResult =
   | {
       ok: true;
-      institution?: Pick<IInstitution, 'tenantId' | 'status' | 'name'>;
+      institution?: GatedInstitution;
       degraded?: 'registry_unavailable' | 'not_found';
     }
   | {
@@ -54,8 +57,8 @@ export async function validateActiveInstitution(
   }
 
   const institution = await Institution.findOne({ tenantId })
-    .select('tenantId status name')
-    .lean<Pick<IInstitution, 'tenantId' | 'status' | 'name'> | null>()
+    .select('tenantId status name chatAccess')
+    .lean<GatedInstitution | null>()
     .exec();
 
   if (!institution) {

@@ -1,5 +1,5 @@
 import type { TConversation, TEndpointOption } from 'librechat-data-provider';
-import type { IUser, AppConfig } from '@librechat/data-schemas';
+import type { IUser, AppConfig, IInstitution } from '@librechat/data-schemas';
 import type { Request } from 'express';
 
 /**
@@ -29,4 +29,6 @@ export type ServerRequest = Request<unknown, unknown, RequestBody> & {
   resolvedConversation?: Partial<TConversation> | null;
   /** Passport strategy that populated req.user for this request. */
   authStrategy?: string;
+  /** The user's institution as read by `tenantContextMiddleware`; absent for users without one. */
+  institution?: Pick<IInstitution, 'tenantId' | 'status' | 'name' | 'chatAccess'>;
 };
