@@ -181,10 +181,16 @@ describe('BashCall intent label', () => {
     expect(screen.queryByText(/object Object/)).not.toBeInTheDocument();
   });
 
-  it('ignores an intent that is not the FIRST args key (label contract is first-position)', () => {
-    renderBashCall('{"command":"sleep 10","intent":"billing_inquiry"}');
-    expect(screen.getByTestId('progress-text')).toHaveTextContent('Running command');
-    expect(screen.queryByText('billing_inquiry')).not.toBeInTheDocument();
+  /** The SDK declares bash's `intent` after `command`, and it is only ever the label. */
+  it('reads a settled intent that comes after the command', () => {
+    renderBashCall('{"command":"sleep 10","intent":"Waiting for the build"}');
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Waiting for the build');
+  });
+
+  it('waits for the args to settle before reading a later intent', () => {
+    renderBashCall('{"command":"sleep 10","intent":"Waiting for the bu');
+    expect(screen.getByTestId('progress-text')).toHaveTextContent('Writing command');
+    expect(screen.queryByText(/Waiting for the bu/)).not.toBeInTheDocument();
   });
 
   it('bounds a runaway intent to a single 256-char line', () => {

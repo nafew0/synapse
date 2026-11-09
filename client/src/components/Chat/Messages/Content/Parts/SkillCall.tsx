@@ -9,6 +9,7 @@ import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
 import Stdout from './Stdout';
 import { cn } from '~/utils';
+import StepRow from './StepRow';
 
 export default function SkillCall({
   isSubmitting,
@@ -33,7 +34,7 @@ export default function SkillCall({
 }) {
   const localize = useLocalize();
   const skillName = useMemo(() => parseJsonField(args, 'skillName'), [args]);
-  const intent = useToolCallIntent(args);
+  const intent = useToolCallIntent(args, 'skill');
 
   const { showCode, toggleCode, expandStyle, expandRef, phase, hasOutput, detailsEnabled } =
     useToolCallState({
@@ -47,7 +48,7 @@ export default function SkillCall({
 
   return (
     <>
-      <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
+      <StepRow>
         <ProgressText
           phase={phase}
           onClick={toggleCode}
@@ -70,7 +71,7 @@ export default function SkillCall({
           hasInput={!!skillName || hasOutput}
           isExpanded={showCode}
         />
-      </div>
+      </StepRow>
       {detailsEnabled && (
         <div style={expandStyle}>
           <div className="overflow-hidden" ref={expandRef}>

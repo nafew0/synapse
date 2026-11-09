@@ -1,6 +1,7 @@
 import { ScrollText } from 'lucide-react';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import StepRow from './StepRow';
 
 /**
  * Minimal variant of `SkillCall` used for the interim window between
@@ -33,7 +34,7 @@ export default function PendingSkillCall({
     : localize('com_ui_skill_running', { 0: skillName });
 
   return (
-    <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
+    <StepRow>
       <div className="progress-text-wrapper text-token-text-secondary relative -mt-[0.75px] h-5 w-full leading-5">
         <div
           className="progress-text-content absolute left-0 top-0 max-w-full overflow-visible whitespace-nowrap"
@@ -48,6 +49,6 @@ export default function PendingSkillCall({
           </div>
         </div>
       </div>
-    </div>
+    </StepRow>
   );
 }

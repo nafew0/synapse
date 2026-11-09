@@ -10,6 +10,7 @@ import parseJsonField from './parseJsonField';
 import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import StepRow from './StepRow';
 
 const LANG_MAP: Record<string, string> = {
   py: 'python',
@@ -84,8 +85,12 @@ export default function ReadFileCall({
   onExpand?: () => void;
 }) {
   const localize = useLocalize();
-  const filePath = useMemo(() => parseJsonField(args, 'file_path'), [args]);
-  const intent = useToolCallIntent(args);
+  /** `read_file` names its argument `path`; `file_path` is kept for older saved calls. */
+  const filePath = useMemo(
+    () => parseJsonField(args, 'path') || parseJsonField(args, 'file_path'),
+    [args],
+  );
+  const intent = useToolCallIntent(args, 'read_file');
   const fileName = filePath.split('/').pop() || filePath;
   const lang = useMemo(() => langFromPath(filePath), [filePath]);
 
@@ -103,7 +108,7 @@ export default function ReadFileCall({
 
   return (
     <>
-      <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
+      <StepRow>
         <ProgressText
           phase={phase}
           onClick={toggleCode}
@@ -126,7 +131,7 @@ export default function ReadFileCall({
           hasInput={!!filePath || hasOutput}
           isExpanded={showCode}
         />
-      </div>
+      </StepRow>
       {detailsEnabled && (
         <div style={expandStyle}>
           <div className="overflow-hidden" ref={expandRef}>

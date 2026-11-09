@@ -6,11 +6,16 @@ import { SourceList, SourceFaviconStack } from '~/components/Web/SourceList';
 import { useLocalize, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import { parsePageSource, parseSearchSources } from './sources';
 import useToolCallState from './useToolCallState';
+import { useDenseSteps } from './StepRow';
 import { useToolCallIntent } from './intent';
 import { WEB_SEARCH_TOOL_NAMES } from '~/utils/toolLabels';
 import cn from '~/utils/cn';
 
-const rowClass = 'tool-status-text my-1 flex min-w-0 items-center gap-2.5 text-text-secondary';
+const rowBase = 'tool-status-text flex min-w-0 items-center gap-2.5 text-text-secondary';
+
+function useRowClass(): string {
+  return cn(rowBase, useDenseSteps() ? 'my-0.5' : 'my-1');
+}
 
 function GlobeIcon({ animate = false }: { animate?: boolean }) {
   return (
@@ -31,6 +36,8 @@ function SearchResults({
   onExpand?: () => void;
 }) {
   const localize = useLocalize();
+  const rowClass = useRowClass();
+  const dense = useDenseSteps();
   const sources = useMemo(() => parseSearchSources(output), [output]);
   const [open, setOpen] = useState(false);
   const { style, ref } = useExpandCollapse(open);
@@ -56,7 +63,7 @@ function SearchResults({
   };
 
   return (
-    <div className="mb-2">
+    <div className={dense ? 'my-0.5' : 'mb-2'}>
       <button
         type="button"
         className={cn(
@@ -91,6 +98,7 @@ function SearchResults({
 
 function PageRead({ output, args }: { output: string; args?: string | Record<string, unknown> }) {
   const localize = useLocalize();
+  const rowClass = useRowClass();
   const page = useMemo(() => parsePageSource(output, args), [output, args]);
 
   if (!page) {
@@ -141,7 +149,8 @@ export default function WebToolCall({
   onExpand?: () => void;
 }) {
   const localize = useLocalize();
-  const intent = useToolCallIntent(args);
+  const rowClass = useRowClass();
+  const intent = useToolCallIntent(args, name);
   const isSearch = WEB_SEARCH_TOOL_NAMES.has(name);
   const { phase } = useToolCallState({
     initialProgress,

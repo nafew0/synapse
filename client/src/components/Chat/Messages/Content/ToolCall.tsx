@@ -18,6 +18,7 @@ import { logger, getToolDisplayLabel } from '~/utils';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
+import StepRow from './Parts/StepRow';
 
 export default function ToolCall({
   initialProgress = 0.1,
@@ -265,11 +266,7 @@ export default function ToolCall({
           return getFinishedText();
         })()}
       </span>
-      <div
-        className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5"
-        data-testid="tool-call"
-        data-tool-call-id={toolCallId}
-      >
+      <StepRow data-testid="tool-call" data-tool-call-id={toolCallId}>
         <ProgressText
           phase={phase}
           onClick={handleToggleInfo}
@@ -293,7 +290,7 @@ export default function ToolCall({
           hasInput={hasInfo}
           isExpanded={showInfo}
         />
-      </div>
+      </StepRow>
       <div
         style={expandStyle}
         onTransitionEnd={handleTransitionEnd}
