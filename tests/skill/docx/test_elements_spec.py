@@ -581,3 +581,36 @@ def test_a_signature_stops_at_a_line_the_structure_call_says_is_not_part_of_it()
     spec, _ = convert(right_side_lines("signature", "page_number"))
     signature = next(block for block in spec["blocks"] if block["type"] == "signature")
     assert signature["lines"] == ["সংযুক্তি: ২ পাতা"]
+
+
+def test_the_words_printed_under_a_logo_come_back_as_its_caption():
+    spec, _ = convert([
+        el("Image", "বাংলাদেশ\nবিশ্ববিদ্যালয় মঞ্জুরী কমিশন"),
+        el("Title", "বাংলাদেশ বিশ্ববিদ্যালয় মঞ্জুরী কমিশন"),
+        el("NarrativeText", "বিষয়: " * 40),
+    ])
+    assert spec["blocks"][0]["logo_caption"] == ["বাংলাদেশ", "বিশ্ববিদ্যালয় মঞ্জুরী কমিশন"]
+
+
+def boxed(kind, text, x0, y0, x1, y1):
+    return el(kind, text, coordinates={
+        "points": [[x0, y0], [x0, y1], [x1, y1], [x1, y0]], "layout_width": 768, "layout_height": 1086,
+    })
+
+
+def test_a_signature_block_is_spaced_from_its_intro_and_its_crop_leaves_out_the_print():
+    """The gap above a signature used to be measured to the printed name under the handwriting,
+    leaving 48 pt of blank page above it."""
+    body = "বাংলাদেশ হাই-টেক পার্ক কর্তৃপক্ষ কর্তৃক বাস্তবায়নাধীন প্রকল্পে প্রেষণে কর্মরত। " * 4
+    spec, crops = convert([
+        boxed("Title", "অফিস আদেশ", 323, 184, 424, 209),
+        boxed("NarrativeText", body, 90, 223, 655, 325),
+        boxed("NarrativeText", "কর্তৃপক্ষের অনুমোদনক্রমে,", 504, 332, 616, 346),
+        boxed("NarrativeText", "Tahmina Rahman 16.09.26", 514, 359, 656, 389),
+        boxed("NarrativeText", "তাহমিনা রহমান", 526, 387, 594, 399),
+        boxed("NarrativeText", "যুগ্মসচিব", 542, 404, 578, 418),
+    ], (768, 1086))
+    signature = next(b for b in spec["blocks"] if b["type"] == "signature")
+    assert signature["space_before"] < 12
+    crop = next(c for c in crops if c["name"] == "sig1")
+    assert [526, 387, 594, 399] in crop["mask"]

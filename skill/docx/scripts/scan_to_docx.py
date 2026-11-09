@@ -18,7 +18,7 @@ from math import log, sqrt
 from statistics import median
 from pathlib import Path
 
-from PIL import Image, ImageFilter, ImageOps
+from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from elements_spec import PAGE_NUMBER, SHARED_BOX_SHARE, TEXT_TYPES, convert, looks_handwritten, reflowed, with_line_role  # noqa: E402
@@ -59,6 +59,15 @@ MAX_SKIPPED_PIECES = 0.3
 HANDWRITING_PIECES = 2
 MAX_WIDTH_ERROR = 0.35
 MAX_LINE_ERROR = 1.0
+ENLARGE = 3
+MASK_PAD = 1
+MAX_PICTURE_EDGE = 1800
+# A handwritten line's width says nothing about its letters, so it takes pieces at a flat cost:
+# less than missing it, more than a printed line that fits its piece.
+HAND_TAKE_COST = 0.9
+# A printed line runs on to the next row only when it fills its row: it ends within this share of
+# its block's width from the block's right edge.
+WRAP_FULL_SHARE = 0.1
 TYPICAL_CHAR_SHARE = 0.4
 MAX_CHAR_SCALE = 1.8
 TYPE_DARK = 160
@@ -700,6 +709,22 @@ def grow_signatures(boxes, page):
         crop["box"] = [x0, signature_top(image, crop["box"], crop.get("ceiling") or 0), x1, bottom]
 
 
+def without_print(page, boxes, qa):
+    """The page with the printed lines next to each signature painted white, so its crop holds the
+    handwriting alone, not a strip of the name under it. The page itself when there are none."""
+    masks = [mask for crop in boxes for mask in crop.get("mask") or []]
+    if not masks:
+        return page
+    with Image.open(page) as source:
+        image = source.convert("RGB")
+    draw = ImageDraw.Draw(image)
+    for x0, y0, x1, y1 in masks:
+        draw.rectangle((x0, y0 - MASK_PAD, x1, y1 + MASK_PAD), fill="white")
+    masked = qa / f"masked-{Path(page).stem}.png"
+    image.save(masked)
+    return masked
+
+
 def run_crops(crops, pages, qa):
     """Cuts every picture that has a box. Returns the crop names that came out."""
     script = Path(__file__).resolve().parent / "crop.py"
@@ -711,7 +736,9 @@ def run_crops(crops, pages, qa):
         grow_signatures(boxes, page)
         args = [f"{c['name']}={','.join(str(v) for v in c['box'])}" for c in boxes]
         result = subprocess.run(
-            [sys.executable, str(script), str(page), str(qa), *args], capture_output=True, text=True
+            [sys.executable, str(script), str(without_print(page, boxes, qa)), str(qa), *args],
+            capture_output=True,
+            text=True,
         )
         if result.returncode != 0:
             print(result.stderr.strip()[-300:])
@@ -758,6 +785,17 @@ def keep_largest_shape(path):
     image.crop((left, top, right + 1, bottom + 1)).save(path)
 
 
+def enlarge(path):
+    """A crop keeps its printed size but gets ENLARGE times the pixels, resampled smoothly, so a
+    logo or signature cut from a small photo prints sharp instead of blocky."""
+    with Image.open(path) as opened:
+        image = opened.convert("RGB")
+    factor = min(ENLARGE, MAX_PICTURE_EDGE / max(image.size))
+    if factor <= 1:
+        return
+    image.resize((round(image.width * factor), round(image.height * factor)), Image.Resampling.LANCZOS).save(path)
+
+
 def place_pictures(spec, made, qa, cm_per_pixel, crop_pages=None):
     """Sets each picture to its size on the page. One with no crop is left out and reported.
     `crop_pages` gives each crop's page, for a scale that differs by page."""
@@ -774,6 +812,7 @@ def place_pictures(spec, made, qa, cm_per_pixel, crop_pages=None):
                 with Image.open(qa / f"{name}.png") as image:
                     scale = page_scale(cm_per_pixel, (crop_pages or {}).get(name, 1))
                     block[width_key] = round(image.width * scale, 2)
+                enlarge(qa / f"{name}.png")
             else:
                 missing.append(name)
                 del block[key]
@@ -917,7 +956,16 @@ def match_lines(lines, ordered, handwritten=None):
     line_height = median(piece[3] - piece[1] + 1 for piece, _ in ordered)
     tall = [piece[3] - piece[1] + 1 > TALL_PIECE_LINES * line_height for piece, _ in ordered]
     widths = [piece[2] - piece[0] + 1 for piece, _ in ordered]
-    per_char = sum(widths) / max(sum(len(line) for line in lines), 1)
+    printed_chars = sum(len(line) for line, hand in zip(lines, handwritten) if not hand)
+    per_char = sum(widths) / max(printed_chars, 1)
+    spans = {}
+    for piece, block in ordered:
+        left, right = spans.get(block, (piece[0], piece[2]))
+        spans[block] = (min(left, piece[0]), max(right, piece[2]))
+    full = [
+        piece[2] >= spans[block][1] - WRAP_FULL_SHARE * (spans[block][1] - spans[block][0])
+        for piece, block in ordered
+    ]
     count, pieces = len(lines), len(ordered)
     cost = [[float("inf")] * (pieces + 1) for _ in range(count + 1)]
     step = [[None] * (pieces + 1) for _ in range(count + 1)]
@@ -937,6 +985,11 @@ def match_lines(lines, ordered, handwritten=None):
                         break
                     if tall[j + k - 1] and not handwritten[i]:
                         break
+                    if k > 1 and not handwritten[i] and not full[j + k - 2]:
+                        break
+                    if handwritten[i]:
+                        moves.append((i + 1, j + k, here + HAND_TAKE_COST + WRAP_COST * (k - 1), ("take", k)))
+                        continue
                     printed = sum(widths[j:j + k])
                     expected = max(len(lines[i]), 1) * per_char
                     error = abs(log(expected / printed))
@@ -955,8 +1008,8 @@ def match_lines(lines, ordered, handwritten=None):
         i, j = pi, pj
     errors = [
         abs(log(max(len(line), 1) * per_char / sum(widths[index] for index in indexes)))
-        for line, indexes in zip(lines, taken)
-        if indexes
+        for line, indexes, hand in zip(lines, taken, handwritten)
+        if indexes and not hand
     ]
     error = sum(errors) / len(errors) if errors else float("inf")
     # Letter width scaled from these lines alone fits any text on average; a letter is about
@@ -991,15 +1044,14 @@ def place_lines(element, image):
     if len({block for _, block in ordered}) < 2:
         # One block of lines is a paragraph that wraps: its lines must stay one paragraph.
         return None
-    # Handwriting read as text has no order or width to match by; it goes into a signature's
-    # picture, which is cut between the printed lines around it, so it needs no box of its own.
+    # Handwriting read as text has no width to match by, but it sits between the printed lines
+    # around it. It takes the pieces there, so a printed line never wraps over them, and its box
+    # tells the signature's picture where the handwriting runs.
     handwritten = [looks_handwritten({"text": line}) for line in lines]
     printed = [line for line, hand in zip(lines, handwritten) if not hand]
-    found_printed, error = match_lines(printed, ordered)
-    matches = iter(found_printed)
-    taken = [[] if hand else next(matches) for hand in handwritten]
+    taken, error = match_lines(lines, ordered, handwritten)
     used = sum(len(indexes) for indexes in taken)
-    found = sum(1 for indexes in taken if indexes)
+    found = sum(1 for indexes, hand in zip(taken, handwritten) if indexes and not hand)
     if (
         found < MIN_MATCHED_LINES * len(printed)
         or len(pieces) - used > MAX_SKIPPED_PIECES * len(pieces) + HANDWRITING_PIECES * sum(handwritten)

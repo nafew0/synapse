@@ -61,6 +61,11 @@ from office.soffice import run_soffice  # noqa: E402
 A4 = (21.0, 29.7)
 DEFAULT_MARGINS = [1.5, 2.0, 1.5, 2.0]
 MIN_SIZE = 10.0
+# The two or three words printed under an emblem, as on a UGC letterhead.
+LOGO_CAPTION_PT = 6.5
+CAPTION_CHAR_EM = 0.42
+POINTS_PER_CM = 72 / 2.54
+MAX_CAPTION_COLUMN_CM = 4.5
 MIN_MARGIN = 1.2
 GAP_STEP = 0.7
 MIN_GAP_SCALE = 0.3
@@ -257,9 +262,22 @@ def letterhead(doc, block, style):
     lines = block.get("lines", [])
     logo = block.get("logo")
     if logo:
-        side = float(block.get("logo_width_cm", 2.0)) + 0.4
-        left, middle, _ = borderless_table(doc, [side, style.text_width_cm - 2 * side, side])
-        picture(shape(left.paragraphs[0], style, {}, align="center", after=0), logo, side - 0.4)
+        mirror = float(block.get("logo_width_cm", 2.0)) + 0.4
+        side = mirror
+        captions = block.get("logo_caption", [])
+        if captions:
+            # A caption wider than the emblem widens its own column rather than wrapping. The
+            # column on the right stays the emblem's width, so the name beside it keeps its room.
+            em_cm = style.size(LOGO_CAPTION_PT) / POINTS_PER_CM
+            widest = max(len(text) for text in captions) * CAPTION_CHAR_EM * em_cm
+            side = min(max(side, widest + 0.2), MAX_CAPTION_COLUMN_CM)
+        left, middle, _ = borderless_table(doc, [side, style.text_width_cm - side - mirror, mirror])
+        picture(shape(left.paragraphs[0], style, {}, align="center", after=0), logo, float(block.get("logo_width_cm", 2.0)))
+        for text in block.get("logo_caption", []):
+            caption = {"size": LOGO_CAPTION_PT}
+            paragraph = left.add_paragraph()
+            shape(paragraph, style, caption, align="center", after=0)
+            add_text(paragraph, text, style, caption)
         target = middle
     else:
         target = None
