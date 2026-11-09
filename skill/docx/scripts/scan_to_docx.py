@@ -21,7 +21,7 @@ from pathlib import Path
 from PIL import Image, ImageFilter, ImageOps
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from elements_spec import PAGE_NUMBER, SHARED_BOX_SHARE, TEXT_TYPES, convert, looks_handwritten, reflowed  # noqa: E402
+from elements_spec import PAGE_NUMBER, SHARED_BOX_SHARE, TEXT_TYPES, convert, looks_handwritten, reflowed, with_line_role  # noqa: E402
 from straighten import page_tilt, turn_about_center, word_direction  # noqa: E402
 
 RENDER_DPI = 150
@@ -1007,16 +1007,17 @@ def place_lines(element, image):
     ):
         return None
     placed = []
-    for text, indexes in zip(lines, taken):
+    for index, (text, indexes) in enumerate(zip(lines, taken)):
         if not indexes:
-            placed.append({**element, "text": text, "metadata": {k: v for k, v in element["metadata"].items() if k != "coordinates"}})
+            unplaced = {**element, "text": text, "metadata": {k: v for k, v in element["metadata"].items() if k != "coordinates"}}
+            placed.append(with_line_role(unplaced, index))
             continue
         boxes = [ordered[index][0] for index in indexes]
         box = [
             x0 + min(b[0] for b in boxes), y0 + min(b[1] for b in boxes),
             x0 + max(b[2] for b in boxes) + 1, y0 + max(b[3] for b in boxes) + 1,
         ]
-        placed.append(line_element(element, text, box, scale))
+        placed.append(with_line_role(line_element(element, text, box, scale), index))
     return placed
 
 

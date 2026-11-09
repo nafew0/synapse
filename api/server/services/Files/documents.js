@@ -5,6 +5,8 @@ const {
   getStorageSource,
   createDocumentReadTool,
   isDocumentOcrAllowed,
+  createStructureLabeller,
+  resolveStructureOptions,
   createUnstructuredClient,
   resolveDocumentOcrClientOptions,
 } = require('@librechat/api');
@@ -90,6 +92,9 @@ async function createDocumentReader(req, agentId) {
       }
       return streamToBuffer(await getDownloadStream(req, file.filepath));
     },
+    labelStructure: config.structure
+      ? createStructureLabeller(resolveStructureOptions(config.structure))
+      : undefined,
     getCached: (hash) => cache.get(cacheKey(hash)),
     setCached: (hash, reading) => cache.set(cacheKey(hash), reading, Time.ONE_DAY * 7),
     recordCharge: ({ file, pages, contentHash }) =>

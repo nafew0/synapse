@@ -1923,6 +1923,19 @@ export const ocrSchema = z.object({
 });
 
 /** The Office Assistant's document reader. Off unless an assistant and an institution are both listed. */
+/**
+ * A vision model that labels each read line's role (signature, page number, addressee...) so the
+ * scan-to-Word rebuild knows what not to treat as a signature. Off unless configured.
+ */
+export const documentOcrStructureSchema = z.object({
+  apiUrl: z.string().default('https://openrouter.ai/api/v1'),
+  apiKey: z.string(),
+  model: z.string().default('google/gemini-2.5-flash-lite'),
+  timeoutMs: z.number().int().min(1000).default(30000),
+});
+
+export type TDocumentOcrStructureConfig = z.infer<typeof documentOcrStructureSchema>;
+
 export const documentOcrSchema = z.object({
   apiUrl: z.string().default('https://transform.unstructured.io'),
   apiKey: z.string(),
@@ -1931,6 +1944,7 @@ export const documentOcrSchema = z.object({
   concurrency: z.number().int().min(1).default(5),
   agents: z.array(z.string()).default([]),
   pricePerPageUsd: z.number().nonnegative().default(0.015),
+  structure: documentOcrStructureSchema.optional(),
 });
 
 export type TDocumentOcrConfig = z.infer<typeof documentOcrSchema>;

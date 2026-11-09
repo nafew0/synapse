@@ -63,6 +63,7 @@ HANDWRITTEN_DATE = re.compile(r"[০-৯\d]{1,2}[/.-][০-৯\d]{1,2}[/.-][০-�
 SHORT_LINE = 70
 MAX_SIGNATURE_LINES = 5
 PICTURE_TYPES = {"Image", "Figure", "Picture"}
+SIGNATURE_ROLES = {"signature", "handwriting"}
 PAGE_NUMBER = re.compile(r"^\s*(?:[-–]\s*)?[0-9০-৯]{1,4}(?:\s*[-–])?\s*$")
 DROPPED_TYPES = {"PageBreak", "PageNumber"}
 TYPE_MEASURED = {"title", "heading", "paragraph"}
@@ -166,6 +167,32 @@ def is_bangla_page(elements):
     """Whether most of the letters on the page are Bangla."""
     text = " ".join(text_of(e) for e in elements)
     return len(BANGLA_LETTER.findall(text)) > len(LATIN_LETTER.findall(text))
+
+
+def role_of(element):
+    """The role the structure call gave this line, if it ran: `role` on a line split from an
+    element, else the first of the element's `line_roles`."""
+    metadata = element.get("metadata") or {}
+    roles = metadata.get("line_roles")
+    return metadata.get("role") or (roles[0] if roles else None)
+
+
+def with_line_role(element, index):
+    """A piece of `element` that starts at its line `index`, taking that line's role."""
+    metadata = element.get("metadata") or {}
+    roles = metadata.get("line_roles")
+    if roles is None:
+        return element
+    rest = {key: value for key, value in metadata.items() if key != "line_roles"}
+    role = roles[index] if index < len(roles) else None
+    return {**element, "metadata": {**rest, "role": role} if role else rest}
+
+
+def can_sign(element):
+    """Whether a line may belong to a signature. The page rules decide; the structure call, when it
+    ran, can only say no: a page number, an addressee or a date on the right is never a signature."""
+    role = role_of(element)
+    return role is None or role in SIGNATURE_ROLES
 
 
 def looks_handwritten(element):
@@ -341,30 +368,34 @@ def split_element(element):
     all_short = sum(len(line) <= SHORT_LINE for line in lines) * 2 > len(lines)
     blocks, paragraph, item = [], [], None
 
-    def emit(kind, content):
-        blocks.append({**element, "type": kind, "text": content})
+    start = 0
+
+    def emit(kind, content, first):
+        blocks.append(with_line_role({**element, "type": kind, "text": content}, first))
 
     def flush():
         nonlocal paragraph, item
         if item is not None:
-            emit("ListItem", " ".join(item))
+            emit("ListItem", " ".join(item), start)
         elif paragraph:
-            emit("NarrativeText", " ".join(paragraph))
+            emit("NarrativeText", " ".join(paragraph), start)
         paragraph, item = [], None
 
-    for line in lines:
+    for index, line in enumerate(lines):
         if LIST_NUMBER.match(line):
             flush()
-            item = [line]
+            item, start = [line], index
         elif (MEMO.match(line) or DATE_LABEL.match(line)) and not paragraph:
             flush()
-            emit("NarrativeText", line)
+            emit("NarrativeText", line, index)
         elif item is not None:
             item.append(line)
         elif all_short:
             flush()
-            emit("NarrativeText", line)
+            emit("NarrativeText", line, index)
         else:
+            if not paragraph:
+                start = index
             paragraph.append(line)
     flush()
     box = layout_box(element)
@@ -771,6 +802,7 @@ class SpecBuilder:
             and self.elements[self.index].get("type") in ("NarrativeText", "UncategorizedText")
             and is_short(self.elements[self.index])
             and not is_page_number_line(self.elements[self.index])
+            and can_sign(self.elements[self.index])
             and not is_memo(self.elements[self.index])
             and not is_date_label(self.elements[self.index])
             and (
@@ -851,7 +883,7 @@ class SpecBuilder:
                 continue
             if text and (is_memo(element) or is_date_label(element)) and self.memo():
                 continue
-            if kind in ("NarrativeText", "UncategorizedText") and is_short(element) and not is_page_number_line(element) and (
+            if kind in ("NarrativeText", "UncategorizedText") and is_short(element) and not is_page_number_line(element) and can_sign(element) and (
                 is_right_side(element) or (self.bangla and looks_handwritten(element))
             ):
                 self.signature()

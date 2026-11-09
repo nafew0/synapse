@@ -60,6 +60,12 @@ export interface DocumentReadDeps {
   checkAllowance?: (pages: number) => Promise<boolean>;
   recordCharge: (charge: DocumentCharge) => Promise<void>;
   uploadToSandbox: (name: string, content: string) => Promise<SandboxFileRef>;
+  /** Adds structure roles to a fresh read's lines. Absent when the structure call is not configured. */
+  labelStructure?: (
+    file: DocumentFile,
+    buffer: Buffer,
+    elements: UnstructuredElement[],
+  ) => Promise<UnstructuredElement[]>;
 }
 
 type ToolOutput = [string, { session_id: string; files: SandboxFileRef[] } | undefined];
@@ -199,6 +205,24 @@ async function readDocument(
   };
 }
 
+/** Roles are an aid to the rebuild, so a failed structure call keeps the read as it is. */
+async function withStructure(
+  deps: Pick<DocumentReadDeps, 'labelStructure'>,
+  file: DocumentFile,
+  buffer: Buffer,
+  reading: DocumentReading,
+): Promise<DocumentReading> {
+  if (!deps.labelStructure || reading.elements.length === 0) {
+    return reading;
+  }
+  try {
+    return { ...reading, elements: await deps.labelStructure(file, buffer, reading.elements) };
+  } catch (error) {
+    logger.error('[read_document] the structure call failed', error);
+    return reading;
+  }
+}
+
 /** The read already succeeded and was cached, so a failed record must not fail the turn. */
 async function chargeForReading(
   deps: Pick<DocumentReadDeps, 'recordCharge'>,
@@ -248,8 +272,9 @@ export function createDocumentReadTool(deps: DocumentReadDeps): DynamicStructure
 
       const key = createHash('sha256').update(buffer).digest('hex');
       const cached = await deps.getCached(key);
-      const reading = cached ?? (await readDocument(file, buffer, deps));
+      let reading = cached ?? (await readDocument(file, buffer, deps));
       if (!cached && !reading.refused) {
+        reading = await withStructure(deps, file, buffer, reading);
         await deps.setCached(key, reading);
         await chargeForReading(deps, file, reading, key);
       }

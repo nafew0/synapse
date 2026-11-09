@@ -17,6 +17,8 @@ export interface UnstructuredElement {
     } | null;
     /** Set on pages Synapse read itself, so nothing mistakes them for OCR output. */
     source?: 'parser';
+    /** One structure role per text line, from the structure call; null where it gave none. */
+    line_roles?: (string | null)[];
   };
 }
 

@@ -551,3 +551,33 @@ def test_a_page_number_at_the_right_edge_is_not_a_signature():
     kinds = [block["type"] for block in spec["blocks"]]
     assert "signature" not in kinds
     assert [block["text"] for block in spec["blocks"] if block["type"] == "paragraph"] == ["12", "5"]
+
+
+def test_each_line_of_a_split_element_keeps_its_role():
+    element = el("NarrativeText", "স্মারক নং-১৮\nতারিখ ঃ ০৩/১১/২০২৬\nমোঃ করিম", line_roles=["memo", "date", "signature"])
+    from elements_spec import role_of, split_element
+
+    assert [role_of(piece) for piece in split_element(element)] == ["memo", "date", "signature"]
+    assert all("line_roles" not in piece["metadata"] for piece in split_element(element))
+
+
+def right_side_lines(*roles):
+    lines = ["অনুচ্ছেদ " * 40, "সংযুক্তি: ২ পাতা", "পরিচালক"]
+    elements = [el("NarrativeText", lines[0], **box(300, 400, 1700, 900))]
+    for index, (text, role) in enumerate(zip(lines[1:], roles)):
+        extra = {"line_roles": [role]} if role else {}
+        elements.append(el("NarrativeText", text, **box(1300, 1000 + 60 * index, 1700, 1040 + 60 * index), **extra))
+    return elements
+
+
+def test_a_line_the_structure_call_says_is_not_a_signature_never_starts_one():
+    without, _ = convert(right_side_lines(None, None))
+    assert "signature" in [block["type"] for block in without["blocks"]]
+    vetoed, _ = convert(right_side_lines("body", "body"))
+    assert "signature" not in [block["type"] for block in vetoed["blocks"]]
+
+
+def test_a_signature_stops_at_a_line_the_structure_call_says_is_not_part_of_it():
+    spec, _ = convert(right_side_lines("signature", "page_number"))
+    signature = next(block for block in spec["blocks"] if block["type"] == "signature")
+    assert signature["lines"] == ["সংযুক্তি: ২ পাতা"]

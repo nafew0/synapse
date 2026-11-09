@@ -417,6 +417,33 @@ describe('read_document', () => {
     expect(artifact?.session_id).toBe('storage-1');
   });
 
+  it('labels the lines of a fresh read once and keeps the roles in the cache', async () => {
+    const labelStructure = jest.fn(
+      async (_file: unknown, _buffer: unknown, read: UnstructuredElement[]) =>
+        read.map((element) => ({
+          ...element,
+          metadata: { ...element.metadata, line_roles: ['title'] },
+        })),
+    );
+    const { reader, uploads } = build({ labelStructure });
+    await invoke(reader, 'photo.png');
+    await invoke(reader, 'photo.png');
+    expect(labelStructure).toHaveBeenCalledTimes(1);
+    const sent = JSON.parse(uploads['document-fedcba65.elements.json']);
+    expect(sent[0].metadata.line_roles).toEqual(['title']);
+  });
+
+  it('keeps the read without roles when labelling fails', async () => {
+    const labelStructure = jest.fn(async () => {
+      throw new Error('no model');
+    });
+    const { reader, uploads } = build({ labelStructure });
+    const { content } = await invoke(reader, 'photo.png');
+    expect(content).toContain('# OCR title');
+    const sent = JSON.parse(uploads['document-fedcba65.elements.json']);
+    expect(sent[0].metadata.line_roles).toBeUndefined();
+  });
+
   it('lists the files when the name is wrong, and sends nothing', async () => {
     const { reader, partition } = build();
     const { content } = await invoke(reader, 'missing.pdf');
