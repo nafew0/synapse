@@ -17,6 +17,15 @@ jest.mock('~/hooks', () => ({
     if (key === 'com_ui_asking_n_questions') {
       return `Asking ${values?.[0]} questions`;
     }
+    if (key === 'com_ui_worked_n_steps') {
+      return `Worked through ${values?.[0]} steps`;
+    }
+    if (key === 'com_ui_worked_one_step') {
+      return 'Worked through 1 step';
+    }
+    if (key === 'com_ui_working') {
+      return 'Working…';
+    }
     if (key === 'com_ui_via_server') {
       return `via ${values?.[0]}`;
     }
@@ -592,5 +601,73 @@ describe('ToolCallGroup image hoisting', () => {
 
     expect(screen.getByRole('button', { name: 'Used 2 tools' })).toBeInTheDocument();
     expect(screen.getByTestId('stacked-icons')).toBeInTheDocument();
+  });
+});
+
+describe('ToolCallGroup in compact mode', () => {
+  const think = {
+    type: ContentTypes.THINK,
+    [ContentTypes.THINK]: 'planning',
+  } as unknown as TMessageContentParts;
+  const parts = [
+    { part: think, idx: 0 },
+    { part: makePart('s1', 'loaded', 'skill', '{"skillName":"official-correspondence"}'), idx: 1 },
+    { part: makePart('s2', 'loaded', 'skill', '{"skillName":"docx"}'), idx: 2 },
+    {
+      part: makePart('c1', 'done', 'execute_code', '{"intent":"Building the order","code":"x"}'),
+      idx: 3,
+    },
+  ];
+  const props = {
+    parts,
+    isSubmitting: false,
+    isLast: false,
+    lastContentIdx: 3,
+    compact: true,
+    renderPart: (_p: TMessageContentParts, idx: number) => (
+      <div data-testid={`inner-${idx}`} key={idx}>
+        {'inner'}
+      </div>
+    ),
+  } satisfies React.ComponentProps<typeof ToolCallGroup>;
+
+  it('counts the steps and shows the skills used, collapsed', () => {
+    renderGroup(props);
+
+    expect(screen.getByRole('status')).toHaveTextContent('Worked through 3 steps');
+    expect(screen.getByText('· official-correspondence, docx')).toBeInTheDocument();
+    expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByTestId('inner-3')).not.toBeInTheDocument();
+  });
+
+  it('names the newest step while the turn is running', () => {
+    renderGroup({
+      ...props,
+      parts: [
+        ...parts.slice(0, 3),
+        { part: makePart('c1', '', 'execute_code', '{"intent":"Building the order"}'), idx: 3 },
+      ],
+      isSubmitting: true,
+      isLast: true,
+    });
+
+    expect(screen.getByRole('status')).toHaveTextContent('Building the order');
+  });
+
+  it('says it is working when the newest step has no label', () => {
+    renderGroup({
+      ...props,
+      parts: [{ part: makePart('c1', '', 'execute_code'), idx: 0 }],
+      isSubmitting: true,
+      isLast: true,
+    });
+
+    expect(screen.getByRole('status')).toHaveTextContent('Working…');
+  });
+
+  it('uses the singular for one step', () => {
+    renderGroup({ ...props, parts: [{ part: makePart('c1', 'done', 'execute_code'), idx: 0 }] });
+
+    expect(screen.getByRole('status')).toHaveTextContent('Worked through 1 step');
   });
 });
