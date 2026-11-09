@@ -73,18 +73,26 @@ export default function BashCall({
       )
     : null;
 
-  const { showCode, toggleCode, expandStyle, expandRef, phase, hasOutput, hasContent } =
-    useToolCallState({
-      initialProgress,
-      isSubmitting,
-      output,
-      hasInput: !!command,
-      onExpand,
-      runStepStatus,
-      extraError: backgroundFailed,
-      hideDetailsWhileRunning: true,
-      autoExpandDetails: false,
-    });
+  const {
+    showCode,
+    toggleCode,
+    expandStyle,
+    expandRef,
+    phase,
+    hasOutput,
+    hasContent,
+    detailsEnabled,
+  } = useToolCallState({
+    initialProgress,
+    isSubmitting,
+    output,
+    hasInput: !!command,
+    onExpand,
+    runStepStatus,
+    extraError: backgroundFailed,
+    hideDetailsWhileRunning: true,
+    autoExpandDetails: false,
+  });
 
   const highlighted = useLazyHighlight(showCode ? command || undefined : undefined, 'bash');
   const { ref: commandPaneRef, onScroll: onCommandPaneScroll } = useFollowScroll<HTMLDivElement>(
@@ -157,45 +165,47 @@ export default function BashCall({
           isExpanded={showCode}
         />
       </div>
-      <div style={expandStyle}>
-        <div className="overflow-hidden" ref={expandRef}>
-          <div className="my-2 overflow-hidden rounded-lg border border-border-light">
-            {command && (
-              <div
-                ref={commandPaneRef}
-                onScroll={onCommandPaneScroll}
-                className="relative max-h-[300px] overflow-auto bg-surface-tertiary dark:bg-gray-950"
-              >
-                <CopyButton
-                  iconOnly
-                  isCopied={isCopied}
-                  onClick={handleCopy}
-                  className="sticky right-0 top-1 float-right mr-1.5 mt-1"
-                  label={localize('com_ui_copy_code')}
-                />
-                <pre className="whitespace-pre-wrap break-words px-3 py-2.5 pr-10 font-mono text-xs">
-                  <span className="select-none text-text-tertiary" aria-hidden="true">
-                    {'$ '}
-                  </span>
-                  <code className="hljs language-bash">{highlighted ?? command}</code>
-                </pre>
-              </div>
-            )}
-            {hasOutput && backgroundHandle == null && (
-              <div className={cn(command && 'border-t border-border-light')}>
-                <pre
-                  className={cn(
-                    'max-h-[300px] overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-xs',
-                    outputHasError ? 'text-status-error' : 'text-text-primary',
-                  )}
+      {detailsEnabled && (
+        <div style={expandStyle}>
+          <div className="overflow-hidden" ref={expandRef}>
+            <div className="my-2 overflow-hidden rounded-lg border border-border-light">
+              {command && (
+                <div
+                  ref={commandPaneRef}
+                  onScroll={onCommandPaneScroll}
+                  className="relative max-h-[300px] overflow-auto bg-surface-tertiary dark:bg-gray-950"
                 >
-                  {output}
-                </pre>
-              </div>
-            )}
+                  <CopyButton
+                    iconOnly
+                    isCopied={isCopied}
+                    onClick={handleCopy}
+                    className="sticky right-0 top-1 float-right mr-1.5 mt-1"
+                    label={localize('com_ui_copy_code')}
+                  />
+                  <pre className="whitespace-pre-wrap break-words px-3 py-2.5 pr-10 font-mono text-xs">
+                    <span className="select-none text-text-tertiary" aria-hidden="true">
+                      {'$ '}
+                    </span>
+                    <code className="hljs language-bash">{highlighted ?? command}</code>
+                  </pre>
+                </div>
+              )}
+              {hasOutput && backgroundHandle == null && (
+                <div className={cn(command && 'border-t border-border-light')}>
+                  <pre
+                    className={cn(
+                      'max-h-[300px] overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-xs',
+                      outputHasError ? 'text-status-error' : 'text-text-primary',
+                    )}
+                  >
+                    {output}
+                  </pre>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
       {!hideAttachments && fileAttachments && fileAttachments.length > 0 && (
         <AttachmentGroup attachments={fileAttachments} />
       )}

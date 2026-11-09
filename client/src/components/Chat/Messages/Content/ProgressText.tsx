@@ -6,7 +6,7 @@ import { isReportableRunStepDuration } from 'librechat-data-provider';
 import type { ToolCallPhase } from '~/utils/toolCallPhase';
 import { cn, getRunStepDurationLabels } from '~/utils';
 import CancelledIcon from './CancelledIcon';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useToolDetails } from '~/hooks';
 
 const wrapperClass =
   'progress-text-wrapper text-token-text-secondary relative -mt-[0.75px] h-5 w-full leading-5';
@@ -48,7 +48,7 @@ export default function ProgressText({
   icon: iconProp,
   subtitle,
   durationMs,
-  hasInput = true,
+  hasInput: hasInputProp = true,
   popover = false,
   isExpanded = false,
 }: {
@@ -75,6 +75,8 @@ export default function ProgressText({
   isExpanded?: boolean;
 }) {
   const localize = useLocalize();
+  const toolDetails = useToolDetails();
+  const hasInput = hasInputProp && toolDetails;
   /** For locale-aware decimal formatting of the sub-10s duration value. */
   const { i18n } = useTranslation();
   const isRunning = phase === 'running';

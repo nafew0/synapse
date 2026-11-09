@@ -1,8 +1,11 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import ProgressText from '../ProgressText';
 
+const mockToolDetails = jest.fn(() => true);
+
 jest.mock('~/hooks', () => ({
+  useToolDetails: () => mockToolDetails(),
   useLocalize:
     () =>
     (key: string, values?: Record<string, string | number>): string => {
@@ -109,5 +112,31 @@ describe('ProgressText duration', () => {
       renderProgressText({ durationMs: 3500 });
       expect(screen.getByRole('button')).toHaveTextContent('took 3.5 seconds');
     });
+  });
+});
+
+describe('ProgressText with tool details turned off', () => {
+  afterEach(() => mockToolDetails.mockReturnValue(true));
+
+  it('cannot be expanded even when the step has details', () => {
+    mockToolDetails.mockReturnValue(false);
+    const onClick = jest.fn();
+    renderProgressText({ hasInput: true, onClick });
+
+    const button = screen.getByRole('button');
+    expect(button).toBeDisabled();
+    expect(button).not.toHaveAttribute('aria-expanded');
+    fireEvent.click(button);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
+  it('can be expanded when tool details are on', () => {
+    const onClick = jest.fn();
+    renderProgressText({ hasInput: true, onClick });
+
+    const button = screen.getByRole('button');
+    expect(button).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(button);
+    expect(onClick).toHaveBeenCalledTimes(1);
   });
 });

@@ -505,7 +505,7 @@ describe('ToolService - Action Capability Gating', () => {
       const capabilities = [AgentCapabilities.tools];
       const agent = {
         id: 'agent_123',
-        tools: [regularTool, 'firecrawl_search', 'firecrawl_scrape'],
+        tools: [regularTool, 'search_web', 'read_web_page'],
       };
       mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
       const original = process.env.FIRECRAWL_API_KEY;
@@ -537,8 +537,8 @@ describe('ToolService - Action Capability Gating', () => {
       expect(mockLoadToolDefinitions.mock.calls[0][0].tools).toEqual([regularTool]);
       expect(mockLoadToolDefinitions.mock.calls[1][0].tools).toEqual([
         regularTool,
-        'firecrawl_search',
-        'firecrawl_scrape',
+        'search_web',
+        'read_web_page',
       ]);
     });
 

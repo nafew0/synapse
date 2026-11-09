@@ -26,7 +26,7 @@ describe('reserveFirecrawlCall', () => {
     expect(reserveFirecrawlCall(firstRequest, 'scrape', limits)).toBeNull();
     expect(reserveFirecrawlCall(resumedRequest, 'scrape', limits)).toBeNull();
     expect(reserveFirecrawlCall(resumedRequest, 'scrape', limits)).toContain(
-      'Budget reached: firecrawl_scrape has been used 2 of 2 times',
+      'Budget reached: Reading web pages has been used 2 of 2 times',
     );
   });
 

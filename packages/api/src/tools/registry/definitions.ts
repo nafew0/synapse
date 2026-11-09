@@ -395,12 +395,12 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
     schema: tavilySearchSchema,
     toolType: 'builtin',
   },
-  firecrawl_search: {
-    ...firecrawlToolkit.firecrawl_search,
+  search_web: {
+    ...firecrawlToolkit.search_web,
     toolType: 'builtin',
   },
-  firecrawl_scrape: {
-    ...firecrawlToolkit.firecrawl_scrape,
+  read_web_page: {
+    ...firecrawlToolkit.read_web_page,
     toolType: 'builtin',
   },
   read_attachment: {

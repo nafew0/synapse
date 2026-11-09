@@ -91,6 +91,7 @@ jest.mock('../useToolCallState', () => {
       progress: initialProgress,
       phase: initialProgress < 1 ? 'running' : 'completed',
       hasContent: !(hideDetailsWhileRunning && initialProgress < 1),
+      detailsEnabled: true,
     };
   }
   return { __esModule: true, default: useMockToolCallState };
