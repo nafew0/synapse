@@ -91,10 +91,11 @@ function TaskTiles() {
           <button
             type="button"
             data-testid={`task-tile-${task.id}`}
+            data-task={task.id}
             onClick={() => fillComposer(task.prompt)}
-            className="flex h-full w-full flex-col items-start gap-2 rounded-xl border border-border-light bg-surface-primary p-3 text-left transition-colors duration-theme-fast hover:border-border-heavy hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
+            className="lc-task-tile group flex h-full w-full flex-col items-start gap-2 rounded-xl border border-border-light bg-surface-primary p-3 text-left transition-[color,background-color,border-color,box-shadow,transform] duration-200 ease-out hover:-translate-y-[3px] hover:border-border-heavy hover:bg-surface-hover hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary active:-translate-y-px motion-reduce:transform-none motion-reduce:transition-colors"
           >
-            <span className="lc-task-tile-icon flex size-9 items-center justify-center rounded-lg">
+            <span className="lc-task-tile-icon flex size-9 items-center justify-center rounded-lg transition-transform duration-300 group-hover:scale-110 motion-reduce:transform-none">
               <task.icon className="size-5" aria-hidden="true" />
             </span>
             <span className="text-sm font-semibold text-text-primary">{localize(task.title)}</span>

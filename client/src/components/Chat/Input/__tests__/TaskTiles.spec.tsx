@@ -64,6 +64,16 @@ describe('TaskTiles', () => {
     expect(document.activeElement?.id).toBe(mainTextareaId);
   });
 
+  it('tags each tile with its task so the hover motion finds its icon', () => {
+    render(<Harness />);
+    const tasks = screen.getAllByRole('button').map((tile) => tile.getAttribute('data-task'));
+    expect(tasks).toEqual(['scan', 'letter', 'slides', 'sheet']);
+    screen.getAllByRole('button').forEach((tile) => {
+      expect(tile).toHaveClass('lc-task-tile');
+      expect(tile.querySelector('svg')).toBeInTheDocument();
+    });
+  });
+
   it('stays hidden for other models', () => {
     mockConversation.spec = 'gpt';
     render(<Harness />);
