@@ -5,6 +5,10 @@ version: 1.3.13
 
 cache: true
 
+memory:
+  tokenLimit: 2000
+  personalize: true
+
 # Prevents old large tool results (e.g. full document dumps from execute_code,
 # OCR'd PDF text, or `context`-attached files) from compounding token cost on
 # every subsequent turn of a long editing session.
@@ -674,7 +678,7 @@ endpoints:
         fetch: false
       titleConvo: true
       titleEndpoint: OpenRouter
-      titleModel: openai/gpt-5.6-luna
+      titleModel: openai/gpt-6-luna
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter Image'
       tokenConfig:
