@@ -63,6 +63,12 @@ DEFAULT_MARGINS = [1.5, 2.0, 1.5, 2.0]
 MIN_SIZE = 10.0
 # The two or three words printed under an emblem, as on a UGC letterhead.
 LOGO_CAPTION_PT = 6.5
+# A row keeps a gap column only when the page left at least this much room; a column is never
+# narrower than MIN_ROW_COLUMN_CM.
+MIN_ROW_GAP_CM = 0.3
+MIN_ROW_COLUMN_CM = 1.0
+# Word pads a cell on both sides; a picture wider than what is left is cut off.
+CELL_PADDING_CM = 0.4
 CAPTION_CHAR_EM = 0.42
 POINTS_PER_CM = 72 / 2.54
 MAX_CAPTION_COLUMN_CM = 4.5
@@ -74,6 +80,10 @@ MIN_SIGNATURE_SCALE = 0.6
 # Bangla faces such as Nikosh carry tall line metrics, so a dense page overflows at any type size.
 # The last fitting step sets the leading itself, tall enough for conjuncts and vowel signs.
 TIGHT_LEADING = 1.25
+# Leading and gap settings, loosest first, tried after fitting to bring the text's end level with
+# the scan's; type sizes are left alone. Within BOTTOM_TOLERANCE of the page height is level.
+SPACING_STEPS = [(False, 1.45), (False, 1.25), (False, 1.0), (True, 1.0), (True, 0.8), (True, 0.6), (True, 0.4)]
+BOTTOM_TOLERANCE = 0.012
 SCALE_STEP = 0.03
 BANGLA = re.compile(r"[ঀ-৿]")
 ALIGN = {
@@ -211,7 +221,11 @@ def bottom_rule(paragraph):
 
 
 def borderless_table(container, widths_cm):
-    table = container.add_table(rows=1, cols=len(widths_cm))
+    return borderless_grid(container, widths_cm, 1).rows[0].cells
+
+
+def borderless_grid(container, widths_cm, rows):
+    table = container.add_table(rows=rows, cols=len(widths_cm))
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
     tbl_pr = table._tbl.tblPr
@@ -221,16 +235,21 @@ def borderless_table(container, widths_cm):
         element.set(qn("w:val"), "nil")
         borders.append(element)
     insert_ordered(tbl_pr, borders, TBL_PR_ORDER)
-    for cell, width in zip(table.rows[0].cells, widths_cm):
-        cell.width = Cm(width)
+    for row in table.rows:
+        for cell, width in zip(row.cells, widths_cm):
+            cell.width = Cm(width)
     for column, width in zip(table.columns, widths_cm):
         column.width = Cm(width)
-    return table.rows[0].cells
+    return table
 
 
 def gap_after_table(doc, style, points):
     """Word needs a paragraph between tables; this one takes only the gap, not a line of text."""
-    paragraph = doc.add_paragraph()
+    return hairline(doc.add_paragraph(), style, points)
+
+
+def hairline(paragraph, style, points=0):
+    """An empty paragraph one point high, so it adds only `points` of space, not a line."""
     fmt = paragraph.paragraph_format
     fmt.space_before, fmt.space_after = Pt(0), style.gap(points)
     fmt.line_spacing_rule, fmt.line_spacing = WD_LINE_SPACING.EXACTLY, Pt(1)
@@ -305,6 +324,36 @@ def memo(doc, block, style):
     gap_after_table(doc, style, block.get("space_after", 4))
 
 
+def is_blank(cell):
+    paragraphs = cell.paragraphs
+    return len(paragraphs) == 1 and not paragraphs[0].text and not paragraphs[0]._p.xpath(".//w:drawing")
+
+
+def signature_part(cell, block, style, width, part):
+    """One piece of a signature, centred in `cell`: its intro, the picture of the handwriting, or
+    printed line `("line", n)`."""
+    paragraph = shape(cell_paragraph(cell, is_blank(cell)), style, {}, align="center", after=2 if part == "intro" else 0)
+    if part == "intro":
+        add_text(paragraph, block["intro"], style, block)
+    elif part == "image":
+        image_width = block.get("image_width_cm") or min(width - 0.5, natural_width_cm(block["image"]))
+        picture(paragraph, block["image"], float(image_width) * style.signature_scale)
+    else:
+        add_text(paragraph, block["lines"][part[1]], style, block)
+
+
+def signature_parts(block):
+    parts = ["intro"] if block.get("intro") else []
+    parts += ["image"] if block.get("image") else []
+    return parts + [("line", number) for number in range(len(block.get("lines", [])))]
+
+
+def signature_content(cell, block, style, width):
+    """The intro, the picture of the handwriting and the printed lines, centred in `cell`."""
+    for part in signature_parts(block):
+        signature_part(cell, block, style, width, part)
+
+
 def signature(doc, block, style):
     width = float(block.get("width_cm", 6.5))
     side = block.get("align", "right")
@@ -318,19 +367,7 @@ def signature(doc, block, style):
         widths = [style.text_width_cm - width, width] if side == "right" else [width, style.text_width_cm - width]
         cells = borderless_table(doc, widths)
         cell = cells[1] if side == "right" else cells[0]
-    first = True
-    if block.get("intro"):
-        add_text(shape(cell_paragraph(cell, first), style, {}, align="center", after=2), block["intro"], style, block)
-        first = False
-    if block.get("image"):
-        paragraph = shape(cell_paragraph(cell, first), style, {}, align="center", after=0)
-        image_width = block.get("image_width_cm") or min(width - 0.5, natural_width_cm(block["image"]))
-        picture(paragraph, block["image"], float(image_width) * style.signature_scale)
-        first = False
-    for line in block.get("lines", []):
-        paragraph = shape(cell_paragraph(cell, first), style, {}, align="center", after=0)
-        add_text(paragraph, line, style, block)
-        first = False
+    signature_content(cell, block, style, width)
     gap_after_table(doc, style, block.get("space_after", 2))
 
 
@@ -408,6 +445,104 @@ def new_section(doc, landscape):
     section.page_width, section.page_height = Cm(width), Cm(height)
 
 
+def row_widths(layout, text_width):
+    """Column widths for a row, with an empty column wherever the page left a gap, so each column
+    starts where it did on the page. Returns the widths and, per laid-out column, its cell index."""
+    widths, cells, cursor = [], [], 0.0
+    for left, width in layout:
+        left = min(max(left, cursor), text_width)
+        if left - cursor >= MIN_ROW_GAP_CM:
+            widths.append(left - cursor)
+        else:
+            left = cursor
+        width = max(min(width, text_width - left), MIN_ROW_COLUMN_CM)
+        cells.append(len(widths))
+        widths.append(width)
+        cursor = left + width
+    if text_width - cursor >= MIN_ROW_GAP_CM:
+        widths.append(text_width - cursor)
+    elif widths:
+        widths[-1] += max(text_width - cursor, 0)
+    return widths, cells
+
+
+def drop_empty_first(cell):
+    """A new cell starts with an empty paragraph; once something else is in it, it is only a gap."""
+    paragraphs = cell.paragraphs
+    if len(paragraphs) > 1 and not paragraphs[0].text and not paragraphs[0]._p.xpath(".//w:drawing"):
+        paragraphs[0]._p.getparent().remove(paragraphs[0]._p)
+
+
+def part_band(block, part):
+    """The band a signature's piece prints in; the block's own band when it was not placed."""
+    bands = block.get("part_bands") or {}
+    if isinstance(part, tuple):
+        lines = bands.get("lines") or []
+        return lines[part[1]] if part[1] < len(lines) else block.get("band", 0)
+    return bands.get(part, block.get("band", 0))
+
+
+def render_row(doc, blocks, style):
+    """Blocks printed side by side, as a borderless table: a column for each, and a table row for
+    each band down the page, so lines printed beside each other stay beside each other."""
+    widths, cells_at = row_widths(blocks[0].get("row_layout", []), style.text_width_cm)
+    gaps = blocks[0].get("row_bands") or [0]
+    table = borderless_grid(doc, widths, len(gaps))
+    last = len(gaps) - 1
+    for block in blocks:
+        column = cells_at[min(block.get("column", 0), len(cells_at) - 1)]
+        if block.get("type") == "signature":
+            width = widths[column]
+            image_width = block.get("image_width_cm")
+            if image_width and float(image_width) * style.signature_scale > width - CELL_PADDING_CM:
+                block = {**block, "image_width_cm": (width - CELL_PADDING_CM) / style.signature_scale}
+            for part in signature_parts(block):
+                signature_part(table.cell(min(part_band(block, part), last), column), block, style, width, part)
+        else:
+            render_block(table.cell(min(block.get("band", 0), last), column), block, style)
+    for number, gap in enumerate(gaps):
+        for cell in table.rows[number].cells:
+            drop_empty_first(cell)
+            if is_blank(cell):
+                hairline(cell.paragraphs[0], style)
+            else:
+                cell.paragraphs[0].paragraph_format.space_before = style.gap(gap)
+    gap_after_table(doc, style, 0)
+
+
+def render_block(doc, block, style):
+    """One block into the document or a table cell."""
+    kind = block.get("type")
+    if kind == "letterhead":
+        letterhead(doc, block, style)
+    elif kind == "memo":
+        memo(doc, block, style)
+    elif kind == "title":
+        paragraph = shape(doc.add_paragraph(), style, block, align="center", before=6, after=8)
+        add_text(paragraph, block.get("text", ""), style, block, size=block.get("size", style.base + 2), bold=block.get("bold", True))
+    elif kind == "heading":
+        paragraph = shape(doc.add_paragraph(), style, block, before=6, after=4)
+        add_text(paragraph, block.get("text", ""), style, block, bold=block.get("bold", False))
+    elif kind == "paragraph":
+        paragraph = shape(doc.add_paragraph(), style, block, align="justify", after=8)
+        add_text(paragraph, block.get("text", ""), style, block)
+    elif kind == "signature":
+        signature(doc, block, style)
+    elif kind == "address":
+        lines_block(doc, block, style)
+    elif kind == "list":
+        numbered_list(doc, block, style)
+    elif kind == "table":
+        data_table(doc, block, style)
+    elif kind == "image":
+        paragraph = shape(doc.add_paragraph(), style, block, align="center", after=4)
+        picture(paragraph, block["path"], block.get("width_cm") or natural_width_cm(block["path"]))
+    elif kind == "spacer":
+        doc.add_paragraph().paragraph_format.space_after = style.gap(block.get("pt", 6))
+    else:
+        raise ValueError(f"unknown block type {kind!r}")
+
+
 def build(spec, out_path, style):
     doc = Document()
     section = doc.sections[0]
@@ -424,42 +559,26 @@ def build(spec, out_path, style):
     if zoom is not None and zoom.get(qn("w:percent")) is None:
         zoom.set(qn("w:percent"), "100")
 
-    for block in spec.get("blocks", []):
+    blocks = spec.get("blocks", [])
+    index = 0
+    while index < len(blocks):
+        block = blocks[index]
         kind = block.get("type")
         if block.get("section"):
             new_section(doc, bool(block["section"].get("landscape")))
         elif block.get("page_break"):
             doc.add_page_break()
+        if block.get("row"):
+            run = blocks[index:index + next((i for i, b in enumerate(blocks[index:]) if b.get("row") != block["row"]), len(blocks) - index)]
+            if block.get("row_space_before"):
+                gap_after_table(doc, style, block["row_space_before"])
+            render_row(doc, run, style)
+            index += len(run)
+            continue
         if block.get("space_before") and (kind in TABLE_BLOCKS or (kind == "letterhead" and block.get("logo"))):
             gap_after_table(doc, style, block["space_before"])
-        if kind == "letterhead":
-            letterhead(doc, block, style)
-        elif kind == "memo":
-            memo(doc, block, style)
-        elif kind == "title":
-            paragraph = shape(doc.add_paragraph(), style, block, align="center", before=6, after=8)
-            add_text(paragraph, block.get("text", ""), style, block, size=block.get("size", style.base + 2), bold=block.get("bold", True))
-        elif kind == "heading":
-            paragraph = shape(doc.add_paragraph(), style, block, before=6, after=4)
-            add_text(paragraph, block.get("text", ""), style, block, bold=block.get("bold", False))
-        elif kind == "paragraph":
-            paragraph = shape(doc.add_paragraph(), style, block, align="justify", after=8)
-            add_text(paragraph, block.get("text", ""), style, block)
-        elif kind == "signature":
-            signature(doc, block, style)
-        elif kind == "address":
-            lines_block(doc, block, style)
-        elif kind == "list":
-            numbered_list(doc, block, style)
-        elif kind == "table":
-            data_table(doc, block, style)
-        elif kind == "image":
-            paragraph = shape(doc.add_paragraph(), style, block, align="center", after=4)
-            picture(paragraph, block["path"], block.get("width_cm") or natural_width_cm(block["path"]))
-        elif kind == "spacer":
-            doc.add_paragraph().paragraph_format.space_after = style.gap(block.get("pt", 6))
-        else:
-            raise ValueError(f"unknown block type {kind!r}")
+        render_block(doc, block, style)
+        index += 1
     doc.save(out_path)
 
 
@@ -534,6 +653,59 @@ def fit(spec, out_path, target, work):
     return ladder[fits], pdf, pages, builds
 
 
+def text_bottoms(pdf):
+    """Where the text ends on each rendered page, as a share of the page height."""
+    out = subprocess.run(["pdftotext", "-bbox", str(pdf), "-"], capture_output=True, text=True).stdout
+    bottoms = []
+    for page in re.findall(r"<page (.*?)</page>", out, re.S):
+        height = float(re.search(r'height="([\d.]+)"', page).group(1))
+        ends = [float(y) for y in re.findall(r'yMax="([\d.]+)"', page)]
+        bottoms.append(max(ends) / height if ends else None)
+    return bottoms
+
+
+def bottom_error(wanted, found):
+    """Mean signed distance of the text's end from the scan's, over pages both have text on."""
+    pairs = [(f, w) for f, w in zip(found, wanted) if f is not None and w is not None]
+    return sum(f - w for f, w in pairs) / len(pairs) if pairs else 0.0
+
+
+def match_bottoms(spec, out_path, fitted, pdf, pages, target, work):
+    """Respaces the fitted document so its text ends where the scan's does: leading and gaps only,
+    stepping tighter while the text runs past the scan's end and looser while it stops short.
+    Keeps the step whose end is closest without adding a page. Returns style, pdf, pages, builds."""
+    wanted = spec.get("content_bottoms")
+    if not wanted:
+        return fitted, pdf, pages, 0
+    steps = [Style(spec, fitted.scale, fitted.margins, tight, gaps, fitted.signature_scale) for tight, gaps in SPACING_STEPS]
+    start = min(
+        range(len(steps)),
+        key=lambda i: (abs(steps[i].gap_scale - fitted.gap_scale), steps[i].tight != fitted.tight),
+    )
+    error = bottom_error(wanted, text_bottoms(pdf))
+    if abs(error) <= BOTTOM_TOLERANCE:
+        return fitted, pdf, pages, 0
+    direction = 1 if error > 0 else -1
+    best = (abs(error), fitted)
+    builds = 0
+    index = start + direction
+    while 0 <= index < len(steps):
+        build(spec, out_path, steps[index])
+        builds += 1
+        tried, count = render(out_path, work)
+        if count > target:
+            break
+        found = bottom_error(wanted, text_bottoms(tried))
+        if abs(found) < best[0]:
+            best = (abs(found), steps[index])
+        if found * direction <= 0:
+            break
+        index += direction
+    build(spec, out_path, best[1])
+    pdf, pages = render(out_path, work)
+    return best[1], pdf, pages, builds + 1
+
+
 def validate(out_path):
     script = Path(__file__).resolve().parent / "office" / "validate.py"
     result = subprocess.run([sys.executable, str(script), str(out_path)], capture_output=True, text=True)
@@ -600,6 +772,8 @@ def main(argv):
 
     with tempfile.TemporaryDirectory() as work:
         style, pdf, pages, builds = fit(spec, out_path, target, work)
+        style, pdf, pages, spaced = match_bottoms(spec, out_path, style, pdf, pages, target, work)
+        builds += spaced
         stem = qa / f"{out_path.stem}-page"
         subprocess.run(["pdftoppm", "-png", "-r", "60", "-f", "1", "-l", "1", str(pdf), str(stem)], check=True)
         page_png = next(qa.glob(f"{out_path.stem}-page-*1.png"))

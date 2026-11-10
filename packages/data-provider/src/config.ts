@@ -1933,7 +1933,7 @@ export const ocrSchema = z.object({
 export const documentOcrStructureSchema = z.object({
   apiUrl: z.string().default('https://openrouter.ai/api/v1'),
   apiKey: z.string(),
-  model: z.string().default('google/gemini-2.5-flash-lite'),
+  model: z.string().default('google/gemini-3.5-flash-lite'),
   timeoutMs: z.number().int().min(1000).default(30000),
 });
 

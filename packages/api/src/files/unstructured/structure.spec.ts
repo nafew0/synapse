@@ -3,7 +3,7 @@ import sharp from 'sharp';
 import type { AddressInfo } from 'net';
 import type { StructureOptions } from './structure';
 import type { UnstructuredElement } from './types';
-import { imageRenderer, labelLines, pageLines } from './structure';
+import { imageRenderer, labelLines, pageLines, withFoundObjects } from './structure';
 
 const box = (x0: number, y0: number, x1: number, y1: number) => ({
   coordinates: {
@@ -189,6 +189,86 @@ describe('labelLines', () => {
     } finally {
       fake.close();
     }
+  });
+});
+
+describe('bold and found pictures', () => {
+  it('puts each line bold on its element, and adds a stamp the reader dropped where it sits', async () => {
+    const fake = await startFake((body) => {
+      const listing = JSON.stringify(body.messages[0].content);
+      if (listing.includes('e2.0')) {
+        return {
+          content: JSON.stringify({ blocks: [], objects: [], side_by_side: [], reading_order: [] }),
+        };
+      }
+      return {
+        content: JSON.stringify({
+          blocks: [
+            { id: 'e0.0', role: 'title', bold: true },
+            { id: 'e1.0', role: 'signature', bold: false },
+            { id: 'e1.1', role: 'signature', bold: true },
+          ],
+          objects: [{ kind: 'stamp', box_2d: [960, 100, 990, 400] }],
+          side_by_side: [],
+          reading_order: [],
+        }),
+      };
+    });
+    try {
+      const result = await labelLines({
+        elements: order,
+        render: blankPage,
+        options: fake.options,
+      });
+      expect(result.elements.map((element) => element.metadata?.line_bold)).toEqual([
+        [true],
+        [false, true, null],
+        undefined,
+        undefined,
+        undefined,
+      ]);
+      expect(result.addedObjects).toBe(1);
+      const stamp = result.elements[2];
+      expect(stamp.type).toBe('Image');
+      expect(stamp.metadata?.source).toBe('vision');
+      expect(stamp.metadata?.vision_kind).toBe('stamp');
+      expect(stamp.metadata?.coordinates?.points?.[0]).toEqual([100, 1920]);
+    } finally {
+      fake.close();
+    }
+  });
+});
+
+describe('withFoundObjects', () => {
+  const page = { page: 1 as const };
+
+  it('keeps out a logo that a picture the reader found already covers', () => {
+    const logo = {
+      type: 'Image',
+      text: '',
+      metadata: { page_number: 1, ...box(100, 100, 300, 300) },
+    };
+    const { added } = withFoundObjects(
+      [logo, ...order],
+      [{ ...page, kind: 'logo', box: [0.12, 0.06, 0.28, 0.14] }],
+    );
+    expect(added).toBe(0);
+  });
+
+  it('adds a stamp over text, but not a signature inside a text block', () => {
+    const { elements, added } = withFoundObjects(order, [
+      { ...page, kind: 'stamp', box: [0.62, 0.8, 0.88, 0.85] },
+      { ...page, kind: 'signature', box: [0.65, 0.8, 0.85, 0.85] },
+    ]);
+    expect(added).toBe(1);
+    expect(elements.filter((element) => element.metadata?.source === 'vision')).toHaveLength(1);
+  });
+
+  it('adds a signature where the reader has nothing at all', () => {
+    const { added } = withFoundObjects(order, [
+      { ...page, kind: 'signature', box: [0.1, 0.4, 0.3, 0.45] },
+    ]);
+    expect(added).toBe(1);
   });
 });
 

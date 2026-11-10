@@ -60,6 +60,12 @@ HANDWRITING_PIECES = 2
 MAX_WIDTH_ERROR = 0.35
 MAX_LINE_ERROR = 1.0
 ENLARGE = 3
+# A box the structure call drew is rough: look this share of its size beyond it, keep shapes at
+# least SNAP_INSIDE inside it.
+SNAP_GROW = 0.15
+SNAP_PAD = 8
+SNAP_INSIDE = 0.5
+SNAP_MIN_AREA = 4
 MASK_PAD = 1
 MAX_PICTURE_EDGE = 1800
 # A handwritten line's width says nothing about its letters, so it takes pieces at a flat cost:
@@ -398,10 +404,20 @@ def type_targets(spec):
                 yield style, holder, len(text), True
 
 
+def without_bold_source(spec):
+    """Takes off every `bold_from` mark, returning the styles whose bold the structure call set."""
+    seen = []
+    for block in spec["blocks"]:
+        holders = [block, *block.get("lines", []), *block.get("item_styles", [])]
+        seen += [holder for holder in holders if isinstance(holder, dict) and holder.pop("bold_from", None)]
+    return seen
+
+
 def apply_type(spec, pages, cm_per_pixel=1.0):
     """Sets each text block's size and bold from its lines on the scan, compared with the page's
     body text: a block the service called a title is not made larger or bold unless it looks so.
     Blocks with no box, or a document with no body text to compare with, keep what they have."""
+    from_vision = {id(style) for style in without_bold_source(spec)}
     measured = []
     for style, holder, length, body in list(type_targets(spec)):
         box, page, line = holder.pop("type_box", None), holder.pop("type_page", 1), holder.pop("type_line", None)
@@ -428,8 +444,9 @@ def apply_type(spec, pages, cm_per_pixel=1.0):
             style["size"] = min(max(round(base * ratio * 2) / 2, MIN_TYPE_SIZE), MAX_TYPE_SIZE)
         elif "size" in style or style.get("type") == "title":
             style["size"] = base
-        if found["height"] < MIN_BOLD_HEIGHT_PX:
-            # A stroke one or two pixels wide cannot tell bold from regular.
+        if found["height"] < MIN_BOLD_HEIGHT_PX or id(style) in from_vision:
+            # A stroke one or two pixels wide cannot tell bold from regular; and what the structure
+            # call saw on the page beats a stroke measured on a small photo.
             continue
         regular = weight * found["height"] + TYPE_BLUR_PX
         style["bold"] = found["stroke"] >= TYPE_BOLD_RATIO * regular
@@ -725,6 +742,32 @@ def without_print(page, boxes, qa):
     return masked
 
 
+def snap_to_ink(page, box):
+    """A rough box moved onto the ink it covers: the shapes mostly inside it, looked for a little
+    beyond it, so the picture neither loses a stroke nor takes in print around it."""
+    x0, y0, x1, y1 = box
+    grow_x, grow_y = SNAP_GROW * (x1 - x0) + SNAP_PAD, SNAP_GROW * (y1 - y0) + SNAP_PAD
+    with Image.open(page) as source:
+        width, height = source.size
+        left, top = int(max(0, x0 - grow_x)), int(max(0, y0 - grow_y))
+        right, bottom = int(min(width, x1 + grow_x)), int(min(height, y1 + grow_y))
+        if right <= left or bottom <= top:
+            return box
+        gray = ImageOps.grayscale(source.crop((left, top, right, bottom))).filter(ImageFilter.MinFilter(3))
+    pixels = gray.load()
+    ink = {(x, y) for y in range(gray.height) for x in range(gray.width) if pixels[x, y] < DARK}
+    kept = []
+    for sx0, sy0, sx1, sy1 in ink_shapes(ink, gray.width, gray.height):
+        shape = [left + sx0, top + sy0, left + sx1 + 1, top + sy1 + 1]
+        inside = max(0, min(shape[2], x1) - max(shape[0], x0)) * max(0, min(shape[3], y1) - max(shape[1], y0))
+        area = (shape[2] - shape[0]) * (shape[3] - shape[1])
+        if area >= SNAP_MIN_AREA and inside >= SNAP_INSIDE * area:
+            kept.append(shape)
+    if not kept:
+        return box
+    return [min(s[0] for s in kept), min(s[1] for s in kept), max(s[2] for s in kept), max(s[3] for s in kept)]
+
+
 def run_crops(crops, pages, qa):
     """Cuts every picture that has a box. Returns the crop names that came out."""
     script = Path(__file__).resolve().parent / "crop.py"
@@ -734,6 +777,9 @@ def run_crops(crops, pages, qa):
         if not boxes:
             continue
         grow_signatures(boxes, page)
+        for crop in boxes:
+            if crop.pop("snap", False):
+                crop["box"] = snap_to_ink(page, crop["box"])
         args = [f"{c['name']}={','.join(str(v) for v in c['box'])}" for c in boxes]
         result = subprocess.run(
             [sys.executable, str(script), str(without_print(page, boxes, qa)), str(qa), *args],

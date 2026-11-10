@@ -1062,3 +1062,85 @@ def test_the_words_under_a_logo_print_under_it(scan, tmp_path):
     logo_cell = table.rows[0].cells[0].text
     assert 'বিশ্ববিদ্যালয় মঞ্জুরী কমিশন' in logo_cell
     assert 'বাংলাদেশ বিশ্ববিদ্যালয় মঞ্জুরী কমিশন' in table.rows[0].cells[1].text
+
+
+def test_a_rough_box_snaps_to_the_ink_it_covers(tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import snap_to_ink
+
+    page = Image.new('RGB', (400, 300), 'white')
+    draw = ImageDraw.Draw(page)
+    draw.ellipse((150, 100, 260, 170), outline='black', width=5)
+    draw.text((20, 260), 'printed line far away', fill='black')
+    page.save(tmp_path / 'page.png')
+    x0, y0, x1, y1 = snap_to_ink(tmp_path / 'page.png', [160, 90, 240, 160])
+    assert abs(x0 - 150) <= 3 and abs(y0 - 100) <= 3 and abs(x1 - 261) <= 3 and abs(y1 - 171) <= 3
+
+
+def test_bold_the_structure_call_set_is_not_measured_again():
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import without_bold_source
+
+    spec = {'blocks': [{'type': 'title', 'text': 'x', 'bold': True, 'bold_from': 'vision'}, {'type': 'paragraph', 'text': 'y'}]}
+    assert len(without_bold_source(spec)) == 1
+    assert 'bold_from' not in spec['blocks'][0]
+
+
+def test_a_row_keeps_a_gap_column_where_the_page_left_room():
+    sys.path.insert(0, str(SCRIPTS))
+    from letter import row_widths
+
+    widths, cells = row_widths([[0.2, 4.0], [11.0, 4.5]], 16.0)
+    assert cells == [0, 2]
+    assert [round(w, 2) for w in widths] == [4.0, 7.0, 4.5, 0.5]
+
+
+def test_a_row_prints_beside_lines_in_the_same_table_row(scan, tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from letter import Style, render_row
+    from docx import Document as NewDocument
+
+    run('crop.py', scan, tmp_path / 'qa', 'sig=280,440,440,540', cwd=tmp_path)
+    blocks = [
+        {'type': 'paragraph', 'text': 'প্রকৌ. মোহাম্মদ জিয়াউর রহমান', 'row': 1, 'column': 0, 'band': 3,
+         'row_layout': [[0.2, 5.0], [10.0, 5.0]], 'row_bands': [0, 4, 0, 2, 4]},
+        {'type': 'paragraph', 'text': 'অতিরিক্ত পরিচালক', 'row': 1, 'column': 0, 'band': 4},
+        {'type': 'signature', 'intro': 'কর্তৃপক্ষের অনুমোদনক্রমে,', 'image': str(tmp_path / 'qa' / 'sig.png'),
+         'image_width_cm': 3, 'lines': ['তাহমিনা রহমান', 'ফোন : ৫৮১৬০২৩৬'], 'row': 1, 'column': 1,
+         'part_bands': {'intro': 0, 'image': 1, 'lines': [2, 3]}},
+    ]
+    document = NewDocument()
+    render_row(document, blocks, Style({'font': {'size': 11}}))
+    table = document.tables[0]
+    assert len(table.rows) == 5
+    assert 'প্রকৌ.' in table.cell(3, 0).text and 'ফোন' in table.cell(3, 2).text
+    assert table.cell(4, 0).text == 'অতিরিক্ত পরিচালক'
+    assert table.cell(1, 2)._tc.xpath('.//w:drawing')
+
+
+def test_the_text_end_is_compared_page_by_page():
+    sys.path.insert(0, str(SCRIPTS))
+    from letter import bottom_error
+
+    assert round(bottom_error([0.7, 0.9], [0.75, 0.95]), 3) == 0.05
+    assert bottom_error([0.7, None], [0.6, 0.3]) == pytest.approx(-0.1)
+    assert bottom_error([], [0.5]) == 0.0
+
+
+@needs_office
+def test_spacing_is_matched_to_where_the_scan_text_ends(scan, tmp_path):
+    run('crop.py', scan, tmp_path / 'qa', 'logo=20,20,120,120', 'sig=280,440,440,540', cwd=tmp_path)
+    ends = {}
+    for name, bottom in (('short', 0.45), ('long', 0.85)):
+        spec = spec_for(tmp_path)
+        spec['content_bottoms'] = [bottom]
+        (tmp_path / f'{name}.json').write_text(json.dumps(spec, ensure_ascii=False), encoding='utf-8')
+        result = run('letter.py', f'{name}.json', f'{name}.docx', cwd=tmp_path)
+        assert result.returncode == 0, result.stdout + result.stderr
+        pdf = next((tmp_path / 'qa').glob(f'{name}.pdf'))
+        sys.path.insert(0, str(SCRIPTS))
+        from letter import text_bottoms
+        ends[name] = text_bottoms(pdf)[0]
+    # A short page can only spread so far; it moves the right way, and lands on a reachable end.
+    assert ends['long'] > ends['short']
+    assert abs(ends['short'] - 0.45) < 0.03
