@@ -496,6 +496,24 @@ html {
 .lc-user-bubble { background-color: var(--lc-user-bubble); }
 .lc-task-tile-icon { background: rgba(19, 79, 84, 0.07); color: #134f54; }
 .dark .lc-task-tile-icon { background: rgba(108, 196, 188, 0.12); color: rgb(108 196 188); }
+/* On hover each tile's Lucide icon acts out its task. Custom CSS because the motion targets single
+ * paths inside the icon, which utilities can't reach; the lift itself is Tailwind in TaskTiles. */
+.lc-task-tile[data-task='letter'] svg path:nth-child(n + 3) { stroke-dasharray: 8; }
+.lc-task-tile[data-task='sheet'] svg line { stroke-dasharray: 18; }
+.lc-task-tile[data-task='slides'] svg path:nth-child(2) { transform-origin: 12px 3px; transition: transform 300ms cubic-bezier(0.3, 1.5, 0.5, 1); }
+.lc-task-tile[data-task='scan']:is(:hover, :focus-visible) svg path:nth-child(5) { animation: lc-task-scan 1.4s ease-in-out infinite; }
+.lc-task-tile[data-task='letter']:is(:hover, :focus-visible) svg path:nth-child(n + 3) { animation: lc-task-draw 600ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.lc-task-tile[data-task='letter']:is(:hover, :focus-visible) svg path:nth-child(4) { animation-delay: 90ms; }
+.lc-task-tile[data-task='letter']:is(:hover, :focus-visible) svg path:nth-child(5) { animation-delay: 180ms; }
+.lc-task-tile[data-task='slides']:is(:hover, :focus-visible) svg path:nth-child(2) { transform: scaleY(1.12); }
+.lc-task-tile[data-task='sheet']:is(:hover, :focus-visible) svg line { animation: lc-task-draw-long 500ms cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+.lc-task-tile[data-task='sheet']:is(:hover, :focus-visible) svg line:nth-child(3) { animation-delay: 80ms; }
+.lc-task-tile[data-task='sheet']:is(:hover, :focus-visible) svg line:nth-child(4) { animation-delay: 160ms; }
+.lc-task-tile[data-task='sheet']:is(:hover, :focus-visible) svg line:nth-child(5) { animation-delay: 240ms; }
+@keyframes lc-task-scan { 0%, 100% { transform: translateY(0); } 25% { transform: translateY(-4px); } 75% { transform: translateY(4px); } }
+@keyframes lc-task-draw { from { stroke-dashoffset: 8; } to { stroke-dashoffset: 0; } }
+@keyframes lc-task-draw-long { from { stroke-dashoffset: 18; } to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) { .lc-task-tile svg * { animation: none !important; transform: none !important; transition: none !important; } }
 .lc-chat-sidebar { background: var(--lc-chat-sidebar-background); border-right: 1px solid rgba(19, 79, 84, 0.1); color: rgb(28 50 48); }
 .lc-chat-sidebar .text-text-primary { color: rgb(28 50 48); }
 .lc-chat-sidebar .text-text-secondary { color: rgb(82 97 95); }
