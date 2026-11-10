@@ -363,6 +363,11 @@ modelSpecs:
       preset:
         endpoint: OpenRouter
         model: openai/gpt-6-luna
+        # A long chat resends its whole history on every message, and compaction only runs once
+        # the history stops fitting this budget. Left at the model's 1M window it never runs, and
+        # a long chat costs up to ~944K input tokens a message. 256K keeps 6-12 full
+        # read_attachment results in context, so file editing rarely compacts mid-edit.
+        maxContextTokens: 262144
         promptPrefix: &chatPrefix |
           ## Language and tone
 
@@ -488,6 +493,7 @@ modelSpecs:
       preset:
         endpoint: OpenRouter
         model: anthropic/claude-haiku-5.5
+        maxContextTokens: 262144
         promptCache: true
         promptPrefix: *chatPrefix
 
@@ -507,6 +513,7 @@ modelSpecs:
       preset:
         endpoint: OpenRouter
         model: deepseek/deepseek-v4-flash-0731
+        maxContextTokens: 262144
         promptCache: true
         promptPrefix: |
           If the user's message is in a language other than English, explain in that language. Match how they talk: formal with a formal message (আপনি and its verb forms in Bangla), relaxed with a casual one (তুমি and its verb forms in Bangla, unless they say আপনি to you). Code, identifiers and technical terms stay in English unless asked otherwise.
@@ -576,6 +583,7 @@ modelSpecs:
       preset:
         endpoint: OpenRouter
         model: google/gemini-3.8-flash
+        maxContextTokens: 262144
         promptPrefix: *chatPrefix
 
 endpoints:
