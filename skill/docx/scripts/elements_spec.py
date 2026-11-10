@@ -88,6 +88,13 @@ SHARED_BOX_SHARE = 0.5
 LARGE_TYPE_RATIO = 1.2
 MAX_TITLE_SIZE = 18
 MIN_SIGNATURE_BLOCK_CM = 5.0
+# Blocks printed side by side, such as an addressee beside a signature, share a row of a borderless
+# table. They count as beside each other when they share this much of the shorter one's height.
+ROW_KINDS = {"paragraph", "heading", "signature", "address", "image"}
+ROW_MIN_OVERLAP = 0.3
+# A block joins a column of a row when it runs on under the column within this many lines.
+COLUMN_GAP_LINES = 2.5
+ROW_COLUMN_GAP_CM = 0.3
 MIN_DATE_CM = 3.0
 A4_HEIGHT_CM = 29.7
 MIN_TOP_MARGIN_CM = 1.0
@@ -178,14 +185,34 @@ def role_of(element):
 
 
 def with_line_role(element, index):
-    """A piece of `element` that starts at its line `index`, taking that line's role."""
+    """A piece of `element` that starts at its line `index`, taking that line's role and bold."""
     metadata = element.get("metadata") or {}
-    roles = metadata.get("line_roles")
-    if roles is None:
+    roles, bolds = metadata.get("line_roles"), metadata.get("line_bold")
+    if roles is None and bolds is None:
         return element
-    rest = {key: value for key, value in metadata.items() if key != "line_roles"}
-    role = roles[index] if index < len(roles) else None
-    return {**element, "metadata": {**rest, "role": role} if role else rest}
+    rest = {key: value for key, value in metadata.items() if key not in ("line_roles", "line_bold")}
+    role = roles[index] if roles and index < len(roles) else None
+    bold = bolds[index] if bolds and index < len(bolds) else None
+    if role:
+        rest["role"] = role
+    if bold is not None:
+        rest["bold"] = bold
+    return {**element, "metadata": rest}
+
+
+def bold_of(element):
+    """Whether the structure call saw this line printed bold: `bold` on a line split from an
+    element, else the element's own lines when they all agree. None when it did not say."""
+    metadata = element.get("metadata") or {}
+    if metadata.get("bold") is not None:
+        return metadata["bold"]
+    values = {value for value in metadata.get("line_bold") or [] if value is not None}
+    return values.pop() if len(values) == 1 else None
+
+
+def is_found_picture(element):
+    """A picture the structure call found where the reader had none: its box is rough."""
+    return (element.get("metadata") or {}).get("source") == "vision"
 
 
 def can_sign(element):
@@ -604,6 +631,182 @@ def start_page(block, box, previous_page, page, landscape):
     return turned if box else landscape
 
 
+def vertical_share(a, b):
+    """How much of the shorter box's height the two share."""
+    shared = min(a[3], b[3]) - max(a[1], b[1])
+    shorter = min(a[3] - a[1], b[3] - b[1])
+    return shared / shorter if shorter > 0 else 0.0
+
+
+def apart(a, b):
+    return a[2] <= b[0] or b[2] <= a[0]
+
+
+def rowable(block):
+    return block["type"] in ROW_KINDS and block.get("_box") and not block.get("_shared")
+
+
+def group_rows(blocks, line_height):
+    """Marks runs of blocks printed side by side with `_row` and a `_col` counted from the left.
+
+    Two blocks next in reading order start a row when they share enough height and no width. Each
+    following block joins the column it runs on under, until one fits none. An addressee printed
+    beside the lower half of a signature is a row: the signature, then the addressee's lines.
+    """
+    row = 0
+    index = 0
+    while index < len(blocks) - 1:
+        first, second = blocks[index], blocks[index + 1]
+        if not (
+            rowable(first)
+            and rowable(second)
+            and first.get("_page") == second.get("_page")
+            and apart(first["_box"], second["_box"])
+            and vertical_share(first["_box"], second["_box"]) >= ROW_MIN_OVERLAP
+        ):
+            index += 1
+            continue
+        columns = [[index], [index + 1]]
+        end = index + 2
+        while end < len(blocks):
+            block = blocks[end]
+            if not rowable(block) or block.get("_page") != first.get("_page"):
+                break
+            box = block["_box"]
+            home = next(
+                (
+                    column for column in columns
+                    if not apart(blocks[column[-1]]["_box"], box)
+                    and 0 <= box[1] - blocks[column[-1]]["_box"][3] <= COLUMN_GAP_LINES * (line_height or 0)
+                    and all(apart(blocks[other[-1]]["_box"], box) for other in columns if other is not column)
+                ),
+                None,
+            )
+            if home is None:
+                break
+            home.append(end)
+            end += 1
+        row += 1
+        columns.sort(key=lambda column: min(blocks[i]["_box"][0] for i in column))
+        for number, column in enumerate(columns):
+            for i in column:
+                blocks[i]["_row"], blocks[i]["_col"] = row, number
+        # The row's blocks render together, so they must sit together in the list, left column first.
+        blocks[index:end] = [blocks[i] for column in columns for i in column]
+        index = end
+
+
+def row_units(block):
+    """The pieces of a row's block that print on their own lines, each with its box: a signature's
+    intro, picture and printed lines; any other block whole. A piece with no box sits right under
+    the one before it."""
+    parts = block.pop("_parts", None)
+    if block["type"] != "signature" or not parts:
+        return [(None, block["_box"])]
+    pieces = []
+    if block.get("intro"):
+        pieces.append(("intro", parts.get("intro")))
+    if block.get("image"):
+        pieces.append(("image", parts.get("image")))
+    lines = parts.get("lines") or []
+    pieces += [(("line", number), lines[number] if number < len(lines) else None) for number in range(len(block.get("lines", [])))]
+    units, last = [], block["_box"][1]
+    for part, box in pieces:
+        box = box or (0, last, 0, last)
+        units.append((part, box))
+        last = box[3]
+    return units
+
+
+def row_bands(members, columns):
+    """Splits a row into bands down the page: pieces from different columns printed on the same
+    lines share a band, so a line beside a signature's last line lands beside it in Word too.
+    Sets each block's `band`, or a signature's `part_bands`, and returns the bands top to bottom."""
+    units = []
+    for block in members:
+        for part, box in row_units(block):
+            units.append({"top": box[1], "bottom": box[3], "column": block["_col"], "block": block, "part": part})
+    units.sort(key=lambda unit: (unit["top"], columns.index(unit["column"])))
+    bands = []
+    for unit in units:
+        band = bands[-1] if bands else None
+        if (
+            band
+            and unit["column"] not in band["columns"]
+            and vertical_share((0, band["top"], 0, band["bottom"]), (0, unit["top"], 0, unit["bottom"])) >= ROW_MIN_OVERLAP
+        ):
+            band["columns"].add(unit["column"])
+            band["bottom"] = max(band["bottom"], unit["bottom"])
+        else:
+            band = {"top": unit["top"], "bottom": unit["bottom"], "columns": {unit["column"]}}
+            bands.append(band)
+        number = len(bands) - 1
+        block, part = unit["block"], unit["part"]
+        if part is None:
+            block["band"] = number
+        elif part in ("intro", "image"):
+            block.setdefault("part_bands", {})[part] = number
+        else:
+            block.setdefault("part_bands", {}).setdefault("lines", []).append(number)
+    return bands
+
+
+def place_row(blocks, start, margins, previous):
+    """Places one row: its columns' extents on the page, the gap above it, and each block's gap
+    from the one above it in its own column. Returns the row's box, for the gap after it."""
+    left_margin = margins[3]
+    row = blocks[start]["_row"]
+    members = []
+    for block in blocks[start:]:
+        if block.get("_row") != row:
+            break
+        members.append(block)
+    width, page_height = members[0]["_box"][4], members[0]["_box"][5]
+    left_edge = min(block["_box"][0] for block in members)
+    right_edge = max(block["_box"][2] for block in members)
+    cm = (A4_HEIGHT_CM if is_landscape(members[0]["_box"]) else A4_WIDTH_CM) / width
+    pt = cm * POINTS_PER_CM
+    top = min(block["_box"][1] for block in members)
+    bottom = max(block["_box"][3] for block in members)
+    columns = sorted({block["_col"] for block in members})
+    layout = []
+    for column in columns:
+        boxes = [block["_box"] for block in members if block["_col"] == column]
+        left = max(min(b[0] for b in boxes) * cm - left_margin, 0)
+        layout.append([round(left, 2), round(max(b[2] for b in boxes) * cm - left_margin - left, 2)])
+    # Our type runs a little wider than the scan's, so a column of text may use the room up to the
+    # next column; a signature keeps its own width, as its lines are centred in it.
+    for number, column in enumerate(columns[:-1]):
+        kinds = {block["type"] for block in members if block["_col"] == column}
+        if "signature" not in kinds:
+            room = layout[number + 1][0] - layout[number][0] - ROW_COLUMN_GAP_CM
+            layout[number][1] = round(max(layout[number][1], room), 2)
+    first = members[0]
+    first["row_layout"] = layout
+    page = first.get("_page")
+    first["row_space_before"] = (
+        round(min(max(top - previous[3], 0) * pt, MAX_GAP_PT), 1) if previous and previous[6] == page else 0
+    )
+    bands = row_bands(members, columns)
+    first["row_bands"] = [
+        round(min(max(band["top"] - bands[number - 1]["bottom"], 0) * pt, MAX_GAP_PT), 1) if number else 0
+        for number, band in enumerate(bands)
+    ]
+    for block in members:
+        column = block["_col"]
+        block["space_after"] = 0
+        block["space_before"] = 0
+        block["row"], block["column"] = row, columns.index(column)
+        if block["type"] == "signature":
+            block.pop("left_cm", None)
+            block["width_cm"] = layout[columns.index(column)][1]
+        elif block["type"] in ("paragraph", "heading", "address"):
+            block["align"] = "left"
+        for key in ("_box", "_page", "_date_x", "_shared", "_row", "_col"):
+            block.pop(key, None)
+    return (left_edge, top, right_edge, bottom, width, page_height, page), len(members)
+
+
 def place_blocks(blocks, margins, body_line_height):
     """Sets each block's spacing, indent, alignment and size from where it sat on the page.
 
@@ -612,14 +815,31 @@ def place_blocks(blocks, margins, body_line_height):
     with no position still starts its page.
     """
     _, right_margin, _, left_margin = margins
+    group_rows(blocks, body_line_height)
+    bottoms = {}
+    for block in blocks:
+        box, page = block.get("_box"), block.get("_page")
+        if box and page and block["type"] != "image":
+            bottoms[page] = max(bottoms.get(page, 0), round(box[3] / box[5], 4))
     previous_box = None
     previous_page = None
     landscape = None
-    for block in blocks:
+    skip = 0
+    for position, block in enumerate(blocks):
+        if skip:
+            skip -= 1
+            continue
+        if block.get("_row"):
+            landscape = start_page(block, block["_box"], previous_page, block.get("_page"), landscape)
+            previous_page = block.get("_page")
+            previous_box, count = place_row(blocks, position, margins, previous_box)
+            skip = count - 1
+            continue
         box = block.pop("_box", None)
         page = block.pop("_page", None)
         date_x = block.pop("_date_x", None)
         shared = block.pop("_shared", False)
+        block.pop("_parts", None)
         landscape = start_page(block, box, previous_page, page, landscape)
         if page is not None:
             previous_page = page
@@ -662,6 +882,7 @@ def place_blocks(blocks, margins, body_line_height):
         if kind == "memo" and date_x is not None:
             block["right_width_cm"] = round(max(page_width - right_margin - date_x * page_width, MIN_DATE_CM), 2)
         previous_box = (*box, page)
+    return bottoms
 
 
 class SpecBuilder:
@@ -708,7 +929,12 @@ class SpecBuilder:
 
     def type_mark(self, target, *elements):
         """Notes where the text sat on the scan, so its size and weight can be measured there. A line
-        sharing a wide box with others, and with no place in it, has nothing of its own to measure."""
+        sharing a wide box with others, and with no place in it, has nothing of its own to measure.
+        Bold the structure call saw on every line is taken as it is; the scan cannot overrule it."""
+        seen = {bold_of(e) for e in elements} if elements else {None}
+        if len(seen) == 1 and None not in seen:
+            target["bold"] = seen.pop()
+            target["bold_from"] = "vision"
         if any(e.get("_shared") and not e.get("_line") for e in elements):
             return target
         boxes = [box for box in (box_of(e, self.scan_size_of(e)) for e in elements) if box]
@@ -724,6 +950,8 @@ class SpecBuilder:
         box = box_of(element, self.scan_size_of(element))
         page = int(metadata.get("page_number") or 1)
         crop = {"name": name, "box": box, "page": page}
+        if is_found_picture(element) and box:
+            crop["snap"] = True
         if metadata.get("ceiling") is not None and box:
             # How high the crop may grow: the bottom of the line above, in the scan's pixels.
             scan_height = self.scan_size_of(element)[1]
@@ -850,6 +1078,12 @@ class SpecBuilder:
             )
             source = {"metadata": signature_box(first, count, self.line_height) or {}}
         block["image"] = self.crop(f"sig{self.signatures}", source)
+        # Where each piece printed, so a row beside the signature can line up with them.
+        block["_parts"] = {
+            "intro": intro_box or (layout_box(above) if "intro" in block and above else None),
+            "image": layout_box(source),
+            "lines": [layout_box(p) for p in printed],
+        }
         masks = [box_of(e, self.scan_size_of(e)) for e in [*printed, *([above] if "intro" in block and above else [])]]
         coordinates = (source.get("metadata") or {}).get("coordinates")
         for band in (source.get("metadata") or {}).get("unplaced_band") or []:
@@ -862,9 +1096,18 @@ class SpecBuilder:
         # the gap above it is measured from there.
         if intro_box is None and "intro" in block and above:
             intro_box = layout_box(above)
-        tops = [b[1] for b in (intro_box, layout_box(source)) if b and block.get("_box") and b[4:6] == block["_box"][4:6]]
-        if tops and block.get("_box"):
-            block["_box"] = (block["_box"][0], min([block["_box"][1], *tops]), *block["_box"][2:])
+        # It ends under its last printed line, so a block printed beside it is seen as beside it.
+        parts = [intro_box, layout_box(source), *(layout_box(p) for p in printed)]
+        parts = [b for b in parts if b and block.get("_box") and b[4:6] == block["_box"][4:6]]
+        if parts:
+            box = block["_box"]
+            block["_box"] = (
+                min([box[0], *(b[0] for b in parts)]),
+                min([box[1], *(b[1] for b in parts)]),
+                max([box[2], *(b[2] for b in parts)]),
+                max([box[3], *(b[3] for b in parts)]),
+                *box[4:],
+            )
 
     def handwriting(self):
         """The handwritten lines, read as text, that start a signature on a Bangla page."""
@@ -875,8 +1118,13 @@ class SpecBuilder:
         return hand
 
     def picture(self, element, position):
-        """A picture low on the page beside text is a signature; anything else stays a picture."""
+        """A picture low on the page beside text is a signature; anything else stays a picture. A
+        stamp, logo or photo the structure call found stays a picture whatever follows it."""
         following = self.elements[position + 1] if position + 1 < len(self.elements) else None
+        kind = (element.get("metadata") or {}).get("vision_kind")
+        if kind and kind not in ("signature", "initials"):
+            self.add({"type": "image", "path": self.crop(f"image{position}", element)}, element)
+            return
         if following is not None and is_short(following):
             self.signature(element)
             return
@@ -955,8 +1203,12 @@ class SpecBuilder:
         page_width, _ = page_size_cm(self.source)
         if page_width > A4_WIDTH_CM:
             page["landscape"] = True
-        place_blocks(self.blocks, page["margins_cm"], self.line_height)
-        return {"pages": max(pages), "page": page, "font": FONT, "blocks": self.blocks}
+        bottoms = place_blocks(self.blocks, page["margins_cm"], self.line_height)
+        spec = {"pages": max(pages), "page": page, "font": FONT, "blocks": self.blocks}
+        if bottoms:
+            # Where the text ends on each scan page, so the build can space its pages to match.
+            spec["content_bottoms"] = [bottoms.get(number) for number in range(1, max(pages) + 1)]
+        return spec
 
 
 def memo_warnings(spec):

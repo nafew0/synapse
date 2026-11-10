@@ -614,3 +614,66 @@ def test_a_signature_block_is_spaced_from_its_intro_and_its_crop_leaves_out_the_
     assert signature["space_before"] < 12
     crop = next(c for c in crops if c["name"] == "sig1")
     assert [526, 387, 594, 399] in crop["mask"]
+
+
+def test_bold_the_structure_call_saw_is_kept_for_the_line():
+    title = el("Title", "অফিস আদেশ", line_bold=[True])
+    spec, _ = convert([title, el("NarrativeText", "বিষয়: " * 40, line_bold=[False])])
+    block = spec["blocks"][0]
+    assert block["bold"] is True and block["bold_from"] == "vision"
+
+
+def test_a_split_line_takes_its_own_bold():
+    sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "skill" / "docx" / "scripts"))
+    from elements_spec import bold_of, with_line_role
+
+    element = el("NarrativeText", "a\nb", line_roles=["title", "body"], line_bold=[True, False])
+    assert bold_of(with_line_role(element, 0)) is True
+    assert bold_of(with_line_role(element, 1)) is False
+    assert bold_of(el("NarrativeText", "a\nb", line_bold=[True, False])) is None
+
+
+def test_a_stamp_the_structure_call_found_stays_a_picture_and_is_snapped():
+    stamp = el("Image", "", source="vision", vision_kind="stamp", coordinates={
+        "points": [[600, 1800], [600, 1900], [900, 1900], [900, 1800]], "layout_width": 1000, "layout_height": 2000,
+    })
+    spec, crops = convert([
+        el("Title", "অফিস আদেশ"), el("NarrativeText", "বিষয়: " * 40), stamp, el("NarrativeText", "সচিব"),
+    ], (1000, 2000))
+    assert "image" in [b["type"] for b in spec["blocks"]]
+    assert "signature" not in [b["type"] for b in spec["blocks"]]
+    assert [c for c in crops if c.get("snap")]
+
+
+def test_an_addressee_beside_a_signature_shares_its_row_and_lines_up_with_its_last_line():
+    """A photographed UGC order: the addressee starts level with the signer's phone line. Placed
+    one after the other, the addressee landed under the signature."""
+    body = "বাংলাদেশ হাই-টেক পার্ক কর্তৃপক্ষ কর্তৃক বাস্তবায়নাধীন প্রকল্পে প্রেষণে কর্মরত। " * 4
+    spec, _ = convert([
+        boxed("Title", "অফিস আদেশ", 323, 184, 424, 209),
+        boxed("NarrativeText", body, 90, 223, 655, 325),
+        boxed("NarrativeText", "কর্তৃপক্ষের অনুমোদনক্রমে,", 504, 332, 616, 346),
+        boxed("NarrativeText", "Tahmina Rahman 16.09.26", 514, 359, 656, 389),
+        boxed("NarrativeText", "তাহমিনা রহমান", 526, 387, 594, 399),
+        boxed("NarrativeText", "যুগ্মসচিব", 542, 404, 578, 418),
+        boxed("NarrativeText", "ফোন : ৫৮১৬০২৩৬ (অফিস)", 496, 421, 624, 433),
+        boxed("NarrativeText", "প্রকৌ. মোহাম্মদ জিয়াউর রহমান", 98, 415, 236, 426),
+        boxed("NarrativeText", "অতিরিক্ত পরিচালক", 98, 432, 178, 442),
+    ], (768, 1086))
+    row = [b for b in spec["blocks"] if b.get("row")]
+    assert [b["type"] for b in row] == ["paragraph", "paragraph", "signature"]
+    assert [b["column"] for b in row] == [0, 0, 1]
+    signature = row[-1]
+    assert row[0]["band"] == signature["part_bands"]["lines"][-1]
+    assert row[1]["band"] > row[0]["band"]
+    assert len(row[0]["row_layout"]) == 2 and len(row[0]["row_bands"]) == row[1]["band"] + 1
+    assert spec["content_bottoms"][0] > 0.39
+
+
+def test_blocks_one_under_another_make_no_row():
+    spec, _ = convert([
+        boxed("Title", "অফিস আদেশ", 323, 184, 424, 209),
+        boxed("NarrativeText", "বিষয়: " * 40, 90, 223, 655, 325),
+        boxed("NarrativeText", "সচিব, ইউজিসি, ঢাকা।", 90, 340, 300, 352),
+    ], (768, 1086))
+    assert not [b for b in spec["blocks"] if b.get("row")]
