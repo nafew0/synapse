@@ -15,10 +15,15 @@ export interface UnstructuredElement {
       layout_width?: number;
       layout_height?: number;
     } | null;
-    /** Set on pages Synapse read itself, so nothing mistakes them for OCR output. */
-    source?: 'parser';
+    /** `parser`: a page Synapse read itself. `vision`: a picture the structure call found that
+     * the reader dropped; it has a rough box and no text. */
+    source?: 'parser' | 'vision';
+    /** What a `vision` picture is, such as a stamp or a signature. */
+    vision_kind?: string;
     /** One structure role per text line, from the structure call; null where it gave none. */
     line_roles?: (string | null)[];
+    /** Whether each text line is printed bold, from the structure call; null where it gave none. */
+    line_bold?: (boolean | null)[];
   };
 }
 
