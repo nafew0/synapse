@@ -3,3 +3,4 @@ export * from './extract';
 export * from './form';
 export * from './identity';
 export * from './working';
+export * from './deferred';

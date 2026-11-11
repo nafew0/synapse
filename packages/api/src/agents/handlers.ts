@@ -48,6 +48,7 @@ import {
   stripIntentLabelsFromToolDefinitions,
   INTENT_ARG,
 } from './intent';
+import { bringDeferredCodeFiles, hasDeferredCodeFiles } from '~/files/code/deferred';
 import { READ_DOCUMENT_TOOL_NAME } from '~/files/unstructured/definitions';
 import { logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
 import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
@@ -3948,6 +3949,34 @@ function buildToolCallConfig(
   return toolCallConfig;
 }
 
+/**
+ * Attached images are not copied to the sandbox at upload: a question about a picture never needs
+ * them there. The first call in a run that can use the sandbox copies them in and mounts them.
+ */
+async function mountDeferredCodeFiles(
+  toolCalls: ToolCallRequest[],
+  mergedConfigurable: Record<string, unknown>,
+): Promise<void> {
+  const req = mergedConfigurable.req as ServerRequest | undefined;
+  if (!req || !hasDeferredCodeFiles(req)) {
+    return;
+  }
+  const calls = toolCalls.filter((tc) => isCodeSessionAwareToolCall(tc.name, mergedConfigurable));
+  if (calls.length === 0) {
+    return;
+  }
+  const files = await bringDeferredCodeFiles(req);
+  if (files.length === 0) {
+    return;
+  }
+  for (const tc of calls) {
+    tc.codeSessionContext = {
+      session_id: tc.codeSessionContext?.session_id || files[0].storage_session_id || '',
+      files: [...(tc.codeSessionContext?.files ?? []), ...files],
+    };
+  }
+}
+
 export function createToolExecuteHandler(options: ToolExecuteOptions): EventHandler {
   const { loadTools, toolEndCallback, persistBackgroundCodeResult, emitAttachment, subagentTasks } =
     options;
@@ -4010,6 +4039,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
             const authoringQueues = new Map<string, Promise<void>>();
             const sandboxAuthoringContexts = new Map<string, SandboxSessionContext>();
             const sequenceSandboxCalls = shouldSequenceSandboxCalls(toolCalls, mergedConfigurable);
+            await mountDeferredCodeFiles(toolCalls, mergedConfigurable);
 
             /**
              * Background tool calls. The set of tools that received the injected

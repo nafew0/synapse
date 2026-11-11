@@ -62,6 +62,8 @@ jest.mock('@librechat/api', () => {
      * The real module cannot be loaded here — requiring it inside this factory runs its
      * initialisation against the mocks this file installs. */
     dedupeInjectedFiles: (files) => files,
+    isDeferredCodeFile: (file) => file.type?.startsWith('image/') === true && !!file.width,
+    deferCodeFiles: jest.fn(),
     logAxiosError: jest.fn(),
     getBasePath: jest.fn(() => ''),
     sanitizeArtifactPath: jest.fn((name) => name),
@@ -2041,6 +2043,62 @@ describe('Code Process', () => {
 
       expect(result.files.map((file) => file.name)).toEqual(['order.pdf']);
       expect(result.files[0].id).toBe('sandbox-newer');
+    });
+
+    /**
+     * A chat image is not copied to the sandbox at upload: the model sees it, and most questions
+     * about a picture never need /mnt/data. Priming names it for the model and hands a copier to
+     * `deferCodeFiles`, which runs only when a sandbox call or read_document needs the image.
+     */
+    it('defers an image with no sandbox copy until a call needs it', async () => {
+      const { deferCodeFiles } = require('@librechat/api');
+      const { handleFileUpload, getDownloadStream } = setupReuploadMocks({
+        storage_session_id: 'sess-img',
+        file_id: 'sandbox-img',
+      });
+      const image = {
+        file_id: 'img-1',
+        filename: 'order.jpg',
+        filepath: '/images/order.jpg',
+        type: 'image/jpeg',
+        width: 768,
+        height: 1086,
+        metadata: {},
+      };
+      getFiles.mockResolvedValue([image]);
+      const req = { user: { id: 'user-123', role: 'USER' } };
+
+      const result = await primeFiles({
+        req,
+        agentId: 'agent-123',
+        tool_resources: { execute_code: { file_ids: ['img-1'] } },
+      });
+
+      expect(result.files).toEqual([]);
+      expect(result.toolContext).toContain('/mnt/data/order.jpg');
+      expect(handleFileUpload).not.toHaveBeenCalled();
+      expect(deferCodeFiles).toHaveBeenCalledWith(req, [image], expect.any(Function));
+
+      const copy = deferCodeFiles.mock.calls.at(-1)[2];
+      const mounted = await copy(image);
+
+      expect(getDownloadStream).toHaveBeenCalledWith(req, '/images/order.jpg');
+      expect(handleFileUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ filename: 'order.jpg', kind: 'user', id: 'user-123' }),
+      );
+      expect(mounted).toEqual({
+        id: 'sandbox-img',
+        resource_id: 'user-123',
+        storage_session_id: 'sess-img',
+        name: 'order.jpg',
+        kind: 'user',
+      });
+      expect(updateFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          file_id: 'img-1',
+          'metadata.codeEnvRef': expect.objectContaining({ file_id: 'sandbox-img' }),
+        }),
+      );
     });
 
     it('uses the permission resource type established by the calling route', async () => {

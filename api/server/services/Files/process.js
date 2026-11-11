@@ -477,10 +477,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
   const { handleImageUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id, endpoint } = metadata;
 
-  /* Before storing: local image storage converts the upload and deletes the temp file. */
-  const sandboxMetadata = returnFile
-    ? undefined
-    : await getImageSandboxMetadata({ req, file, metadata });
+  /* A chat image is copied to the sandbox only when a call needs it there (`deferCodeFiles`). */
   const { filepath, bytes, width, height, storageKey, storageRegion } = await handleImageUpload({
     req,
     file,
@@ -500,7 +497,6 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
       filename: file.originalname,
       context: FileContext.message_attachment,
       source,
-      metadata: sandboxMetadata,
       type: `image/${appConfig.imageOutputType}`,
       ...(await getRetentionExpiry(req)),
       width,
@@ -1365,10 +1361,10 @@ const isSandboxUploadAllowed = ({ req, assistantTools }) => {
 };
 
 /**
- * Copies an attached image into the code sandbox when the assistant has one, so it can crop a
- * logo or signature out of a scan, OCR it, or compare a render against it. The model still sees
- * the image as before; this only adds the `codeEnvRef`. Only assistants whose tools include
- * `execute_code` get the copy, and a failed copy never fails the upload.
+ * Copies an image saved to an assistant's own files into the code sandbox when the assistant has
+ * one. A chat image is not copied here: the model sees it, and it reaches the sandbox only when a
+ * call needs it there (`deferCodeFiles`). Only assistants whose tools include `execute_code` get
+ * the copy, and a failed copy never fails the upload.
  *
  * @param {object} params
  * @param {ServerRequest} params.req
@@ -1777,7 +1773,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     });
   }
 
-  if (isImage && fileInfoMetadata == null) {
+  if (isImage && !messageAttachment && fileInfoMetadata == null) {
     fileInfoMetadata = await getImageSandboxMetadata({ req, file, metadata });
   }
 

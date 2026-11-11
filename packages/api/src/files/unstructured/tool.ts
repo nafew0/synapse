@@ -28,6 +28,7 @@ export interface SandboxFileRef {
   name: string;
   storage_session_id: string;
   kind: 'user';
+  resource_id?: string;
 }
 
 /** A finished read, kept so that later requests on the same file are not charged again. */
@@ -60,6 +61,11 @@ export interface DocumentReadDeps {
   checkAllowance?: (pages: number) => Promise<boolean>;
   recordCharge: (charge: DocumentCharge) => Promise<void>;
   uploadToSandbox: (name: string, content: string) => Promise<SandboxFileRef>;
+  /**
+   * Puts an image's own bytes in the sandbox for the rebuild to crop from. Images are not copied
+   * at upload, since most questions about one never need the sandbox. Null when it fails.
+   */
+  copySource?: (file: DocumentFile, bytes: Buffer) => Promise<SandboxFileRef | null>;
   /** Adds structure roles to a fresh read's lines. Absent when the structure call is not configured. */
   labelStructure?: (
     file: DocumentFile,
@@ -305,13 +311,17 @@ export function createDocumentReadTool(deps: DocumentReadDeps): DynamicStructure
 
       const markdown = elementsToMarkdown(reading.elements);
       const base = sandboxBase(file);
-      const [elementsRef, markdownRef] = await Promise.all([
+      const [elementsRef, markdownRef, sourceRef] = await Promise.all([
         deps.uploadToSandbox(`${base}.elements.json`, JSON.stringify(reading.elements)),
         deps.uploadToSandbox(`${base}.md`, markdown),
+        IMAGE_TYPES.test(file.type) && deps.copySource
+          ? deps.copySource(file, buffer)
+          : Promise.resolve(null),
       ]);
+      const source = sourceRef ? `/mnt/data/${sourceRef.name}` : '<source file>';
 
       const notes = [
-        `Read "${file.filename}". Saved as /mnt/data/${elementsRef.name} and /mnt/data/${markdownRef.name} for this request only; on a later request call read_document again, which is free. For Word, load the docx skill and run: cd /mnt/data && python3 /mnt/data/skills/docx/scripts/scan_to_docx.py ${elementsRef.name} <source file> /mnt/data/<name>.docx with the final file name; do not copy or rename it afterwards, because every file in /mnt/data is delivered. "Doc" and "Word" both mean this .docx: never convert it to .doc, which drops the embedded Bangla font.`,
+        `Read "${file.filename}". Saved as /mnt/data/${elementsRef.name} and /mnt/data/${markdownRef.name} for this request only; on a later request call read_document again, which is free. For Word, load the docx skill and run: cd /mnt/data && python3 /mnt/data/skills/docx/scripts/scan_to_docx.py ${elementsRef.name} ${source} /mnt/data/<name>.docx with the final file name; do not copy or rename it afterwards, because every file in /mnt/data is delivered. "Doc" and "Word" both mean this .docx: never convert it to .doc, which drops the embedded Bangla font.`,
       ];
       if (reading.refused) {
         notes.push(
@@ -329,7 +339,7 @@ export function createDocumentReadTool(deps: DocumentReadDeps): DynamicStructure
         `${notes.join('\n')}\n\n${markdown.slice(0, MAX_RETURN_CHARS)}`,
         {
           session_id: config?.toolCall?.session_id || elementsRef.storage_session_id,
-          files: [elementsRef, markdownRef],
+          files: sourceRef ? [elementsRef, markdownRef, sourceRef] : [elementsRef, markdownRef],
         },
       ];
     } catch (error) {

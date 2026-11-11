@@ -774,6 +774,47 @@ describe('File Methods', () => {
   });
 
   describe('getUserCodeFiles', () => {
+    it('returns an earlier chat image that has no sandbox copy yet', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const imageId = uuidv4();
+      const textId = uuidv4();
+      const base = {
+        user: ownerId,
+        tenantId: 'tenant-a',
+        conversationId: 'conversation-owner',
+        source: 'local',
+        bytes: 100,
+        context: FileContext.message_attachment,
+      };
+      await runAsSystem(() =>
+        fileMethods.createFile({
+          ...base,
+          file_id: imageId,
+          filename: 'order.jpg',
+          filepath: '/images/order.png',
+          type: 'image/png',
+          width: 768,
+          height: 1086,
+        }),
+      );
+      await runAsSystem(() =>
+        fileMethods.createFile({
+          ...base,
+          file_id: textId,
+          filename: 'notes.txt',
+          filepath: '/uploads/notes.txt',
+          type: 'text/plain',
+        }),
+      );
+
+      const files = await fileMethods.getUserCodeFiles([imageId, textId], {
+        userId: ownerId.toString(),
+        tenantId: 'tenant-a',
+      });
+
+      expect(files.map((file) => file.file_id)).toEqual([imageId]);
+    });
+
     it('returns only authenticated owner code-env uploads', async () => {
       const ownerId = new mongoose.Types.ObjectId();
       const victimId = new mongoose.Types.ObjectId();

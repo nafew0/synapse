@@ -1062,8 +1062,8 @@ describe('primeResources', () => {
       const attachmentIds = result.attachments?.map((f) => f?.file_id).sort();
       expect(attachmentIds).toEqual(['existing-file', 'new-file', 'ocr-file']);
 
-      // Check tool_resources
-      expect(result.tool_resources?.[EToolResources.execute_code]?.files).toHaveLength(1);
+      /* The image has no sandbox copy yet; it joins the code files to be copied when a call needs it. */
+      expect(result.tool_resources?.[EToolResources.execute_code]?.files).toHaveLength(2);
       expect(result.tool_resources?.[EToolResources.image_edit]?.files).toHaveLength(1);
       expect(result.tool_resources?.[EToolResources.image_edit]?.files?.[0]?.file_id).toBe(
         'new-file',

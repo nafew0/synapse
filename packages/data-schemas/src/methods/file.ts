@@ -314,6 +314,8 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
           $or: [
             { 'metadata.codeEnvRef': { $exists: true } },
             { 'metadata.codeEnvRefs': { $exists: true } },
+            /* A chat image reaches the sandbox only when a call needs it, so it has no ref yet. */
+            { type: { $regex: '^image/' }, width: { $gt: 0 }, height: { $gt: 0 } },
           ],
         },
         ownerScope,
