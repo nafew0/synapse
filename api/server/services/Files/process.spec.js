@@ -1403,17 +1403,17 @@ describe('processAgentFileUpload', () => {
 
     describe('images for an assistant with the sandbox', () => {
       /**
-       * A scanned office order is read by the model as a picture, but cropping its logo or
-       * signatures, OCR-ing small print, and comparing a render against it all need the file in
-       * /mnt/data as well.
+       * The model reads a chat image as a picture, so most questions about one never touch the
+       * sandbox. A chat image is copied there only when a call needs it (`deferCodeFiles`), not
+       * at upload, so the upload no longer waits on the sandbox.
        */
       const imageReq = () => {
         convertImage.mockResolvedValue({ filepath: '/images/upload.png', source: 'local' });
         return makeReq({ mimetype: 'image/png', ocrConfig: null, path: uploadPath });
       };
 
-      test('copies the image into the sandbox and still sends it to the provider', async () => {
-        db.getAgent.mockResolvedValueOnce({ id: 'agent_office', tools: ['execute_code'] });
+      test('stores a chat image for the provider without copying it to the sandbox', async () => {
+        db.getAgent.mockResolvedValue({ id: 'agent_office', tools: ['execute_code'] });
 
         await processAgentFileUpload({
           req: imageReq(),
@@ -1421,103 +1421,29 @@ describe('processAgentFileUpload', () => {
           metadata: autoMetadata({ agent_id: 'agent_office' }),
         });
 
-        expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.execute_code);
+        expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.execute_code);
         expect(db.createFile).toHaveBeenCalledWith(
-          expect.objectContaining({
-            type: 'image/png',
-            metadata: expect.objectContaining({ codeEnvRef: expect.anything() }),
-          }),
+          expect.objectContaining({ type: 'image/png' }),
           true,
         );
+        expect(db.createFile.mock.calls.map(([file]) => file.metadata?.codeEnvRef)).toEqual([
+          undefined,
+          undefined,
+        ]);
       });
 
-      test('copies an image uploaded through the image route', async () => {
-        db.getAgent.mockResolvedValueOnce({ id: 'agent_office', tools: ['execute_code'] });
+      test('leaves an image from the image route out of the sandbox', async () => {
+        db.getAgent.mockResolvedValue({ id: 'agent_office', tools: ['execute_code'] });
 
         await processImageFile({
           req: imageReq(),
           res: mockRes,
           metadata: { file_id: 'img-1', agent_id: 'agent_office', message_file: 'true' },
-        });
-
-        expect(db.createFile).toHaveBeenCalledWith(
-          expect.objectContaining({
-            metadata: expect.objectContaining({ codeEnvRef: expect.anything() }),
-          }),
-          true,
-        );
-      });
-
-      test('copies the image before storing it, as local storage deletes the upload', async () => {
-        /* Local image storage converts the upload and unlinks the temp file. The sandbox copy
-         * read that path afterwards and failed with ENOENT, so a scanned order never reached
-         * /mnt/data and the scan rebuild had nothing to work on. */
-        db.getAgent.mockResolvedValueOnce({ id: 'agent_office', tools: ['execute_code'] });
-        const tempPath = nodePath.join(uploadDir, 'office-order.jpg');
-        nodeFs.writeFileSync(tempPath, 'jpeg bytes');
-        const received = [];
-        routeStrategies({
-          codeEnv: {
-            handleFileUpload: jest.fn(async ({ stream }) => {
-              for await (const chunk of stream) {
-                received.push(chunk);
-              }
-              return { storage_session_id: 'sess-1', file_id: 'code-file-1' };
-            }),
-          },
-          storage: {
-            handleImageUpload: jest.fn(async ({ file }) => {
-              await nodeFs.promises.unlink(file.path);
-              return { bytes: 10, width: 768, height: 1086, filepath: '/images/office-order.png' };
-            }),
-          },
-        });
-
-        await processImageFile({
-          req: makeReq({ mimetype: 'image/jpeg', ocrConfig: null, path: tempPath }),
-          res: mockRes,
-          metadata: { file_id: 'img-1', agent_id: 'agent_office', message_file: 'true' },
-        });
-
-        expect(Buffer.concat(received).toString()).toBe('jpeg bytes');
-        expect(db.createFile).toHaveBeenCalledWith(
-          expect.objectContaining({
-            metadata: expect.objectContaining({ codeEnvRef: expect.anything() }),
-          }),
-          true,
-        );
-      });
-
-      test('keeps the image out of the sandbox for an agent without execute_code', async () => {
-        db.getAgent.mockResolvedValueOnce({ id: 'agent_chat', tools: ['file_search'] });
-
-        await processImageFile({
-          req: imageReq(),
-          res: mockRes,
-          metadata: { file_id: 'img-1', agent_id: 'agent_chat', message_file: 'true' },
         });
 
         expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.execute_code);
         expect(db.createFile).toHaveBeenCalledWith(
-          expect.objectContaining({ metadata: undefined }),
-          true,
-        );
-      });
-
-      test('still saves the image when the sandbox copy fails', async () => {
-        db.getAgent.mockResolvedValueOnce({ id: 'agent_office', tools: ['execute_code'] });
-        routeStrategies({
-          codeEnv: { handleFileUpload: jest.fn().mockRejectedValue(new Error('sandbox down')) },
-        });
-
-        await processImageFile({
-          req: imageReq(),
-          res: mockRes,
-          metadata: { file_id: 'img-1', agent_id: 'agent_office', message_file: 'true' },
-        });
-
-        expect(db.createFile).toHaveBeenCalledWith(
-          expect.objectContaining({ file_id: 'img-1', metadata: undefined }),
+          expect.not.objectContaining({ metadata: expect.anything() }),
           true,
         );
       });
