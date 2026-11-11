@@ -45,6 +45,7 @@ function FileFormChat({
         abortUpload={abortUpload}
         setFilesLoading={setFilesLoading}
         isRTL={isRTL}
+        tiles
         Wrapper={ChatFileRowWrapper}
       />
     </>

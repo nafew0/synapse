@@ -26,10 +26,30 @@ const deliveryLabels: Record<string, TranslationKeys> = {
 };
 
 /**
- * The one line of status on an attachment chip: what is happening to the file while it uploads,
- * and how the model will read it once it is ready. Files attached without automatic preparation
- * fall back to the chip's usual file-type subtitle.
+ * The attachment's status in words: what is happening to the file while it uploads, and how the
+ * model will read it once it is ready. Files attached without automatic preparation get
+ * `fallback`, the usual file-type title.
  */
+export function usePreparationLabel(file: Partial<ExtendedFile>, fallback: string): string {
+  const localize = useLocalize();
+  const preparation = file.metadata?.preparation;
+
+  if ((file.progress ?? 1) < 1) {
+    const stageKey = stageLabels[file.preparationStage ?? 'uploading'];
+    return localize(stageKey ?? 'com_ui_file_stage_uploading');
+  }
+
+  const deliveryKey = preparation?.label != null ? deliveryLabels[preparation.label] : undefined;
+  if (!deliveryKey) {
+    return fallback;
+  }
+
+  const label = localize(deliveryKey);
+  const suffix = preparation?.ocrApplied === true ? ` · ${localize('com_ui_file_recognized')}` : '';
+  return `${label}${suffix}`;
+}
+
+/** The one line of status on an attachment chip. */
 const PreparationStatus = ({
   file,
   fallback,
@@ -38,34 +58,10 @@ const PreparationStatus = ({
   /** The chip's default subtitle, shown when the file carries no preparation of its own. */
   fallback: string;
 }) => {
-  const localize = useLocalize();
-  const preparation = file.metadata?.preparation;
-
-  if ((file.progress ?? 1) < 1) {
-    const stageKey = stageLabels[file.preparationStage ?? 'uploading'];
-    return (
-      <div className="truncate text-text-secondary">
-        {localize(stageKey ?? 'com_ui_file_stage_uploading')}
-      </div>
-    );
-  }
-
-  const deliveryKey = preparation?.label != null ? deliveryLabels[preparation.label] : undefined;
-  if (!deliveryKey) {
-    return (
-      <div className="truncate text-text-secondary" title={fallback}>
-        {fallback}
-      </div>
-    );
-  }
-
-  const label = localize(deliveryKey);
-  const suffix = preparation?.ocrApplied === true ? ` · ${localize('com_ui_file_recognized')}` : '';
-
+  const label = usePreparationLabel(file, fallback);
   return (
-    <div className="truncate text-text-secondary" title={`${label}${suffix}`}>
+    <div className="truncate text-text-secondary" title={label}>
       {label}
-      {suffix}
     </div>
   );
 };

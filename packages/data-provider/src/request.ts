@@ -302,13 +302,20 @@ const withAuthorization = (options: RequestInit | undefined, token: string | nul
   return { ...options, headers };
 };
 
-async function _authenticatedFetch(url: string, options?: RequestInit): Promise<Response> {
+type FetchTransport = (url: string, options?: RequestInit) => Promise<Response>;
+
+/** `transport` swaps the network call (an upload uses XHR to report bytes sent); auth stays here. */
+async function _authenticatedFetch(
+  url: string,
+  options?: RequestInit,
+  transport: FetchTransport = fetch,
+): Promise<Response> {
   if (typeof window === 'undefined') {
-    return fetch(url, options);
+    return transport(url, options);
   }
 
   const token = (await refreshBeforeRequest(url)) ?? getBearerToken();
-  const response = await fetch(url, withAuthorization(options, token));
+  const response = await transport(url, withAuthorization(options, token));
   if (
     response.status !== 401 ||
     isAuthRecoveryEndpoint(url) ||
@@ -332,7 +339,7 @@ async function _authenticatedFetch(url: string, options?: RequestInit): Promise<
   }
 
   await response.body?.cancel().catch(() => undefined);
-  return fetch(url, withAuthorization(options, refreshedToken));
+  return transport(url, withAuthorization(options, refreshedToken));
 }
 
 if (typeof window !== 'undefined') {

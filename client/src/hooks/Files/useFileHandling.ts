@@ -227,6 +227,24 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     [updateFileById, clearUploadTimer],
   );
 
+  /** Last whole percent shown per file, so a fast stream of progress events re-renders at most 100 times. */
+  const uploadPercentRef = useRef(new Map<string, number>());
+  const handleUploadProgress = useCallback(
+    (fileId: string, fraction: number) => {
+      const percent = Math.floor(fraction * 100);
+      if (uploadPercentRef.current.get(fileId) === percent) {
+        return;
+      }
+      if (percent >= 100) {
+        uploadPercentRef.current.delete(fileId);
+      } else {
+        uploadPercentRef.current.set(fileId, percent);
+      }
+      updateFileById(fileId, { uploadProgress: percent / 100 });
+    },
+    [updateFileById],
+  );
+
   const uploadFile = useUploadFileMutation(
     {
       onSuccess: (data) => {
@@ -300,6 +318,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     },
     abortControllerRef.current?.signal,
     handleUploadStage,
+    handleUploadProgress,
   );
 
   const uploadWithRecovery = (

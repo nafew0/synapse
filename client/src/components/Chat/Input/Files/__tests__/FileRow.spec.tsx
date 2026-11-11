@@ -48,6 +48,16 @@ jest.mock('../FileContainer', () => {
   };
 });
 
+jest.mock('../Tile', () => {
+  return function MockTile({ file }: any) {
+    return (
+      <div data-testid="mock-file-tile">
+        <span data-testid="file-name">{file.filename}</span>
+      </div>
+    );
+  };
+});
+
 const mockUseLocalize = jest.requireMock('~/hooks').useLocalize;
 const mockUseDeleteFilesMutation = jest.requireMock('~/data-provider').useDeleteFilesMutation;
 const mockUseFileDeletion = jest.requireMock('~/hooks/Files').useFileDeletion;
@@ -255,6 +265,21 @@ describe('FileRow', () => {
 
       expect(screen.getByTestId('mock-file-container')).toBeInTheDocument();
       expect(screen.queryByTestId('mock-image')).not.toBeInTheDocument();
+    });
+
+    it('should render square tiles for non-image files when asked, as the composer does', () => {
+      const file = createMockFile({ type: 'application/pdf', filename: 'document.pdf' });
+      const image = createMockFile({ file_id: 'img-1', type: 'image/png', filename: 'a.png' });
+      const filesMap = new Map<string, ExtendedFile>([
+        [file.file_id, file],
+        [image.file_id, image],
+      ]);
+
+      render(<FileRow files={filesMap} setFiles={mockSetFiles} tiles />);
+
+      expect(screen.getByTestId('mock-file-tile')).toBeInTheDocument();
+      expect(screen.getByTestId('mock-image')).toBeInTheDocument();
+      expect(screen.queryByTestId('mock-file-container')).not.toBeInTheDocument();
     });
   });
 

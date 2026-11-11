@@ -3,8 +3,9 @@ import { Button } from '@librechat/client';
 import { Maximize2, X } from 'lucide-react';
 import { FileSources } from 'librechat-data-provider';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import ProgressCircle from './ProgressCircle';
+import type { UploadStageName } from 'librechat-data-provider';
 import SourceIcon from './SourceIcon';
+import Scan from './Scan';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -19,6 +20,8 @@ const ImagePreview = ({
   imageBase64,
   url,
   progress = 1,
+  uploadProgress,
+  stage,
   className = '',
   source,
   alt = 'Preview image',
@@ -26,6 +29,8 @@ const ImagePreview = ({
   imageBase64?: string;
   url?: string;
   progress?: number;
+  uploadProgress?: number;
+  stage?: UploadStageName;
   className?: string;
   source?: FileSources;
   alt?: string;
@@ -104,13 +109,6 @@ const ImagePreview = ({
     return null;
   }
 
-  const radius = 55;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - progress * circumference;
-  const circleCSSProperties = {
-    transition: 'stroke-dashoffset 0.3s linear',
-  };
-
   /** Keyboard users need the same expand affordance the pointer gets on hover. */
   const showExpandAffordance = isHovered || isFocused;
 
@@ -137,14 +135,8 @@ const ImagePreview = ({
         onFocus={() => setIsFocused(true)}
         onBlur={() => setIsFocused(false)}
       >
-        {progress < 1 ? (
-          <ProgressCircle
-            circumference={circumference}
-            offset={offset}
-            circleCSSProperties={circleCSSProperties}
-            aria-label={`Loading progress: ${Math.round(progress * 100)}%`}
-          />
-        ) : (
+        <Scan progress={progress} uploadProgress={uploadProgress} stage={stage} />
+        {progress >= 1 && (
           <div
             className={cn(
               'absolute inset-0 flex transform-gpu cursor-pointer items-center justify-center rounded-xl transition-opacity duration-200 ease-in-out',

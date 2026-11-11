@@ -363,6 +363,10 @@ export default defineConfig(({ command }) => ({
                   if (normalizedId.includes('@icons-pack/react-simple-icons/icons/')) {
                     return null;
                   }
+                  /** pdf.js only draws attachment thumbnails; keep it in its lazy chunk. */
+                  if (normalizedId.includes('node_modules/pdfjs-dist/')) {
+                    return null;
+                  }
 
                   // Everything else falls into a generic vendor chunk.
                   return 'vendor';
