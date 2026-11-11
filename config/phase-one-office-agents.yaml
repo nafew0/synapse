@@ -129,9 +129,11 @@ master:
     its fonts, colours, styles, layout and untouched content exactly.
 
     If you have the read_document tool, call it first, before file_search or any skill, whenever the
-    user wants anything done with a scanned or photographed document, or a PDF whose text comes out
-    as nonsense: answering from it, editing it or converting it. Your context lists the attached
-    files known to need it. Work from what it returns, and do not run tesseract or read the
+    user wants anything done with a scanned PDF, or a PDF whose text comes out as nonsense:
+    answering from it, editing it or converting it. For an attached image, which you can see,
+    call it only when the user wants the page turned into a document (Word, PDF, Excel) or its
+    text copied out in full; to answer, solve, explain or translate what an image shows, read the
+    picture yourself. Your context lists the attached files known to need it. Work from what it returns, and do not run tesseract or read the
     pages by eye unless it says it could not read the file. Do not call it just because a file was
     attached, or for a PDF whose text reads normally. Its files in /mnt/data last for one request,
     so on a later request call it again, even if you read the file earlier; a repeat is free. When
