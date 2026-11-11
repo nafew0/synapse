@@ -1,0 +1,1407 @@
+[
+ {
+  "id": "a-cycle-cycle-infographics-010",
+  "kind": "cycle",
+  "items": 3,
+  "roles": [
+   "body",
+   "head",
+   "number"
+  ],
+  "bbox": [
+   1.524,
+   2.043,
+   10.284,
+   4.807
+  ],
+  "source": "Cycle Infographics.pptx#10",
+  "file": "cycle.pptx",
+  "slide": 1
+ },
+ {
+  "id": "a-cycle-cycle-infographics-015",
+  "kind": "cycle",
+  "items": 3,
+  "roles": [
+   "body",
+   "head",
+   "number"
+  ],
+  "bbox": [
+   1.415,
+   2.007,
+   10.504,
+   4.874
+  ],
+  "source": "Cycle Infographics.pptx#15",
+  "file": "cycle.pptx",
+  "slide": 2
+ },
+ {
+  "id": "a-cycle-cycle-infographics-020",
+  "kind": "cycle",
+  "items": 3,
+  "roles": [
+   "body",
+   "head",
+   "number"
+  ],
+  "bbox": [
+   1.366,
+   1.964,
+   11.078,
+   4.966
+  ],
+  "source": "Cycle Infographics.pptx#20",
+  "file": "cycle.pptx",
+  "slide": 3
+ },
+ {
+  "id": "a-cycle-cycle-infographics-001",
+  "kind": "cycle",
+  "items": 4,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   0.839,
+   2.053,
+   11.655,
+   4.781
+  ],
+  "source": "Cycle Infographics.pptx#1",
+  "file": "cycle.pptx",
+  "slide": 4
+ },
+ {
+  "id": "a-cycle-cycle-infographics-004",
+  "kind": "cycle",
+  "items": 4,
+  "roles": [
+   "body",
+   "head",
+   "number"
+  ],
+  "bbox": [
+   1.314,
+   1.875,
+   10.706,
+   5.136
+  ],
+  "source": "Cycle Infographics.pptx#4",
+  "file": "cycle.pptx",
+  "slide": 5
+ },
+ {
+  "id": "a-cycle-cycle-infographics-007",
+  "kind": "cycle",
+  "items": 4,
+  "roles": [
+   "body",
+   "head",
+   "number"
+  ],
+  "bbox": [
+   1.387,
+   1.904,
+   10.979,
+   5.079
+  ],
+  "source": "Cycle Infographics.pptx#7",
+  "file": "cycle.pptx",
+  "slide": 6
+ },
+ {
+  "id": "a-cycle-cycle-infographics-011",
+  "kind": "cycle",
+  "items": 4,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.682,
+   1.958,
+   9.943,
+   4.972
+  ],
+  "source": "Cycle Infographics.pptx#11",
+  "file": "cycle.pptx",
+  "slide": 7
+ },
+ {
+  "id": "a-cycle-cycle-infographics-018",
+  "kind": "cycle",
+  "items": 4,
+  "roles": [
+   "body",
+   "head",
+   "number"
+  ],
+  "bbox": [
+   1.412,
+   1.887,
+   10.466,
+   5.114
+  ],
+  "source": "Cycle Infographics.pptx#18",
+  "file": "cycle.pptx",
+  "slide": 8
+ },
+ {
+  "id": "a-cycle-cycle-infographics-019",
+  "kind": "cycle",
+  "items": 4,
+  "roles": [
+   "body",
+   "head",
+   "number"
+  ],
+  "bbox": [
+   1.251,
+   1.954,
+   10.836,
+   4.978
+  ],
+  "source": "Cycle Infographics.pptx#19",
+  "file": "cycle.pptx",
+  "slide": 9
+ },
+ {
+  "id": "a-cycle-cycle-infographics-006",
+  "kind": "cycle",
+  "items": 5,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.171,
+   1.931,
+   11.151,
+   4.986
+  ],
+  "source": "Cycle Infographics.pptx#6",
+  "file": "cycle.pptx",
+  "slide": 10
+ },
+ {
+  "id": "a-cycle-cycle-infographics-014",
+  "kind": "cycle",
+  "items": 5,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.119,
+   1.949,
+   11.263,
+   4.958
+  ],
+  "source": "Cycle Infographics.pptx#14",
+  "file": "cycle.pptx",
+  "slide": 11
+ },
+ {
+  "id": "a-cycle-cycle-infographics-003",
+  "kind": "cycle",
+  "items": 6,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.216,
+   1.881,
+   11.027,
+   5.126
+  ],
+  "source": "Cycle Infographics.pptx#3",
+  "file": "cycle.pptx",
+  "slide": 12
+ },
+ {
+  "id": "a-cycle-cycle-infographics-009",
+  "kind": "cycle",
+  "items": 6,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.063,
+   2.124,
+   11.212,
+   4.615
+  ],
+  "source": "Cycle Infographics.pptx#9",
+  "file": "cycle.pptx",
+  "slide": 13
+ },
+ {
+  "id": "a-cycle-cycle-infographics-013",
+  "kind": "cycle",
+  "items": 6,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.077,
+   2.077,
+   11.185,
+   4.678
+  ],
+  "source": "Cycle Infographics.pptx#13",
+  "file": "cycle.pptx",
+  "slide": 14
+ },
+ {
+  "id": "a-product-life-cycle-product-life-cycle-013",
+  "kind": "cycle",
+  "items": 5,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   0.832,
+   1.971,
+   11.684,
+   4.913
+  ],
+  "source": "Product Life Cycle.pptx#13",
+  "file": "cycle.pptx",
+  "slide": 15
+ },
+ {
+  "id": "a-product-life-cycle-product-life-cycle-017",
+  "kind": "cycle",
+  "items": 5,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   0.821,
+   2.004,
+   11.683,
+   4.966
+  ],
+  "source": "Product Life Cycle.pptx#17",
+  "file": "cycle.pptx",
+  "slide": 16
+ },
+ {
+  "id": "a-product-life-cycle-product-life-cycle-019",
+  "kind": "cycle",
+  "items": 5,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   0.803,
+   1.951,
+   11.745,
+   5.14
+  ],
+  "source": "Product Life Cycle.pptx#19",
+  "file": "cycle.pptx",
+  "slide": 17
+ },
+ {
+  "id": "a-funnel-funnel-infographics-009",
+  "kind": "funnel",
+  "items": 4,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.331,
+   2.465,
+   10.71,
+   3.716
+  ],
+  "source": "Funnel Infographics.pptx#9",
+  "file": "funnel.pptx",
+  "slide": 1
+ },
+ {
+  "id": "a-funnel-funnel-infographics-010",
+  "kind": "funnel",
+  "items": 4,
+  "roles": [
+   "text"
+  ],
+  "bbox": [
+   1.427,
+   1.981,
+   10.435,
+   4.927
+  ],
+  "source": "Funnel Infographics.pptx#10",
+  "file": "funnel.pptx",
+  "slide": 2
+ },
+ {
+  "id": "a-funnel-funnel-infographics-012",
+  "kind": "funnel",
+  "items": 4,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.394,
+   2.387,
+   10.317,
+   4.113
+  ],
+  "source": "Funnel Infographics.pptx#12",
+  "file": "funnel.pptx",
+  "slide": 3
+ },
+ {
+  "id": "a-funnel-funnel-infographics-020",
+  "kind": "funnel",
+  "items": 4,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.093,
+   2.373,
+   11.107,
+   4.094
+  ],
+  "source": "Funnel Infographics.pptx#20",
+  "file": "funnel.pptx",
+  "slide": 4
+ },
+ {
+  "id": "a-funnel-funnel-infographics-001",
+  "kind": "funnel",
+  "items": 5,
+  "roles": [
+   "head"
+  ],
+  "bbox": [
+   1.547,
+   1.199,
+   10.23,
+   5.14
+  ],
+  "source": "Funnel Infographics.pptx#1",
+  "file": "funnel.pptx",
+  "slide": 5
+ },
+ {
+  "id": "a-funnel-funnel-infographics-008",
+  "kind": "funnel",
+  "items": 5,
+  "roles": [
+   "text"
+  ],
+  "bbox": [
+   1.682,
+   2.02,
+   9.845,
+   4.678
+  ],
+  "source": "Funnel Infographics.pptx#8",
+  "file": "funnel.pptx",
+  "slide": 6
+ },
+ {
+  "id": "a-funnel-funnel-infographics-011",
+  "kind": "funnel",
+  "items": 5,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.099,
+   2.507,
+   11.22,
+   3.933
+  ],
+  "source": "Funnel Infographics.pptx#11",
+  "file": "funnel.pptx",
+  "slide": 7
+ },
+ {
+  "id": "a-funnel-funnel-infographics-016",
+  "kind": "funnel",
+  "items": 5,
+  "roles": [
+   "text"
+  ],
+  "bbox": [
+   1.851,
+   2.303,
+   9.644,
+   4.278
+  ],
+  "source": "Funnel Infographics.pptx#16",
+  "file": "funnel.pptx",
+  "slide": 8
+ },
+ {
+  "id": "a-funnel-funnel-infographics-018",
+  "kind": "funnel",
+  "items": 5,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.547,
+   1.468,
+   10.247,
+   4.579
+  ],
+  "source": "Funnel Infographics.pptx#18",
+  "file": "funnel.pptx",
+  "slide": 9
+ },
+ {
+  "id": "a-matrix-diagram-matrix-diagram-templates-003",
+  "kind": "matrix",
+  "items": 4,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   2.045,
+   2.408,
+   9.271,
+   3.969
+  ],
+  "source": "Matrix Diagram Templates.pptx#3",
+  "file": "matrix.pptx",
+  "slide": 1
+ },
+ {
+  "id": "a-matrix-diagram-matrix-diagram-templates-016",
+  "kind": "matrix",
+  "items": 4,
+  "roles": [
+   "body",
+   "head",
+   "number"
+  ],
+  "bbox": [
+   1.454,
+   1.969,
+   10.416,
+   4.657
+  ],
+  "source": "Matrix Diagram Templates.pptx#16",
+  "file": "matrix.pptx",
+  "slide": 2
+ },
+ {
+  "id": "a-matrix-diagram-matrix-diagram-templates-002",
+  "kind": "matrix",
+  "items": 4,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.7,
+   1.981,
+   9.87,
+   4.717
+  ],
+  "source": "Matrix Diagram Templates.pptx#2",
+  "file": "matrix.pptx",
+  "slide": 3
+ },
+ {
+  "id": "a-matrix-diagram-matrix-diagram-templates-012",
+  "kind": "matrix",
+  "items": 4,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.268,
+   1.798,
+   10.827,
+   5.065
+  ],
+  "source": "Matrix Diagram Templates.pptx#12",
+  "file": "matrix.pptx",
+  "slide": 4
+ },
+ {
+  "id": "a-swot-swot-infographics-007",
+  "kind": "matrix",
+  "items": 4,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.283,
+   1.951,
+   10.782,
+   4.738
+  ],
+  "source": "SWOT Infographics.pptx#7",
+  "file": "matrix.pptx",
+  "slide": 5
+ },
+ {
+  "id": "a-swot-swot-infographics-017",
+  "kind": "matrix",
+  "items": 4,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.103,
+   1.034,
+   11.125,
+   5.43
+  ],
+  "source": "SWOT Infographics.pptx#17",
+  "file": "matrix.pptx",
+  "slide": 6
+ },
+ {
+  "id": "a-arrow-arrow-infographics-004",
+  "kind": "process",
+  "items": 4,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   0.823,
+   2.75,
+   11.675,
+   3.386
+  ],
+  "source": "Arrow Infographics.pptx#4",
+  "file": "process.pptx",
+  "slide": 1
+ },
+ {
+  "id": "a-arrow-arrow-infographics-008",
+  "kind": "process",
+  "items": 4,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.361,
+   2.105,
+   10.65,
+   4.479
+  ],
+  "source": "Arrow Infographics.pptx#8",
+  "file": "process.pptx",
+  "slide": 2
+ },
+ {
+  "id": "a-arrow-arrow-infographics-005",
+  "kind": "process",
+  "items": 6,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.028,
+   1.99,
+   11.271,
+   4.697
+  ],
+  "source": "Arrow Infographics.pptx#5",
+  "file": "process.pptx",
+  "slide": 3
+ },
+ {
+  "id": "a-arrow-arrow-infographics-015",
+  "kind": "process",
+  "items": 6,
+  "roles": [
+   "number",
+   "text"
+  ],
+  "bbox": [
+   0.909,
+   1.951,
+   11.516,
+   4.996
+  ],
+  "source": "Arrow Infographics.pptx#15",
+  "file": "process.pptx",
+  "slide": 4
+ },
+ {
+  "id": "a-process-process-infographics-013",
+  "kind": "process",
+  "items": 4,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.151,
+   2.077,
+   10.869,
+   4.69
+  ],
+  "source": "Process Infographics.pptx#13",
+  "file": "process.pptx",
+  "slide": 5
+ },
+ {
+  "id": "a-process-process-infographics-003",
+  "kind": "process",
+  "items": 5,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   0.958,
+   2.525,
+   11.419,
+   3.692
+  ],
+  "source": "Process Infographics.pptx#3",
+  "file": "process.pptx",
+  "slide": 6
+ },
+ {
+  "id": "a-process-process-infographics-005",
+  "kind": "process",
+  "items": 5,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.439,
+   2.051,
+   10.463,
+   4.768
+  ],
+  "source": "Process Infographics.pptx#5",
+  "file": "process.pptx",
+  "slide": 7
+ },
+ {
+  "id": "a-process-process-infographics-012",
+  "kind": "process",
+  "items": 5,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   0.823,
+   2.123,
+   11.687,
+   4.335
+  ],
+  "source": "Process Infographics.pptx#12",
+  "file": "process.pptx",
+  "slide": 8
+ },
+ {
+  "id": "a-process-process-infographics-015",
+  "kind": "process",
+  "items": 5,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.511,
+   2.75,
+   10.29,
+   3.205
+  ],
+  "source": "Process Infographics.pptx#15",
+  "file": "process.pptx",
+  "slide": 9
+ },
+ {
+  "id": "a-process-process-infographics-008",
+  "kind": "process",
+  "items": 6,
+  "roles": [
+   "number",
+   "text"
+  ],
+  "bbox": [
+   1.073,
+   2.195,
+   11.158,
+   4.272
+  ],
+  "source": "Process Infographics.pptx#8",
+  "file": "process.pptx",
+  "slide": 10
+ },
+ {
+  "id": "a-process-process-infographics-010",
+  "kind": "process",
+  "items": 6,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.689,
+   1.902,
+   9.934,
+   4.804
+  ],
+  "source": "Process Infographics.pptx#10",
+  "file": "process.pptx",
+  "slide": 11
+ },
+ {
+  "id": "a-pyramid-pyramid-infographics-002",
+  "kind": "pyramid",
+  "items": 4,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.269,
+   2.178,
+   10.785,
+   4.306
+  ],
+  "source": "Pyramid Infographics.pptx#2",
+  "file": "pyramid.pptx",
+  "slide": 1
+ },
+ {
+  "id": "a-pyramid-pyramid-infographics-008",
+  "kind": "pyramid",
+  "items": 4,
+  "roles": [
+   "body",
+   "head",
+   "number"
+  ],
+  "bbox": [
+   0.986,
+   1.921,
+   11.362,
+   4.776
+  ],
+  "source": "Pyramid Infographics.pptx#8",
+  "file": "pyramid.pptx",
+  "slide": 2
+ },
+ {
+  "id": "a-pyramid-pyramid-infographics-014",
+  "kind": "pyramid",
+  "items": 4,
+  "roles": [
+   "head",
+   "value"
+  ],
+  "bbox": [
+   1.352,
+   2.647,
+   10.633,
+   3.485
+  ],
+  "source": "Pyramid Infographics.pptx#14",
+  "file": "pyramid.pptx",
+  "slide": 3
+ },
+ {
+  "id": "a-pyramid-pyramid-infographics-020",
+  "kind": "pyramid",
+  "items": 4,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.478,
+   2.586,
+   10.183,
+   3.846
+  ],
+  "source": "Pyramid Infographics.pptx#20",
+  "file": "pyramid.pptx",
+  "slide": 4
+ },
+ {
+  "id": "a-pyramid-pyramid-infographics-010",
+  "kind": "pyramid",
+  "items": 5,
+  "roles": [
+   "text"
+  ],
+  "bbox": [
+   1.393,
+   2.163,
+   10.638,
+   4.526
+  ],
+  "source": "Pyramid Infographics.pptx#10",
+  "file": "pyramid.pptx",
+  "slide": 5
+ },
+ {
+  "id": "a-pyramid-pyramid-infographics-015",
+  "kind": "pyramid",
+  "items": 5,
+  "roles": [
+   "text"
+  ],
+  "bbox": [
+   1.65,
+   2.472,
+   10.364,
+   3.671
+  ],
+  "source": "Pyramid Infographics.pptx#15",
+  "file": "pyramid.pptx",
+  "slide": 6
+ },
+ {
+  "id": "a-pyramid-pyramid-infographics-017",
+  "kind": "pyramid",
+  "items": 5,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   0.997,
+   2.479,
+   11.345,
+   3.721
+  ],
+  "source": "Pyramid Infographics.pptx#17",
+  "file": "pyramid.pptx",
+  "slide": 7
+ },
+ {
+  "id": "a-pyramid-pyramid-infographics-018",
+  "kind": "pyramid",
+  "items": 5,
+  "roles": [
+   "text"
+  ],
+  "bbox": [
+   1.779,
+   2.273,
+   9.776,
+   4.001
+  ],
+  "source": "Pyramid Infographics.pptx#18",
+  "file": "pyramid.pptx",
+  "slide": 8
+ },
+ {
+  "id": "a-pyramid-pyramid-infographics-003",
+  "kind": "pyramid",
+  "items": 6,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   0.74,
+   2.144,
+   11.853,
+   4.306
+  ],
+  "source": "Pyramid Infographics.pptx#3",
+  "file": "pyramid.pptx",
+  "slide": 9
+ },
+ {
+  "id": "a-pyramid-pyramid-infographics-007",
+  "kind": "pyramid",
+  "items": 6,
+  "roles": [
+   "text"
+  ],
+  "bbox": [
+   1.694,
+   2.345,
+   9.945,
+   3.901
+  ],
+  "source": "Pyramid Infographics.pptx#7",
+  "file": "pyramid.pptx",
+  "slide": 10
+ },
+ {
+  "id": "a-swot-swot-infographics-002",
+  "kind": "swot",
+  "items": 4,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.586,
+   2.017,
+   10.16,
+   4.775
+  ],
+  "source": "SWOT Infographics.pptx#2",
+  "file": "swot.pptx",
+  "slide": 1
+ },
+ {
+  "id": "a-swot-swot-infographics-010",
+  "kind": "swot",
+  "items": 4,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   2.671,
+   0.972,
+   7.982,
+   5.552
+  ],
+  "source": "SWOT Infographics.pptx#10",
+  "file": "swot.pptx",
+  "slide": 2
+ },
+ {
+  "id": "a-swot-swot-infographics-013",
+  "kind": "swot",
+  "items": 4,
+  "roles": [
+   "text"
+  ],
+  "bbox": [
+   1.55,
+   1.386,
+   10.245,
+   4.753
+  ],
+  "source": "SWOT Infographics.pptx#13",
+  "file": "swot.pptx",
+  "slide": 3
+ },
+ {
+  "id": "a-swot-swot-infographics-018",
+  "kind": "swot",
+  "items": 4,
+  "roles": [
+   "text"
+  ],
+  "bbox": [
+   2.65,
+   0.846,
+   7.988,
+   5.81
+  ],
+  "source": "SWOT Infographics.pptx#18",
+  "file": "swot.pptx",
+  "slide": 4
+ },
+ {
+  "id": "a-milestones-milestones-infographics-019",
+  "kind": "timeline",
+  "items": 3,
+  "roles": [
+   "body",
+   "date",
+   "head"
+  ],
+  "bbox": [
+   0.982,
+   1.93,
+   11.349,
+   5.026
+  ],
+  "source": "Milestones Infographics.pptx#19",
+  "file": "timeline.pptx",
+  "slide": 1
+ },
+ {
+  "id": "a-milestones-milestones-infographics-004",
+  "kind": "timeline",
+  "items": 4,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   0.835,
+   2.338,
+   11.663,
+   4.165
+  ],
+  "source": "Milestones Infographics.pptx#4",
+  "file": "timeline.pptx",
+  "slide": 2
+ },
+ {
+  "id": "a-milestones-milestones-infographics-015",
+  "kind": "timeline",
+  "items": 4,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   0.823,
+   1.801,
+   11.684,
+   5.294
+  ],
+  "source": "Milestones Infographics.pptx#15",
+  "file": "timeline.pptx",
+  "slide": 3
+ },
+ {
+  "id": "a-milestones-milestones-infographics-016",
+  "kind": "timeline",
+  "items": 4,
+  "roles": [
+   "body",
+   "date",
+   "head"
+  ],
+  "bbox": [
+   -0.003,
+   1.902,
+   13.338,
+   5.04
+  ],
+  "source": "Milestones Infographics.pptx#16",
+  "file": "timeline.pptx",
+  "slide": 4
+ },
+ {
+  "id": "a-milestones-milestones-infographics-003",
+  "kind": "timeline",
+  "items": 5,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   0.814,
+   1.873,
+   11.704,
+   5.156
+  ],
+  "source": "Milestones Infographics.pptx#3",
+  "file": "timeline.pptx",
+  "slide": 5
+ },
+ {
+  "id": "a-milestones-milestones-infographics-006",
+  "kind": "timeline",
+  "items": 5,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   0.0,
+   1.903,
+   13.333,
+   5.21
+  ],
+  "source": "Milestones Infographics.pptx#6",
+  "file": "timeline.pptx",
+  "slide": 6
+ },
+ {
+  "id": "a-milestones-milestones-infographics-010",
+  "kind": "timeline",
+  "items": 5,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   0.818,
+   1.909,
+   11.697,
+   5.079
+  ],
+  "source": "Milestones Infographics.pptx#10",
+  "file": "timeline.pptx",
+  "slide": 7
+ },
+ {
+  "id": "a-roadmap-roadmap-infographics-009",
+  "kind": "timeline",
+  "items": 4,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   2.511,
+   2.51,
+   8.3,
+   3.682
+  ],
+  "source": "Roadmap Infographics.pptx#9",
+  "file": "timeline.pptx",
+  "slide": 8
+ },
+ {
+  "id": "a-roadmap-roadmap-infographics-015",
+  "kind": "timeline",
+  "items": 4,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   -0.0,
+   2.513,
+   13.333,
+   3.615
+  ],
+  "source": "Roadmap Infographics.pptx#15",
+  "file": "timeline.pptx",
+  "slide": 9
+ },
+ {
+  "id": "a-roadmap-roadmap-infographics-018",
+  "kind": "timeline",
+  "items": 4,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.139,
+   2.33,
+   11.038,
+   3.954
+  ],
+  "source": "Roadmap Infographics.pptx#18",
+  "file": "timeline.pptx",
+  "slide": 10
+ },
+ {
+  "id": "a-roadmap-roadmap-infographics-002",
+  "kind": "timeline",
+  "items": 5,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.802,
+   2.489,
+   9.749,
+   3.662
+  ],
+  "source": "Roadmap Infographics.pptx#2",
+  "file": "timeline.pptx",
+  "slide": 11
+ },
+ {
+  "id": "a-roadmap-roadmap-infographics-007",
+  "kind": "timeline",
+  "items": 5,
+  "roles": [
+   "text"
+  ],
+  "bbox": [
+   1.235,
+   2.774,
+   10.876,
+   3.17
+  ],
+  "source": "Roadmap Infographics.pptx#7",
+  "file": "timeline.pptx",
+  "slide": 12
+ },
+ {
+  "id": "a-roadmap-roadmap-infographics-003",
+  "kind": "timeline",
+  "items": 6,
+  "roles": [
+   "text"
+  ],
+  "bbox": [
+   1.012,
+   2.237,
+   11.32,
+   4.158
+  ],
+  "source": "Roadmap Infographics.pptx#3",
+  "file": "timeline.pptx",
+  "slide": 13
+ },
+ {
+  "id": "a-roadmap-roadmap-infographics-012",
+  "kind": "timeline",
+  "items": 6,
+  "roles": [
+   "text"
+  ],
+  "bbox": [
+   -0.0,
+   2.555,
+   13.333,
+   3.543
+  ],
+  "source": "Roadmap Infographics.pptx#12",
+  "file": "timeline.pptx",
+  "slide": 14
+ },
+ {
+  "id": "a-timeline-timeline-infographics-011",
+  "kind": "timeline",
+  "items": 4,
+  "roles": [
+   "body",
+   "date",
+   "head"
+  ],
+  "bbox": [
+   0.883,
+   2.554,
+   11.549,
+   3.503
+  ],
+  "source": "Timeline Infographics.pptx#11",
+  "file": "timeline.pptx",
+  "slide": 15
+ },
+ {
+  "id": "a-timeline-timeline-infographics-001",
+  "kind": "timeline",
+  "items": 5,
+  "roles": [
+   "date",
+   "head"
+  ],
+  "bbox": [
+   1.655,
+   2.249,
+   10.004,
+   4.38
+  ],
+  "source": "Timeline Infographics.pptx#1",
+  "file": "timeline.pptx",
+  "slide": 16
+ },
+ {
+  "id": "a-timeline-timeline-infographics-010",
+  "kind": "timeline",
+  "items": 5,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.911,
+   1.226,
+   9.488,
+   5.221
+  ],
+  "source": "Timeline Infographics.pptx#10",
+  "file": "timeline.pptx",
+  "slide": 17
+ },
+ {
+  "id": "a-timeline-timeline-infographics-017",
+  "kind": "timeline",
+  "items": 5,
+  "roles": [
+   "body",
+   "date",
+   "head"
+  ],
+  "bbox": [
+   0.823,
+   2.12,
+   11.675,
+   4.376
+  ],
+  "source": "Timeline Infographics.pptx#17",
+  "file": "timeline.pptx",
+  "slide": 18
+ },
+ {
+  "id": "a-timeline-timeline-infographics-004",
+  "kind": "timeline",
+  "items": 6,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   0.964,
+   1.835,
+   11.399,
+   4.993
+  ],
+  "source": "Timeline Infographics.pptx#4",
+  "file": "timeline.pptx",
+  "slide": 19
+ },
+ {
+  "id": "a-timeline-timeline-infographics-006",
+  "kind": "timeline",
+  "items": 6,
+  "roles": [
+   "body",
+   "head",
+   "number"
+  ],
+  "bbox": [
+   1.05,
+   2.399,
+   11.228,
+   3.674
+  ],
+  "source": "Timeline Infographics.pptx#6",
+  "file": "timeline.pptx",
+  "slide": 20
+ },
+ {
+  "id": "a-timeline-timeline-infographics-016",
+  "kind": "timeline",
+  "items": 6,
+  "roles": [
+   "body",
+   "head"
+  ],
+  "bbox": [
+   1.042,
+   1.239,
+   11.23,
+   5.086
+  ],
+  "source": "Timeline Infographics.pptx#16",
+  "file": "timeline.pptx",
+  "slide": 21
+ }
+]

@@ -11,7 +11,8 @@ A `.pptx` is a ZIP archive of XML files. Choose your approach by task:
 
 | Task | Approach |
 |---|---|
-| **Create** a new deck | Write a `pptxgenjs` script — see gotchas below. Never author in `python-pptx`: the idioms here are pptxgenjs, and transliterating them invents methods that do not exist (python-pptx has no `Slide.add_notes`; notes live at `slide.notes_slide.notes_text_frame.text`). python-pptx is for the read and validate scripts |
+| **Create** a new deck | **Default: a themed deck.** Write a JSON spec and run `scripts/deck.py` (see "Themed decks" below). It gives designed backgrounds, shapes and layouts that a generated deck cannot match |
+| **Create** a deck no theme fits | Write a `pptxgenjs` script — see gotchas below. Use this when the user gives their own brand colours or look, or needs a slide type the themes lack (a diagram, a dense custom layout). Never write your own `python-pptx` authoring code: the idioms here are pptxgenjs, and transliterating them invents methods that do not exist (python-pptx has no `Slide.add_notes`; notes live at `slide.notes_slide.notes_text_frame.text`). `deck.py` is the one tested python-pptx author; the rest is for reading and checking |
 | **Edit** an existing deck, or build from a template | unzip → edit `ppt/slides/slideN.xml` → zip |
 | **Change some text** on existing slides | `python3 /mnt/data/skills/pptx/scripts/replace.py in.pptx out.pptx "old" "new"`: one call, formatting kept, validated. Do not unpack for this |
 | **Read** structure | `python3 /mnt/data/skills/pptx/scripts/outline.py deck.pptx` (each slide's shapes, positions, text, notes) |
@@ -64,6 +65,7 @@ costs a round trip per script. Everything else is plain Python, `node`, or shell
 
 | Script | What it does |
 |---|---|
+| `scripts/deck.py spec.json /mnt/data/deck.pptx` | **Builds a themed deck** from a JSON spec and runs `check.py` on it, in one call. `--list` prints every theme and its layouts |
 | `scripts/check.py deck.pptx [--build qa/build.js.txt] [--original src.pptx]` | **The QA step.** Builds, fixes content types, validates, runs the layout gate and placeholder scan, and draws the slide grid, in one call with one short report. |
 | `scripts/thumbnail.py deck.pptx [prefix]` | Labeled contact sheet of every slide — the visual-QA grid, and how you pick template layouts. `.pptx` only. Writes to `/mnt/data/qa/thumbnails.jpg` and prints the path. Pass `prefix` when two decks are in flight at once, or the second overwrites the first's grid |
 | `scripts/add_slide.py unpacked/ slide2.xml [--after slideN.xml]` | Duplicate a slide (or a `slideLayoutN.xml`) with all the package bookkeeping. Also takes a `.pptx` directly with `-o out.pptx` |
@@ -72,6 +74,115 @@ costs a round trip per script. Everything else is plain Python, `node`, or shell
 | `scripts/office/validate.py deck.pptx [--original src.pptx]` | Schema, relationship, content-type, chart and slide checks; each failure names its fix. Pass `--original` for any template-derived deck — it baselines the schema checks against the template, so the template's own XSD errors don't read as yours |
 | `scripts/office/soffice.py --headless --convert-to pdf deck.pptx` | LibreOffice wrapper — bare `soffice` hangs in this sandbox |
 | `scripts/check_layout.py deck.pptx [--original src.pptx] [--slides 2,5] [--json]` | Slide size, overflowing text, text covered by a later shape, shapes off the canvas. Measured with the deck's own fonts; exits 2 on defects |
+
+## Themed decks
+
+Each theme is a designed master: photo or gradient backgrounds, decorative shapes, and named
+layouts. You choose the theme and a layout per slide and write the content. `deck.py` places,
+sizes and colours everything, sets Nikosh for Bangla, and runs the checks.
+
+**1. Pick a theme** by audience and tone:
+
+| Theme | Look | Suits |
+|---|---|---|
+| `Growing_Liberty` | calm blue and green, leaf shapes, photo cover | reports, health, environment, formal talks |
+| `Grey_Elegant` | quiet greys, line illustrations, jigsaw quote | academic, policy, council and board papers |
+| `Freshes` | teal sky photos, diagonal blocks | data reports, project updates, science, IT |
+| `Candy` | bright purple/blue/pink/yellow geometry | teaching, student events, outreach |
+| `Yellow_Idea` | sunny yellow, hand-drawn light bulbs | workshops, training, ideas, innovation |
+
+**2. Pick layouts.** Every theme takes the same seven names, so use these and no others unless
+`--list` shows you a theme's own:
+
+| Layout | For |
+|---|---|
+| `cover` | the first slide |
+| `section` | a divider between parts |
+| `content` | most slides; the only one to use for infographics, charts and tables |
+| `agenda` | the list of what the deck covers |
+| `picture` | text beside an `image` |
+| `quote` | a `quote` |
+| `closing` | the last slide |
+
+`python3 /mnt/data/skills/pptx/scripts/deck.py --list` shows each theme's own extra layouts
+(dark ones, alternative backgrounds) if you want more variety.
+
+**3. Write the spec** to `/mnt/data/qa/spec.json`. Each content slide has a title and **one**
+block:
+
+```json
+{"theme": "Growing_Liberty", "slides": [
+  {"layout": "cover", "title": "Admissions 2026: two new campuses lift intake", "subtitle": "Board briefing, November 2026"},
+  {"layout": "content", "title": "Admissions rose 12%, almost all at the new campuses",
+   "stats": [["4,120", "admitted, up 12% on 2025"], ["86%", "of the growth from Sylhet and Rajshahi"]],
+   "source": "Source: Registrar, October 2026"},
+  {"layout": "content", "title": "Admissions run as a four-stage cycle",
+   "infographic": {"kind": "cycle", "items": [["Plan", "Set intake targets for each campus"], ["Promote", "Visit schools and run the campaign"],
+                                              ["Admit", "Publish the merit list in May"], ["Review", "Compare intake with the targets"]]}},
+  {"layout": "content", "title": "Sylhet is now the second-largest campus",
+   "chart": {"type": "column", "labels": ["Dhaka", "Sylhet", "Rajshahi"], "series": [{"name": "Admitted", "values": [1650, 980, 720]}], "highlight": 1},
+   "takeaway": "Sylhet needs its own registrar office before July"},
+  {"layout": "closing", "title": "Decision needed: approve 18 posts in December"}]}
+```
+
+| Block | Shape | Use for |
+|---|---|---|
+| `bullets` | `["...", ...]` | up to about 6 short points |
+| `text` | `"..."` | one paragraph or a question |
+| `cards` | `[["Heading", "Detail"], ...]` 2-4 | peers side by side |
+| `stats` | `[["৳2.5 cr", "income, up 12%"], ...]` 2-4 | headline figures, each with its comparison |
+| `steps` | `[["Heading", "Detail"], ...]` exactly 3 | three short steps; 4-6 steps must be a `process` infographic (deck.py refuses `steps` with 4 or more) |
+| `chart` | `{"type", "labels", "series": [{"name", "values"}], "highlight"}` | `bar`, `column`, `line`, `pie`, `doughnut`, `stacked`; `highlight` is the index of the one bar that carries the point |
+| `table` | `[["Header", ...], ["cell", ...]]` | exact figures; first row is the header |
+| `quote` | `"..."` plus `"by"` | one sentence from a person |
+| `image` | `"/mnt/data/photo.jpg"` | alone, or beside `bullets` or `text`; fills the layout's picture area |
+| `infographic` | `{"kind": "cycle", "items": [["Heading", "Detail"], ...]}` | a designed diagram; see below |
+
+**Infographics** are professionally drawn diagrams from the skill's library. They're recoloured
+to the theme and filled with your items in order. They are what makes a deck look designed, so
+use them wherever the content has a shape:
+- **Always** draw these as an `infographic`, never as `bullets`, `steps`, `cards` or a `table`:
+  - 4-6 steps in order: `process`
+  - stages that repeat: `cycle`
+  - 3-6 dates or phases: `timeline`
+  - narrowing stages: `funnel`
+  - levels or priorities: `pyramid`
+  - four groups on two dimensions: `matrix`
+  - a SWOT: `swot`
+- Most decks of 6 or more slides have at least two infographics.
+
+| Kind | Items | Use when | Order |
+|---|---|---|---|
+| `process` | 4-6 | steps that lead to a result | first step first |
+| `cycle` | 3-6 | stages that repeat | clockwise; the last leads back to the first |
+| `timeline` | 3-6 | dates, phases, a roadmap | earliest first; put the date or period in the heading |
+| `funnel` | 4-5 | stages that narrow (applicants → admitted) | widest first |
+| `pyramid` | 4-6 | levels from base to top, or a priority order | top level first |
+| `matrix` | 4 | four groups across two dimensions | top-left, top-right, bottom-left, bottom-right |
+| `swot` | 4 | a SWOT analysis only | Strengths, Weaknesses, Opportunities, Threats |
+
+- **Items:** give each item a short heading (1-3 words) and a detail (under about 12 words).
+  Either give every item a detail or none.
+- **Too long:** if the text is too long for every design of that kind and count, the build says
+  so; shorten the text, don't change the kind.
+- **Light layouts only:** infographics are drawn for white backgrounds, so use a light layout,
+  never a dark one.
+- **Item counts:** `deck.py --list` prints the item counts each kind has.
+
+Any content slide may add `"takeaway"` (the conclusion, in a band under the block), `"source"`
+and `"notes"`. `cover`, `section` and `closing` layouts take `title` and `subtitle` only. Write
+Bangla straight into the strings; never invent figures for a chart, table or stat.
+
+**4. Build:**
+
+```bash
+python3 /mnt/data/skills/pptx/scripts/deck.py /mnt/data/qa/spec.json /mnt/data/<deck>.pptx
+```
+
+If any text does not fit or a block does not suit its layout, nothing is written: it prints
+one line per problem (`slide 4: bullets need more room than the body has even at 14pt: cut them
+or split the slide`). Fix the spec and run it again. Otherwise it prints the `check.py` report:
+follow the QA steps below, fixing the **spec**, not the deck.
 
 ## Creating with pptxgenjs — gotchas
 
@@ -123,6 +234,8 @@ either side, and is immediately visible as wrong.
 When the task starts from a deck or template the user gave you, read `references/editing.md` (`read_file /mnt/data/skills/pptx/references/editing.md`) before changing anything, and pass `--original <their deck>` to `check.py`.
 
 ## Design Ideas
+
+These are for pptxgenjs decks. A themed deck takes its palette, fonts and decoration from the theme.
 
 **Don't create boring slides.** Plain bullets on a white background won't impress anyone. Consider ideas from this list for each slide.
 
@@ -215,13 +328,14 @@ One command builds the deck and runs every check:
 ```bash
 python3 /mnt/data/skills/pptx/scripts/check.py /mnt/data/<deck>.pptx --build /mnt/data/qa/build.js.txt
 # for an edit or a template: add --original /mnt/data/<their deck>.pptx and drop --build
+# for a themed deck: deck.py already ran this; its output is the report
 ```
 
 It runs the generator, `fix_content_types.py`, `validate.py`, the layout gate (`check_layout.py`), a scan for leftover placeholder text, and draws one labelled grid of every slide. The report ends with the grid's path. Exit 0 means every check passed; 2 means something to fix, named by slide and shape.
 
 1. **Read the report, then read the grid image once.** One image shows every slide. Do not render or read slides one by one: several slide images in one turn are dropped before they reach you.
 2. **List every defect before changing anything:** what the report names, plus what the grid shows (text running out of a box or off the slide, overlapping shapes, low contrast, uneven gaps, cramped margins, leftover placeholder text).
-3. **Fix them all in one `edit_file` call** on the generator, then rerun the same `check.py` line. Never patch the generator with `sed` or a Python replace.
+3. **Fix them all in one `edit_file` call** on the generator (or the spec, for a themed deck), then rerun the same `check.py` or `deck.py` line. Never patch the generator with `sed` or a Python replace.
 4. **Two rounds at most.** Every call spends part of a fixed step budget, and a run that reaches it delivers nothing. Layout-gate defects must be fixed; if only minor visual polish remains, deliver and mention it.
 
 Do not deliver while the layout gate reports defects: a defect it reports is real even if the render looks fine, because the renderer may draw a narrower font than PowerPoint. If a check cannot run, say so rather than implying the deck was verified. `references/qa.md` explains each check in detail.

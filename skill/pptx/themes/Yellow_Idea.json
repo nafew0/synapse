@@ -1,0 +1,58 @@
+{
+  "name": "Yellow_Idea",
+  "description": "Sunny yellow with hand-drawn light bulbs. Ideas, workshops, training, innovation.",
+  "file": "Yellow_Idea.pptx",
+  "fonts": {
+    "latin": "Calibri",
+    "bangla": "Nikosh"
+  },
+  "colors": {
+    "primary": "F2C02C",
+    "accent": "1A1A1A",
+    "emphasis": "1A1A1A",
+    "ink": "1A1A1A",
+    "muted": "4D4D4D",
+    "tint": "FFF4D1",
+    "chart": [
+      "1A1A1A",
+      "F2C02C",
+      "8C8C8C",
+      "E8A202",
+      "BFBFBF"
+    ]
+  },
+  "layouts": {
+    "cover": {
+      "role": "cover",
+      "card": "FFFFFF"
+    },
+    "callout": {
+      "card": "FFFFFF"
+    },
+    "section": {
+      "role": "section",
+      "card": "FFFFFF"
+    },
+    "content_panel": {
+      "card": "FFFFFF"
+    },
+    "content": {},
+    "content_plain": {},
+    "content_dark": {
+      "card": "FFFFFF"
+    },
+    "closing": {
+      "role": "closing",
+      "card": "FFFFFF"
+    }
+  },
+  "aliases": {
+    "cover": "cover",
+    "section": "section",
+    "closing": "closing",
+    "content": "content",
+    "agenda": "content_plain",
+    "picture": "content",
+    "quote": "callout"
+  }
+}
