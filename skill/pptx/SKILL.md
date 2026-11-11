@@ -104,6 +104,9 @@ block:
   {"layout": "content", "title": "Admissions rose 12%, almost all at the new campuses",
    "stats": [["4,120", "admitted, up 12% on 2025"], ["86%", "of the growth from Sylhet and Rajshahi"]],
    "source": "Source: Registrar, October 2026"},
+  {"layout": "content", "title": "Admissions run as a four-stage cycle",
+   "infographic": {"kind": "cycle", "items": [["Plan", "Set intake targets for each campus"], ["Promote", "Visit schools and run the campaign"],
+                                              ["Admit", "Publish the merit list in May"], ["Review", "Compare intake with the targets"]]}},
   {"layout": "feature", "title": "Sylhet is now the second-largest campus",
    "chart": {"type": "column", "labels": ["Dhaka", "Sylhet", "Rajshahi"], "series": [{"name": "Admitted", "values": [1650, 980, 720]}], "highlight": 1},
    "takeaway": "Sylhet needs its own registrar office before July"},
@@ -121,6 +124,30 @@ block:
 | `table` | `[["Header", ...], ["cell", ...]]` | exact figures; first row is the header |
 | `quote` | `"..."` plus `"by"` | one sentence from a person |
 | `image` | `"/mnt/data/photo.jpg"` | alone, or beside `bullets` or `text`; fills the layout's picture area |
+| `infographic` | `{"kind": "cycle", "items": [["Heading", "Detail"], ...]}` | a designed diagram; see below |
+
+**Infographics** are professionally drawn diagrams from the skill's library. They're recoloured
+to the theme and filled with your items in order. Use one wherever the content has a shape:
+- in a deck of 6 or more slides, aim for one every two or three content slides
+- otherwise prefer `cards`, `steps` or `bullets`
+
+| Kind | Items | Use when | Order |
+|---|---|---|---|
+| `process` | 4-6 | steps that lead to a result | first step first |
+| `cycle` | 3-6 | stages that repeat | clockwise; the last leads back to the first |
+| `timeline` | 3-6 | dates, phases, a roadmap | earliest first; put the date or period in the heading |
+| `funnel` | 4-5 | stages that narrow (applicants → admitted) | widest first |
+| `pyramid` | 4-6 | levels from base to top, or a priority order | top level first |
+| `matrix` | 4 | four groups across two dimensions | top-left, top-right, bottom-left, bottom-right |
+| `swot` | 4 | a SWOT analysis only | Strengths, Weaknesses, Opportunities, Threats |
+
+- **Items:** give each item a short heading (1-3 words) and a detail (under about 12 words).
+  Either give every item a detail or none.
+- **Too long:** if the text is too long for every design of that kind and count, the build says
+  so; shorten the text, don't change the kind.
+- **Light layouts only:** infographics are drawn for white backgrounds, so use a light layout,
+  never a dark one.
+- **Item counts:** `deck.py --list` prints the item counts each kind has.
 
 Any content slide may add `"takeaway"` (the conclusion, in a band under the block), `"source"`
 and `"notes"`. `cover`, `section` and `closing` layouts take `title` and `subtitle` only. Write

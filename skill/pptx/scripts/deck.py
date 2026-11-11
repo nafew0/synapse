@@ -49,11 +49,12 @@ from pptx.util import Inches, Pt
 SCRIPTS = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS))
 from check_layout import resolve_font, text_width_emu  # noqa: E402
+from infographic import Library, fill_all, place, remove as remove_elements  # noqa: E402
 
 THEMES = SCRIPTS.parent / "themes"
 BANGLA = re.compile(r"[\u0980-\u09F1\u09F4-\u09FF]")
 """Bangla letters and digits; the taka and rupee signs are left out because they sit in Latin text."""
-BLOCKS = ("bullets", "text", "cards", "stats", "steps", "chart", "table", "quote")
+BLOCKS = ("bullets", "text", "cards", "stats", "steps", "chart", "table", "quote", "infographic")
 TITLE_SIZES = {"cover": (40, 28), "section": (36, 26), "closing": (36, 26), "content": (30, 22)}
 SUBTITLE_SIZE = (20, 14)
 BODY_SIZE = (20, 14)
@@ -134,11 +135,14 @@ def scaled(size, text):
 
 
 def line_count(text, width, size, bold, style):
+    """Lines the text wraps to; a word wider than the box counts as never fitting, since it would break mid-word."""
     lines, current = 1, 0
     for word in text.split():
         bangla = has_bangla(word)
         font = resolve_font(style.bangla if bangla else style.latin, bold, False)
         word_width = text_width_emu(word + " ", font, size * BANGLA_SCALE if bangla else size)
+        if word_width > width * 1.08:
+            return 10_000
         if current and current + word_width > width:
             lines += 1
             current = word_width
@@ -239,16 +243,20 @@ def remove(shape):
 
 
 class Builder:
-    def __init__(self, theme, themes_dir):
+    def __init__(self, theme, themes_dir, library=None):
         self.theme = theme
         self.presentation = Presentation(themes_dir / theme["file"])
         self.layouts = {layout.name: layout for master in self.presentation.slide_masters for layout in master.slide_layouts}
         self.problems = []
+        self.library = Library(library) if library else Library()
+        self.used = set()
+        self.title = ""
 
     def problem(self, number, message):
         self.problems.append(f"slide {number}: {message}")
 
     def build(self, slides):
+        self.title = str(slides[0].get("title", "")) if slides else ""
         for number, spec in enumerate(slides, 1):
             try:
                 self.slide(number, spec)
@@ -562,6 +570,33 @@ class Builder:
         else:
             value.visible = False
 
+    def infographic(self, slide, number, spec, area, layout, style):
+        block = spec["infographic"]
+        if not isinstance(block, dict) or "kind" not in block or "items" not in block:
+            raise SpecError('infographic is {"kind": "cycle", "items": [["Heading", "Detail"], ...]}')
+        if style.dark:
+            raise SpecError("infographics are drawn for light backgrounds: use a light layout for this slide")
+        kinds = self.library.kinds()
+        kind = block["kind"]
+        if kind not in kinds:
+            raise SpecError(f"no infographic kind {kind!r}; use one of: {', '.join(kinds)}")
+        items = [infographic_item(item) for item in block["items"]]
+        if len(items) not in kinds[kind]:
+            raise SpecError(f"{kind} designs take {', '.join(map(str, kinds[kind]))} items, not {len(items)}")
+        candidates = self.library.choose(kind, items, block.get("centre"), area, f"{self.title}:{number}", self.used, block.get("design"))
+        if not candidates:
+            raise SpecError(f"no {kind} design with {len(items)} items matches these fields; give every item a detail, or none")
+        tools = Measure(style)
+        reason = ""
+        for design in candidates:
+            elements, factor = place(slide, self.library, design, area)
+            reason = fill_all(elements, design, items, block.get("centre"), factor, tools)
+            if reason is None:
+                self.used.add(design["id"])
+                return
+            remove_elements(elements)
+        raise SpecError(f"no {kind} design fits this text ({reason}): shorten the headings and details")
+
     def takeaway(self, slide, box, text, style, number):
         panel(slide, box, style.band)
         inner = box.inset(Inches(0.15))
@@ -619,6 +654,34 @@ def load_theme(name, themes_dir):
     raise SpecError(f"no theme {name!r}; use one of: {names}")
 
 
+class Measure:
+    """deck.py's measuring and font rules, handed to infographic.py."""
+
+    def __init__(self, style):
+        self.style = style
+        self.scaled = scaled
+
+    def height(self, paragraphs, width, size, bold):
+        return text_height(paragraphs, width, size, bold, self.style)
+
+    def fonts(self, rpr, text):
+        latin = rpr.find(qn("a:latin"))
+        if latin is None:
+            latin = etree.SubElement(rpr, qn("a:latin"))
+        latin.set("typeface", self.style.latin)
+        for old in rpr.findall(qn("a:cs")):
+            rpr.remove(old)
+        add_bangla_font(rpr, self.style.bangla, has_bangla(text))
+
+
+def infographic_item(item):
+    if isinstance(item, dict) and item.get("head"):
+        return {key: str(value) for key, value in item.items() if value not in (None, "")}
+    if isinstance(item, list) and 1 <= len(item) <= 2 and all(isinstance(v, str) for v in item):
+        return {"head": item[0], **({"body": item[1]} if len(item) == 2 and item[1] else {})}
+    raise SpecError('each infographic item is ["Heading", "Detail"] or {"head", "body", "value", "date"}')
+
+
 def list_themes(themes_dir):
     for path in sorted(themes_dir.glob("*.json")):
         theme = json.loads(path.read_text(encoding="utf8"))
@@ -632,6 +695,9 @@ def list_themes(themes_dir):
             if layout.get("columns"):
                 notes.append(f"{len(layout['columns'])} cards")
             print(f"  {name} ({', '.join(notes)})")
+    kinds = Library().kinds()
+    if kinds:
+        print("Infographic kinds (item counts): " + "; ".join(f"{k} ({', '.join(map(str, v))})" for k, v in kinds.items()))
 
 
 def main(argv):
@@ -639,6 +705,7 @@ def main(argv):
     parser.add_argument("spec", nargs="?", type=Path)
     parser.add_argument("out", nargs="?", type=Path)
     parser.add_argument("--themes", type=Path, default=THEMES)
+    parser.add_argument("--library", type=Path, help="infographic library folder (default: the skill's)")
     parser.add_argument("--list", action="store_true", help="list themes and their layouts")
     parser.add_argument("--no-check", action="store_true", help="skip check.py after building")
     args = parser.parse_args(argv)
@@ -656,7 +723,7 @@ def main(argv):
     if not spec.get("slides"):
         print("spec: give at least one slide")
         return 2
-    builder = Builder(theme, args.themes)
+    builder = Builder(theme, args.themes, args.library)
     builder.build(spec["slides"])
     if builder.problems:
         print("not built, fix these and run again:\n" + "\n".join(builder.problems))
