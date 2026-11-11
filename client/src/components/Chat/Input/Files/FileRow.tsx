@@ -7,6 +7,7 @@ import { logger, getFileType, getCachedPreview } from '~/utils';
 import { useFileDeletion } from '~/hooks/Files';
 import PreparationStatus from './PreparationStatus';
 import FileContainer from './FileContainer';
+import Tile from './Tile';
 import { useLocalize } from '~/hooks';
 import Image from './Image';
 
@@ -29,6 +30,7 @@ export default function FileRow({
   tool_resource,
   fileFilter,
   isRTL = false,
+  tiles = false,
   Wrapper,
 }: {
   files: Map<string, ExtendedFile> | undefined;
@@ -40,6 +42,8 @@ export default function FileRow({
   agent_id?: string;
   tool_resource?: EToolResources;
   isRTL?: boolean;
+  /** Draw non-image files as square tiles that match image previews, instead of named chips. */
+  tiles?: boolean;
   Wrapper?: React.FC<{ children: React.ReactNode }>;
 }) {
   const localize = useLocalize();
@@ -89,6 +93,31 @@ export default function FileRow({
     return null;
   }
 
+  const renderAttachment = (file: ExtendedFile, handleDelete: () => void) => {
+    if (file.type?.startsWith('image') ?? false) {
+      return (
+        <Image
+          url={getCachedPreview(file.file_id) ?? file.preview ?? file.filepath}
+          onDelete={handleDelete}
+          progress={file.progress}
+          uploadProgress={file.uploadProgress}
+          stage={file.preparationStage}
+          source={file.source}
+        />
+      );
+    }
+    if (tiles) {
+      return <Tile file={file} onDelete={handleDelete} />;
+    }
+    return (
+      <FileContainer
+        file={file}
+        onDelete={handleDelete}
+        subtitle={<PreparationStatus file={file} fallback={getFileType(file.type).title} />}
+      />
+    );
+  };
+
   const renderFiles = () => {
     const rowStyle = isRTL
       ? {
@@ -133,8 +162,6 @@ export default function FileRow({
               }
               deleteFile({ file, setFiles });
             };
-            const isImage = file.type?.startsWith('image') ?? false;
-
             return (
               <div
                 key={index}
@@ -144,22 +171,7 @@ export default function FileRow({
                   flexShrink: 0,
                 }}
               >
-                {isImage ? (
-                  <Image
-                    url={getCachedPreview(file.file_id) ?? file.preview ?? file.filepath}
-                    onDelete={handleDelete}
-                    progress={file.progress}
-                    source={file.source}
-                  />
-                ) : (
-                  <FileContainer
-                    file={file}
-                    onDelete={handleDelete}
-                    subtitle={
-                      <PreparationStatus file={file} fallback={getFileType(file.type).title} />
-                    }
-                  />
-                )}
+                {renderAttachment(file, handleDelete)}
               </div>
             );
           })}

@@ -602,6 +602,8 @@ export interface ExtendedFile {
   metadata?: t.TFile['metadata'];
   /** Latest preparation stage reported by the server while the upload is still processing. */
   preparationStage?: t.UploadStageName;
+  /** Share of the file's bytes sent to the server so far (0 to 1), while it uploads. */
+  uploadProgress?: number;
 }
 
 export interface ModelItemProps {
