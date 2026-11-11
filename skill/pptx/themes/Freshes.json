@@ -45,5 +45,14 @@
     },
     "chart": {},
     "diagram": {}
+  },
+  "aliases": {
+    "cover": "cover",
+    "section": "section",
+    "closing": "section",
+    "content": "chart",
+    "agenda": "content_left_bar",
+    "picture": "picture_tiles",
+    "quote": "diagram"
   }
 }

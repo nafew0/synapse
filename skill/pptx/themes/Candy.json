@@ -85,5 +85,14 @@
     "closing": {
       "role": "closing"
     }
+  },
+  "aliases": {
+    "cover": "cover",
+    "section": "section",
+    "closing": "closing",
+    "content": "content",
+    "agenda": "agenda",
+    "picture": "picture_right",
+    "quote": "content_narrow"
   }
 }

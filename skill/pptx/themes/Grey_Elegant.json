@@ -37,5 +37,14 @@
         5.0
       ]
     }
+  },
+  "aliases": {
+    "cover": "cover",
+    "section": "cover",
+    "closing": "cover",
+    "content": "content",
+    "agenda": "agenda",
+    "picture": "picture_right",
+    "quote": "quote"
   }
 }

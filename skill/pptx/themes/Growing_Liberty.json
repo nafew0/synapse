@@ -44,5 +44,14 @@
       "role": "closing",
       "dark": true
     }
+  },
+  "aliases": {
+    "cover": "cover",
+    "section": "section",
+    "closing": "closing",
+    "content": "content",
+    "agenda": "content_wave",
+    "picture": "content",
+    "quote": "feature_2"
   }
 }

@@ -75,6 +75,8 @@ CHART_TYPES = {
     "doughnut": XL_CHART_TYPE.DOUGHNUT,
 }
 LIMITS = {"cards": (2, 4), "stats": (2, 4), "steps": (3, 5)}
+"""An infographic shrunk further than this has text too small to read."""
+MIN_INFOGRAPHIC_SCALE = 0.8
 
 
 class SpecError(Exception):
@@ -124,6 +126,9 @@ class Style:
         self.band_text = colors["ink"] if self.dark else "FFFFFF"
         self.chart = colors["chart"]
         self.accent = colors["accent"]
+        ordered = list(dict.fromkeys([*colors["chart"], colors["primary"], colors["accent"], colors["emphasis"]]))
+        self.slots = (ordered * 6)[:6]
+        self.text_ink = colors["ink"]
 
 
 def has_bangla(text):
@@ -264,9 +269,12 @@ class Builder:
                 self.problem(number, str(error))
 
     def slide(self, number, spec):
-        name = spec.get("layout")
+        name = self.theme.get("aliases", {}).get(spec.get("layout"), spec.get("layout"))
         if name not in self.theme["layouts"] or name not in self.layouts:
-            raise SpecError(f"no layout {name!r} in {self.theme['name']}; use one of: {', '.join(self.theme['layouts'])}")
+            shared = list(self.theme.get("aliases", {}))
+            own = ", ".join(self.theme["layouts"])
+            options = f"{', '.join(shared)}, or this theme's own {own}" if shared else own
+            raise SpecError(f"no layout {spec.get('layout')!r} in {self.theme['name']}; use one of: {options}")
         layout = self.theme["layouts"][name]
         role = layout.get("role", "content")
         style = Style(self.theme, layout)
@@ -425,6 +433,8 @@ class Builder:
 
     def steps(self, slide, number, spec, area, layout, style):
         items = self.pairs(number, spec, "steps")
+        if len(items) >= 4:
+            raise SpecError('draw 4-6 ordered steps as an infographic: {"infographic": {"kind": "process", "items": [...]}}')
         rows = area.rows(len(items), gap=Inches(0.15))
         circle = min(Inches(0.5), rows[0].h)
         text_x = area.x + circle + Inches(0.25)
@@ -590,11 +600,17 @@ class Builder:
         reason = ""
         for design in candidates:
             elements, factor = place(slide, self.library, design, area)
+            if factor < MIN_INFOGRAPHIC_SCALE:
+                remove_elements(elements)
+                reason = "the layout's content area is too small"
+                continue
             reason = fill_all(elements, design, items, block.get("centre"), factor, tools)
             if reason is None:
                 self.used.add(design["id"])
                 return
             remove_elements(elements)
+        if reason == "the layout's content area is too small":
+            raise SpecError(f"this layout's content area is too small for a {kind}: use the content layout")
         raise SpecError(f"no {kind} design fits this text ({reason}): shorten the headings and details")
 
     def takeaway(self, slide, box, text, style, number):
@@ -654,6 +670,18 @@ def load_theme(name, themes_dir):
     raise SpecError(f"no theme {name!r}; use one of: {names}")
 
 
+def luminance(hex_color):
+    def channel(value):
+        value /= 255
+        return value / 12.92 if value <= 0.03928 else ((value + 0.055) / 1.055) ** 2.4
+    r, g, b = (int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+    return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+
+
+def contrast_on_white(hex_color):
+    return 1.05 / (luminance(hex_color) + 0.05)
+
+
 class Measure:
     """deck.py's measuring and font rules, handed to infographic.py."""
 
@@ -672,6 +700,18 @@ class Measure:
         for old in rpr.findall(qn("a:cs")):
             rpr.remove(old)
         add_bangla_font(rpr, self.style.bangla, has_bangla(text))
+        self.readable(rpr)
+
+    def readable(self, rpr):
+        """Text coloured with a pale theme accent (yellow, light grey) is hard to read on white: use ink."""
+        fill = rpr.find(qn("a:solidFill"))
+        slot = fill.find(qn("a:schemeClr")) if fill is not None else None
+        if slot is None or not slot.get("val", "").startswith("accent") or len(slot):
+            return
+        color = self.style.slots[int(slot.get("val")[-1]) - 1]
+        if contrast_on_white(color) < 3:
+            fill.remove(slot)
+            etree.SubElement(fill, qn("a:srgbClr"), val=self.style.text_ink)
 
 
 def infographic_item(item):
@@ -686,6 +726,8 @@ def list_themes(themes_dir):
     for path in sorted(themes_dir.glob("*.json")):
         theme = json.loads(path.read_text(encoding="utf8"))
         print(f"{theme['name']}: {theme['description']}")
+        if theme.get("aliases"):
+            print("  shared names: " + ", ".join(f"{k} -> {v}" for k, v in theme["aliases"].items()))
         for name, layout in theme["layouts"].items():
             notes = [layout.get("role", "content")]
             if layout.get("dark"):

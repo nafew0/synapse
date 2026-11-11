@@ -45,5 +45,14 @@
       "role": "closing",
       "card": "FFFFFF"
     }
+  },
+  "aliases": {
+    "cover": "cover",
+    "section": "section",
+    "closing": "closing",
+    "content": "content",
+    "agenda": "content_plain",
+    "picture": "content",
+    "quote": "callout"
   }
 }

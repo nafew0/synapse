@@ -94,3 +94,42 @@ def test_problems_name_the_fix(tmp_path):
     assert 'slide 2: cycle designs take 3, 4, 5, 6 items, not 12' in result.stdout
     assert 'slide 3: infographics are drawn for light backgrounds' in result.stdout
     assert 'slide 4: no cycle design fits this text' in result.stdout
+
+
+def test_shared_layout_names_work_on_every_theme(tmp_path):
+    for theme in ('Candy', 'Growing_Liberty', 'Freshes', 'Yellow_Idea', 'Grey_Elegant'):
+        result = run(tmp_path, [
+            {'layout': 'cover', 'title': 'Admissions 2026', 'subtitle': 'Board briefing'},
+            {'layout': 'agenda', 'title': 'What we cover', 'bullets': ['Growth', 'Costs', 'Decision']},
+            {'layout': 'content', 'title': 'Admissions run as a cycle', 'infographic': {'kind': 'cycle', 'items': CYCLE}},
+            {'layout': 'quote', 'title': 'In their words', 'quote': 'Hire before spring.', 'by': 'Registrar'},
+            {'layout': 'section', 'title': 'Next steps'},
+            {'layout': 'closing', 'title': 'Decision needed in December'},
+        ], theme=theme, out=f'{theme}.pptx')
+        assert result.returncode == 0, f'{theme}: {result.stdout}'
+
+
+def test_infographic_refuses_a_small_content_area(tmp_path):
+    result = run(tmp_path, [{'layout': 'callout', 'title': 'x', 'infographic': {'kind': 'cycle', 'items': CYCLE}}], theme='Yellow_Idea')
+    assert result.returncode == 2
+    assert 'content area is too small for a cycle: use the content layout' in result.stdout
+
+
+def test_four_or_more_steps_must_be_an_infographic(tmp_path):
+    result = run(tmp_path, [{'layout': 'content', 'title': 'Hiring', 'steps': CYCLE}])
+    assert result.returncode == 2
+    assert 'draw 4-6 ordered steps as an infographic' in result.stdout
+
+
+def test_pale_accent_text_becomes_ink(tmp_path):
+    result = run(tmp_path, [{'layout': 'content', 'title': 'Rollout', 'infographic': {'kind': 'timeline', 'items': CYCLE}}], theme='Yellow_Idea')
+    assert result.returncode == 0, result.stdout
+    slide = Presentation(tmp_path / 'deck.pptx').slides[0]
+    pale = {'accent2', 'accent4', 'accent5'}
+    for shape in slide.shapes._spTree.iter(qn('p:sp')):
+        name = shape.find(qn('p:nvSpPr') + '/' + qn('p:cNvPr')).get('name', '')
+        if not name.startswith('slot:'):
+            continue
+        for text_run in shape.iter(qn('a:r')):
+            scheme = text_run.find(qn('a:rPr') + '/' + qn('a:solidFill') + '/' + qn('a:schemeClr'))
+            assert scheme is None or scheme.get('val') not in pale or len(scheme)

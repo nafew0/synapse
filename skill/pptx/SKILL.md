@@ -91,9 +91,21 @@ sizes and colours everything, sets Nikosh for Bangla, and runs the checks.
 | `Candy` | bright purple/blue/pink/yellow geometry | teaching, student events, outreach |
 | `Yellow_Idea` | sunny yellow, hand-drawn light bulbs | workshops, training, ideas, innovation |
 
-**2. Pick layouts.** Every theme has a `cover` and content layouts; most have `section` and
-`closing`. Run `python3 /mnt/data/skills/pptx/scripts/deck.py --list` once to see each theme's
-layouts and which are dark or have a picture area. Vary layouts across the deck.
+**2. Pick layouts.** Every theme takes the same seven names, so use these and no others unless
+`--list` shows you a theme's own:
+
+| Layout | For |
+|---|---|
+| `cover` | the first slide |
+| `section` | a divider between parts |
+| `content` | most slides; the only one to use for infographics, charts and tables |
+| `agenda` | the list of what the deck covers |
+| `picture` | text beside an `image` |
+| `quote` | a `quote` |
+| `closing` | the last slide |
+
+`python3 /mnt/data/skills/pptx/scripts/deck.py --list` shows each theme's own extra layouts
+(dark ones, alternative backgrounds) if you want more variety.
 
 **3. Write the spec** to `/mnt/data/qa/spec.json`. Each content slide has a title and **one**
 block:
@@ -107,7 +119,7 @@ block:
   {"layout": "content", "title": "Admissions run as a four-stage cycle",
    "infographic": {"kind": "cycle", "items": [["Plan", "Set intake targets for each campus"], ["Promote", "Visit schools and run the campaign"],
                                               ["Admit", "Publish the merit list in May"], ["Review", "Compare intake with the targets"]]}},
-  {"layout": "feature", "title": "Sylhet is now the second-largest campus",
+  {"layout": "content", "title": "Sylhet is now the second-largest campus",
    "chart": {"type": "column", "labels": ["Dhaka", "Sylhet", "Rajshahi"], "series": [{"name": "Admitted", "values": [1650, 980, 720]}], "highlight": 1},
    "takeaway": "Sylhet needs its own registrar office before July"},
   {"layout": "closing", "title": "Decision needed: approve 18 posts in December"}]}
@@ -119,7 +131,7 @@ block:
 | `text` | `"..."` | one paragraph or a question |
 | `cards` | `[["Heading", "Detail"], ...]` 2-4 | peers side by side |
 | `stats` | `[["৳2.5 cr", "income, up 12%"], ...]` 2-4 | headline figures, each with its comparison |
-| `steps` | `[["Heading", "Detail"], ...]` 3-5 | an ordered process |
+| `steps` | `[["Heading", "Detail"], ...]` exactly 3 | three short steps; 4-6 steps must be a `process` infographic (deck.py refuses `steps` with 4 or more) |
 | `chart` | `{"type", "labels", "series": [{"name", "values"}], "highlight"}` | `bar`, `column`, `line`, `pie`, `doughnut`, `stacked`; `highlight` is the index of the one bar that carries the point |
 | `table` | `[["Header", ...], ["cell", ...]]` | exact figures; first row is the header |
 | `quote` | `"..."` plus `"by"` | one sentence from a person |
@@ -127,9 +139,17 @@ block:
 | `infographic` | `{"kind": "cycle", "items": [["Heading", "Detail"], ...]}` | a designed diagram; see below |
 
 **Infographics** are professionally drawn diagrams from the skill's library. They're recoloured
-to the theme and filled with your items in order. Use one wherever the content has a shape:
-- in a deck of 6 or more slides, aim for one every two or three content slides
-- otherwise prefer `cards`, `steps` or `bullets`
+to the theme and filled with your items in order. They are what makes a deck look designed, so
+use them wherever the content has a shape:
+- **Always** draw these as an `infographic`, never as `bullets`, `steps`, `cards` or a `table`:
+  - 4-6 steps in order: `process`
+  - stages that repeat: `cycle`
+  - 3-6 dates or phases: `timeline`
+  - narrowing stages: `funnel`
+  - levels or priorities: `pyramid`
+  - four groups on two dimensions: `matrix`
+  - a SWOT: `swot`
+- Most decks of 6 or more slides have at least two infographics.
 
 | Kind | Items | Use when | Order |
 |---|---|---|---|
