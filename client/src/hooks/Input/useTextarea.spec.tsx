@@ -791,6 +791,38 @@ describe('useTextarea long-paste fallback', () => {
     expect(mockOpenModal).not.toHaveBeenCalled();
   });
 
+  it('keeps a copied file name out of the composer when the file is pasted', async () => {
+    mockAutoFilePreparationEnabled = true;
+    mockRouteFiles.mockResolvedValueOnce(true);
+    const { result } = renderTextareaHook();
+    const image = new File(['png'], 'shot.png', { type: 'image/png' });
+    const event = { ...createPasteEvent([image]) };
+    event.clipboardData.getData = jest.fn(() => 'shot.png');
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    expect(event.preventDefault).toHaveBeenCalled();
+    await waitFor(() => expect(mockRouteFiles).toHaveBeenCalledTimes(1));
+  });
+
+  it('still pastes real text that arrives with a picture of it', async () => {
+    mockAutoFilePreparationEnabled = true;
+    mockRouteFiles.mockResolvedValueOnce(true);
+    const { result } = renderTextareaHook();
+    const image = new File(['png'], 'image.png', { type: 'image/png' });
+    const event = { ...createPasteEvent([image]) };
+    event.clipboardData.getData = jest.fn(() => 'Quarterly totals\t1200');
+
+    act(() =>
+      result.current.handlePaste(event as unknown as React.ClipboardEvent<HTMLTextAreaElement>),
+    );
+
+    expect(event.preventDefault).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockRouteFiles).toHaveBeenCalledTimes(1));
+  });
+
   it('asks where a pasted image goes when file preparation is off', async () => {
     mockGetUploadOptions.mockReturnValue([undefined, EToolResources.context]);
     const { result } = renderTextareaHook();
