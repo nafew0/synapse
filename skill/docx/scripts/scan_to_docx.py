@@ -60,6 +60,17 @@ HANDWRITING_PIECES = 2
 MAX_WIDTH_ERROR = 0.35
 MAX_LINE_ERROR = 1.0
 ENLARGE = 3
+# Grey levels for clear_paper: at or below OPAQUE_INK a pixel is solid, at or above CLEAR_PAPER it
+# is fully see-through, and in between it fades.
+OPAQUE_INK = 135
+CLEAR_PAPER = 190
+# Marks on paper are redrawn larger than photos, and their edges smoothed by this blur in pixels.
+MARK_ENLARGE = 4
+EDGE_SMOOTHING = 1.2
+# A picture at least this much paper is a stamp or seal, not a photo.
+PAPER_PICTURE_SHARE = 0.6
+# How light a pixel must be to count as paper when telling a stamp from a photo.
+PAPER_LIGHT = 235
 # A box the structure call drew is rough: look this share of its size beyond it, keep shapes at
 # least SNAP_INSIDE inside it.
 SNAP_GROW = 0.15
@@ -842,6 +853,40 @@ def enlarge(path):
     image.resize((round(image.width * factor), round(image.height * factor)), Image.Resampling.LANCZOS).save(path)
 
 
+def clear_paper(path):
+    """Redraws a signature, logo or stamp as crisp ink on see-through paper. It is enlarged
+    MARK_ENLARGE times, its stair-stepped edges smoothed, and its edge set by a steep but smooth
+    fade from ink to clear: strokes print sharp instead of blocky, and no box shows over the page.
+    The ink keeps its colour, spread to the stroke edges so they are not washed out by the paper."""
+    with Image.open(path) as opened:
+        image = opened.convert("RGB")
+    factor = min(MARK_ENLARGE, MAX_PICTURE_EDGE / max(image.size))
+    if factor > 1:
+        image = image.resize((round(image.width * factor), round(image.height * factor)), Image.Resampling.BICUBIC)
+    gray = ImageOps.grayscale(image).filter(ImageFilter.GaussianBlur(EDGE_SMOOTHING))
+    color = image.filter(ImageFilter.MinFilter(3))
+    color.putalpha(gray.point(ink_alpha))
+    color.save(path)
+
+
+def ink_alpha(value):
+    """Solid at or below OPAQUE_INK, clear at or above CLEAR_PAPER, a smooth step between."""
+    if value <= OPAQUE_INK:
+        return 255
+    if value >= CLEAR_PAPER:
+        return 0
+    share = (CLEAR_PAPER - value) / (CLEAR_PAPER - OPAQUE_INK)
+    return round(255 * share * share * (3 - 2 * share))
+
+
+def mostly_paper(path):
+    """Whether a picture is marks on paper, like a stamp or a seal, rather than a photo: most of
+    it is as light as the paper."""
+    with Image.open(path) as opened:
+        histogram = ImageOps.grayscale(opened.convert("RGB")).histogram()
+    return sum(histogram[PAPER_LIGHT:]) >= PAPER_PICTURE_SHARE * sum(histogram)
+
+
 def place_pictures(spec, made, qa, cm_per_pixel, crop_pages=None):
     """Sets each picture to its size on the page. One with no crop is left out and reported.
     `crop_pages` gives each crop's page, for a scale that differs by page."""
@@ -858,7 +903,11 @@ def place_pictures(spec, made, qa, cm_per_pixel, crop_pages=None):
                 with Image.open(qa / f"{name}.png") as image:
                     scale = page_scale(cm_per_pixel, (crop_pages or {}).get(name, 1))
                     block[width_key] = round(image.width * scale, 2)
-                enlarge(qa / f"{name}.png")
+                if key in ("logo", "image") or mostly_paper(qa / f"{name}.png"):
+                    # A signature, logo, stamp or seal; a photo keeps its background.
+                    clear_paper(qa / f"{name}.png")
+                else:
+                    enlarge(qa / f"{name}.png")
             else:
                 missing.append(name)
                 del block[key]

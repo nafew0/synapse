@@ -566,20 +566,46 @@ def build(spec, out_path, style):
         kind = block.get("type")
         if block.get("section"):
             new_section(doc, bool(block["section"].get("landscape")))
-        elif block.get("page_break"):
-            doc.add_page_break()
+        body = doc.element.body
+        before = len(body)
         if block.get("row"):
             run = blocks[index:index + next((i for i, b in enumerate(blocks[index:]) if b.get("row") != block["row"]), len(blocks) - index)]
             if block.get("row_space_before"):
                 gap_after_table(doc, style, block["row_space_before"])
             render_row(doc, run, style)
             index += len(run)
-            continue
-        if block.get("space_before") and (kind in TABLE_BLOCKS or (kind == "letterhead" and block.get("logo"))):
-            gap_after_table(doc, style, block["space_before"])
-        render_block(doc, block, style)
-        index += 1
+        else:
+            if block.get("space_before") and (kind in TABLE_BLOCKS or (kind == "letterhead" and block.get("logo"))):
+                gap_after_table(doc, style, block["space_before"])
+            render_block(doc, block, style)
+            index += 1
+        if block.get("page_break") and not block.get("section") and len(body) > before:
+            # Body elements are added before the closing sectPr, so the first new one sits here.
+            break_before(body[before - 1])
     doc.save(out_path)
+
+
+def break_before(element):
+    """Starts a new page at `element` without a paragraph of its own: as the paragraph's own
+    "page break before", or, for a table, at the end of the paragraph before it. A paragraph
+    holding only a break is pushed onto the next page when Word's text runs a little taller
+    than LibreOffice's, and its break then leaves that page blank."""
+    if element.tag == qn("w:p"):
+        p_pr = element.get_or_add_pPr()
+        if p_pr.find(qn("w:pageBreakBefore")) is None:
+            insert_ordered(p_pr, OxmlElement("w:pageBreakBefore"), P_PR_ORDER)
+        return
+    previous = element.getprevious()
+    run = OxmlElement("w:r")
+    page = OxmlElement("w:br")
+    page.set(qn("w:type"), "page")
+    run.append(page)
+    if previous is not None and previous.tag == qn("w:p"):
+        previous.append(run)
+        return
+    paragraph = OxmlElement("w:p")
+    paragraph.append(run)
+    element.addprevious(paragraph)
 
 
 def render(docx_path, work):

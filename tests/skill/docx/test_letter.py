@@ -1144,3 +1144,64 @@ def test_spacing_is_matched_to_where_the_scan_text_ends(scan, tmp_path):
     # A short page can only spread so far; it moves the right way, and lands on a reachable end.
     assert ends['long'] > ends['short']
     assert abs(ends['short'] - 0.45) < 0.03
+
+
+def test_a_new_page_starts_without_a_paragraph_of_its_own(tmp_path):
+    """NU notice 5603 opened in Word with a blank page: each break was a paragraph of its own,
+    and when Word's taller Bangla lines filled the page, that paragraph went over onto a new one."""
+    sys.path.insert(0, str(SCRIPTS))
+    from letter import Style, build
+
+    spec = {'font': {'size': 11}, 'blocks': [
+        {'type': 'paragraph', 'text': 'প্রথম পাতা'},
+        {'type': 'paragraph', 'text': 'দ্বিতীয় পাতা', 'page_break': True},
+        {'type': 'memo', 'left': 'স্মারক নং- ১', 'right': ['তারিখ'], 'page_break': True},
+    ]}
+    build(spec, tmp_path / 'out.docx', Style(spec))
+    body = zipfile.ZipFile(tmp_path / 'out.docx').read('word/document.xml').decode()
+    assert '<w:p><w:r><w:br w:type="page"/></w:r></w:p>' not in body
+    assert body.count('<w:pageBreakBefore/>') == 1
+    assert body.count('w:type="page"') == 1
+    assert body.index('w:type="page"') < body.index('স্মারক')
+
+
+@needs_office
+def test_pages_still_break_where_the_scan_did(tmp_path):
+    spec = {'pages': 3, 'font': {'size': 11}, 'blocks': [
+        {'type': 'paragraph', 'text': 'প্রথম পাতা'},
+        {'type': 'paragraph', 'text': 'দ্বিতীয় পাতা', 'page_break': True},
+        {'type': 'memo', 'left': 'স্মারক নং- ১', 'right': ['তারিখ'], 'page_break': True},
+    ]}
+    (tmp_path / 'spec.json').write_text(json.dumps(spec, ensure_ascii=False), encoding='utf-8')
+    result = run('letter.py', 'spec.json', 'out.docx', cwd=tmp_path)
+    assert 'pages: 3 (target 3)' in result.stdout, result.stdout + result.stderr
+
+
+def test_a_signature_crop_has_see_through_paper(tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import clear_paper
+
+    crop = Image.new('RGB', (120, 60), (250, 248, 240))
+    ImageDraw.Draw(crop).line((10, 40, 60, 10, 110, 45), fill=(20, 30, 120), width=4)
+    crop.save(tmp_path / 'sig1.png')
+    clear_paper(tmp_path / 'sig1.png')
+    with Image.open(tmp_path / 'sig1.png') as done:
+        assert done.mode == 'RGBA'
+        assert done.size == (480, 240)
+        assert done.getpixel((8, 8))[3] == 0
+        assert done.getpixel((240, 44))[3] == 255
+        # The ink keeps its colour, a little darker where it is spread to the stroke edge.
+        assert all(abs(a - b) <= 20 for a, b in zip(done.getpixel((240, 44))[:3], (20, 30, 120)))
+
+
+def test_a_stamp_is_told_from_a_photo_by_how_much_paper_it_shows(tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from scan_to_docx import mostly_paper
+
+    stamp = Image.new('RGB', (200, 80), 'white')
+    ImageDraw.Draw(stamp).text((10, 30), 'Received 17.9.2026', fill=(90, 40, 140))
+    stamp.save(tmp_path / 'stamp.png')
+    photo = Image.linear_gradient('L').resize((200, 200)).convert('RGB')
+    photo.save(tmp_path / 'photo.png')
+    assert mostly_paper(tmp_path / 'stamp.png')
+    assert not mostly_paper(tmp_path / 'photo.png')
