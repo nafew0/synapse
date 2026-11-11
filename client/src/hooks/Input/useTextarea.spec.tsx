@@ -25,6 +25,7 @@ let useTextarea: typeof import('./useTextarea').default;
 let mockIndex = 0;
 let mockIsSubmitting = false;
 let mockIsUploadConfigPending = false;
+let mockAutoFilePreparationEnabled = false;
 let mockConversation: { endpoint: string; conversationId?: string } = {
   endpoint: 'openAI',
   conversationId: 'convo-1',
@@ -32,6 +33,7 @@ let mockConversation: { endpoint: string; conversationId?: string } = {
 
 jest.mock('~/utils', () => ({
   ...jest.requireActual('~/utils/drafts'),
+  PER_FILE_UPLOAD_ROUTE: 'per-file',
   forceResize: mockForceResize,
   insertTextAtCursor: mockInsertTextAtCursor,
   resolvePastedTextFile: mockResolvePastedTextFile,
@@ -96,6 +98,9 @@ jest.mock('~/hooks/Files/useUploadOptions', () => ({
 }));
 
 jest.mock('~/data-provider', () => ({
+  useGetStartupConfig: jest.fn(() => ({
+    data: { autoFilePreparationEnabled: mockAutoFilePreparationEnabled },
+  })),
   useInteractionHealthCheck: jest.fn(() => jest.fn(async () => true)),
 }));
 
@@ -165,6 +170,7 @@ describe('useTextarea long-paste fallback', () => {
     mockIndex = 0;
     mockIsSubmitting = false;
     mockIsUploadConfigPending = false;
+    mockAutoFilePreparationEnabled = false;
     mockConversation = { endpoint: 'openAI', conversationId: 'convo-1' };
     mockGetUploadOptions.mockReturnValue([EToolResources.context]);
     mockResolvePastedTextFile.mockImplementation((text: string) => ({
@@ -765,6 +771,39 @@ describe('useTextarea long-paste fallback', () => {
       expect.objectContaining({ message: 'com_error_files_unsupported' }),
     );
     expect(mockOpenModal).not.toHaveBeenCalled();
+  });
+
+  it('uploads a pasted image without asking when file preparation is on', async () => {
+    mockAutoFilePreparationEnabled = true;
+    mockGetUploadOptions.mockReturnValue([undefined, EToolResources.context]);
+    mockRouteFiles.mockResolvedValueOnce(true);
+    const { result } = renderTextareaHook();
+    const image = new File(['png'], 'shot.png', { type: 'image/png' });
+
+    act(() =>
+      result.current.handlePaste(
+        createPasteEvent([image]) as unknown as React.ClipboardEvent<HTMLTextAreaElement>,
+      ),
+    );
+
+    await waitFor(() => expect(mockRouteFiles).toHaveBeenCalledTimes(1));
+    expect(mockRouteFiles.mock.calls[0][1]).toBe('per-file');
+    expect(mockOpenModal).not.toHaveBeenCalled();
+  });
+
+  it('asks where a pasted image goes when file preparation is off', async () => {
+    mockGetUploadOptions.mockReturnValue([undefined, EToolResources.context]);
+    const { result } = renderTextareaHook();
+    const image = new File(['png'], 'shot.png', { type: 'image/png' });
+
+    act(() =>
+      result.current.handlePaste(
+        createPasteEvent([image]) as unknown as React.ClipboardEvent<HTMLTextAreaElement>,
+      ),
+    );
+
+    await waitFor(() => expect(mockOpenModal).toHaveBeenCalledTimes(1));
+    expect(mockRouteFiles).not.toHaveBeenCalled();
   });
 
   it('still rejects a paste once the loaded config offers nothing', async () => {
