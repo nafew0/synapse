@@ -1144,3 +1144,34 @@ def test_spacing_is_matched_to_where_the_scan_text_ends(scan, tmp_path):
     # A short page can only spread so far; it moves the right way, and lands on a reachable end.
     assert ends['long'] > ends['short']
     assert abs(ends['short'] - 0.45) < 0.03
+
+
+def test_a_new_page_starts_without_a_paragraph_of_its_own(tmp_path):
+    """NU notice 5603 opened in Word with a blank page: each break was a paragraph of its own,
+    and when Word's taller Bangla lines filled the page, that paragraph went over onto a new one."""
+    sys.path.insert(0, str(SCRIPTS))
+    from letter import Style, build
+
+    spec = {'font': {'size': 11}, 'blocks': [
+        {'type': 'paragraph', 'text': 'প্রথম পাতা'},
+        {'type': 'paragraph', 'text': 'দ্বিতীয় পাতা', 'page_break': True},
+        {'type': 'memo', 'left': 'স্মারক নং- ১', 'right': ['তারিখ'], 'page_break': True},
+    ]}
+    build(spec, tmp_path / 'out.docx', Style(spec))
+    body = zipfile.ZipFile(tmp_path / 'out.docx').read('word/document.xml').decode()
+    assert '<w:p><w:r><w:br w:type="page"/></w:r></w:p>' not in body
+    assert body.count('<w:pageBreakBefore/>') == 1
+    assert body.count('w:type="page"') == 1
+    assert body.index('w:type="page"') < body.index('স্মারক')
+
+
+@needs_office
+def test_pages_still_break_where_the_scan_did(tmp_path):
+    spec = {'pages': 3, 'font': {'size': 11}, 'blocks': [
+        {'type': 'paragraph', 'text': 'প্রথম পাতা'},
+        {'type': 'paragraph', 'text': 'দ্বিতীয় পাতা', 'page_break': True},
+        {'type': 'memo', 'left': 'স্মারক নং- ১', 'right': ['তারিখ'], 'page_break': True},
+    ]}
+    (tmp_path / 'spec.json').write_text(json.dumps(spec, ensure_ascii=False), encoding='utf-8')
+    result = run('letter.py', 'spec.json', 'out.docx', cwd=tmp_path)
+    assert 'pages: 3 (target 3)' in result.stdout, result.stdout + result.stderr
