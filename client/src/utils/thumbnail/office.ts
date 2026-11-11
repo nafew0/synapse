@@ -1,8 +1,9 @@
-import { unzipSync } from 'fflate';
+import { unzipEntries } from './zip';
 
 /**
- * Where Office and OpenDocument files keep the preview picture their editor saved. Word and
- * PowerPoint write one only when "Save preview picture" is on; LibreOffice always writes one.
+ * Where Office and OpenDocument files keep the preview picture their editor saved. PowerPoint
+ * writes one only when "Save preview picture" is on; LibreOffice always writes one. Word's is left
+ * out on purpose: Word for Mac saves the same blank page into every file.
  */
 const THUMBNAIL_PATHS: Record<string, string> = {
   'docProps/thumbnail.jpeg': 'image/jpeg',
@@ -24,13 +25,7 @@ const toDataUrl = (bytes: Uint8Array, mime: string): string => {
  * is inflated, so reading it synchronously stays cheap even for a large file.
  */
 export function readEmbeddedThumbnail(data: ArrayBuffer): string | null {
-  try {
-    const entries = unzipSync(new Uint8Array(data), {
-      filter: (entry) => entry.name in THUMBNAIL_PATHS,
-    });
-    const name = Object.keys(entries)[0];
-    return name ? toDataUrl(entries[name], THUMBNAIL_PATHS[name]) : null;
-  } catch {
-    return null;
-  }
+  const entries = unzipEntries(data, (name) => name in THUMBNAIL_PATHS);
+  const name = Object.keys(entries)[0];
+  return name ? toDataUrl(entries[name], THUMBNAIL_PATHS[name]) : null;
 }

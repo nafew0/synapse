@@ -74,6 +74,25 @@ describe('file Tile', () => {
     );
   });
 
+  test('shows the page larger, with the name and status, when the tile is focused', async () => {
+    const { container } = render(
+      <Tile
+        file={pdf({
+          file_id: 'pdf-hover',
+          file: new File(['%PDF'], 'Annual report.pdf', { type: 'application/pdf' }),
+        })}
+        onDelete={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(container.querySelector('img')).toBeInTheDocument());
+
+    fireEvent.focus(screen.getByRole('group'));
+
+    const preview = await screen.findByTestId('tile-preview');
+    expect(preview.querySelector('img')).toHaveAttribute('src', 'data:image/jpeg;base64,cGFnZQ==');
+    expect(preview).toHaveTextContent('Annual report.pdf');
+  });
+
   test('keeps the file-type icon when the file has no page picture', async () => {
     const { container } = render(
       <Tile
