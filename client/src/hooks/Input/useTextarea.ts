@@ -38,6 +38,19 @@ import store from '~/store';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
 
+/** A file copied from a file manager also carries its name as plain text, which must not be
+ * pasted beside the upload; text copied with a picture of it (Word, Excel) is kept. */
+const isOnlyFileNames = (text: string, files: FileList): boolean => {
+  const names = new Set<string>();
+  for (const file of files) {
+    names.add(file.name);
+  }
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .every((line) => line === '' || names.has(line));
+};
+
 export default function useTextarea({
   textAreaRef,
   submitButtonRef,
@@ -353,6 +366,9 @@ export default function useTextarea({
       }
 
       if (clipboardData.files.length > 0) {
+        if (isOnlyFileNames(clipboardData.getData('text/plain'), clipboardData.files)) {
+          e.preventDefault();
+        }
         const timestampedFiles: File[] = [];
         for (const file of clipboardData.files) {
           const newFile = new File([file], `clipboard_${+new Date()}_${file.name}`, {
