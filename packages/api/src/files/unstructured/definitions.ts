@@ -22,6 +22,6 @@ export const documentReadToolDefinition: {
 } = {
   name: READ_DOCUMENT_TOOL_NAME,
   description:
-    'Reads a scanned or photographed document, or a PDF whose text is damaged, with its headings, lists and tables. Use it first whenever the user wants anything done with such a file: answering from it, editing it, or converting it. Returns the text and saves <name>.elements.json and <name>.md in /mnt/data for this request. Calling it again for the same file is free and restores those files.',
+    'Reads a scanned PDF, a PDF whose text is damaged, or a photographed page, with its headings, lists and tables. For such a PDF, use it first whenever the user wants anything done with it: answering from it, editing it, or converting it. For an image you can see, use it only to turn the page into a document or copy its text out in full; answer, solve or explain what an image shows by reading the picture yourself. Returns the text and saves <name>.elements.json and <name>.md in /mnt/data for this request. Calling it again for the same file is free and restores those files.',
   schema,
 };

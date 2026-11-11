@@ -250,6 +250,27 @@ describe('buildDocumentReadContext', () => {
     expect(context).not.toContain('sticker.webp');
   });
 
+  it('keeps an image the model can see out of OCR unless its page is to be rebuilt or copied out', () => {
+    /* A photographed maths question with "solve it" went to read_document, because the note
+     * said to call it for anything done with an attached image; the model can read the picture. */
+    const context = buildDocumentReadContext([
+      { file_id: 'q', filename: 'question.png', type: 'image/png' },
+    ]);
+    expect(context).toContain('turned into a document');
+    expect(context).toContain('read the picture yourself');
+    expect(context).not.toContain('anything done');
+    const scanned = buildDocumentReadContext([
+      {
+        file_id: 's',
+        filename: 'scan.pdf',
+        metadata: { preparation: { scan: { ocrPages: [1], garbledPages: [] } } },
+      },
+    ]);
+    expect(scanned).toContain(
+      'When the user wants anything done with one of them, call read_document',
+    );
+  });
+
   it('says nothing when no file needs OCR', () => {
     expect(buildDocumentReadContext([scanned('b', 'typed.pdf', []), {}])).toBeUndefined();
   });

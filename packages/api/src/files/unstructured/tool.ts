@@ -106,8 +106,9 @@ interface ClassifiedFile {
   metadata?: { preparation?: { scan?: { ocrPages?: number[]; garbledPages?: number[] } } } | null;
 }
 
+/** An image is visible to the model, so reading it with OCR is only for rebuilding it or copying it out. */
 const IMAGE_NOTE =
-  'These attached images can be read with read_document when they show a page of text, such as a scanned or photographed letter or order. The model sees them only as pictures, without their names:';
+  'These attached images reach you as pictures, without their names. Call read_document on one only when the user wants its page turned into a document (Word, PDF, Excel) or its text copied out in full. To answer, solve, explain or translate what it shows, read the picture yourself:';
 
 /**
  * Tells the assistant which attached files need OCR: PDF pages the upload's classifier flagged,
@@ -142,7 +143,7 @@ export function buildDocumentReadContext(files: ClassifiedFile[]): string | unde
   const sections: string[] = [];
   if (lines.length > 0) {
     sections.push(
-      `These attached files are scanned or have damaged text on these pages, so file_search and pdftotext cannot read them:\n${lines.join('\n')}`,
+      `These attached files are scanned or have damaged text on these pages, so file_search and pdftotext cannot read them:\n${lines.join('\n')}\nWhen the user wants anything done with one of them, call read_document on it first, before file_search or any skill.`,
     );
   }
   if (images.length > 0) {
@@ -151,7 +152,7 @@ export function buildDocumentReadContext(files: ClassifiedFile[]): string | unde
   if (sections.length === 0) {
     return undefined;
   }
-  const reading = `${sections.join('\n')}\nWhen the user wants anything done with one of them, call read_document on it first, before file_search or any skill.`;
+  const reading = sections.join('\n');
   if (digital.length === 0) {
     return reading;
   }
