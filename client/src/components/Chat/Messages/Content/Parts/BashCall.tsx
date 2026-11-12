@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import copy from 'copy-to-clipboard';
 import { useRecoilValue } from 'recoil';
 import { LoaderCircle } from 'lucide-react';
+import { Tools } from 'librechat-data-provider';
 import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import { parseBackgroundHandle, splitBackgroundAttachments } from './handle';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
@@ -17,6 +18,7 @@ import { AttachmentGroup } from './Attachment';
 import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import StepRow from './StepRow';
 
 export default function BashCall({
   isSubmitting,
@@ -116,7 +118,7 @@ export default function BashCall({
    *  live label from the earliest delta — before the command exists and while
    *  it runs. It persists as the settled label too (completion is a UI state,
    *  not a tense change); the generic texts are the no-intent fallback. */
-  const intent = useToolCallIntent(args);
+  const intent = useToolCallIntent(args, Tools.bash_tool);
   const inProgressText = (() => {
     if (intent != null) {
       return intent;
@@ -132,7 +134,7 @@ export default function BashCall({
 
   return (
     <>
-      <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
+      <StepRow>
         <ProgressText
           phase={phase}
           onClick={toggleCode}
@@ -164,7 +166,7 @@ export default function BashCall({
           hasInput={hasContent}
           isExpanded={showCode}
         />
-      </div>
+      </StepRow>
       {detailsEnabled && (
         <div style={expandStyle}>
           <div className="overflow-hidden" ref={expandRef}>

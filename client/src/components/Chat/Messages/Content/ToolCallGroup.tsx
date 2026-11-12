@@ -20,6 +20,9 @@ import {
 } from '~/utils';
 import { useLocalize, useExpandCollapse, scheduleMessageContentLayoutReconcile } from '~/hooks';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
+import { getToolCallIntent } from './Parts/intent';
+import { DenseStepsContext } from './Parts/StepRow';
+import parseJsonField from './Parts/parseJsonField';
 import { isBashProgrammaticToolCall } from './routing';
 import { ASK_USER_QUESTION } from '~/utils/approval';
 import { StackedToolIcons } from './ToolOutput';
@@ -103,6 +106,18 @@ interface ToolCallGroupProps {
   /** Activity-label part terminating this block; when it carries generated
    *  text the header shows that text instead of the default tool summary. */
   labelPart?: PartWithIndex;
+  /** A whole turn's activity folded into one block: the header names the live
+   *  step, then the step count, with the skills used as its tags. */
+  compact?: boolean;
+}
+
+const SKILL_TOOL = 'skill';
+
+function getStepArgs(part: TMessageContentParts): Agents.ToolCall['args'] | undefined {
+  if (part.type !== ContentTypes.TOOL_CALL) {
+    return undefined;
+  }
+  return (part[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)?.args;
 }
 
 export type ToolCallGroupExpansionState = {
@@ -120,6 +135,7 @@ export default function ToolCallGroup({
   initialExpansionState,
   onExpansionChange,
   labelPart,
+  compact = false,
 }: ToolCallGroupProps) {
   const localize = useLocalize();
   const mcpIconMap = useMCPIconMap();
@@ -208,6 +224,36 @@ export default function ToolCallGroup({
     }
     return `${labels.slice(0, 3).join(', ')}, +${labels.length - 3}`;
   }, [toolNames, localize, mcpServerNames]);
+
+  /** Skills read as what the turn drew on, so a compact block keeps them in view. */
+  const skillNames = useMemo(() => {
+    if (!compact) {
+      return [];
+    }
+    const names = new Set<string>();
+    for (const { part } of parts) {
+      const meta = getToolMeta(part);
+      const skillName =
+        meta?.name === SKILL_TOOL ? parseJsonField(getStepArgs(part), 'skillName') : '';
+      if (skillName) {
+        names.add(skillName);
+      }
+    }
+    return Array.from(names);
+  }, [compact, parts]);
+  /** The newest step's own label, so a running block says what it is doing now. */
+  const liveStepLabel = useMemo(() => {
+    if (!compact) {
+      return undefined;
+    }
+    for (let i = parts.length - 1; i >= 0; i--) {
+      if (parts[i].part.type === ContentTypes.TOOL_CALL) {
+        return getToolCallIntent(getStepArgs(parts[i].part), getToolMeta(parts[i].part)?.name);
+      }
+    }
+    return undefined;
+  }, [compact, parts]);
+  const compactRunning = compact && isSubmitting && isLast;
 
   const autoExpand = useRecoilValue(store.autoExpandTools);
   /** A labeled activity block is summarized by its header, so it collapses
@@ -315,12 +361,21 @@ export default function ToolCallGroup({
         ? localize('com_ui_asked_n_questions', { 0: String(count) })
         : localize('com_ui_asking_n_questions', { 0: String(count) });
     }
+    if (compactRunning) {
+      return liveStepLabel ?? localize('com_ui_working');
+    }
+    if (compact) {
+      return count === 1
+        ? localize('com_ui_worked_one_step')
+        : localize('com_ui_worked_n_steps', { 0: String(count) });
+    }
     return localize('com_ui_used_n_tools', { 0: String(count) });
   };
   /** The generated line wins over the generic category verb — but only once
    *  it exists. An unfilled label part leaves the block rendering exactly as
    *  it would without the feature. */
   const groupLabel = activityLabelText.length > 0 ? activityLabelText : resolveGroupLabel();
+  const headerTags = compact && skillNames.length > 0 ? skillNames.join(', ') : toolNameSummary;
   /** Single category glyph for homogeneous groups (else StackedToolIcons). */
   const CategoryIcon = allSubagents ? Users : MessageCircleQuestion;
 
@@ -373,6 +428,7 @@ export default function ToolCallGroup({
           className={cn(
             'tool-status-text min-w-0 truncate font-medium',
             activityFailed && 'text-text-warning',
+            compactRunning && activityLabelText.length === 0 && 'shimmer',
           )}
           role="status"
           title={groupLabel}
@@ -382,9 +438,9 @@ export default function ToolCallGroup({
         {/** Hide the tool-name summary for pure-category groups (subagents /
          *   questions) — every entry deduplicates to the same token, which
          *   adds noise without info. Mixed groups keep the summary. */}
-        {toolNameSummary && !allSubagents && !allAskQuestions && (
+        {headerTags && !allSubagents && !allAskQuestions && (
           <span className="min-w-0 max-w-[40%] truncate text-xs font-normal text-text-secondary">
-            · {toolNameSummary}
+            · {headerTags}
           </span>
         )}
         <ChevronDown
@@ -403,11 +459,18 @@ export default function ToolCallGroup({
       >
         {shouldRenderBody && (
           <div className="overflow-hidden" ref={expandRef}>
-            <div className="py-0.5 pl-4">
-              {parts.map(({ part, idx }) =>
-                renderPart(part, idx, isLast && idx === lastContentIdx, handleToolExpand),
-              )}
-            </div>
+            <DenseStepsContext.Provider value={compact}>
+              <div
+                className={cn(
+                  'py-0.5',
+                  compact ? 'ml-2 border-l border-border-light pl-3' : 'pl-4',
+                )}
+              >
+                {parts.map(({ part, idx }) =>
+                  renderPart(part, idx, isLast && idx === lastContentIdx, handleToolExpand),
+                )}
+              </div>
+            </DenseStepsContext.Provider>
           </div>
         )}
       </div>

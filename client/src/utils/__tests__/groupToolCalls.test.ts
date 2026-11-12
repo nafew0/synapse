@@ -198,3 +198,103 @@ describe('groupSequentialToolCalls with activity labels', () => {
     });
   });
 });
+
+const namedCall = (id: string, name: string, args = '{}'): TMessageContentParts =>
+  ({
+    type: ContentTypes.TOOL_CALL,
+    [ContentTypes.TOOL_CALL]: { id, name, args, output: 'ok' },
+  }) as unknown as TMessageContentParts;
+
+const kinds = (grouped: ReturnType<typeof groupSequentialToolCalls>) =>
+  grouped.map((entry) =>
+    entry.type === 'single'
+      ? `single:${entry.part.idx}`
+      : `group:${entry.parts.map((p) => p.idx).join(',')}`,
+  );
+
+describe('groupSequentialToolCalls in compact mode', () => {
+  /** The Office Assistant shape: thoughts between every step, notes between
+   *  steps, a file built mid-way, and the answer at the end. */
+  it('folds a whole turn into one block and leaves the answer outside', () => {
+    const parts = withIndex([
+      think('planning'),
+      namedCall('s1', 'skill', '{"skillName":"official-correspondence"}'),
+      think('reading the template'),
+      namedCall('r1', 'read_file'),
+      text('Let me build the order.'),
+      think('writing'),
+      namedCall('c1', 'execute_code'),
+      think('checking'),
+      namedCall('c2', 'execute_code'),
+      text('Here is your office order.'),
+    ]);
+
+    expect(kinds(groupSequentialToolCalls(parts, { compact: true }))).toEqual([
+      'group:0,1,2,3,4,5,6,7,8',
+      'single:9',
+    ]);
+  });
+
+  it('groups a single step, which the default mode leaves bare', () => {
+    const parts = withIndex([think('one look'), toolCall('t1'), text('Done.')]);
+
+    expect(kinds(groupSequentialToolCalls(parts, { compact: true }))).toEqual([
+      'group:0,1',
+      'single:2',
+    ]);
+    expect(kinds(groupSequentialToolCalls(parts))).toEqual(['single:0', 'single:1', 'single:2']);
+  });
+
+  it('folds a handoff into the block', () => {
+    const parts = withIndex([
+      text('I will hand this to the Presentation Assistant.'),
+      namedCall('h1', 'transfer_to_agent_office_presentations'),
+      namedCall('s1', 'skill', '{"skillName":"pptx"}'),
+      text('Created the deck.'),
+    ]);
+
+    expect(kinds(groupSequentialToolCalls(parts, { compact: true }))).toEqual([
+      'group:0,1,2',
+      'single:3',
+    ]);
+  });
+
+  it('keeps a question to the user outside the block', () => {
+    const parts = withIndex([
+      think('unsure'),
+      toolCall('t1'),
+      namedCall('q1', 'ask_user_question'),
+      toolCall('t2'),
+      text('Answer.'),
+    ]);
+
+    expect(kinds(groupSequentialToolCalls(parts, { compact: true }))).toEqual([
+      'group:0,1',
+      'single:2',
+      'group:3',
+      'single:4',
+    ]);
+  });
+
+  it('leaves a turn with no steps as it was', () => {
+    const parts = withIndex([think('just thinking'), text('Answer.')]);
+
+    expect(kinds(groupSequentialToolCalls(parts, { compact: true }))).toEqual([
+      'single:0',
+      'single:1',
+    ]);
+  });
+
+  it('defers to server activity labels when they are present', () => {
+    const parts = withIndex([
+      think('a'),
+      toolCall('t1'),
+      label('Searched the web'),
+      text('Answer.'),
+    ]);
+
+    expect(groupSequentialToolCalls(parts, { compact: true })).toEqual(
+      groupSequentialToolCalls(parts),
+    );
+  });
+});

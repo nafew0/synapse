@@ -12,6 +12,7 @@ import { langFromPath } from './ReadFileCall';
 import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import StepRow from './StepRow';
 
 type FileAuthoringToolName = 'create_file' | 'edit_file';
 
@@ -134,7 +135,7 @@ export default function FileAuthoringCall({
    *  `Created`/`Updated`, so key the finished label off it for truthfulness. */
   const overwrote = isCreate && output.startsWith('Updated ');
   const filePath = useMemo(() => parseJsonField(args, 'file_path'), [args]);
-  const intent = useToolCallIntent(args);
+  const intent = useToolCallIntent(args, toolName);
   const authoredContent = useMemo(() => parseJsonField(args, 'content'), [args]);
   const editArgsPreview = useMemo(() => buildEditArgsPreview(args), [args]);
   const fileName = filePath.split('/').pop() || filePath;
@@ -179,7 +180,7 @@ export default function FileAuthoringCall({
 
   return (
     <>
-      <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
+      <StepRow>
         <ProgressText
           phase={phase}
           onClick={toggleCode}
@@ -208,7 +209,7 @@ export default function FileAuthoringCall({
           hasInput={hasContent}
           isExpanded={showCode}
         />
-      </div>
+      </StepRow>
       {detailsEnabled && (
         <div style={expandStyle}>
           <div className="overflow-hidden" ref={expandRef}>
