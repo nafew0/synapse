@@ -51,6 +51,7 @@ const namespaces = {
   [CacheKeys.TOOL_CACHE]: standardCache(CacheKeys.TOOL_CACHE),
   [CacheKeys.PENDING_REQ]: standardCache(CacheKeys.PENDING_REQ),
   [CacheKeys.ENCODED_DOMAINS]: new Keyv({ store: keyvMongo, namespace: CacheKeys.ENCODED_DOMAINS }),
+  [CacheKeys.DOCUMENT_OCR]: standardCache(CacheKeys.DOCUMENT_OCR, Time.ONE_DAY * 7),
   [CacheKeys.ABORT_KEYS]: standardCache(CacheKeys.ABORT_KEYS, Time.TEN_MINUTES),
   [CacheKeys.TOKEN_CONFIG]: standardCache(CacheKeys.TOKEN_CONFIG, Time.THIRTY_MINUTES),
   [CacheKeys.GEN_TITLE]: standardCache(CacheKeys.GEN_TITLE, Time.TWO_MINUTES),

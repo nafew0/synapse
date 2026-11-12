@@ -254,6 +254,7 @@ function stripRestrictedFields(row, restrictToLabeled) {
   }
   const {
     totalCost: _totalCost,
+    ocrCost: _ocrCost,
     providerKey: _providerKey,
     providerModelId: _providerModelId,
     ...visible
@@ -328,7 +329,7 @@ async function getUsageSummary({ tenantId, start, end, labels }) {
 
   /** "Models used" counts the models members can pick today: the table's rows,
    *  less the one row superadmins see for retired models. */
-  const [[summary], models] = await Promise.all([
+  const [[summary], models, [ocr]] = await Promise.all([
     tenantStorage.run({ tenantId }, async () =>
       Transaction.aggregate([
         { $match: getBaseMatch(range) },
@@ -347,9 +348,19 @@ async function getUsageSummary({ tenantId, start, end, labels }) {
       ]),
     ),
     aggregateModelUsage({ tenantId, range, labels }),
+    tenantStorage.run({ tenantId }, async () =>
+      Transaction.aggregate([
+        { $match: { createdAt: { $gte: range.start, $lt: range.end }, usageKind: 'ocr' } },
+        { $group: { _id: null, ocrPages: { $sum: '$pages' }, ocrCost: { $sum: '$costUsd' } } },
+        { $project: { _id: 0, ocrPages: 1, ocrCost: 1 } },
+      ]),
+    ),
   ]);
 
   const resolved = {
+    ocrPages: 0,
+    ocrCost: 0,
+    ...(ocr ?? {}),
     promptTokens: 0,
     completionTokens: 0,
     totalTokens: 0,

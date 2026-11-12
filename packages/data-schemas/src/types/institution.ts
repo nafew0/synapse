@@ -9,6 +9,7 @@ export interface IInstitution extends Document {
   status: InstitutionStatus;
   authDomains?: string[];
   timezone?: string;
+  ocrAccess?: boolean;
   usagePolicyVersion?: number;
   packageAssignment?: {
     packageId: string;

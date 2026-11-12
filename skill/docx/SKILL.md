@@ -65,13 +65,25 @@ Every tool call spends part of a fixed step budget for the whole request. A run 
 
 ## From a scan or photo of a page
 
-A picture of an office order, letter or notice to be turned into Word: read `references/scan.md` (`read_file /mnt/data/skills/docx/references/scan.md`) and follow it. It is about five tool calls with `scripts/crop.py` and `scripts/letter.py`; do not hand-write a docx-js script for it.
+When `read_document` has saved `document-<id>.elements.json` for this request, do not read any reference or transcribe. Run the one command, then read its comparison image:
+
+```bash
+cd /mnt/data && python3 /mnt/data/skills/docx/scripts/scan_to_docx.py document-<id>.elements.json <source file> /mnt/data/<name>.docx
+```
+
+Name the file the user should get in that command. Every file written to `/mnt/data` is delivered to the user, so never copy or rename the result afterwards: a copy reaches them as a second file even if you delete it. Deliver that `.docx` even when the user said "doc"; never convert it to `.doc` (see below).
+
+Deliver if the comparison shows every block in place. Only if a block is clearly wrong, make a small `edit_file` to `qa/spec.json` and rerun `python3 /mnt/data/skills/docx/scripts/letter.py qa/spec.json /mnt/data/<name>.docx --source <page image>`. Never rewrite the whole spec, and do not check numbers against the image: tell the user in one line that they should check numbers and anything handwritten.
+
+Otherwise, a picture of an office order, letter or notice to be turned into Word: read `references/scan.md` (`read_file /mnt/data/skills/docx/references/scan.md`) and follow it. It is about five tool calls with `scripts/crop.py` and `scripts/letter.py`; do not hand-write a docx-js script for it.
 
 ## Editing existing documents
 
 Match the document's existing fonts, colours, styles and structure. Edit the XML in place; never rebuild the content in a new document, which drops the original styling.
 
 Legacy `.doc` files must be converted first: `python scripts/office/soffice.py --headless --convert-to docx file.doc`.
+
+Deliver `.docx` even when the user says "doc": to Bangla users "doc" means a Word file. Converting to Word 97 `.doc` drops the embedded Nikosh and sets Bangla runs to Times New Roman, so it opens broken. Make a `.doc` only when they ask for Word 97 by name, and then as a second file beside the `.docx`.
 
 **Unpack, edit and repack must be ONE `bash_tool` call**, chained with `&&` and ending in
 the `mv` onto the delivered path. Not one call to unpack and another to edit: `/tmp` is

@@ -8,6 +8,7 @@ const {
   isFirecrawlTool,
   createFirecrawlTool,
   isFileAuthoringTool,
+  READ_DOCUMENT_TOOL_NAME,
   resolveFirecrawlBudgetScope,
   loadWebSearchAuth,
   splitMCPToolKey,
@@ -61,6 +62,7 @@ const {
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
 const { createChatFileTool } = require('~/server/services/Files/authoring');
+const { createDocumentReader } = require('~/server/services/Files/documents');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
@@ -431,6 +433,12 @@ const loadTools = async ({
       continue;
     } else if (tool === ASK_USER_QUESTION_TOOL_NAME) {
       requestedTools[tool] = async () => createAskUserQuestionTool();
+      continue;
+    } else if (tool === READ_DOCUMENT_TOOL_NAME) {
+      const reader = await createDocumentReader(options.req, agent?.id);
+      if (reader) {
+        requestedTools[tool] = async () => reader;
+      }
       continue;
     } else if (isFileAuthoringTool(tool)) {
       requestedTools[tool] = async () => createChatFileTool(tool, options.req);

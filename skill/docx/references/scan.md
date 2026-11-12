@@ -8,6 +8,14 @@ A scanned PDF works the same way: first render it with `pdftoppm -r 150 -png <fi
 
 The whole job is five tool calls after loading this skill. Do not add OCR, enlarged crops, or a hand-written docx-js script: each of those has cost runs ten extra steps and made the file worse.
 
+## If `read_document` saved elements
+
+Use the Word conversion command in the skill's "From a scan or photo of a page" section. Follow this page only for its spec reference, when a block must change, or for the steps below when `read_document` is not available.
+
+If the file is not there, or `read_document` said it could not read the file, carry on from step 1.
+
+Asked for a PDF rather than Word: build the Word file the same way; `letter.py` leaves the PDF at `qa/<name>.pdf`, so copy that to `/mnt/data/<name>.pdf` and deliver it.
+
 ## 1. Look at the scan
 
 Make the reading copies, in a call of its own:
@@ -59,7 +67,7 @@ The spec is data. Use the block types in the order they appear on the page:
 }
 ```
 
-Other blocks: `{"type": "image", "path": ..., "width_cm": ...}` and `{"type": "spacer", "pt": 6}`. Any block takes `align` (left, center, right, justify), `size`, `bold`, `space_before` and `space_after` in points. A signature is its cropped image plus its printed lines; never type the handwriting out as text.
+Other blocks: `{"type": "image", "path": ..., "width_cm": ...}`, `{"type": "spacer", "pt": 6}` and `{"type": "table", "rows": [[{"text": ..., "header": true, "colspan": 2, "rowspan": 1}, ...], ...], "widths_cm": [...]}`. Any block takes `align` (left, center, right, justify), `size`, `bold`, `space_before` and `space_after` in points. A signature is its cropped image plus its printed lines; never type the handwriting out as text.
 
 Handwritten margin notes, "Received" stamps and initials added after printing are not part of the document: leave them out and say so in one line.
 

@@ -120,6 +120,37 @@ describe('File Methods', () => {
     });
   });
 
+  describe('preparation scan verdicts', () => {
+    const create = (preparation: Record<string, unknown>) =>
+      fileMethods.createFile({
+        user: new mongoose.Types.ObjectId(),
+        file_id: uuidv4(),
+        bytes: 1,
+        filename: 'order.pdf',
+        filepath: '/uploads/order.pdf',
+        type: 'application/pdf',
+        object: 'file',
+        metadata: { preparation },
+      } as never);
+
+    it('stores which pages need OCR', async () => {
+      const scan = { pages: 3, ocrPages: [2, 3], garbledPages: [3] };
+      const file = await create({ delivery: 'search', scan });
+      const { metadata } = await File.findOne({ file_id: file?.file_id })
+        .lean<{ metadata: { preparation: { scan: unknown } } }>()
+        .orFail();
+      expect(metadata.preparation.scan).toEqual(scan);
+    });
+
+    it('adds nothing to a file that was not classified', async () => {
+      const file = await create({ delivery: 'search' });
+      const { metadata } = await File.findOne({ file_id: file?.file_id })
+        .lean<{ metadata: { preparation: Record<string, unknown> } }>()
+        .orFail();
+      expect(metadata.preparation).not.toHaveProperty('scan');
+    });
+  });
+
   describe('claimCodeFile', () => {
     it('claims code output files independently per tenant', async () => {
       const userId = new mongoose.Types.ObjectId().toString();

@@ -19,6 +19,7 @@ import { fileToArtifact, TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
 import Image from '~/components/Chat/Messages/Content/Image';
 import ToolMermaidArtifact from './ToolMermaidArtifact';
 import ToolArtifactCard from './ToolArtifactCard';
+import { PendingDownload, useDownloadReady } from './delivery';
 import { useAttachmentLink } from './LogLink';
 import { useLocalize, useAttachmentPreviewSync, useExpandCollapse } from '~/hooks';
 import { cn, getFileType } from '~/utils';
@@ -26,6 +27,16 @@ import { cn, getFileType } from '~/utils';
 const COLLAPSED_MAX_HEIGHT = 320;
 /** Up to this many generated files show as their own download chips; more fold into one group. */
 const INLINE_FILE_LIMIT = 3;
+const DOWNLOAD_CHIP_CLASS =
+  'bg-surface-secondary hover:cursor-pointer hover:bg-surface-hover active:bg-surface-secondary focus:bg-surface-hover hover:border-border-heavy active:border-border-heavy';
+const PENDING_CHIP_CLASS = 'bg-surface-secondary cursor-default';
+
+const PendingSubtitle = ({ label }: { label: string }) => (
+  <div className="flex items-center gap-1.5 truncate text-xs text-text-secondary" title={label}>
+    <Loader2 className="h-3 w-3 shrink-0 animate-spin" aria-hidden="true" />
+    <span className="truncate">{label}</span>
+  </div>
+);
 
 /**
  * Card-shaped placeholder for a code-execution office file whose
@@ -54,6 +65,7 @@ const PreviewPlaceholderCard = memo(
     previewError?: string;
   }) => {
     const localize = useLocalize();
+    const downloadReady = useDownloadReady();
     const file = attachment as TFile & TAttachmentMetadata;
     const { handleDownload } = useAttachmentLink({
       href: attachment.filepath ?? '',
@@ -101,19 +113,23 @@ const PreviewPlaceholderCard = memo(
             </div>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={handleDownload}
-          aria-label={`${localize('com_ui_download')} ${visibleFilename}`}
-          title={localize('com_ui_download')}
-          className={cn(
-            'flex shrink-0 items-center justify-center px-3 transition-colors duration-200',
-            'rounded-r-xl bg-surface-tertiary text-text-secondary hover:bg-surface-hover hover:text-text-primary',
-            'border-l border-border-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
-          )}
-        >
-          <Download className="size-4" aria-hidden="true" />
-        </button>
+        {downloadReady ? (
+          <button
+            type="button"
+            onClick={handleDownload}
+            aria-label={`${localize('com_ui_download')} ${visibleFilename}`}
+            title={localize('com_ui_download')}
+            className={cn(
+              'flex shrink-0 items-center justify-center px-3 transition-colors duration-200',
+              'rounded-r-xl bg-surface-tertiary text-text-secondary hover:bg-surface-hover hover:text-text-primary',
+              'border-l border-border-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-heavy',
+            )}
+          >
+            <Download className="size-4" aria-hidden="true" />
+          </button>
+        ) : (
+          <PendingDownload />
+        )}
       </div>
     );
   },
@@ -121,6 +137,8 @@ const PreviewPlaceholderCard = memo(
 PreviewPlaceholderCard.displayName = 'PreviewPlaceholderCard';
 
 const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> }) => {
+  const localize = useLocalize();
+  const downloadReady = useDownloadReady();
   const [isVisible, setIsVisible] = useState(false);
   const file = attachment as TFile & TAttachmentMetadata;
   const { handleDownload } = useAttachmentLink({
@@ -189,11 +207,16 @@ const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> 
     >
       <FileContainer
         file={attachment}
-        onClick={handleDownload}
+        onClick={downloadReady ? handleDownload : undefined}
         overrideType={extension}
         displayName={displayFilename(attachment.filename)}
+        subtitle={
+          downloadReady ? undefined : (
+            <PendingSubtitle label={localize('com_ui_download_after_reply')} />
+          )
+        }
         containerClassName="max-w-fit"
-        buttonClassName="bg-surface-secondary hover:cursor-pointer hover:bg-surface-hover active:bg-surface-secondary focus:bg-surface-hover hover:border-border-heavy active:border-border-heavy"
+        buttonClassName={downloadReady ? DOWNLOAD_CHIP_CLASS : PENDING_CHIP_CLASS}
       />
     </div>
   );
@@ -320,6 +343,7 @@ const TextAttachment = memo(
     showFileChip?: boolean;
   }) => {
     const localize = useLocalize();
+    const downloadReady = useDownloadReady();
     const preId = useId();
     const preRef = useRef<HTMLPreElement>(null);
     const [isVisible, setIsVisible] = useState(false);
@@ -371,11 +395,16 @@ const TextAttachment = memo(
         {attachment.filepath && showFileChip && (
           <FileContainer
             file={attachment}
-            onClick={handleDownload}
+            onClick={downloadReady ? handleDownload : undefined}
             overrideType={extension}
             displayName={displayFilename(attachment.filename)}
+            subtitle={
+              downloadReady ? undefined : (
+                <PendingSubtitle label={localize('com_ui_download_after_reply')} />
+              )
+            }
             containerClassName="max-w-fit"
-            buttonClassName="bg-surface-secondary hover:cursor-pointer hover:bg-surface-hover active:bg-surface-secondary focus:bg-surface-hover hover:border-border-heavy active:border-border-heavy"
+            buttonClassName={downloadReady ? DOWNLOAD_CHIP_CLASS : PENDING_CHIP_CLASS}
           />
         )}
         <div className="overflow-hidden rounded-lg bg-surface-secondary">
@@ -384,7 +413,7 @@ const TextAttachment = memo(
               <span className="min-w-0 truncate text-sm font-medium" title={visibleFilename}>
                 {visibleFilename}
               </span>
-              {attachment.filepath && (
+              {attachment.filepath && downloadReady && (
                 <button
                   type="button"
                   onClick={handleDownload}

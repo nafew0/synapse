@@ -1448,6 +1448,46 @@ describe('processAgentFileUpload', () => {
         );
       });
 
+      test('copies the image before storing it, as local storage deletes the upload', async () => {
+        /* Local image storage converts the upload and unlinks the temp file. The sandbox copy
+         * read that path afterwards and failed with ENOENT, so a scanned order never reached
+         * /mnt/data and the scan rebuild had nothing to work on. */
+        db.getAgent.mockResolvedValueOnce({ id: 'agent_office', tools: ['execute_code'] });
+        const tempPath = nodePath.join(uploadDir, 'office-order.jpg');
+        nodeFs.writeFileSync(tempPath, 'jpeg bytes');
+        const received = [];
+        routeStrategies({
+          codeEnv: {
+            handleFileUpload: jest.fn(async ({ stream }) => {
+              for await (const chunk of stream) {
+                received.push(chunk);
+              }
+              return { storage_session_id: 'sess-1', file_id: 'code-file-1' };
+            }),
+          },
+          storage: {
+            handleImageUpload: jest.fn(async ({ file }) => {
+              await nodeFs.promises.unlink(file.path);
+              return { bytes: 10, width: 768, height: 1086, filepath: '/images/office-order.png' };
+            }),
+          },
+        });
+
+        await processImageFile({
+          req: makeReq({ mimetype: 'image/jpeg', ocrConfig: null, path: tempPath }),
+          res: mockRes,
+          metadata: { file_id: 'img-1', agent_id: 'agent_office', message_file: 'true' },
+        });
+
+        expect(Buffer.concat(received).toString()).toBe('jpeg bytes');
+        expect(db.createFile).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: expect.objectContaining({ codeEnvRef: expect.anything() }),
+          }),
+          true,
+        );
+      });
+
       test('keeps the image out of the sandbox for an agent without execute_code', async () => {
         db.getAgent.mockResolvedValueOnce({ id: 'agent_chat', tools: ['file_search'] });
 

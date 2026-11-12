@@ -477,6 +477,10 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
   const { handleImageUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id, endpoint } = metadata;
 
+  /* Before storing: local image storage converts the upload and deletes the temp file. */
+  const sandboxMetadata = returnFile
+    ? undefined
+    : await getImageSandboxMetadata({ req, file, metadata });
   const { filepath, bytes, width, height, storageKey, storageRegion } = await handleImageUpload({
     req,
     file,
@@ -484,9 +488,6 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
     endpoint,
   });
   const storageMetadata = getStorageMetadata({ filepath, source, storageKey, storageRegion });
-  const sandboxMetadata = returnFile
-    ? undefined
-    : await getImageSandboxMetadata({ req, file, metadata });
 
   const result = await db.createFile(
     {
@@ -754,6 +755,8 @@ const uploadToCodeEnvironment = async ({ req, file, agent_id, messageAttachment 
  * @param {boolean} params.ocrAvailable - A configured OCR service may be used for this file.
  * @param {number} params.ocrMinCharsPerPage
  * @param {() => void} [params.onRecognize] - Called just before the OCR request goes out.
+ * @param {(scan: import('librechat-data-provider').FilePageScan) => void} [params.onClassify] - Gets
+ *   the per-page verdicts. A callback because a fully scanned PDF has no text to return them with.
  * @returns {Promise<{ text: string, bytes: number, filepath?: string, pages?: number, ocrApplied: boolean } | undefined>}
  */
 const extractDocumentText = async ({
@@ -762,18 +765,25 @@ const extractDocumentText = async ({
   ocrAvailable,
   ocrMinCharsPerPage,
   onRecognize,
+  onClassify,
 }) => {
   let parsed;
+  let scan;
   if (isDocumentParserType(file.mimetype)) {
     try {
       const { handleFileUpload } = getStrategyFunctions(FileSources.document_parser);
-      parsed = await handleFileUpload({ req, file, loadAuthValues });
+      parsed = await handleFileUpload({ req, file, loadAuthValues, ocrMinCharsPerPage });
+      scan = parsed?.scan;
     } catch (err) {
+      scan = err?.scan;
       logger.warn(
         `[processAgentFileUpload] Document parser found no text in "${file.originalname}":`,
         err,
       );
     }
+  }
+  if (scan) {
+    onClassify?.(scan);
   }
 
   const readsAsScan = shouldEscalateToOcr({
@@ -812,7 +822,14 @@ const extractDocumentText = async ({
  *
  * @returns {Promise<{ text: string, bytes: number, filepath?: string, type?: string, ocrApplied: boolean, pages?: number }>}
  */
-const resolveContextExtraction = async ({ req, file, metadata, appConfig, onRecognize }) => {
+const resolveContextExtraction = async ({
+  req,
+  file,
+  metadata,
+  appConfig,
+  onRecognize,
+  onClassify,
+}) => {
   const fileConfig = mergeFileConfig(appConfig.fileConfig);
   const { file_id } = metadata;
 
@@ -851,6 +868,7 @@ const resolveContextExtraction = async ({ req, file, metadata, appConfig, onReco
       ocrAvailable: isOcrConfigured,
       ocrMinCharsPerPage: autoConfig.ocrMinCharsPerPage,
       onRecognize,
+      onClassify,
     });
     if (extracted) {
       return extracted;
@@ -1215,6 +1233,7 @@ const extractPreparedText = async ({
   autoConfig,
   category,
   sseStream,
+  onClassify,
 }) => {
   if (category === FileCategory.audio) {
     if (!fileConfig.checkType(file.mimetype, fileConfig.stt?.supportedMimeTypes || [])) {
@@ -1232,6 +1251,7 @@ const extractPreparedText = async ({
       ocrAvailable: availability.ocr,
       ocrMinCharsPerPage: autoConfig.ocrMinCharsPerPage,
       onRecognize: () => sseStream?.sendProgress(UploadStage.recognizing),
+      onClassify,
     });
     if (extracted?.text?.trim()) {
       return extracted;
@@ -1437,6 +1457,7 @@ const prepareUploadAutomatically = async ({ req, res, metadata, sseStream }) => 
   };
 
   sseStream?.sendProgress(UploadStage.reading);
+  let scan;
   const extracted = await extractPreparedText({
     req,
     file,
@@ -1446,6 +1467,9 @@ const prepareUploadAutomatically = async ({ req, res, metadata, sseStream }) => 
     autoConfig,
     category,
     sseStream,
+    onClassify: (verdicts) => {
+      scan = verdicts;
+    },
   });
 
   const [textTokens, conversationUsedTokens] = await Promise.all([
@@ -1491,7 +1515,8 @@ const prepareUploadAutomatically = async ({ req, res, metadata, sseStream }) => 
     delivery: plan.delivery,
     label: plan.label,
     ocrApplied: plan.ocrApplied,
-    pageCount: extracted?.pages,
+    pageCount: extracted?.pages ?? scan?.pages,
+    scan,
   };
 
   if (plan.delivery === DeliveryMethod.full_text) {
@@ -1638,12 +1663,16 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     }
     // Note: File search processing continues to dual storage logic below
   } else if (tool_resource === EToolResources.context) {
+    let scan;
     const extracted = await resolveContextExtraction({
       req,
       file,
       metadata,
       appConfig,
       onRecognize: () => sseStream?.sendProgress(UploadStage.recognizing),
+      onClassify: (verdicts) => {
+        scan = verdicts;
+      },
     });
     const result = await persistExtractedText({
       req,
@@ -1661,6 +1690,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           delivery: DeliveryMethod.full_text,
           ocrApplied: extracted.ocrApplied === true,
           pageCount: extracted.pages,
+          scan,
         },
       },
     });

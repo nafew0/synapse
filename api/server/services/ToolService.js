@@ -13,6 +13,9 @@ const {
   getUserMCPAuthMap,
   firecrawlToolNames,
   fileAuthoringToolNames: chatFileToolNames,
+  READ_DOCUMENT_TOOL_NAME,
+  isDocumentOcrAllowed,
+  buildDocumentReadContext,
   isFirecrawlTool,
   isFirecrawlConfigured,
   loadToolDefinitions,
@@ -41,6 +44,7 @@ const {
   isFatalAgentInitializationError,
   resolveCodeExecutionContext,
 } = require('@librechat/api');
+const { getDocumentOcrAccess } = require('~/server/services/Files/documents');
 const {
   Time,
   Tools,
@@ -535,6 +539,7 @@ const nativeTools = new Set([
   Tools.memory,
   ...firecrawlToolNames,
   ...chatFileToolNames,
+  READ_DOCUMENT_TOOL_NAME,
 ]);
 
 const mcpServerPinPrefix = `${Constants.mcp_server}${Constants.mcp_delimiter}`;
@@ -657,6 +662,9 @@ async function loadToolDefinitionsWrapper({
       ? await primeSearchResources({ req, agent, agentResourceType, tool_resources })
       : null;
 
+  const ocrAccess = agent.tools?.includes(READ_DOCUMENT_TOOL_NAME)
+    ? await getDocumentOcrAccess(req)
+    : false;
   const filteredTools = agent.tools?.filter((tool) => {
     if (tool === Tools.file_search) {
       return (primedSearch?.files?.length ?? 0) > 0;
@@ -669,6 +677,13 @@ async function loadToolDefinitionsWrapper({
     }
     if (isFirecrawlTool(tool)) {
       return isFirecrawlConfigured();
+    }
+    if (tool === READ_DOCUMENT_TOOL_NAME) {
+      return isDocumentOcrAllowed({
+        config: req.config?.documentOcr,
+        ocrAccess,
+        agentId: agent.id,
+      });
     }
     if (tool === Tools.memory) {
       return checkCapability(AgentCapabilities.memory);
@@ -1220,6 +1235,15 @@ async function loadToolDefinitionsWrapper({
         throw error;
       }
       logger.error('[loadToolDefinitionsWrapper] Error priming code files:', error);
+    }
+  }
+
+  if (filteredTools.includes(READ_DOCUMENT_TOOL_NAME)) {
+    const scanContext = buildDocumentReadContext(
+      Object.values(tool_resources ?? {}).flatMap((resource) => resource?.files ?? []),
+    );
+    if (scanContext) {
+      dynamicToolContextMap[READ_DOCUMENT_TOOL_NAME] = scanContext;
     }
   }
 
