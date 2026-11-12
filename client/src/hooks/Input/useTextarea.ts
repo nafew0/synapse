@@ -10,6 +10,7 @@ import type { UploadLifecycleCallbacks } from '~/hooks/Files/useFileHandling';
 import {
   forceResize,
   insertTextAtCursor,
+  PER_FILE_UPLOAD_ROUTE,
   resolvePastedTextFile,
   getNewConversationDraftToken,
   getComposerDraftId,
@@ -27,7 +28,7 @@ import useFileUploadRouter from '~/hooks/Files/useFileUploadRouter';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import useUploadOptions from '~/hooks/Files/useUploadOptions';
-import { useInteractionHealthCheck } from '~/data-provider';
+import { useGetStartupConfig, useInteractionHealthCheck } from '~/data-provider';
 import { resolveComposerKeyDown } from '~/utils/shortcuts';
 import { useChatContext } from '~/Providers/ChatContext';
 import { useUploadModalContext } from '~/Providers';
@@ -36,6 +37,19 @@ import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 type KeyEvent = KeyboardEvent<HTMLTextAreaElement>;
+
+/** A file copied from a file manager also carries its name as plain text, which must not be
+ * pasted beside the upload; text copied with a picture of it (Word, Excel) is kept. */
+const isOnlyFileNames = (text: string, files: FileList): boolean => {
+  const names = new Set<string>();
+  for (const file of files) {
+    names.add(file.name);
+  }
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .every((line) => line === '' || names.has(line));
+};
 
 export default function useTextarea({
   textAreaRef,
@@ -72,6 +86,9 @@ export default function useTextarea({
   } = useUploadOptions();
   const routeFiles = useFileUploadRouter();
   const { openModal } = useUploadModalContext();
+  const { data: startupConfig } = useGetStartupConfig();
+  /** Same rule as drag-and-drop: with preparation on there is no destination to ask about. */
+  const autoPreparationEnabled = startupConfig?.autoFilePreparationEnabled === true;
   const assistantMap = useAssistantsMapContext();
   const checkHealth = useInteractionHealthCheck();
   const enterToSend = useRecoilValue(store.enterToSend);
@@ -290,6 +307,10 @@ export default function useTextarea({
           return await upload();
         }
 
+        if (preferred == null && autoPreparationEnabled) {
+          return await upload(PER_FILE_UPLOAD_ROUTE);
+        }
+
         /** Resolving options reads the file config, so until that lands the list is empty for
          * reasons that have nothing to do with this file. A caller that already knows where the
          * file belongs hands it to the upload instead, which waits for the same config and
@@ -328,6 +349,7 @@ export default function useTextarea({
       setFilesLoading,
       getUploadOptions,
       isUploadConfigPending,
+      autoPreparationEnabled,
     ],
   );
 
@@ -344,6 +366,9 @@ export default function useTextarea({
       }
 
       if (clipboardData.files.length > 0) {
+        if (isOnlyFileNames(clipboardData.getData('text/plain'), clipboardData.files)) {
+          e.preventDefault();
+        }
         const timestampedFiles: File[] = [];
         for (const file of clipboardData.files) {
           const newFile = new File([file], `clipboard_${+new Date()}_${file.name}`, {
