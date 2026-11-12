@@ -173,6 +173,9 @@ interface:
   marketplace:
     use: false
   fileCitations: true
+  # Tool steps show a short label (and sources for web reads), never their code,
+  # arguments or raw output.
+  toolDetails: false
   # Stated explicitly on purpose. `create` is only written to the role when this key is
   # present, or on a role's first seed (packages/api/src/app/permissions.ts). A role that
   # once had CREATE turned off keeps it until an explicit key overrides it, so omitting

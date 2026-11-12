@@ -8,7 +8,7 @@ import type {
   SearchResultData,
   PartMetadata,
 } from 'librechat-data-provider';
-import { FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
+import { SourceList, SourceFaviconStack } from '~/components/Web/SourceList';
 import { useLocalize, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import { StackedFavicons } from '~/components/Web/Sources';
 import { useToolCallIntent } from './Parts/intent';
@@ -21,8 +21,6 @@ type ProgressKeys =
   | 'com_ui_web_searching_again'
   | 'com_ui_web_search_processing'
   | 'com_ui_web_search_reading';
-
-const MAX_VISIBLE_FAVICONS = 3;
 
 function collectSources(results: Record<string, SearchResultData>): ValidSource[] {
   const sourceMap = new Map<string, ValidSource>();
@@ -42,44 +40,6 @@ function collectSources(results: Record<string, SearchResultData>): ValidSource[
     });
   }
   return Array.from(sourceMap.values());
-}
-
-function getUniqueDomainSources(sources: ValidSource[], max: number): ValidSource[] {
-  const seen = new Set<string>();
-  const result: ValidSource[] = [];
-  for (const source of sources) {
-    const domain = getCleanDomain(source.link);
-    if (seen.has(domain)) {
-      continue;
-    }
-    seen.add(domain);
-    result.push(source);
-    if (result.length >= max) {
-      break;
-    }
-  }
-  return result;
-}
-
-function SourceFaviconStack({ sources }: { sources: ValidSource[] }) {
-  const visible = getUniqueDomainSources(sources, MAX_VISIBLE_FAVICONS);
-  return (
-    <div className="flex items-center" aria-hidden="true">
-      {visible.map((source, i) => (
-        <div
-          key={source.link}
-          className={cn(
-            'relative flex items-center justify-center rounded-full border border-border-medium bg-surface-secondary',
-            'h-[22px] w-[22px]',
-            i > 0 && '-ml-2.5',
-          )}
-          style={{ zIndex: MAX_VISIBLE_FAVICONS - i }}
-        >
-          <FaviconImage domain={getCleanDomain(source.link)} className="size-3 rounded-full" />
-        </div>
-      ))}
-    </div>
-  );
 }
 
 export default function WebSearch({
@@ -276,31 +236,7 @@ export default function WebSearch({
         {hasSourceData && (
           <div style={sourceExpandStyle} onTransitionEnd={handleTransitionEnd}>
             <div className="overflow-hidden" ref={sourceExpandRef}>
-              {shouldRenderBody && (
-                <div className="my-2 max-h-[280px] overflow-y-auto rounded-lg border border-border-light">
-                  {allSources.map((source, i) => {
-                    const domain = getCleanDomain(source.link);
-                    return (
-                      <a
-                        key={source.link}
-                        href={source.link}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={cn(
-                          'flex items-center gap-2.5 px-3 py-2 transition-colors hover:bg-surface-hover',
-                          i > 0 && 'border-t border-border-light',
-                        )}
-                      >
-                        <FaviconImage domain={domain} className="size-4 shrink-0 rounded-sm" />
-                        <span className="min-w-0 flex-1 truncate text-xs font-medium text-text-primary">
-                          {source.title || domain}
-                        </span>
-                        <span className="shrink-0 text-[11px] text-text-secondary">{domain}</span>
-                      </a>
-                    );
-                  })}
-                </div>
-              )}
+              {shouldRenderBody && <SourceList sources={allSources} />}
             </div>
           </div>
         )}

@@ -160,9 +160,9 @@ master:
 
     ## Web sources
 
-    When the user gives a URL, read it with firecrawl_scrape before writing anything, using the
+    When the user gives a URL, read it with read_web_page before writing anything, using the
     URL exactly as given. When the task needs current or published information (news, prices,
-    rules, recent research, facts about an organisation), search with firecrawl_search first; do
+    rules, recent research, facts about an organisation), search with search_web first; do
     not answer such questions from memory. Every search and every page
     read costs money: one well-phrased search is usually enough, so search again only when the
     first finds nothing useful. Read only the pages that directly answer the request, at most
@@ -269,7 +269,7 @@ master:
   provider: OpenRouter
   model: anthropic/claude-haiku-5.5
   model_parameters: { reasoning_effort: medium }
-  tools: [ask_user_question, execute_code, file_search, firecrawl_search, firecrawl_scrape, read_document]
+  tools: [ask_user_question, execute_code, file_search, search_web, read_web_page, read_document]
   skills_enabled: true
   subagents: { enabled: true, allowSelf: false }
   orchestrationOnly: false

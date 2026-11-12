@@ -4,7 +4,10 @@ import { render } from '@testing-library/react';
 import ExecuteCode from '../ExecuteCode';
 import store from '~/store';
 
+const mockToolDetails = jest.fn(() => true);
+
 jest.mock('~/hooks', () => ({
+  useToolDetails: () => mockToolDetails(),
   useLocalize:
     () =>
     (key: string): string =>
@@ -132,5 +135,26 @@ describe('ExecuteCode streaming follow-scroll', () => {
     rerender(finishedCall('print(1)\nprint(2)'));
 
     expect(state.writes).toHaveLength(0);
+  });
+});
+
+describe('ExecuteCode with tool details turned off', () => {
+  afterEach(() => mockToolDetails.mockReturnValue(true));
+
+  it('keeps the code and its output out of the page, even with auto-expand on', () => {
+    mockToolDetails.mockReturnValue(false);
+    const { container } = render(
+      <RecoilRoot initializeState={({ set }) => set(store.autoExpandTools, true)}>
+        <ExecuteCode
+          initialProgress={1}
+          isSubmitting={false}
+          args={{ lang: 'py', code: 'secret_helper()' }}
+          output="raw stdout"
+        />
+      </RecoilRoot>,
+    );
+
+    expect(container.textContent).not.toContain('secret_helper');
+    expect(container.textContent).not.toContain('raw stdout');
   });
 });

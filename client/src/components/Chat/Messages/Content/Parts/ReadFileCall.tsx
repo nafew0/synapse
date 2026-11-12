@@ -89,14 +89,15 @@ export default function ReadFileCall({
   const fileName = filePath.split('/').pop() || filePath;
   const lang = useMemo(() => langFromPath(filePath), [filePath]);
 
-  const { showCode, toggleCode, expandStyle, expandRef, phase, hasOutput } = useToolCallState({
-    initialProgress,
-    isSubmitting,
-    output,
-    hasInput: !!filePath,
-    onExpand,
-    runStepStatus,
-  });
+  const { showCode, toggleCode, expandStyle, expandRef, phase, hasOutput, detailsEnabled } =
+    useToolCallState({
+      initialProgress,
+      isSubmitting,
+      output,
+      hasInput: !!filePath,
+      onExpand,
+      runStepStatus,
+    });
 
   const highlighted = useLazyHighlight(hasOutput ? output : undefined, lang);
 
@@ -126,20 +127,22 @@ export default function ReadFileCall({
           isExpanded={showCode}
         />
       </div>
-      <div style={expandStyle}>
-        <div className="overflow-hidden" ref={expandRef}>
-          {hasOutput && (
-            <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
-              <CodeWindowHeader language={fileName} code={output} />
-              <pre className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt">
-                <code className={`hljs language-${lang} !whitespace-pre`}>
-                  {highlighted ?? output}
-                </code>
-              </pre>
-            </div>
-          )}
+      {detailsEnabled && (
+        <div style={expandStyle}>
+          <div className="overflow-hidden" ref={expandRef}>
+            {hasOutput && (
+              <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
+                <CodeWindowHeader language={fileName} code={output} />
+                <pre className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt">
+                  <code className={`hljs language-${lang} !whitespace-pre`}>
+                    {highlighted ?? output}
+                  </code>
+                </pre>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
       {!hideAttachments && attachments && attachments.length > 0 && (
         <AttachmentGroup attachments={attachments} />
       )}

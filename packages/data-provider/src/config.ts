@@ -1506,6 +1506,8 @@ export const interfaceSchema = z
     webSearch: z.boolean().optional(),
     contextUsage: z.boolean().optional(),
     contextCost: z.boolean().optional(),
+    /** Show tool arguments, code and raw output when a tool step is expanded. */
+    toolDetails: z.boolean().optional(),
     currency: z
       .object({
         code: z.string(),
@@ -1586,6 +1588,7 @@ export const interfaceSchema = z
     webSearch: true,
     contextUsage: true,
     contextCost: false,
+    toolDetails: true,
     peoplePicker: {
       users: true,
       groups: true,
