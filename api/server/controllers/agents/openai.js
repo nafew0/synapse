@@ -280,7 +280,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       getUserKeyValues: db.getUserKeyValues,
       getUserCodeFiles: db.getUserCodeFiles,
       getToolFilesByIds: db.getToolFilesByIds,
-      hasInstitutionKb: db.hasReadyKbDocuments,
+      getInstitutionKbCatalog: db.listReadyKbCatalog,
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
       listSkillsByAccess: skillDbMethods.listSkillsByAccess,
       listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,

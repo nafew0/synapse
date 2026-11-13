@@ -1,7 +1,7 @@
 import type { PartitionFile, UnstructuredElement } from '~/files/unstructured/types';
 import type { KbElement } from './types';
 import { subsetPdf } from '~/files/unstructured/pages';
-import { cleanCell, cleanText } from './normalize';
+import { asListItem, cleanCell, cleanText } from './normalize';
 
 const TEXT_TYPES = new Set([
   'NarrativeText',
@@ -80,7 +80,11 @@ export function ocrToElements(elements: UnstructuredElement[], pages: number[]):
     if (element.type === 'Title') {
       result.push({ kind: 'heading', text, level: element.metadata?.category_depth ?? 1, page });
     } else if (TEXT_TYPES.has(element.type) || element.type === 'Table') {
-      result.push({ kind: 'text', text: element.type === 'ListItem' ? `• ${text}` : text, page });
+      result.push({
+        kind: 'text',
+        text: element.type === 'ListItem' ? asListItem(text) : text,
+        page,
+      });
     }
   }
   return result;

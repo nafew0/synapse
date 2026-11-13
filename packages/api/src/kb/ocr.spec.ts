@@ -32,6 +32,11 @@ describe('ocrToElements', () => {
         { type: 'Header', text: 'UGC', metadata: { page_number: 1 } },
         { type: 'Title', text: 'অফিস আদেশ', metadata: { page_number: 1 } },
         { type: 'ListItem', text: 'সচিব', metadata: { page_number: 2 } },
+        {
+          type: 'ListItem',
+          text: '• Employees file a request through email.',
+          metadata: { page_number: 2 },
+        },
         { type: 'PageNumber', text: '2', metadata: { page_number: 2 } },
       ],
       [3, 7],
@@ -39,6 +44,7 @@ describe('ocrToElements', () => {
     expect(elements).toEqual([
       { kind: 'heading', text: 'অফিস আদেশ', level: 1, page: 3 },
       { kind: 'text', text: '• সচিব', page: 7 },
+      { kind: 'text', text: '• Employees file a request through email.', page: 7 },
     ]);
   });
 });

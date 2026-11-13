@@ -274,6 +274,10 @@ describe('knowledge base documents', () => {
     );
     expect(await asTenant('uni-a', () => methods.hasReadyKbDocuments('uni-a'))).toBe(true);
     expect(await asTenant('uni-b', () => methods.hasReadyKbDocuments('uni-b'))).toBe(false);
+    expect(await asTenant('uni-a', () => methods.listReadyKbCatalog('uni-a'))).toEqual([
+      { title: 'Policy', docType: 'other' },
+    ]);
+    expect(await asTenant('uni-b', () => methods.listReadyKbCatalog('uni-b'))).toEqual([]);
 
     const renamed = await asTenant('uni-a', () =>
       methods.updateKbDocument(String(document._id), {

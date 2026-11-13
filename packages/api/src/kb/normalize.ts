@@ -28,5 +28,10 @@ export function cleanText(text: string): string {
     .trim();
 }
 
+const BULLET = /^[•●▪◦‣∙·\-–*]\s*/;
+
+/** A list item with exactly one leading bullet, whether or not the source already had one. */
+export const asListItem = (text: string): string => `• ${text.replace(BULLET, '')}`;
+
 /** A table cell on one line. */
 export const cleanCell = (text: string): string => cleanText(text).replace(/\s*\n\s*/g, ' ');

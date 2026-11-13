@@ -1,5 +1,5 @@
-import { formatKbResults } from './tool';
-import { forgetInstitutionKb, getKbRagApiUrl, hasInstitutionKb } from './availability';
+import { buildInstitutionKbInstructions, formatKbResults } from './tool';
+import { forgetInstitutionKb, getInstitutionKbCatalog, getKbRagApiUrl } from './availability';
 
 describe('formatKbResults', () => {
   it('numbers each source with its document, section and pages', () => {
@@ -41,18 +41,42 @@ describe('formatKbResults', () => {
   });
 });
 
-describe('hasInstitutionKb', () => {
-  it('asks once a minute per tenant and never without a tenant', async () => {
-    const probe = jest.fn(async (tenantId: string) => tenantId === 'uni-a');
-    expect(await hasInstitutionKb(undefined, probe)).toBe(false);
-    expect(await hasInstitutionKb('uni-a', probe, 1_000)).toBe(true);
-    expect(await hasInstitutionKb('uni-a', probe, 30_000)).toBe(true);
-    expect(probe).toHaveBeenCalledTimes(1);
-    expect(await hasInstitutionKb('uni-a', probe, 62_000)).toBe(true);
-    expect(probe).toHaveBeenCalledTimes(2);
+describe('getInstitutionKbCatalog', () => {
+  it('loads once a minute per tenant and never without a tenant', async () => {
+    const load = jest.fn(async (tenantId: string) =>
+      tenantId === 'uni-a' ? [{ title: 'HR policy', docType: 'policy' }] : [],
+    );
+    expect(await getInstitutionKbCatalog(undefined, load)).toEqual([]);
+    expect(await getInstitutionKbCatalog('uni-a', load, 1_000)).toHaveLength(1);
+    expect(await getInstitutionKbCatalog('uni-a', load, 30_000)).toHaveLength(1);
+    expect(load).toHaveBeenCalledTimes(1);
+    await getInstitutionKbCatalog('uni-a', load, 62_000);
+    expect(load).toHaveBeenCalledTimes(2);
     forgetInstitutionKb('uni-a');
-    await hasInstitutionKb('uni-a', probe, 62_001);
-    expect(probe).toHaveBeenCalledTimes(3);
+    await getInstitutionKbCatalog('uni-a', load, 62_001);
+    expect(load).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('buildInstitutionKbInstructions', () => {
+  it('lists the documents and tells the model to search them before other sources', () => {
+    const text = buildInstitutionKbInstructions([
+      { title: 'Draft Policy for\nWork-From-Home', docType: 'policy' },
+      { title: 'BdREN contacts', docType: 'directory' },
+    ]);
+    expect(text).toContain(
+      '- Draft Policy for Work-From-Home (policy)\n- BdREN contacts (directory)',
+    );
+    expect(text).toMatch(/call `institution_kb` before using web search/);
+    expect(text).toMatch(/"home office"/);
+  });
+
+  it('caps a long list', () => {
+    const catalog = Array.from({ length: 45 }, (_, i) => ({ title: `Doc ${i}`, docType: 'other' }));
+    const text = buildInstitutionKbInstructions(catalog);
+    expect(text).toContain('- Doc 39 (other)');
+    expect(text).not.toContain('- Doc 40 (other)');
+    expect(text).toContain('…and 5 more documents');
   });
 });
 
