@@ -263,6 +263,7 @@ const startServer = async () => {
   app.use('/api/agents/chat', agentStartupIngressMiddleware);
   app.use(metricsMiddleware);
   app.use(noIndex);
+  app.use('/api/browser/llm/v1', routes.browserExtension.llm);
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(handleJsonParseError);
@@ -369,6 +370,7 @@ const startServer = async () => {
   app.use('/api/agents/chat', rejectChatStartsUntilReady);
   app.use('/api/agents', routes.agents);
   app.use('/api/banner', routes.banner);
+  app.use('/api/browser/ext', routes.browserExtension.ext);
   app.use('/api/memories', routes.memories);
   app.use('/api/permissions', routes.accessPermissions);
 

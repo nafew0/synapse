@@ -24,6 +24,10 @@ export interface IInstitution extends Document {
     assignedAt: Date;
     assignedBy?: Types.ObjectId | string;
   } | null;
+  browserControl?: {
+    extensionEnabled?: boolean;
+    blockedDomains?: string[];
+  };
   limits?: {
     maxActiveMembers?: number | null;
   };

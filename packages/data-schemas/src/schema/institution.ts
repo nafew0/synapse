@@ -60,6 +60,14 @@ const institutionSchema: Schema<IInstitution> = new Schema<IInstitution>(
       },
       default: null,
     },
+    /** The browser extension: off until switched on for the institution, with sites it may never open. */
+    browserControl: {
+      type: {
+        extensionEnabled: { type: Boolean, default: false },
+        blockedDomains: { type: [String], default: [] },
+      },
+      default: { extensionEnabled: false, blockedDomains: [] },
+    },
     limits: {
       type: {
         maxActiveMembers: {

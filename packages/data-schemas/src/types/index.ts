@@ -11,6 +11,7 @@ export * from './session';
 export * from './balance';
 export * from './creditGrant';
 export * from './banner';
+export * from './browserExtension';
 export * from './transaction';
 export * from './message';
 export * from './agent';
