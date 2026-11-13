@@ -24,6 +24,8 @@ const config: ExtensionConfig = {
   dailyTokens: 1_000,
   maxOutputTokens: 4_096,
   maxSteps: 50,
+  contextTokens: 400_000,
+  vision: true,
 };
 
 let mongo: MongoMemoryServer;
@@ -151,10 +153,14 @@ describe('sign-in', () => {
     const settings = await request(server)
       .get('/settings')
       .set('Authorization', `Bearer ${first.body.token}`);
+    // The model's own facts come from Synapse: the extension only ever sends the name `synapse`.
     expect(settings.body).toEqual({
       enabled: true,
       blockedDomains: ['bank.example'],
       maxSteps: 50,
+      contextTokens: 400_000,
+      maxOutputTokens: 4_096,
+      vision: true,
     });
   });
 

@@ -102,6 +102,9 @@ export function createExtensionHandlers(deps: {
       enabled: !!institution?.browserControl?.extensionEnabled,
       blockedDomains: institution?.browserControl?.blockedDomains ?? [],
       maxSteps: deps.config().maxSteps,
+      contextTokens: deps.config().contextTokens,
+      maxOutputTokens: deps.config().maxOutputTokens,
+      vision: deps.config().vision,
     });
   };
 
