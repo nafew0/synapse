@@ -7,6 +7,9 @@ const {
   mcpToolPattern,
   isFirecrawlTool,
   createFirecrawlTool,
+  INSTITUTION_KB_TOOL_NAME,
+  createInstitutionKbTool,
+  getKbRagApiUrl,
   isFileAuthoringTool,
   READ_DOCUMENT_TOOL_NAME,
   resolveFirecrawlBudgetScope,
@@ -442,6 +445,13 @@ const loadTools = async ({
       continue;
     } else if (isFileAuthoringTool(tool)) {
       requestedTools[tool] = async () => createChatFileTool(tool, options.req);
+      continue;
+    } else if (tool === INSTITUTION_KB_TOOL_NAME) {
+      const tenantId = options.req?.user?.tenantId;
+      const ragApiUrl = getKbRagApiUrl();
+      if (tenantId && ragApiUrl) {
+        requestedTools[tool] = async () => createInstitutionKbTool({ ragApiUrl, tenantId });
+      }
       continue;
     } else if (isFirecrawlTool(tool)) {
       requestedTools[tool] = async () =>

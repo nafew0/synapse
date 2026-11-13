@@ -18,6 +18,8 @@ const {
   buildDocumentReadContext,
   isFirecrawlTool,
   isFirecrawlConfigured,
+  INSTITUTION_KB_TOOL_NAME,
+  getKbRagApiUrl,
   loadToolDefinitions,
   GenerationJobManager,
   isActionDomainAllowed,
@@ -540,6 +542,7 @@ const nativeTools = new Set([
   ...firecrawlToolNames,
   ...chatFileToolNames,
   READ_DOCUMENT_TOOL_NAME,
+  INSTITUTION_KB_TOOL_NAME,
 ]);
 
 const mcpServerPinPrefix = `${Constants.mcp_server}${Constants.mcp_delimiter}`;
@@ -677,6 +680,9 @@ async function loadToolDefinitionsWrapper({
     }
     if (isFirecrawlTool(tool)) {
       return isFirecrawlConfigured();
+    }
+    if (tool === INSTITUTION_KB_TOOL_NAME) {
+      return Boolean(getKbRagApiUrl() && req.user?.tenantId);
     }
     if (tool === READ_DOCUMENT_TOOL_NAME) {
       return isDocumentOcrAllowed({
@@ -1389,6 +1395,8 @@ async function loadAgentTools({
       return includesWebSearch;
     } else if (isFirecrawlTool(tool)) {
       return isFirecrawlConfigured();
+    } else if (tool === INSTITUTION_KB_TOOL_NAME) {
+      return Boolean(getKbRagApiUrl() && req.user?.tenantId);
     } else if (tool === Tools.memory) {
       return checkCapability(AgentCapabilities.memory);
     } else if (tool === ASK_USER_QUESTION_TOOL_NAME) {

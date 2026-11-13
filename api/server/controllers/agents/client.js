@@ -2077,6 +2077,7 @@ class AgentClient extends BaseClient {
         updateFilesUsage: db.updateFilesUsage,
         getUserKeyValues: db.getUserKeyValues,
         getToolFilesByIds: db.getToolFilesByIds,
+        hasInstitutionKb: db.hasReadyKbDocuments,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         filterFilesByAgentAccess,
       },

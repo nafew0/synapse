@@ -199,6 +199,7 @@ const processAddedConvo = async ({
         getUserCodeFiles: db.getUserCodeFiles,
         getUserKeyValues: db.getUserKeyValues,
         getToolFilesByIds: db.getToolFilesByIds,
+        hasInstitutionKb: db.hasReadyKbDocuments,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         filterFilesByAgentAccess,
         listSkillsByAccess: skillDbMethods.listSkillsByAccess,
