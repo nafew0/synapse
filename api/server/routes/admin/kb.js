@@ -50,6 +50,7 @@ router.post(
   handlers.replace,
 );
 router.patch('/documents/:documentId', canManage, handlers.update);
+router.post('/documents/:documentId/retry', canManage, handlers.retry);
 router.delete('/documents/:documentId', canManage, handlers.remove);
 
 module.exports = router;

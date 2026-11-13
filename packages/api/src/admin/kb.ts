@@ -47,6 +47,7 @@ export interface AdminKbDeps {
     | 'updateKbDocument'
     | 'listKbDocumentVersions'
     | 'deleteKbDocument'
+    | 'retryKbDocument'
   >;
   store: KbFileStore;
   index: Pick<KbIndexClient, 'remove'> | null;
@@ -127,6 +128,7 @@ export interface AdminKbHandlers {
   update: AdminKbHandler;
   versions: AdminKbHandler;
   remove: AdminKbHandler;
+  retry: AdminKbHandler;
 }
 
 export function createAdminKbHandlers(deps: AdminKbDeps): AdminKbHandlers {
@@ -293,5 +295,14 @@ export function createAdminKbHandlers(deps: AdminKbDeps): AdminKbHandlers {
     res.status(204).end();
   });
 
-  return { list, upload, replace, update, versions, remove };
+  const retry = scoped(async (req, res) => {
+    const existing = await findDocument(req.params.documentId);
+    const document = await methods.retryKbDocument(String(existing._id));
+    if (!document) {
+      throw new KbRequestError(409, 'Only a document whose processing failed can be retried');
+    }
+    res.json({ document: toView(document) });
+  });
+
+  return { list, upload, replace, update, versions, remove, retry };
 }

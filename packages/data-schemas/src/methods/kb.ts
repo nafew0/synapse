@@ -76,6 +76,8 @@ export interface KbMethods {
   completeKbIngestJob(input: CompleteKbIngestInput): Promise<{ prunedFileRefs: string[] }>;
   failKbIngestJob(input: FailKbIngestInput): Promise<{ retrying: boolean }>;
   deleteKbDocument(documentId: string): Promise<{ fileRefs: string[] }>;
+  /** Queues the latest version again after it failed. Null when there is nothing to retry. */
+  retryKbDocument(documentId: string): Promise<IKbDocument | null>;
 }
 
 /** Knowledge base rows always belong to one institution, so creating one needs a tenant context. */
@@ -352,6 +354,39 @@ export function createKbMethods(mongoose: typeof import('mongoose')): KbMethods 
     return { retrying };
   }
 
+  async function retryKbDocument(documentId: string): Promise<IKbDocument | null> {
+    const document = await documents().findOne({ _id: documentId });
+    if (!document) {
+      return null;
+    }
+    const job = await jobs().findOneAndUpdate(
+      {
+        documentId: document._id,
+        version: document.latestVersion,
+        status: KbIngestJobStatuses.FAILED,
+      },
+      {
+        $set: {
+          status: KbIngestJobStatuses.QUEUED,
+          attempts: 0,
+          availableAt: new Date(),
+          lockedAt: null,
+          error: null,
+        },
+      },
+    );
+    if (!job) {
+      return null;
+    }
+    return (await documents()
+      .findOneAndUpdate(
+        { _id: document._id },
+        { $set: { status: KbDocumentStatuses.QUEUED, error: null } },
+        { new: true },
+      )
+      .lean()) as IKbDocument | null;
+  }
+
   async function deleteKbDocument(documentId: string) {
     const all = await versions().find({ documentId }).select('fileRef').lean();
     await Promise.all([
@@ -376,5 +411,6 @@ export function createKbMethods(mongoose: typeof import('mongoose')): KbMethods 
     completeKbIngestJob,
     failKbIngestJob,
     deleteKbDocument,
+    retryKbDocument,
   };
 }

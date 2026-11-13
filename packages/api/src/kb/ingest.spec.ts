@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { PDFDocument } from 'pdf-lib';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import {
   createModels,
@@ -9,6 +10,8 @@ import {
 } from '@librechat/data-schemas';
 import type { AllMethods } from '@librechat/data-schemas';
 import type { KbIndexClient, KbIndexUpload, KbIndexTarget } from './rag';
+import type { UnstructuredElement } from '~/files/unstructured/types';
+import type { KbIngestOcr } from './ingest';
 import type { DoclingClient } from './docling';
 import type { DoclingDocument } from './types';
 import { processNextKbJob, type KbIngestDeps } from './ingest';
@@ -57,9 +60,14 @@ const deps = (client: DoclingClient): KbIngestDeps => ({
   runAsTenant: asTenant,
 });
 
-const upload = async (tenantId: string, n: number, mimeType = 'application/pdf', body = 'pdf') => {
+const upload = async (
+  tenantId: string,
+  n: number,
+  mimeType = 'application/pdf',
+  body: string | Buffer = 'pdf',
+) => {
   const fileRef = `kb/${tenantId}/${n}`;
-  files.set(fileRef, Buffer.from(body));
+  files.set(fileRef, Buffer.isBuffer(body) ? body : Buffer.from(body));
   return {
     fileRef,
     filename: `file-${n}`,
@@ -158,7 +166,7 @@ describe('processNextKbJob', () => {
     expect(uploads).toHaveLength(0);
     const failed = await asTenant('uni-a', () => methods.getKbDocument(String(document._id)));
     expect(failed?.status).toBe(KbDocumentStatuses.FAILED);
-    expect(failed?.error).toMatch(/looks scanned/);
+    expect(failed?.error).toMatch(/is a scan .*cannot be read on this server/);
   });
 
   it('retries when Docling is down, but not when it rejects the file', async () => {
@@ -197,5 +205,113 @@ describe('processNextKbJob', () => {
       await processNextKbJob(deps(readsContacts));
     }
     expect(deleted).toEqual(['kb/uni-a/1']);
+  });
+
+  describe('scanned pages', () => {
+    /** Docling read page 1 only; page 2 is a scan. */
+    const halfScanned = {
+      ...contacts,
+      pages: { 1: {}, 2: {} },
+    } as unknown as DoclingDocument;
+
+    const twoPagePdf = async (): Promise<Buffer> => {
+      const pdf = await PDFDocument.create();
+      pdf.addPage();
+      pdf.addPage();
+      return Buffer.from(await pdf.save());
+    };
+
+    const ocrElements: UnstructuredElement[] = [
+      { type: 'Title', text: 'পরিচালক তালিকা', metadata: { page_number: 1 } },
+      {
+        type: 'Table',
+        text: 'Office Email',
+        metadata: {
+          page_number: 1,
+          text_as_html:
+            '<table><tr><th>দপ্তর</th><th>ইমেইল</th></tr><tr><td>আইসিটি</td><td>ict@ugc.gov.bd</td></tr></table>',
+        },
+      },
+    ];
+
+    const ocr = (allowed: boolean) => {
+      const charges: { pages: number; tenantId: string }[] = [];
+      const sent: number[][] = [];
+      const reader: KbIngestOcr = {
+        maxPages: 50,
+        allowed: async () => allowed,
+        partition: async (file) => {
+          const pdf = await PDFDocument.load(file.buffer);
+          sent.push([pdf.getPageCount()]);
+          return ocrElements;
+        },
+        recordCharge: async (charge) => void charges.push(charge),
+      };
+      return { reader, charges, sent };
+    };
+
+    it('reads only the scanned page with OCR, merges it in page order and records the charge', async () => {
+      const file = await upload('uni-a', 1, 'application/pdf', await twoPagePdf());
+      const { document } = await asTenant('uni-a', () =>
+        methods.createKbDocument({ title: 'Mixed', file }),
+      );
+      const { reader, charges, sent } = ocr(true);
+      await processNextKbJob({
+        ...deps(docling(async () => halfScanned)),
+        ocr: reader,
+        classifyPages: async () => ['text', 'scan'],
+      });
+
+      expect(sent).toEqual([[1]]);
+      expect(charges).toMatchObject([{ tenantId: 'uni-a', pages: 1 }]);
+      const texts = uploads[0].chunks.map((chunk) => chunk.text);
+      expect(texts.some((text) => text.includes('noc@bdren.net.bd'))).toBe(true);
+      const ocrTable = uploads[0].chunks.find((chunk) => chunk.text.includes('ict@ugc.gov.bd'));
+      expect(ocrTable).toMatchObject({
+        kind: 'table',
+        pageStart: 2,
+        sectionPath: 'পরিচালক তালিকা',
+      });
+      expect(ocrTable?.text.startsWith('| দপ্তর | ইমেইল |')).toBe(true);
+      const ready = await asTenant('uni-a', () => methods.getKbDocument(String(document._id)));
+      expect(ready).toMatchObject({ status: 'ready', pageCount: 2, unreadablePages: [] });
+    });
+
+    it('explains that OCR is off for the institution instead of indexing nothing', async () => {
+      const file = await upload('uni-a', 1, 'application/pdf', await twoPagePdf());
+      const { document } = await asTenant('uni-a', () =>
+        methods.createKbDocument({ title: 'Scan', file }),
+      );
+      const scanned = {
+        ...contacts,
+        body: { ...contacts.body, children: [] },
+        pages: { 1: {}, 2: {} },
+      };
+      const { reader, charges } = ocr(false);
+      await processNextKbJob({
+        ...deps(docling(async () => scanned as unknown as DoclingDocument)),
+        ocr: reader,
+        classifyPages: async () => ['scan', 'scan'],
+      });
+      expect(charges).toEqual([]);
+      const failed = await asTenant('uni-a', () => methods.getKbDocument(String(document._id)));
+      expect(failed?.error).toMatch(/OCR\), which is off for this institution/);
+    });
+
+    it('never indexes a garbled text layer, and keeps it unreadable when OCR is off', async () => {
+      const file = await upload('uni-a', 1, 'application/pdf', await twoPagePdf());
+      const { document } = await asTenant('uni-a', () =>
+        methods.createKbDocument({ title: 'Bijoy', file }),
+      );
+      const { reader } = ocr(false);
+      await processNextKbJob({
+        ...deps(docling(async () => halfScanned)),
+        ocr: reader,
+        classifyPages: async () => ['garbled', 'text'],
+      });
+      const failed = await asTenant('uni-a', () => methods.getKbDocument(String(document._id)));
+      expect(uploads).toHaveLength(0);
+      expect(failed?.status).toBe('failed');
+    });
   });
 });
