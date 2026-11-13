@@ -13,6 +13,7 @@ let mongoServer: MongoMemoryServer;
 let methods: AllMethods;
 let root: string;
 const removed: { tenantId: string; documentId: string }[] = [];
+const renamed: Record<string, unknown>[] = [];
 
 type Captured = { status: number; body: unknown };
 
@@ -56,7 +57,10 @@ const handlersFor = (tenantId: string | null) =>
   createAdminKbHandlers({
     methods,
     store: createLocalKbFileStore(root),
-    index: { remove: async (target) => void removed.push(target) },
+    index: {
+      remove: async (target) => void removed.push(target),
+      rename: async (target) => void renamed.push(target),
+    },
     resolveTenant: (_req, res) => {
       if (!tenantId) {
         res.status(400).json({ error: 'Select an institution to scope this request' });
@@ -80,6 +84,7 @@ afterAll(async () => {
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'kb-admin-'));
   removed.length = 0;
+  renamed.length = 0;
 });
 
 afterEach(async () => {
@@ -223,5 +228,29 @@ describe('admin knowledge base handlers', () => {
     await mongoose.models.KbIngestJob.updateOne({}, { $set: { status: 'failed' } });
     const retried = await call(kb.retry, { params: { documentId: id } });
     expect(retried.body).toMatchObject({ document: { status: 'queued', error: null } });
+  });
+
+  it('carries a rename into the search index once the document is indexed', async () => {
+    const kb = handlersFor('uni-a');
+    const created = await call(kb.upload, { file: upload('scan.txt') });
+    const id = (created.body as { document: { id: string } }).document.id;
+    await call(kb.update, { params: { documentId: id }, body: { title: 'Queued title' } });
+    expect(renamed).toEqual([]);
+
+    await mongoose.models.KbDocument.updateOne({ _id: id }, { $set: { currentVersion: 1 } });
+    await call(kb.update, { params: { documentId: id }, body: { title: 'Queued title' } });
+    expect(renamed).toEqual([]);
+    await call(kb.update, {
+      params: { documentId: id },
+      body: { title: 'Draft Policy for Work-From-Home', docType: 'policy' },
+    });
+    expect(renamed).toEqual([
+      {
+        tenantId: 'uni-a',
+        documentId: id,
+        title: 'Draft Policy for Work-From-Home',
+        docType: 'policy',
+      },
+    ]);
   });
 });

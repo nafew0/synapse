@@ -34,6 +34,7 @@ const index: KbIndexClient = {
     activated.push(target);
   },
   remove: async () => undefined,
+  rename: async () => undefined,
 };
 
 const docling = (convert: DoclingClient['convert']): DoclingClient => ({ convert });

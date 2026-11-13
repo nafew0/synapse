@@ -26,6 +26,10 @@ export interface KbIndexClient {
   /** Makes this version the searchable one and drops every other version's chunks. */
   activate(target: KbIndexTarget): Promise<void>;
   remove(target: Omit<KbIndexTarget, 'version'>): Promise<void>;
+  /** Carries a new title or type onto the stored chunks, so results and citations show it. */
+  rename(
+    target: Omit<KbIndexTarget, 'version'> & { title?: string; docType?: string },
+  ): Promise<void>;
 }
 
 const toPayload = (chunk: KbChunk) => ({
@@ -77,5 +81,18 @@ export function createKbIndexClient(baseUrl: string): KbIndexClient {
     await axios.delete(`${base}/kb/documents/${encodeURIComponent(documentId)}`, auth(tenantId));
   };
 
-  return { upload, activate, remove };
+  const rename = async ({
+    tenantId,
+    documentId,
+    title,
+    docType,
+  }: Omit<KbIndexTarget, 'version'> & { title?: string; docType?: string }) => {
+    await axios.patch(
+      `${base}/kb/documents/${encodeURIComponent(documentId)}`,
+      { title, doc_type: docType },
+      auth(tenantId),
+    );
+  };
+
+  return { upload, activate, remove, rename };
 }
