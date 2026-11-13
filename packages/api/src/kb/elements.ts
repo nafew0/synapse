@@ -6,7 +6,7 @@ import type {
   DoclingTextItem,
   DoclingTableItem,
 } from './types';
-import { cleanCell, cleanText } from './normalize';
+import { asListItem, cleanCell, cleanText } from './normalize';
 
 const SKIPPED_TEXT = new Set(['page_header', 'page_footer']);
 const HEADING_TEXT = new Set(['title', 'section_header']);
@@ -74,7 +74,7 @@ function textElement(item: DoclingTextItem): KbElement | null {
   if (HEADING_TEXT.has(item.label)) {
     return { kind: 'heading', text, level: item.label === 'title' ? 0 : (item.level ?? 1), page };
   }
-  return { kind: 'text', text: item.label === 'list_item' ? `• ${text}` : text, page };
+  return { kind: 'text', text: item.label === 'list_item' ? asListItem(text) : text, page };
 }
 
 /**
