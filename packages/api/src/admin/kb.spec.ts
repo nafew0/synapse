@@ -214,4 +214,14 @@ describe('admin knowledge base handlers', () => {
     const result = await call(handlersFor(null).list, {});
     expect(result.status).toBe(400);
   });
+
+  it('retries only a document whose processing failed', async () => {
+    const kb = handlersFor('uni-a');
+    const created = await call(kb.upload, { file: upload('scan.txt') });
+    const id = (created.body as { document: { id: string } }).document.id;
+    expect((await call(kb.retry, { params: { documentId: id } })).status).toBe(409);
+    await mongoose.models.KbIngestJob.updateOne({}, { $set: { status: 'failed' } });
+    const retried = await call(kb.retry, { params: { documentId: id } });
+    expect(retried.body).toMatchObject({ document: { status: 'queued', error: null } });
+  });
 });

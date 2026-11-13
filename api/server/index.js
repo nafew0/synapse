@@ -220,7 +220,7 @@ const startServer = async () => {
     await syncAllTenantInterfacePermissions();
     await syncAllInstitutionAdminCapabilities();
   });
-  startKnowledgeBaseWorker();
+  startKnowledgeBaseWorker(appConfig);
 
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
   let indexHTML = fs.readFileSync(indexPath, 'utf8');

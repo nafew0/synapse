@@ -287,4 +287,20 @@ describe('knowledge base documents', () => {
     );
     expect(versions.map((v) => v.version)).toEqual([1]);
   });
+
+  it('queues a failed version again on retry, and only a failed one', async () => {
+    const { document } = await asTenant('uni-a', () =>
+      methods.createKbDocument({ title: 'Scan', file: file(1) }),
+    );
+    const id = String(document._id);
+    expect(await asTenant('uni-a', () => methods.retryKbDocument(id))).toBeNull();
+    const job = await claim();
+    await asTenant('uni-a', () =>
+      methods.failKbIngestJob({ jobId: job!._id, error: 'looks scanned', retryable: false }),
+    );
+    const retried = await asTenant('uni-a', () => methods.retryKbDocument(id));
+    expect(retried).toMatchObject({ status: KbDocumentStatuses.QUEUED, error: null });
+    const again = await claim();
+    expect(again).toMatchObject({ version: 1, attempts: 1 });
+  });
 });
