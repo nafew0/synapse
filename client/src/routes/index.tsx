@@ -21,6 +21,7 @@ import ShareRoute from './ShareRoute';
 import ChatRoute from './ChatRoute';
 import Search from './Search';
 import Root from './Root';
+import { BrowserExtensionConnect } from '~/components/BrowserExtension';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -134,6 +135,10 @@ export const router = createBrowserRouter(
             {
               path: 'c/:conversationId?',
               element: <ChatRoute />,
+            },
+            {
+              path: 'browser-extension/connect',
+              element: <BrowserExtensionConnect />,
             },
             {
               path: 'search',

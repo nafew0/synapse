@@ -2490,5 +2490,15 @@
   "com_ui_file_stage_reading": "Reading…",
   "com_ui_file_stage_recognizing": "Recognising text…",
   "com_ui_file_stage_indexing": "Indexing…",
-  "com_ui_file_stage_ready": "Ready"
+  "com_ui_file_stage_ready": "Ready",
+  "com_ui_browser_ext_connect_title": "Connect Synapse Browser",
+  "com_ui_browser_ext_connect_intro": "Get a code and type it into the Synapse Browser extension to sign it in to this account. A code works once and expires after 10 minutes.",
+  "com_ui_browser_ext_get_code": "Get a code",
+  "com_ui_browser_ext_new_code": "Get a new code",
+  "com_ui_browser_ext_code_label": "Your sign-in code",
+  "com_ui_browser_ext_code_expires": "Expires at {{0}}",
+  "com_ui_browser_ext_error": "Could not get a code. Browser tasks may be off on this server, or try again.",
+  "com_ui_browser_ext_sign_out_hint": "Lost a computer, or finished with the extension? Sign it out here.",
+  "com_ui_browser_ext_sign_out": "Sign out every extension",
+  "com_ui_browser_ext_signed_out": "Signed out: {{0}}"
 }

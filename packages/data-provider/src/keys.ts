@@ -101,6 +101,8 @@ export enum MutationKeys {
   createIssueReport = 'createIssueReport',
   markBannerSeen = 'markBannerSeen',
   dismissBanner = 'dismissBanner',
+  browserExtensionCode = 'browserExtensionCode',
+  browserExtensionSignOut = 'browserExtensionSignOut',
   updateLangfuseConnection = 'updateLangfuseConnection',
   testLangfuseConnection = 'testLangfuseConnection',
   createAgentApiKey = 'createAgentApiKey',
