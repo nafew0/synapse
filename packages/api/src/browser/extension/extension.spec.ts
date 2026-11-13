@@ -13,7 +13,7 @@ import type { ExtensionConfig } from './config';
 import type { ExtensionRequest } from './auth';
 import { createExtensionAuth, createExtensionEnabledCheck } from './auth';
 import { createExtensionHandlers } from './handlers';
-import { createModelHandlers, prepareBody, usageFromStream } from './model';
+import { createModelHandlers, droppedFields, prepareBody, usageFromStream } from './model';
 import type { FetchLike } from './model';
 import { normaliseCode } from './credentials';
 
@@ -193,6 +193,33 @@ describe('sign-in', () => {
     ).toBe(200);
   });
 
+  it('ends the earlier sign-in when the user connects again', async () => {
+    const server = app(noFetch);
+    const first = await signIn(server);
+    const second = await signIn(server);
+    expect(
+      (await request(server).get('/settings').set('Authorization', `Bearer ${first}`)).status,
+    ).toBe(401);
+    expect(
+      (await request(server).get('/settings').set('Authorization', `Bearer ${second}`)).status,
+    ).toBe(200);
+  });
+
+  it('refuses a suspended member and ends their tokens', async () => {
+    const server = app(noFetch);
+    const token = await signIn(server);
+    await mongoose.models.User.updateOne(
+      { _id: user._id },
+      { $set: { membershipStatus: 'suspended' } },
+    );
+    const res = await request(server).get('/settings').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(401);
+    await mongoose.models.User.updateOne({ _id: user._id }, { $set: { membershipStatus: 'active' } });
+    expect(
+      (await request(server).get('/settings').set('Authorization', `Bearer ${token}`)).status,
+    ).toBe(401);
+  });
+
   it('runs the request in the user’s own tenant', async () => {
     const server = app(noFetch);
     const token = await signIn(server, 'other');
@@ -283,17 +310,73 @@ describe('the model endpoint', () => {
     expect(res.body.error.code).toBe('daily_limit');
   });
 
-  it('passes a provider error through with its status', async () => {
+  it('keeps the provider’s own words about Synapse’s account out of the answer', async () => {
     const fake: FetchLike = async () =>
-      new Response('{"error":{"message":"overloaded"}}', { status: 503 });
+      new Response('{"error":{"message":"Insufficient credits on key sk-or-v1-abc"}}', {
+        status: 402,
+      });
     const server = app(fake);
     const token = await signIn(server);
     const res = await request(server)
       .post('/chat')
       .set('Authorization', `Bearer ${token}`)
-      .send({ messages: [] });
+      .send({ messages: [{ role: 'user', content: 'x' }] });
     expect(res.status).toBe(503);
-    expect(await mongoose.models.BrowserExtensionUsage.countDocuments()).toBe(0);
+    expect(res.body.error.code).toBe('model_unavailable');
+    expect(JSON.stringify(res.body)).not.toContain('credits');
+  });
+
+  it('passes on only the fields it knows, so the model and the provider stay Synapse’s', () => {
+    const sent = prepareBody(
+      {
+        messages: [{ role: 'user', content: 'x' }],
+        temperature: 0.2,
+        model: 'gpt-anything',
+        models: ['expensive/model'],
+        provider: { order: ['x'] },
+        plugins: [{ id: 'web' }],
+        route: 'fallback',
+        n: 8,
+        max_completion_tokens: 1,
+        max_tokens: 200_000,
+      },
+      config,
+    );
+    expect(sent).toMatchObject({ model: 'openai/gpt-6-luna', temperature: 0.2 });
+    expect(sent.max_completion_tokens).toBe(1);
+    expect(sent.max_tokens).toBeUndefined();
+    for (const field of ['models', 'provider', 'plugins', 'route', 'n'])
+      expect(sent[field]).toBeUndefined();
+    expect(droppedFields({ models: [], messages: [] })).toEqual(['models']);
+  });
+
+  it('charges the estimate when an answer reports no usage, so an abandoned call still counts', async () => {
+    const fake: FetchLike = async () =>
+      new Response(stream(['data: {"choices":[{"delta":{"content":"hi"}}]}\n\n']), {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    const server = app(fake);
+    const token = await signIn(server);
+    const res = await request(server)
+      .post('/chat')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ stream: true, messages: [{ role: 'user', content: 'x'.repeat(400) }] });
+    expect(res.status).toBe(200);
+    const [usage] = await mongoose.models.BrowserExtensionUsage.find().lean();
+    expect(usage.inputTokens).toBeGreaterThan(90);
+    expect(usage.outputTokens).toBe(0);
+  });
+
+  it('stops a request whose own estimate would pass today’s limit', async () => {
+    const server = app(noFetch);
+    const token = await signIn(server);
+    const res = await request(server)
+      .post('/chat')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ messages: [{ role: 'user', content: 'x'.repeat(8_000) }] });
+    expect(res.status).toBe(429);
+    expect(res.body.error.code).toBe('daily_limit');
   });
 
   it('keeps max_completion_tokens when the extension sends it', () => {

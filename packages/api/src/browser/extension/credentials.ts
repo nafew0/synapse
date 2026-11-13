@@ -13,6 +13,7 @@ export type CredentialStore = Pick<
   | 'createBrowserExtensionCredential'
   | 'findBrowserExtensionCredential'
   | 'deleteBrowserExtensionCredential'
+  | 'deleteBrowserExtensionTokens'
   | 'touchBrowserExtensionCredential'
 >;
 
@@ -59,6 +60,8 @@ export async function exchangeCode(
   const found = await store.findBrowserExtensionCredential(normaliseCode(input), 'code');
   if (!found) return null;
   await store.deleteBrowserExtensionCredential(found._id);
+  // One sign-in per user: connecting again ends the extension's earlier tokens.
+  await store.deleteBrowserExtensionTokens(found.user as Types.ObjectId);
   const token = newToken();
   const expiresAt = new Date(now + TOKEN_TTL_MS);
   await store.createBrowserExtensionCredential({

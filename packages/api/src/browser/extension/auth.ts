@@ -1,4 +1,4 @@
-import { logger, runAsSystem, tenantStorage } from '@librechat/data-schemas';
+import { InstitutionMembershipStatuses, logger, runAsSystem, tenantStorage } from '@librechat/data-schemas';
 import type { NextFunction, Response } from 'express';
 import type { IInstitution, IUser } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
@@ -45,6 +45,17 @@ export function createExtensionAuth(deps: {
       const user = await runAsSystem(() => deps.findUser({ _id: credential.user }));
       if (!user)
         return refuse(res, 401, 'signed_out', 'Your Synapse account was not found. Connect again.');
+      // A token outlives a suspension or a removal by up to 30 days, so the account is checked on every request.
+      if (
+        (user.membershipStatus !== undefined &&
+          user.membershipStatus !== InstitutionMembershipStatuses.ACTIVE) ||
+        user.agentTriggerDeletionStartedAt != null
+      ) {
+        void runAsSystem(() => deps.store.deleteBrowserExtensionTokens(user._id)).catch(
+          () => undefined,
+        );
+        return refuse(res, 401, 'signed_out', 'Your Synapse account is no longer active.');
+      }
       void runAsSystem(() => deps.store.touchBrowserExtensionCredential(credential._id)).catch(
         () => undefined,
       );

@@ -25,7 +25,16 @@ export interface BrowserExtensionMethods {
   /** Signs a user out of every extension. */
   deleteBrowserExtensionTokens: (user: Types.ObjectId | string) => Promise<number>;
   touchBrowserExtensionCredential: (id: Types.ObjectId | string) => Promise<void>;
-  recordBrowserExtensionUsage: (fields: BrowserExtensionUsageFields) => Promise<void>;
+  /** Opens a usage row and returns its id, so the counts can be replaced once the provider reports them. */
+  recordBrowserExtensionUsage: (fields: BrowserExtensionUsageFields) => Promise<Types.ObjectId>;
+  /** Replaces the counts on a usage row opened before the call. */
+  settleBrowserExtensionUsage: (
+    id: Types.ObjectId | string,
+    counts: Pick<
+      BrowserExtensionUsageFields,
+      'inputTokens' | 'outputTokens' | 'cachedTokens' | 'costUsd'
+    >,
+  ) => Promise<void>;
   /** Input plus output tokens a user spent through the extension since `since`. */
   sumBrowserExtensionTokens: (user: Types.ObjectId | string, since: Date) => Promise<number>;
 }
@@ -71,8 +80,22 @@ export function createBrowserExtensionMethods(
     await credentials().updateOne({ _id: id }, { $set: { lastUsedAt: new Date() } });
   }
 
-  async function recordBrowserExtensionUsage(fields: BrowserExtensionUsageFields): Promise<void> {
-    await usage().create(fields);
+  async function recordBrowserExtensionUsage(
+    fields: BrowserExtensionUsageFields,
+  ): Promise<Types.ObjectId> {
+    const row = await usage().create(fields);
+    return row._id as Types.ObjectId;
+  }
+
+  /** Replaces the counts on a usage row opened before the call, once the provider reports the real ones. */
+  async function settleBrowserExtensionUsage(
+    id: Types.ObjectId | string,
+    counts: Pick<
+      BrowserExtensionUsageFields,
+      'inputTokens' | 'outputTokens' | 'cachedTokens' | 'costUsd'
+    >,
+  ): Promise<void> {
+    await usage().updateOne({ _id: id }, { $set: counts });
   }
 
   async function sumBrowserExtensionTokens(
@@ -93,6 +116,7 @@ export function createBrowserExtensionMethods(
     deleteBrowserExtensionTokens,
     touchBrowserExtensionCredential,
     recordBrowserExtensionUsage,
+    settleBrowserExtensionUsage,
     sumBrowserExtensionTokens,
   };
 }
