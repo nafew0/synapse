@@ -75,9 +75,9 @@ export function prepareBody(body: ChatBody, config: ExtensionConfig): ChatBody {
 
 /** The fields the endpoint refused to pass on, for the log. */
 export function droppedFields(body: ChatBody): string[] {
-  return Object.keys(body).filter(
-    (key) => !ALLOWED_FIELDS.has(key) && key !== 'model' && key !== 'max_tokens' && key !== 'max_completion_tokens',
-  );
+  // The endpoint sets these itself, so they are replaced rather than refused.
+  const SERVER_SET = new Set(['model', 'max_tokens', 'max_completion_tokens', 'stream_options', 'usage']);
+  return Object.keys(body).filter((key) => !ALLOWED_FIELDS.has(key) && !SERVER_SET.has(key));
 }
 
 /** What a request is likely to cost in input tokens, before the provider says. */
