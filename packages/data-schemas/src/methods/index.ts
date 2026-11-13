@@ -55,6 +55,7 @@ import { createChatProjectMethods, type ChatProjectMethods } from './chatProject
 import { createKbMethods, type KbMethods } from './kb';
 export type {
   KbUsage,
+  KbCatalogEntry,
   KbFileInput,
   KbQueuedResult,
   FailKbIngestInput,

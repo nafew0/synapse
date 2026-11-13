@@ -137,6 +137,18 @@ describe('processNextKbJob', () => {
     });
   });
 
+  it('names a document after its first heading when it was only named after its file', async () => {
+    const file = await upload('uni-a', 1);
+    const { document } = await asTenant('uni-a', () =>
+      methods.createKbDocument({ title: 'file-1', file }),
+    );
+    await processNextKbJob(deps(readsContacts));
+    expect(uploads[0].title).toBe('BdREN Operational Contacts');
+    expect(uploads[0].chunks[0].embedText.startsWith('BdREN Operational Contacts')).toBe(true);
+    const renamed = await asTenant('uni-a', () => methods.getKbDocument(String(document._id)));
+    expect(renamed?.title).toBe('BdREN Operational Contacts');
+  });
+
   it('indexes plain text without calling Docling', async () => {
     const file = await upload(
       'uni-a',

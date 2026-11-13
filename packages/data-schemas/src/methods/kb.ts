@@ -48,6 +48,11 @@ export type FailKbIngestInput = {
   now?: Date;
 };
 
+export type KbCatalogEntry = {
+  title: string;
+  docType: KbDocType;
+};
+
 export type KbUsage = {
   documents: number;
   bytes: number;
@@ -66,6 +71,8 @@ export interface KbMethods {
   getKbUsage(): Promise<KbUsage>;
   /** Whether this tenant has anything searchable; read on every chat turn, so one indexed query. */
   hasReadyKbDocuments(tenantId: string): Promise<boolean>;
+  /** Titles and types of a tenant's searchable documents, newest first, for the chat prompt. */
+  listReadyKbCatalog(tenantId: string, limit?: number): Promise<KbCatalogEntry[]>;
   updateKbDocument(
     documentId: string,
     update: { title?: string; docType?: KbDocType; updatedBy?: string | null },
@@ -199,6 +206,15 @@ export function createKbMethods(mongoose: typeof import('mongoose')): KbMethods 
       .exists({ tenantId, currentVersion: { $gt: 0 } })
       .lean();
     return found != null;
+  }
+
+  async function listReadyKbCatalog(tenantId: string, limit = 40): Promise<KbCatalogEntry[]> {
+    return (await documents()
+      .find({ tenantId, currentVersion: { $gt: 0 } })
+      .sort({ updatedAt: -1 })
+      .limit(limit)
+      .select('-_id title docType')
+      .lean()) as KbCatalogEntry[];
   }
 
   async function updateKbDocument(
@@ -405,6 +421,7 @@ export function createKbMethods(mongoose: typeof import('mongoose')): KbMethods 
     getKbDocumentVersion,
     getKbUsage,
     hasReadyKbDocuments,
+    listReadyKbCatalog,
     updateKbDocument,
     listKbDocumentVersions,
     claimKbIngestJob,

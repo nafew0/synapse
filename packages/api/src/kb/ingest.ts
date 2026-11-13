@@ -1,3 +1,4 @@
+import path from 'path';
 import { logger } from '@librechat/data-schemas';
 import type { IKbIngestJob, KbMethods } from '@librechat/data-schemas';
 import type { KbIndexClient } from './rag';
@@ -36,6 +37,7 @@ export interface KbIngestDeps {
     | 'failKbIngestJob'
     | 'getKbDocument'
     | 'getKbDocumentVersion'
+    | 'updateKbDocument'
   >;
   docling: DoclingClient;
   index: KbIndexClient;
@@ -130,14 +132,15 @@ async function runJob(job: IKbIngestJob, deps: KbIngestDeps): Promise<void> {
     ocrUsed = result.ocrUsed;
     ocrOff = result.ocrOff;
   }
-  const chunks: KbChunk[] = chunkElements(document.title, parsed.elements);
+  const title = await titleFromContent(deps, documentId, document.title, version.filename, parsed);
+  const chunks: KbChunk[] = chunkElements(title, parsed.elements);
   const unreadable = unreadablePages(parsed);
   if (chunks.length === 0) {
     throw new KbJobRejected(noTextReason(unreadable.length > 0, ocrUsed, ocrOff));
   }
 
   const target = { tenantId: job.tenantId, documentId, version: job.version };
-  await deps.index.upload({ ...target, title: document.title, docType: document.docType, chunks });
+  await deps.index.upload({ ...target, title, docType: document.docType, chunks });
   await deps.index.activate(target);
   const { prunedFileRefs } = await deps.methods.completeKbIngestJob({
     jobId: job._id,
@@ -157,6 +160,32 @@ async function runJob(job: IKbIngestJob, deps: KbIngestDeps): Promise<void> {
   logger.info(
     `[kb/ingest] ${job.tenantId}/${documentId} v${job.version}: ${chunks.length} chunks, ${parsed.pageCount} pages`,
   );
+}
+
+const MAX_TITLE = 160;
+
+/**
+ * An upload without a title is named after its file, which models cannot match a question to
+ * ("bYKKqv1DeY1594737831"). Such a document takes its first heading as its title instead.
+ */
+async function titleFromContent(
+  deps: KbIngestDeps,
+  documentId: string,
+  title: string,
+  filename: string,
+  parsed: KbParsed,
+): Promise<string> {
+  if (title !== path.basename(filename, path.extname(filename))) {
+    return title;
+  }
+  const heading = parsed.elements.find((element) => element.kind === 'heading');
+  const named = heading?.kind === 'heading' ? heading.text.replace(/\s+/g, ' ').trim() : '';
+  if (!named) {
+    return title;
+  }
+  const next = named.slice(0, MAX_TITLE);
+  await deps.methods.updateKbDocument(documentId, { title: next });
+  return next;
 }
 
 function noTextReason(hasPages: boolean, ocrUsed: boolean, ocrOff: boolean): string {

@@ -3,6 +3,7 @@ import { tool } from '@librechat/agents/langchain/tools';
 import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
 import type { ExtendedJsonSchema } from '~/tools/registry/schema';
 import { createAxiosInstance } from '~/utils/axios';
+import type { KbCatalogItem } from './availability';
 import { generateKbToken } from '~/crypto/jwt';
 
 const axios = createAxiosInstance();
@@ -37,9 +38,32 @@ export const institutionKbToolDefinition: {
 } = {
   name: INSTITUTION_KB_TOOL_NAME,
   description:
-    "Searches the user's own institution's knowledge base: the policies, circulars, notices, forms, templates, contact lists and reports its administrators uploaded. Call it when the request concerns the institution, its offices, people, rules, figures or formats, including when drafting a letter, email or message to one of its teams, to get exact names, designations, emails and phone numbers. Skip it for general questions. Use only details found in the results and name the document and page you used; if nothing relevant comes back, say so and leave placeholders such as [NOC email] instead of guessing. When the knowledge base, a web search and a file the user attached disagree, say what each source says.",
+    "Searches the user's own institution's knowledge base: the policies, circulars, notices, forms, templates, contact lists and reports its administrators uploaded. Call it when the request concerns the institution, its offices, people, rules, figures or formats, including when drafting a letter, email or message to one of its teams, to get exact names, designations, emails and phone numbers. Search it before web search or answering from memory; skip it only for plainly general questions. Use only details found in the results and name the document and page you used; if nothing relevant comes back, say so and leave placeholders such as [NOC email] instead of guessing. When the knowledge base, a web search and a file the user attached disagree, say what each source says.",
   schema: institutionKbSchema,
 };
+
+const MAX_LISTED = 40;
+const MAX_TITLE = 120;
+
+/** One line per document; titles are admin-written, so they are flattened and shortened. */
+const listTitle = ({ title, docType }: KbCatalogItem): string =>
+  `- ${title.replace(/\s+/g, ' ').trim().slice(0, MAX_TITLE)} (${docType})`;
+
+/**
+ * System prompt addition for members whose institution has a knowledge base: search it before
+ * any other source, and name what it holds so vague questions ("home office") find the right
+ * document.
+ */
+export function buildInstitutionKbInstructions(catalog: KbCatalogItem[]): string {
+  const listed = catalog.slice(0, MAX_LISTED).map(listTitle).join('\n');
+  const more =
+    catalog.length > MAX_LISTED ? `\n- …and ${catalog.length - MAX_LISTED} more documents` : '';
+  return `## Institution knowledge base
+The user's institution keeps its own documents in a knowledge base, searched with the \`${INSTITUTION_KB_TOOL_NAME}\` tool. It currently holds:
+${listed}${more}
+
+Look in the knowledge base first. Unless the request is plainly general knowledge or only about a file the user attached, call \`${INSTITUTION_KB_TOOL_NAME}\` before using web search or answering from memory, including when drafting letters, emails or documents. Read the user's words as being about their own institution: "home office", "leave", "apply for", "our policy" or a team name usually mean the institution's own rules, people and procedures. Search again with other wording (English and Bangla, synonyms such as "work from home") if the first search finds nothing relevant. Only when the knowledge base has nothing relevant, use other sources, and say that the institution's documents did not cover it.`;
+}
 
 interface KbResult {
   title: string;

@@ -80,8 +80,8 @@ import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
-import { INSTITUTION_KB_TOOL_NAME } from '~/kb/tool';
-import { getKbRagApiUrl, hasInstitutionKb } from '~/kb/availability';
+import { INSTITUTION_KB_TOOL_NAME, buildInstitutionKbInstructions } from '~/kb/tool';
+import { getKbRagApiUrl, getInstitutionKbCatalog } from '~/kb/availability';
 import { primeResources } from './resources';
 
 /**
@@ -520,8 +520,8 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
    * operator-config names.
    */
   getAccessibleMcpServerNames?: (userId?: string, role?: string) => Promise<string[]>;
-  /** Whether the user's institution has a searchable knowledge base; adds `institution_kb` when so. */
-  hasInstitutionKb?: (tenantId: string) => Promise<boolean>;
+  /** The user's institution's searchable documents; when any, `institution_kb` is added. */
+  getInstitutionKbCatalog?: (tenantId: string) => Promise<{ title: string; docType: string }[]>;
   /** Update usage tracking for multiple files */
   updateFilesUsage: (
     files: Array<{ file_id: string }>,
@@ -706,14 +706,20 @@ export async function initializeAgent(
    */
   const kbTenantId = (req.user as { tenantId?: string } | undefined)?.tenantId;
   if (
-    db.hasInstitutionKb &&
+    db.getInstitutionKbCatalog &&
     kbTenantId &&
     getKbRagApiUrl() &&
     (agent.tools?.length ?? 0) > 0 &&
-    !agent.tools!.includes(INSTITUTION_KB_TOOL_NAME) &&
-    (await hasInstitutionKb(kbTenantId, db.hasInstitutionKb))
+    !agent.tools!.includes(INSTITUTION_KB_TOOL_NAME)
   ) {
-    agent.tools = [...agent.tools!, INSTITUTION_KB_TOOL_NAME];
+    const catalog = await getInstitutionKbCatalog(kbTenantId, db.getInstitutionKbCatalog);
+    if (catalog.length > 0) {
+      agent.tools = [...agent.tools!, INSTITUTION_KB_TOOL_NAME];
+      appendAdditionalInstructions(agent, buildInstitutionKbInstructions(catalog));
+      logger.debug(
+        `[kb] ${INSTITUTION_KB_TOOL_NAME} offered to ${agent.id} (tenant ${kbTenantId}, ${catalog.length} documents)`,
+      );
+    }
   }
 
   if (
