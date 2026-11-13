@@ -50,7 +50,7 @@ export interface AdminKbDeps {
     | 'retryKbDocument'
   >;
   store: KbFileStore;
-  index: Pick<KbIndexClient, 'remove'> | null;
+  index: Pick<KbIndexClient, 'remove' | 'rename'> | null;
   /** The tenant from `resolveAdminTenant`; sends the error itself and returns null when missing. */
   resolveTenant(req: Request, res: Response): string | null;
 }
@@ -254,7 +254,7 @@ export function createAdminKbHandlers(deps: AdminKbDeps): AdminKbHandlers {
     }
   });
 
-  const update = scoped(async (req, res) => {
+  const update = scoped(async (req, res, tenantId) => {
     const existing = await findDocument(req.params.documentId);
     const title = typeof req.body?.title === 'string' ? req.body.title : undefined;
     if (title !== undefined && !title.trim()) {
@@ -265,6 +265,18 @@ export function createAdminKbHandlers(deps: AdminKbDeps): AdminKbHandlers {
       docType: readDocType(req.body?.docType),
       updatedBy: userId(req),
     });
+    const changed = document!.title !== existing.title || document!.docType !== existing.docType;
+    if (deps.index && changed && existing.currentVersion > 0) {
+      await deps.index.rename({
+        tenantId,
+        documentId: String(existing._id),
+        title: document!.title,
+        docType: document!.docType,
+      });
+    }
+    if (changed) {
+      forgetInstitutionKb(tenantId);
+    }
     res.json({ document: toView(document!) });
   });
 
