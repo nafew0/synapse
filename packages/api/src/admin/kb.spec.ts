@@ -253,4 +253,20 @@ describe('admin knowledge base handlers', () => {
       },
     ]);
   });
+
+  it('still deletes the document when the index cannot be reached', async () => {
+    const kb = createAdminKbHandlers({
+      methods,
+      store: createLocalKbFileStore(root),
+      index: {
+        remove: async () => Promise.reject(new Error('ECONNREFUSED')),
+        rename: async () => undefined,
+      },
+      resolveTenant: () => 'uni-a',
+    });
+    const created = await call(kb.upload, { file: upload('policy.txt') });
+    const id = (created.body as { document: { id: string } }).document.id;
+    expect((await call(kb.remove, { params: { documentId: id } })).status).toBe(204);
+    expect(await mongoose.models.KbDocument.countDocuments({})).toBe(0);
+  });
 });

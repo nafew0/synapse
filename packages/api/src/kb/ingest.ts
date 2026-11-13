@@ -28,6 +28,7 @@ export const KB_SUPPORTED_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 const DEFAULT_POLL_MS = 15_000;
+const DEFAULT_RECONCILE_MS = 30 * 60 * 1000;
 
 export interface KbIngestDeps {
   methods: Pick<
@@ -38,6 +39,8 @@ export interface KbIngestDeps {
     | 'getKbDocument'
     | 'getKbDocumentVersion'
     | 'updateKbDocument'
+    | 'listKbDocumentIds'
+    | 'listKbTenantIds'
   >;
   docling: DoclingClient;
   index: KbIndexClient;
@@ -142,6 +145,14 @@ async function runJob(job: IKbIngestJob, deps: KbIngestDeps): Promise<void> {
   const target = { tenantId: job.tenantId, documentId, version: job.version };
   await deps.index.upload({ ...target, title, docType: document.docType, chunks });
   await deps.index.activate(target);
+  /* Deleted while being processed: the admin's delete may have reached the index before this
+   * version was activated, so this worker removes what it just made searchable. */
+  if (!(await deps.methods.getKbDocument(documentId))) {
+    await deps.index.remove({ tenantId: job.tenantId, documentId });
+    forgetInstitutionKb(job.tenantId);
+    logger.info(`[kb/ingest] ${job.tenantId}/${documentId} was deleted while processing; removed`);
+    return;
+  }
   const { prunedFileRefs } = await deps.methods.completeKbIngestJob({
     jobId: job._id,
     pageCount: parsed.pageCount,
@@ -256,6 +267,32 @@ async function readScannedPages({
   return { parsed: { elements: merged, pageCount }, ocrUsed: true, ocrOff: false };
 }
 
+/**
+ * Removes index chunks whose document no longer has a record: a delete that could not reach
+ * the index, a crash between steps, or a manual edit. Returns how many documents it removed.
+ */
+export async function reconcileKbIndex(deps: KbIngestDeps): Promise<number> {
+  const tenants = await deps.runAsSystem(() => deps.methods.listKbTenantIds());
+  let removed = 0;
+  for (const tenantId of tenants) {
+    const indexed = await deps.index.listDocumentIds(tenantId);
+    if (indexed.length === 0) {
+      continue;
+    }
+    const known = new Set(
+      await deps.runAsTenant(tenantId, () => deps.methods.listKbDocumentIds(tenantId)),
+    );
+    for (const documentId of indexed.filter((id) => !known.has(id))) {
+      await deps.index.remove({ tenantId, documentId });
+      removed++;
+      logger.warn(
+        `[kb/reconcile] removed index chunks of deleted document ${tenantId}/${documentId}`,
+      );
+    }
+  }
+  return removed;
+}
+
 /** Claims and runs one job. Returns false when the queue is empty. */
 export async function processNextKbJob(deps: KbIngestDeps): Promise<boolean> {
   const job = await deps.runAsSystem(() => deps.methods.claimKbIngestJob());
@@ -285,13 +322,19 @@ export async function processNextKbJob(deps: KbIngestDeps): Promise<boolean> {
 export function startKbIngestWorker(
   deps: KbIngestDeps,
   pollMs: number = DEFAULT_POLL_MS,
+  reconcileMs: number = DEFAULT_RECONCILE_MS,
 ): () => void {
   let stopped = false;
   let timer: NodeJS.Timeout | undefined;
+  let nextReconcile = 0;
   const tick = async () => {
     try {
       while (!stopped && (await processNextKbJob(deps))) {
         /* drain the queue */
+      }
+      if (!stopped && Date.now() >= nextReconcile) {
+        nextReconcile = Date.now() + reconcileMs;
+        await reconcileKbIndex(deps);
       }
     } catch (error) {
       logger.error('[kb/ingest] worker error', error);

@@ -14,7 +14,7 @@ import type { UnstructuredElement } from '~/files/unstructured/types';
 import type { KbIngestOcr } from './ingest';
 import type { DoclingClient } from './docling';
 import type { DoclingDocument } from './types';
-import { processNextKbJob, type KbIngestDeps } from './ingest';
+import { processNextKbJob, reconcileKbIndex, type KbIngestDeps } from './ingest';
 import contacts from './__fixtures__/contacts.docling.json';
 import { DoclingRejectedError } from './docling';
 
@@ -35,6 +35,7 @@ const index: KbIndexClient = {
   },
   remove: async () => undefined,
   rename: async () => undefined,
+  listDocumentIds: async () => [],
 };
 
 const docling = (convert: DoclingClient['convert']): DoclingClient => ({ convert });
@@ -326,5 +327,47 @@ describe('processNextKbJob', () => {
       expect(uploads).toHaveLength(0);
       expect(failed?.status).toBe('failed');
     });
+  });
+
+  it('removes what it activated when the document was deleted while processing', async () => {
+    const file = await upload('uni-a', 1);
+    const { document } = await asTenant('uni-a', () =>
+      methods.createKbDocument({ title: 'Doomed', file }),
+    );
+    const id = String(document._id);
+    const removedNow: string[] = [];
+    await processNextKbJob({
+      ...deps(readsContacts),
+      index: {
+        ...index,
+        activate: async (target) => {
+          activated.push(target);
+          await asTenant('uni-a', () => methods.deleteKbDocument(id));
+        },
+        remove: async ({ documentId }) => void removedNow.push(documentId),
+      },
+    });
+    expect(activated).toHaveLength(1);
+    expect(removedNow).toEqual([id]);
+    expect(await mongoose.models.KbIngestJob.countDocuments({})).toBe(0);
+  });
+
+  it('reconciles away index chunks whose document has no record, and nothing else', async () => {
+    const file = await upload('uni-a', 1);
+    const { document } = await asTenant('uni-a', () =>
+      methods.createKbDocument({ title: 'Kept', file }),
+    );
+    const kept = String(document._id);
+    const removedNow: { tenantId: string; documentId: string }[] = [];
+    const removed = await reconcileKbIndex({
+      ...deps(readsContacts),
+      index: {
+        ...index,
+        listDocumentIds: async (tenantId) => (tenantId === 'uni-a' ? [kept, 'orphan-1'] : []),
+        remove: async (target) => void removedNow.push(target),
+      },
+    });
+    expect(removed).toBe(1);
+    expect(removedNow).toEqual([{ tenantId: 'uni-a', documentId: 'orphan-1' }]);
   });
 });

@@ -1,10 +1,13 @@
-import { buildInstitutionKbInstructions, formatKbResults } from './tool';
+import http from 'http';
+import type { AddressInfo } from 'net';
+import { buildInstitutionKbInstructions, createInstitutionKbTool, formatKbResults } from './tool';
 import { forgetInstitutionKb, getInstitutionKbCatalog, getKbRagApiUrl } from './availability';
 
 describe('formatKbResults', () => {
   it('numbers each source with its document, section and pages', () => {
     const text = formatKbResults([
       {
+        doc_id: 'd1',
         title: 'BdREN contacts',
         doc_type: 'directory',
         section_path: '1. Team directory',
@@ -13,6 +16,7 @@ describe('formatKbResults', () => {
         text: '| Team | Email |\n| NOC | noc@bdren.net.bd |',
       },
       {
+        doc_id: 'd2',
         title: 'HR policy',
         doc_type: 'policy',
         section_path: '',
@@ -21,6 +25,7 @@ describe('formatKbResults', () => {
         text: 'Annual leave is twenty days.',
       },
       {
+        doc_id: 'd3',
         title: 'Notes',
         doc_type: 'other',
         section_path: '',
@@ -44,7 +49,7 @@ describe('formatKbResults', () => {
 describe('getInstitutionKbCatalog', () => {
   it('loads once a minute per tenant and never without a tenant', async () => {
     const load = jest.fn(async (tenantId: string) =>
-      tenantId === 'uni-a' ? [{ title: 'HR policy', docType: 'policy' }] : [],
+      tenantId === 'uni-a' ? [{ id: 'd1', title: 'HR policy', docType: 'policy' }] : [],
     );
     expect(await getInstitutionKbCatalog(undefined, load)).toEqual([]);
     expect(await getInstitutionKbCatalog('uni-a', load, 1_000)).toHaveLength(1);
@@ -61,8 +66,8 @@ describe('getInstitutionKbCatalog', () => {
 describe('buildInstitutionKbInstructions', () => {
   it('lists the documents and tells the model to search them before other sources', () => {
     const text = buildInstitutionKbInstructions([
-      { title: 'Draft Policy for\nWork-From-Home', docType: 'policy' },
-      { title: 'BdREN contacts', docType: 'directory' },
+      { id: 'd1', title: 'Draft Policy for\nWork-From-Home', docType: 'policy' },
+      { id: 'd2', title: 'BdREN contacts', docType: 'directory' },
     ]);
     expect(text).toContain(
       '- Draft Policy for Work-From-Home (policy)\n- BdREN contacts (directory)',
@@ -72,7 +77,11 @@ describe('buildInstitutionKbInstructions', () => {
   });
 
   it('caps a long list', () => {
-    const catalog = Array.from({ length: 45 }, (_, i) => ({ title: `Doc ${i}`, docType: 'other' }));
+    const catalog = Array.from({ length: 45 }, (_, i) => ({
+      id: `d${i}`,
+      title: `Doc ${i}`,
+      docType: 'other',
+    }));
     const text = buildInstitutionKbInstructions(catalog);
     expect(text).toContain('- Doc 39 (other)');
     expect(text).not.toContain('- Doc 40 (other)');
@@ -93,5 +102,51 @@ describe('getKbRagApiUrl', () => {
     expect(getKbRagApiUrl()).toBe('https://rag.example');
     process.env.KB_RAG_API_URL = 'http://127.0.0.1:8010';
     expect(getKbRagApiUrl()).toBe('http://127.0.0.1:8010');
+  });
+});
+
+describe('createInstitutionKbTool', () => {
+  it('never shows results from a document that no longer has a record', async () => {
+    process.env.RAG_JWT_SECRET = 'test-secret';
+    const server = http.createServer((_req, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      res.end(
+        JSON.stringify({
+          results: [
+            {
+              doc_id: 'gone',
+              title: 'Deleted',
+              doc_type: 'other',
+              section_path: '',
+              page_start: 1,
+              page_end: 1,
+              text: 'stale',
+            },
+            {
+              doc_id: 'live',
+              title: 'HR policy',
+              doc_type: 'policy',
+              section_path: '',
+              page_start: 2,
+              page_end: 2,
+              text: 'Twenty days',
+            },
+          ],
+        }),
+      );
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const kbTool = createInstitutionKbTool({
+        ragApiUrl: `http://127.0.0.1:${port}`,
+        tenantId: 'uni-a',
+        knownDocumentIds: async () => new Set(['live']),
+      });
+      const output = await kbTool.invoke({ query: 'leave' });
+      expect(output).toBe('[1] HR policy, page 2\nTwenty days');
+    } finally {
+      server.close();
+    }
   });
 });

@@ -66,6 +66,7 @@ Look in the knowledge base first. Unless the request is plainly general knowledg
 }
 
 interface KbResult {
+  doc_id: string;
   title: string;
   doc_type: string;
   section_path: string;
@@ -105,11 +106,17 @@ export interface InstitutionKbToolOptions {
   ragApiUrl: string;
   /** Taken from the signed-in user on the server, never from the model. */
   tenantId: string;
+  /**
+   * Documents that still have a record. Chunks of any other document are leftovers of a
+   * delete that did not reach the index, and are never shown to the model.
+   */
+  knownDocumentIds?: () => Promise<ReadonlySet<string>>;
 }
 
 export function createInstitutionKbTool({
   ragApiUrl,
   tenantId,
+  knownDocumentIds,
 }: InstitutionKbToolOptions): DynamicStructuredTool {
   const url = `${ragApiUrl.replace(/\/+$/, '')}/kb/query`;
   return tool(async ({ query, doc_types }: KbToolInput, runConfig?: { signal?: AbortSignal }) => {
@@ -122,6 +129,8 @@ export function createInstitutionKbTool({
         signal: runConfig?.signal,
       },
     );
-    return formatKbResults(data.results ?? []);
+    const results = data.results ?? [];
+    const known = knownDocumentIds ? await knownDocumentIds() : null;
+    return formatKbResults(known ? results.filter((r) => known.has(r.doc_id)) : results);
   }, institutionKbToolDefinition) as DynamicStructuredTool;
 }

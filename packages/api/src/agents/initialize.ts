@@ -521,7 +521,9 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
    */
   getAccessibleMcpServerNames?: (userId?: string, role?: string) => Promise<string[]>;
   /** The user's institution's searchable documents; when any, `institution_kb` is added. */
-  getInstitutionKbCatalog?: (tenantId: string) => Promise<{ title: string; docType: string }[]>;
+  getInstitutionKbCatalog?: (
+    tenantId: string,
+  ) => Promise<{ id: string; title: string; docType: string }[]>;
   /** Update usage tracking for multiple files */
   updateFilesUsage: (
     files: Array<{ file_id: string }>,

@@ -49,6 +49,7 @@ export type FailKbIngestInput = {
 };
 
 export type KbCatalogEntry = {
+  id: string;
   title: string;
   docType: KbDocType;
 };
@@ -71,8 +72,12 @@ export interface KbMethods {
   getKbUsage(): Promise<KbUsage>;
   /** Whether this tenant has anything searchable; read on every chat turn, so one indexed query. */
   hasReadyKbDocuments(tenantId: string): Promise<boolean>;
-  /** Titles and types of a tenant's searchable documents, newest first, for the chat prompt. */
+  /** A tenant's searchable documents, newest first: the chat prompt lists them, search keeps to them. */
   listReadyKbCatalog(tenantId: string, limit?: number): Promise<KbCatalogEntry[]>;
+  /** Every document record a tenant has, in any state, for reconciling the search index. */
+  listKbDocumentIds(tenantId: string): Promise<string[]>;
+  /** Institutions plus any tenant with knowledge base records. Call inside `runAsSystem`. */
+  listKbTenantIds(): Promise<string[]>;
   updateKbDocument(
     documentId: string,
     update: { title?: string; docType?: KbDocType; updatedBy?: string | null },
@@ -208,13 +213,31 @@ export function createKbMethods(mongoose: typeof import('mongoose')): KbMethods 
     return found != null;
   }
 
-  async function listReadyKbCatalog(tenantId: string, limit = 40): Promise<KbCatalogEntry[]> {
-    return (await documents()
+  async function listReadyKbCatalog(
+    tenantId: string,
+    limit: number = KbLimits.maxDocuments,
+  ): Promise<KbCatalogEntry[]> {
+    const ready = await documents()
       .find({ tenantId, currentVersion: { $gt: 0 } })
       .sort({ updatedAt: -1 })
       .limit(limit)
-      .select('-_id title docType')
-      .lean()) as KbCatalogEntry[];
+      .select('_id title docType')
+      .lean();
+    return ready.map(({ _id, title, docType }) => ({ id: String(_id), title, docType }));
+  }
+
+  async function listKbDocumentIds(tenantId: string): Promise<string[]> {
+    const ids = await documents().distinct('_id', { tenantId });
+    return ids.map(String);
+  }
+
+  async function listKbTenantIds(): Promise<string[]> {
+    const institutions = mongoose.models.Institution;
+    const [fromInstitutions, fromDocuments] = await Promise.all([
+      institutions ? institutions.distinct('tenantId') : Promise.resolve([]),
+      documents().distinct('tenantId'),
+    ]);
+    return [...new Set([...fromInstitutions, ...fromDocuments].map(String))].filter(Boolean);
   }
 
   async function updateKbDocument(
@@ -422,6 +445,8 @@ export function createKbMethods(mongoose: typeof import('mongoose')): KbMethods 
     getKbUsage,
     hasReadyKbDocuments,
     listReadyKbCatalog,
+    listKbDocumentIds,
+    listKbTenantIds,
     updateKbDocument,
     listKbDocumentVersions,
     claimKbIngestJob,

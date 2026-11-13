@@ -10,6 +10,7 @@ const {
   INSTITUTION_KB_TOOL_NAME,
   createInstitutionKbTool,
   getKbRagApiUrl,
+  getInstitutionKbCatalog,
   isFileAuthoringTool,
   READ_DOCUMENT_TOOL_NAME,
   resolveFirecrawlBudgetScope,
@@ -71,7 +72,13 @@ const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getMCPServerTools, checkCapability } = require('~/server/services/Config');
 const { getMCPServersRegistry } = require('~/config');
-const { getRoleByName, setMemory, deleteMemory, getFormattedMemories } = require('~/models');
+const {
+  getRoleByName,
+  setMemory,
+  deleteMemory,
+  listReadyKbCatalog,
+  getFormattedMemories,
+} = require('~/models');
 
 /**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
@@ -450,7 +457,12 @@ const loadTools = async ({
       const tenantId = options.req?.user?.tenantId;
       const ragApiUrl = getKbRagApiUrl();
       if (tenantId && ragApiUrl) {
-        requestedTools[tool] = async () => createInstitutionKbTool({ ragApiUrl, tenantId });
+        const knownDocumentIds = async () =>
+          new Set(
+            (await getInstitutionKbCatalog(tenantId, listReadyKbCatalog)).map(({ id }) => id),
+          );
+        requestedTools[tool] = async () =>
+          createInstitutionKbTool({ ragApiUrl, tenantId, knownDocumentIds });
       }
       continue;
     } else if (isFirecrawlTool(tool)) {
