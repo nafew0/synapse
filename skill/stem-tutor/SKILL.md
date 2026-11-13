@@ -17,44 +17,73 @@ In the chat. Make a file only when the user asks for one ("as Word", "a PDF", "i
 solution sheet"); then see [A file, when asked](#a-file-when-asked). For an exam paper or
 worksheet use the `teaching-materials` skill; for LaTeX source, the `latex` skill.
 
-## Pick the shape from the question
+## Every answer has the same sections
 
-**A concept** ("what is", "why does", "explain", "how does … work"):
+Explaining or solving, an answer is built in this order. Start each part with its name as a `###`
+heading on its own line (`### The idea behind it`), so a student or teacher can read, reuse or skip
+a part. Theory comes first and the solution uses it.
 
-1. The idea in one or two plain sentences.
-2. How it works, built up from something the reader already knows.
-3. One analogy (rules below), then where it stops being true.
-4. The defining equation, if there is one, with each symbol named and its unit.
-5. One worked example or real case with real numbers.
-6. A common misconception, if there is a well-known one.
+### 1. The idea behind it
 
-**A problem** ("solve", "find", "calculate", "how much"):
+The concept or theory the question rests on, in plain words, built up from something the reader
+already knows. For a problem, this is the theory needed to solve it ("a falling object turns height
+into speed: energy is conserved"), not the solution yet.
 
-1. **Given** and **Find** in one line each, with units.
-2. The plan in one sentence: which law or method, and why it fits.
-3. Numbered steps. Each says what is done and why, names the formula, law or theorem used
-   ("Newton's second law", "the chain rule", "the ideal gas law"), states it once before using it,
-   then shows the working.
-4. **Answer** set apart, with units and sensible significant figures.
-5. **Check** in a line: units, substitution, an extreme case or the order of magnitude.
+### 2. Everyday analogy
 
-**A proof or derivation:** what is to be shown; the idea of the proof in one sentence; numbered
-steps, each justified by a named result; what was shown, at the end. Never skip a step as "obvious".
+One analogy from daily life that anyone, anywhere, has seen: water in a pipe or a tank, a crowded
+room, a ball rolling downhill, money in a bank account, a queue, a pan heating on a stove. Never tie
+it to a country, sport or culture. Pick the one that works the same way as the idea, then say in a
+sentence where it stops being true ("unlike water, charge is not used up in a bulb").
+
+### 3. The formula and why it works
+
+The formula, law or theorem, displayed on its own line, each symbol named with its unit. Then the
+logic behind it in two to four lines: where it comes from or why it must be true, never only
+the formula restated (the product rule holds because when both sides of a rectangle grow a little,
+its area grows by two thin strips, one for each side). The formula belongs here, not in section 1 ("kinetic energy
+grows with the square of speed, so doubling speed needs four times the energy"). For a proof, state
+each theorem the proof will use here.
+
+### 4. Applying it
+
+- **Solving:** **Given** and **Find** with units, then numbered steps. Each step names the part of
+  section 1 or 3 it uses ("by conservation of energy", "substituting into the formula above") and
+  shows the working.
+- **Explaining:** one worked example with real numbers, then where the idea shows up in real life
+  (a fridge, a phone battery, a bridge, a medicine dose).
+- **Proving:** numbered steps, each justified by a named result from section 3. Never skip a step
+  as "obvious".
+
+### 5. Answer
+
+Set apart, with units and sensible significant figures, and one line on what it means in real terms
+("19.8 m/s is about 71 km/h, a car's highway speed"). For an explanation, the idea in one sentence;
+for a proof, what was shown.
+
+### 6. Check
+
+One line: units, substitution back, an extreme case or a rough estimate. Add a common mistake when
+there is a well-known one ("heavier objects do not fall faster without air resistance").
+
+### A teacher preparing a lesson
+
+When the user is teaching others ("explain to my class", "how do I teach", "for a lesson"), keep the
+six sections and add three: **More analogies** (two more, each with where it breaks), **Classroom
+demo** (a simple activity with everyday objects), and **Check questions** (three short questions
+with answers, the answers set apart at the end).
+
+Every calculation, derivative, proof or "how many" gets all six sections, however short the
+working: the theory first, then the solution that uses it. Skip them only for a look-up with
+nothing to work out ("what is the value of g?").
 
 ## Level
 
 Match the question. A school-level question gets school-level words, and every technical term is
-defined the first time. A postgraduate question can be terse. Keep technical terms in English in
-any language. When the user says a step is unclear, re-explain only that step, from a different
-angle and with a small example; do not repeat the whole answer.
-
-## Analogies
-
-One analogy from everyday life that anyone, anywhere, has seen: water in a pipe or a tank, a
-crowded room, a ball rolling downhill, money in a bank account, a queue, a pan heating on a stove.
-Never tie it to a country, sport or culture. Pick the one that works the same way as the concept,
-use it for one idea only, and always say where it breaks ("unlike water, charge does not get used
-up"). No analogy for pure calculation.
+defined the first time. A postgraduate question can be terse, but keeps the sections. Keep
+technical terms in English in any language. When the user says a part is unclear, re-explain only
+that part from a different angle with a small example; when they ask for another analogy or
+example, give a new one, not the same one reworded.
 
 ## Accuracy
 
