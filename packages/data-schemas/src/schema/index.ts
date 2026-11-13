@@ -9,6 +9,7 @@ export { default as bannerSchema } from './banner';
 export { default as bannerViewSchema } from './bannerView';
 export { default as categoriesSchema } from './categories';
 export { default as chatProjectSchema } from './chatProject';
+export { kbDocumentSchema, kbDocumentVersionSchema, kbIngestJobSchema } from './kb';
 export { default as conversationTagSchema } from './conversationTag';
 export { default as convoSchema } from './convo';
 export { default as fileSchema } from './file';

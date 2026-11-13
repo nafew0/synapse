@@ -35,6 +35,8 @@ export const SystemCapabilities = {
   MANAGE_SKILLS: 'manage:skills',
   READ_SHARED_LINKS: 'read:sharedlinks',
   MANAGE_SHARED_LINKS: 'manage:sharedlinks',
+  READ_KB: 'read:kb',
+  MANAGE_KB: 'manage:kb',
   /** Reserved — not yet enforced by any middleware. */
   READ_ASSISTANTS: 'read:assistants',
   MANAGE_ASSISTANTS: 'manage:assistants',
@@ -94,6 +96,7 @@ export const CapabilityImplications: Partial<Record<BaseSystemCapability, BaseSy
     [SystemCapabilities.MANAGE_SKILLS]: [SystemCapabilities.READ_SKILLS],
     [SystemCapabilities.MANAGE_SHARED_LINKS]: [SystemCapabilities.READ_SHARED_LINKS],
     [SystemCapabilities.MANAGE_ASSISTANTS]: [SystemCapabilities.READ_ASSISTANTS],
+    [SystemCapabilities.MANAGE_KB]: [SystemCapabilities.READ_KB],
   };
 
 // ---------------------------------------------------------------------------
@@ -254,6 +257,8 @@ export const CAPABILITY_CATEGORIES: CapabilityCategory[] = [
       SystemCapabilities.MANAGE_MCP_SERVERS,
       SystemCapabilities.MANAGE_SHARED_LINKS,
       SystemCapabilities.READ_SHARED_LINKS,
+      SystemCapabilities.MANAGE_KB,
+      SystemCapabilities.READ_KB,
     ],
   },
   {

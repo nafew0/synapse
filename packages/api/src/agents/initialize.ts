@@ -80,6 +80,8 @@ import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
+import { INSTITUTION_KB_TOOL_NAME } from '~/kb/tool';
+import { hasInstitutionKb } from '~/kb/availability';
 import { primeResources } from './resources';
 
 /**
@@ -518,6 +520,8 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
    * operator-config names.
    */
   getAccessibleMcpServerNames?: (userId?: string, role?: string) => Promise<string[]>;
+  /** Whether the user's institution has a searchable knowledge base; adds `institution_kb` when so. */
+  hasInstitutionKb?: (tenantId: string) => Promise<boolean>;
   /** Update usage tracking for multiple files */
   updateFilesUsage: (
     files: Array<{ file_id: string }>,
@@ -693,6 +697,23 @@ export async function initializeAgent(
       agent.tools = healedKeys.tools;
       agent.tool_options = healedKeys.toolOptions;
     }
+  }
+
+  /**
+   * The institution knowledge base is offered to every model the member uses, but only to
+   * agents that already call tools: a tool-less agent, such as image generation, may run on
+   * a model that cannot take one.
+   */
+  const kbTenantId = (req.user as { tenantId?: string } | undefined)?.tenantId;
+  if (
+    db.hasInstitutionKb &&
+    kbTenantId &&
+    process.env.RAG_API_URL &&
+    (agent.tools?.length ?? 0) > 0 &&
+    !agent.tools!.includes(INSTITUTION_KB_TOOL_NAME) &&
+    (await hasInstitutionKb(kbTenantId, db.hasInstitutionKb))
+  ) {
+    agent.tools = [...agent.tools!, INSTITUTION_KB_TOOL_NAME];
   }
 
   if (

@@ -6,6 +6,7 @@ import { createSkillSyncStatusModel } from './skillSyncStatus';
 import { createConversationTagModel } from './conversationTag';
 import { createAgentCategoryModel } from './agentCategory';
 import { createChatProjectModel } from './chatProject';
+import { createKbDocumentModel, createKbDocumentVersionModel, createKbIngestJobModel } from './kb';
 import { createAgentApiKeyModel } from './agentApiKey';
 import { createTransactionModel } from './transaction';
 import { createPromptGroupModel } from './promptGroup';
@@ -63,6 +64,9 @@ export function createModels(mongoose: typeof import('mongoose')): {
   CreditGrant: ReturnType<typeof createCreditGrantModel>;
   Conversation: ReturnType<typeof createConversationModel>;
   ChatProject: ReturnType<typeof createChatProjectModel>;
+  KbDocument: ReturnType<typeof createKbDocumentModel>;
+  KbDocumentVersion: ReturnType<typeof createKbDocumentVersionModel>;
+  KbIngestJob: ReturnType<typeof createKbIngestJobModel>;
   Message: ReturnType<typeof createMessageModel>;
   Agent: ReturnType<typeof createAgentModel>;
   AgentApiKey: ReturnType<typeof createAgentApiKeyModel>;
@@ -117,6 +121,9 @@ export function createModels(mongoose: typeof import('mongoose')): {
     CreditGrant: createCreditGrantModel(mongoose),
     Conversation: createConversationModel(mongoose),
     ChatProject: createChatProjectModel(mongoose),
+    KbDocument: createKbDocumentModel(mongoose),
+    KbDocumentVersion: createKbDocumentVersionModel(mongoose),
+    KbIngestJob: createKbIngestJobModel(mongoose),
     Message: createMessageModel(mongoose),
     Agent: createAgentModel(mongoose),
     AgentApiKey: createAgentApiKeyModel(mongoose),

@@ -7,6 +7,7 @@ export * from './user';
 export * from './token';
 export * from './convo';
 export * from './chatProject';
+export * from './kb';
 export * from './session';
 export * from './balance';
 export * from './creditGrant';

@@ -28,6 +28,19 @@ export const generateShortLivedToken = (userId: string, expireIn: string = '5m')
   });
 };
 
+export const KB_SCOPE = 'kb';
+
+/**
+ * Token for the RAG API's institution knowledge base routes. The tenant travels in the signed
+ * claim, never in the request body, so a caller can only read or write its own institution.
+ */
+export const generateKbToken = (tenantId: string, expireIn: string = '5m'): string => {
+  return jwt.sign({ id: `kb:${tenantId}`, scope: KB_SCOPE, tenant: tenantId }, getRagJwtSecret(), {
+    expiresIn: expireIn,
+    algorithm: 'HS256',
+  });
+};
+
 /** Mint the server-only identity used by durable agent trigger admission. */
 export const generateAgentTriggerToken = (userId: string, expireIn: string = '60s'): string => {
   return jwt.sign({ id: userId, scope: AGENT_TRIGGER_SCOPE }, process.env.JWT_SECRET!, {
