@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { unlink } from 'fs/promises';
 import { logger } from '@librechat/data-schemas';
+import { inferMimeType } from 'librechat-data-provider';
 import type { Response } from 'express';
 import type { BrowserExtensionMethods, IInstitution } from '@librechat/data-schemas';
 import type { ExtensionConfig } from './config';
@@ -8,6 +9,7 @@ import type { CredentialStore } from './credentials';
 import type { ExtensionRequest } from './auth';
 import { exchangeCode, issueCode } from './credentials';
 import { parseText } from '~/files/text';
+import { parseDocument } from '~/files/documents/crud';
 
 /** Documents the extension may send to be read: the formats tax and VAT papers arrive in. */
 const DOCUMENT_TYPES = /\.(pdf|docx?|xlsx?|odt|ods|rtf|csv|pptx?)$/i;
@@ -30,8 +32,29 @@ export function createExtensionHandlers(deps: {
   store: CredentialStore & Pick<BrowserExtensionMethods, 'deleteBrowserExtensionTokens'>;
   getInstitutionByTenantId: (tenantId: string) => Promise<IInstitution | null>;
   parse?: typeof parseText;
+  parseDocument?: typeof parseDocument;
 }): ExtensionHandlers {
   const parse = deps.parse ?? parseText;
+  const parseBuiltIn = deps.parseDocument ?? parseDocument;
+
+  /**
+   * The RAG service's text extraction first, then Synapse's built-in document parser, as uploads do. Never raw text:
+   * read that way, a PDF or Word file is unreadable bytes.
+   */
+  const readDocument = async (
+    req: ExtensionRequest,
+    file: Express.Multer.File,
+  ): Promise<string> => {
+    try {
+      return (await parse({ req, file, file_id: randomUUID(), allowNativeFallback: false })).text;
+    } catch (error) {
+      logger.warn(
+        '[browserExtension] RAG extraction unavailable, using the built-in parser',
+        error instanceof Error ? error.message : '',
+      );
+      return (await parseBuiltIn({ file })).text;
+    }
+  };
 
   /** The connect page asks for a code to show; the user types it into the extension. */
   const createCode = async (req: ExtensionRequest, res: Response): Promise<void> => {
@@ -99,7 +122,10 @@ export function createExtensionHandlers(deps: {
         });
         return;
       }
-      const { text } = await parse({ req, file, file_id: randomUUID() });
+      if (!file.mimetype || file.mimetype === 'application/octet-stream') {
+        file.mimetype = inferMimeType(file.originalname, file.mimetype) || file.mimetype;
+      }
+      const text = await readDocument(req, file);
       res.json({
         name: file.originalname,
         text: text.slice(0, MAX_EXTRACT_CHARS),

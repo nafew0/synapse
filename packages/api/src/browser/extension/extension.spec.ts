@@ -47,7 +47,13 @@ const route =
   (req, res, next) =>
     void handler(req as ExtensionRequest, res, next);
 
-function app(fetchImpl: FetchLike, parse?: Parameters<typeof createExtensionHandlers>[0]['parse']) {
+type HandlerDeps = Parameters<typeof createExtensionHandlers>[0];
+
+function app(
+  fetchImpl: FetchLike,
+  parse?: HandlerDeps['parse'],
+  parseDocument?: HandlerDeps['parseDocument'],
+) {
   const server = express();
   server.use(express.json());
   const signedIn = (req: ExtensionRequest, _res: Response, next: NextFunction) => {
@@ -64,6 +70,7 @@ function app(fetchImpl: FetchLike, parse?: Parameters<typeof createExtensionHand
     store: db,
     getInstitutionByTenantId: db.getInstitutionByTenantId,
     parse,
+    parseDocument,
   });
   const model = createModelHandlers({ config: () => config, store: db, fetch: fetchImpl });
   server.post('/codes', route(signedIn), route(handlers.createCode));
@@ -330,5 +337,24 @@ describe('document reading', () => {
       .send({ file: { originalname: 'setup.exe', path } });
     expect(res.status).toBe(415);
     expect(existsSync(path)).toBe(false);
+  });
+
+  it('falls back to the built-in parser when the RAG service is unavailable, never to raw text', async () => {
+    const path = join(tmpdir(), `extract-${Date.now()}.docx`);
+    await writeFile(path, 'x');
+    const parse = jest.fn(async () => {
+      throw new Error('RAG unavailable');
+    });
+    const builtIn = jest.fn(async () => ({ text: 'Net VAT payable 125,200', pages: 1 }));
+    const server = app(noFetch, parse, builtIn as unknown as HandlerDeps['parseDocument']);
+    const token = await signIn(server);
+    const res = await request(server)
+      .post('/extract')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ file: { originalname: 'return.docx', path, mimetype: 'application/octet-stream' } });
+    expect(res.body.text).toBe('Net VAT payable 125,200');
+    expect(parse).toHaveBeenCalledWith(expect.objectContaining({ allowNativeFallback: false }));
+    const [[{ file }]] = builtIn.mock.calls as unknown as Array<[{ file: Express.Multer.File }]>;
+    expect(file.mimetype).toContain('wordprocessingml');
   });
 });
