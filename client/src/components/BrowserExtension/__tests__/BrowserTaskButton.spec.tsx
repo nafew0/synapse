@@ -44,7 +44,7 @@ describe('the button that hands a task to Synapse Browser', () => {
   it('sends what was typed, and clears the composer once it is handed over', async () => {
     const sent = fakeChrome({
       ping: { installed: true, version: '1.0.0', connected: true, enabled: true },
-      task: { ok: true, opened: true },
+      task: { ok: true },
     });
     const onSent = jest.fn();
     show(<BrowserTaskButton getText={() => '  fill my leave form  '} onSent={onSent} />);
@@ -57,11 +57,11 @@ describe('the button that hands a task to Synapse Browser', () => {
     });
   });
 
-  it('still counts as handed over when the panel could not open itself', async () => {
+  it('counts as handed over however the panel behaves', async () => {
     const onSent = jest.fn();
     fakeChrome({
       ping: { installed: true, version: '1.0.0', connected: true, enabled: true },
-      task: { ok: true, opened: false },
+      task: { ok: true },
     });
     show(<BrowserTaskButton getText={() => 'do it'} onSent={onSent} />);
     await userEvent.click(await screen.findByRole('button'));
@@ -72,7 +72,7 @@ describe('the button that hands a task to Synapse Browser', () => {
     const onSent = jest.fn();
     const sent = fakeChrome({
       ping: { installed: true, version: '1.0.0', connected: true, enabled: true },
-      task: { ok: false, opened: false, reason: 'disabled' },
+      task: { ok: false, reason: 'disabled' },
     });
     show(<BrowserTaskButton getText={() => 'do it'} onSent={onSent} />);
     await userEvent.click(await screen.findByRole('button'));

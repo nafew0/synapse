@@ -29,10 +29,7 @@ function BrowserTaskButton({ getText, onSent, disabled }: {
       showToast({ message: localize(result ? reason : 'com_ui_browser_task_failed'), status: 'warning' });
       return;
     }
-    showToast({
-      message: localize(result.opened ? 'com_ui_browser_task_sent' : 'com_ui_browser_task_waiting'),
-      status: 'success',
-    });
+    showToast({ message: localize('com_ui_browser_task_sent'), status: 'success' });
     onSent();
   }, [getText, handOver, localize, onSent, showToast]);
 

@@ -7,6 +7,14 @@ import { useCallback, useEffect, useState } from 'react';
  */
 export const BROWSER_EXTENSION_ID = 'infhkkgcaahmcnccpfolcghgdcfgnigi';
 
+/**
+ * Two ways to reach it. The bridge — a content script the extension puts on this app's pages — carries the click's
+ * user activation, which is what Chrome needs before it will open the side panel; without it the task still starts,
+ * but the panel waits for the user to open it. The direct call is the fallback.
+ */
+const BRIDGE_SOURCE = 'synapse-browser';
+const BRIDGE_TIMEOUT_MS = 400;
+
 interface ChromeRuntime {
   sendMessage: (id: string, message: unknown, callback: (response?: unknown) => void) => void;
   lastError?: { message?: string };
@@ -23,8 +31,7 @@ interface Ping {
 
 export interface TaskResult {
   ok: boolean;
-  /** False when the panel could not open by itself: the user clicks the extension's button to see the task. */
-  opened: boolean;
+  /** Why it could not be taken. Absent when the run has started in a tab of its own. */
   reason?: 'not_connected' | 'disabled' | 'empty';
 }
 
@@ -32,7 +39,28 @@ function runtime(): ChromeRuntime | undefined {
   return (window as ExtensionWindow).chrome?.runtime;
 }
 
-function send<T>(message: unknown): Promise<T | null> {
+/** Through the content script, so the click still counts. Null when no bridge answers in time. */
+function viaBridge<T>(message: { type: 'ping' | 'task'; text?: string }): Promise<T | null> {
+  return new Promise((resolve) => {
+    const id = `${Date.now()}-${Math.random()}`;
+    const done = (value: T | null) => {
+      window.removeEventListener('message', listener);
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const listener = (event: MessageEvent) => {
+      const data = event.data as { source?: string; id?: string; reply?: T | null } | null;
+      if (event.source !== window || data?.source !== BRIDGE_SOURCE || data.id !== id) return;
+      done(data.reply ?? null);
+    };
+    const timer = setTimeout(() => done(null), BRIDGE_TIMEOUT_MS);
+    window.addEventListener('message', listener);
+    window.postMessage({ source: BRIDGE_SOURCE, id, ...message }, window.location.origin);
+  });
+}
+
+/** Straight to the extension. Chrome delivers it, but the panel cannot open without the click's activation. */
+function direct<T>(message: unknown): Promise<T | null> {
   const api = runtime();
   if (!api?.sendMessage) return Promise.resolve(null);
   return new Promise((resolve) => {
@@ -54,14 +82,18 @@ export function useBrowserTask() {
 
   useEffect(() => {
     let live = true;
-    void send<Ping>({ type: 'ping' }).then((ping) => live && setState(ping));
+    void (async () => {
+      const ping = (await viaBridge<Ping>({ type: 'ping' })) ?? (await direct<Ping>({ type: 'ping' }));
+      if (live) setState(ping);
+    })();
     return () => {
       live = false;
     };
   }, []);
 
   const handOver = useCallback(
-    (text: string) => send<TaskResult>({ type: 'task', text }),
+    async (text: string) =>
+      (await viaBridge<TaskResult>({ type: 'task', text })) ?? (await direct<TaskResult>({ type: 'task', text })),
     [],
   );
 
