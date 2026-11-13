@@ -2502,8 +2502,8 @@
   "com_ui_browser_ext_sign_out": "Sign out every extension",
   "com_ui_browser_ext_signed_out": "Signed out: {{0}}",
   "com_ui_browser_task": "Do this in my browser",
-  "com_ui_browser_task_sent": "Sent to Synapse Browser. It is waiting in the new tab — read it and press send.",
-  "com_ui_browser_task_waiting": "Sent to Synapse Browser. Click its button in the toolbar to see the task.",
+  "com_ui_browser_task_sent": "Started in Synapse Browser — watch it in the new tab.",
+  "com_ui_browser_task_waiting": "Sent to Synapse Browser. Open it in the new tab to start it.",
   "com_ui_browser_task_off": "Browser tasks are not switched on for your institution.",
   "com_ui_browser_task_signed_out": "Sign in to Synapse in the browser extension first.",
   "com_ui_browser_task_failed": "Synapse Browser did not answer. Check that it is installed."
