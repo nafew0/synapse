@@ -30,6 +30,8 @@ export interface KbIndexClient {
   rename(
     target: Omit<KbIndexTarget, 'version'> & { title?: string; docType?: string },
   ): Promise<void>;
+  /** Every document the index holds chunks for, for this tenant. */
+  listDocumentIds(tenantId: string): Promise<string[]>;
 }
 
 const toPayload = (chunk: KbChunk) => ({
@@ -94,5 +96,10 @@ export function createKbIndexClient(baseUrl: string): KbIndexClient {
     );
   };
 
-  return { upload, activate, remove, rename };
+  const listDocumentIds = async (tenantId: string) => {
+    const { data } = await axios.get<{ doc_ids: string[] }>(`${base}/kb/documents`, auth(tenantId));
+    return data.doc_ids ?? [];
+  };
+
+  return { upload, activate, remove, rename, listDocumentIds };
 }

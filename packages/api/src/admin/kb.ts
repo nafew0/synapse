@@ -131,6 +131,28 @@ export interface AdminKbHandlers {
   retry: AdminKbHandler;
 }
 
+const INDEX_DELETE_ATTEMPTS = 3;
+
+/** Index chunks left behind after all attempts are removed by the worker's reconciliation. */
+async function removeFromIndex(
+  index: Pick<KbIndexClient, 'remove'>,
+  tenantId: string,
+  documentId: string,
+): Promise<void> {
+  for (let attempt = 1; attempt <= INDEX_DELETE_ATTEMPTS; attempt++) {
+    try {
+      await index.remove({ tenantId, documentId });
+      return;
+    } catch (error) {
+      if (attempt === INDEX_DELETE_ATTEMPTS) {
+        logger.warn(
+          `[admin/kb] could not remove ${tenantId}/${documentId} from the index; reconciliation will: ${(error as Error).message}`,
+        );
+      }
+    }
+  }
+}
+
 export function createAdminKbHandlers(deps: AdminKbDeps): AdminKbHandlers {
   const { methods, store } = deps;
 
@@ -298,12 +320,14 @@ export function createAdminKbHandlers(deps: AdminKbDeps): AdminKbHandlers {
   const remove = scoped(async (req, res, tenantId) => {
     const existing = await findDocument(req.params.documentId);
     const documentId = String(existing._id);
-    if (deps.index) {
-      await deps.index.remove({ tenantId, documentId });
-    }
+    /* Record first: a worker still processing this document checks for it after activating,
+     * and removes its own chunks once the record is gone. */
     const { fileRefs } = await methods.deleteKbDocument(documentId);
-    await Promise.all(fileRefs.map((ref) => store.remove(ref).catch(() => undefined)));
     forgetInstitutionKb(tenantId);
+    await Promise.all(fileRefs.map((ref) => store.remove(ref).catch(() => undefined)));
+    if (deps.index) {
+      await removeFromIndex(deps.index, tenantId, documentId);
+    }
     res.status(204).end();
   });
 

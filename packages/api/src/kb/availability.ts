@@ -8,6 +8,7 @@ export const getKbRagApiUrl = (): string | undefined =>
   process.env.KB_RAG_API_URL || process.env.RAG_API_URL || undefined;
 
 export interface KbCatalogItem {
+  id: string;
   title: string;
   docType: string;
 }
