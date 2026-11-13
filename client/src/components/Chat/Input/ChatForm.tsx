@@ -50,6 +50,7 @@ import StopButton from './StopButton';
 import SendButton from './SendButton';
 import EditBadges from './EditBadges';
 import BadgeRow from './BadgeRow';
+import { BrowserTaskButton } from '~/components/BrowserExtension';
 import Mention from './Mention';
 import store from '~/store';
 
@@ -691,6 +692,12 @@ const ChatForm = memo(function ChatForm({
                     isSubmitting={isSubmitting}
                   />
                 )}
+                {/* Synapse Browser: hands the typed task to the extension, which opens it in a new tab. */}
+                <BrowserTaskButton
+                  getText={() => methods.getValues('text') ?? ''}
+                  onSent={() => methods.reset()}
+                  disabled={disableInputs || isNotAppendable || isSubmitting}
+                />
                 {steering.duringRunActive &&
                   steering.canControlGeneration &&
                   (textValue?.trim() ?? '') !== '' && (
