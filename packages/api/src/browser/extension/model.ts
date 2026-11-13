@@ -98,13 +98,14 @@ export function createModelHandlers(deps: {
     const config = deps.config();
     const user = req.user;
     if (!user) {
-      res.status(401).json({ error: { message: 'Sign in to Synapse again.' } });
+      res.status(401).json({ error: { code: 'signed_out', message: 'Sign in to Synapse again.' } });
       return;
     }
     const used = await deps.store.sumBrowserExtensionTokens(user._id, startOfUtcDay(now()));
     if (used >= config.dailyTokens) {
       res.status(429).json({
         error: {
+          code: 'daily_limit',
           message: "You have reached today's limit for browser tasks. It resets at 00:00 UTC.",
         },
       });

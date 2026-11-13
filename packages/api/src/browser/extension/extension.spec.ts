@@ -280,6 +280,7 @@ describe('the model endpoint', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ messages: [] });
     expect(res.status).toBe(429);
+    expect(res.body.error.code).toBe('daily_limit');
   });
 
   it('passes a provider error through with its status', async () => {
