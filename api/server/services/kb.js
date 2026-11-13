@@ -3,6 +3,7 @@ const {
   createDoclingClient,
   startKbIngestWorker,
   createLocalKbFileStore,
+  getKbRagApiUrl,
 } = require('@librechat/api');
 const { logger, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
 const paths = require('~/config/paths');
@@ -11,7 +12,8 @@ const db = require('~/models');
 /** Originals live beside other uploads; see `createLocalKbFileStore` for the layout. */
 const store = createLocalKbFileStore(paths.uploads);
 
-const index = process.env.RAG_API_URL ? createKbIndexClient(process.env.RAG_API_URL) : null;
+const ragApiUrl = getKbRagApiUrl();
+const index = ragApiUrl ? createKbIndexClient(ragApiUrl) : null;
 
 const runAsTenant = (tenantId, fn) => tenantStorage.run({ tenantId }, fn);
 
@@ -24,7 +26,7 @@ function startKnowledgeBaseWorker() {
   const doclingKey = process.env.KB_DOCLING_API_KEY;
   if (!doclingUrl || !doclingKey || !index) {
     logger.info(
-      '[kb] ingestion worker off: set KB_DOCLING_URL, KB_DOCLING_API_KEY and RAG_API_URL to run it',
+      '[kb] ingestion worker off: set KB_DOCLING_URL, KB_DOCLING_API_KEY and KB_RAG_API_URL or RAG_API_URL to run it',
     );
     return null;
   }

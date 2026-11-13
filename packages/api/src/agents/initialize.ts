@@ -81,7 +81,7 @@ import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
 import { INSTITUTION_KB_TOOL_NAME } from '~/kb/tool';
-import { hasInstitutionKb } from '~/kb/availability';
+import { getKbRagApiUrl, hasInstitutionKb } from '~/kb/availability';
 import { primeResources } from './resources';
 
 /**
@@ -708,7 +708,7 @@ export async function initializeAgent(
   if (
     db.hasInstitutionKb &&
     kbTenantId &&
-    process.env.RAG_API_URL &&
+    getKbRagApiUrl() &&
     (agent.tools?.length ?? 0) > 0 &&
     !agent.tools!.includes(INSTITUTION_KB_TOOL_NAME) &&
     (await hasInstitutionKb(kbTenantId, db.hasInstitutionKb))

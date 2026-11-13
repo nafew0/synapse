@@ -19,6 +19,7 @@ const {
   isFirecrawlTool,
   isFirecrawlConfigured,
   INSTITUTION_KB_TOOL_NAME,
+  getKbRagApiUrl,
   loadToolDefinitions,
   GenerationJobManager,
   isActionDomainAllowed,
@@ -681,7 +682,7 @@ async function loadToolDefinitionsWrapper({
       return isFirecrawlConfigured();
     }
     if (tool === INSTITUTION_KB_TOOL_NAME) {
-      return Boolean(process.env.RAG_API_URL && req.user?.tenantId);
+      return Boolean(getKbRagApiUrl() && req.user?.tenantId);
     }
     if (tool === READ_DOCUMENT_TOOL_NAME) {
       return isDocumentOcrAllowed({
@@ -1395,7 +1396,7 @@ async function loadAgentTools({
     } else if (isFirecrawlTool(tool)) {
       return isFirecrawlConfigured();
     } else if (tool === INSTITUTION_KB_TOOL_NAME) {
-      return Boolean(process.env.RAG_API_URL && req.user?.tenantId);
+      return Boolean(getKbRagApiUrl() && req.user?.tenantId);
     } else if (tool === Tools.memory) {
       return checkCapability(AgentCapabilities.memory);
     } else if (tool === ASK_USER_QUESTION_TOOL_NAME) {

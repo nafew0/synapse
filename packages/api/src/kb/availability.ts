@@ -1,5 +1,12 @@
 const TTL_MS = 60_000;
 
+/**
+ * The RAG API holding the knowledge base index. `KB_RAG_API_URL` lets it differ from the one
+ * used for file search, e.g. a dev server that shares production's file search.
+ */
+export const getKbRagApiUrl = (): string | undefined =>
+  process.env.KB_RAG_API_URL || process.env.RAG_API_URL || undefined;
+
 const cache = new Map<string, { ready: boolean; expires: number }>();
 
 /**

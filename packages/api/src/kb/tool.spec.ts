@@ -1,5 +1,5 @@
 import { formatKbResults } from './tool';
-import { forgetInstitutionKb, hasInstitutionKb } from './availability';
+import { forgetInstitutionKb, getKbRagApiUrl, hasInstitutionKb } from './availability';
 
 describe('formatKbResults', () => {
   it('numbers each source with its document, section and pages', () => {
@@ -53,5 +53,21 @@ describe('hasInstitutionKb', () => {
     forgetInstitutionKb('uni-a');
     await hasInstitutionKb('uni-a', probe, 62_001);
     expect(probe).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('getKbRagApiUrl', () => {
+  const saved = { kb: process.env.KB_RAG_API_URL, rag: process.env.RAG_API_URL };
+  afterEach(() => {
+    process.env.KB_RAG_API_URL = saved.kb;
+    process.env.RAG_API_URL = saved.rag;
+  });
+
+  it('prefers the knowledge base RAG API and falls back to the file search one', () => {
+    process.env.RAG_API_URL = 'https://rag.example';
+    delete process.env.KB_RAG_API_URL;
+    expect(getKbRagApiUrl()).toBe('https://rag.example');
+    process.env.KB_RAG_API_URL = 'http://127.0.0.1:8010';
+    expect(getKbRagApiUrl()).toBe('http://127.0.0.1:8010');
   });
 });

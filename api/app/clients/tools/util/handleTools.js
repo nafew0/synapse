@@ -9,6 +9,7 @@ const {
   createFirecrawlTool,
   INSTITUTION_KB_TOOL_NAME,
   createInstitutionKbTool,
+  getKbRagApiUrl,
   isFileAuthoringTool,
   READ_DOCUMENT_TOOL_NAME,
   resolveFirecrawlBudgetScope,
@@ -447,9 +448,9 @@ const loadTools = async ({
       continue;
     } else if (tool === INSTITUTION_KB_TOOL_NAME) {
       const tenantId = options.req?.user?.tenantId;
-      if (tenantId && process.env.RAG_API_URL) {
-        requestedTools[tool] = async () =>
-          createInstitutionKbTool({ ragApiUrl: process.env.RAG_API_URL, tenantId });
+      const ragApiUrl = getKbRagApiUrl();
+      if (tenantId && ragApiUrl) {
+        requestedTools[tool] = async () => createInstitutionKbTool({ ragApiUrl, tenantId });
       }
       continue;
     } else if (isFirecrawlTool(tool)) {
