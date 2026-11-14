@@ -87,6 +87,38 @@ export function estimateInputTokens(body: ChatBody): number {
   return Math.ceil(text.length / CHARS_PER_TOKEN);
 }
 
+/** What a request is made of, by role and kind, so the cost of a step can be seen rather than guessed. */
+function logShape(body: ChatBody): void {
+  const messages = Array.isArray(body.messages) ? (body.messages as Array<Record<string, unknown>>) : [];
+  const parts: string[] = [];
+  let images = 0;
+  for (const message of messages) {
+    const content = message.content;
+    const text =
+      typeof content === 'string'
+        ? content.length
+        : Array.isArray(content)
+          ? content.reduce((sum: number, piece) => {
+              const p = piece as { type?: string; text?: string };
+              if (p.type === 'image_url' || p.type === 'image') images++;
+              return sum + (p.text?.length ?? 0);
+            }, 0)
+          : 0;
+    parts.push(`${String(message.role)}:${Math.round(text / 4)}`);
+  }
+  const toolList = Array.isArray(body.tools) ? (body.tools as unknown[]) : [];
+  const tools = JSON.stringify(toolList).length;
+  const byTool = toolList
+    .map((t) => {
+      const f = (t as { function?: { name?: string } }).function;
+      return `${f?.name ?? '?'}:${Math.round(JSON.stringify(t).length / 4)}`;
+    })
+    .sort((a, b) => Number(b.split(':')[1]) - Number(a.split(':')[1]));
+  logger.info(
+    `[browserExtension] step shape — messages ${messages.length} (${parts.join(' ')}) · images ${images} · tools ~${Math.round(tools / 4)} tokens [${byTool.join(' ')}]`,
+  );
+}
+
 /** The last usage report in a streamed answer's tail. */
 export function usageFromStream(tail: string): ProviderUsage | null {
   const lines = tail.split('\n').reverse();
@@ -169,6 +201,8 @@ export function createModelHandlers(deps: {
     const refused = droppedFields((req.body ?? {}) as ChatBody);
     if (refused.length) logger.warn(`[browserExtension] fields not passed on: ${refused.join(', ')}`);
     const estimate = estimateInputTokens(body);
+    // Where the size of a step goes, for tuning. Off unless asked for: it counts nothing but shapes and lengths.
+    if (process.env.BROWSER_EXTENSION_MEASURE === '1') logShape(body);
     const used = await deps.store.sumBrowserExtensionTokens(user._id, startOfUtcDay(now()));
     if (used + estimate >= config.dailyTokens) {
       res.status(429).json({
