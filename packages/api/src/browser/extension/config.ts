@@ -20,9 +20,25 @@ export interface ExtensionConfig {
    * waits on this, so `none` is the default; `low` and above buy judgement at seconds a step.
    */
   reasoning: 'none' | 'low' | 'medium' | 'high';
+  /**
+   * Tools to leave out of a run. Every tool's definition is sent on every step — about 8.5k tokens in all — so one
+   * a pilot never needs costs time on each of them. `snapshot` and `done` are always kept.
+   */
+  disabledTools: string[];
 }
 
 const EFFORTS = ['none', 'low', 'medium', 'high'] as const;
+
+/** Left out unless an institution asks for them: hovering, and the agent's own file tools. */
+const DEFAULT_DISABLED = ['hover', 'save_file', 'read_attachment'];
+
+const list = (value: string | undefined, fallback: string[]): string[] => {
+  const given = value
+    ?.split(',')
+    .map((name) => name.trim())
+    .filter(Boolean);
+  return given === undefined ? fallback : given;
+};
 
 const effort = (value: string | undefined): ExtensionConfig['reasoning'] => {
   const given = value?.trim().toLowerCase();
@@ -48,6 +64,7 @@ export function getExtensionConfig(env: NodeJS.ProcessEnv = process.env): Extens
     contextTokens: positive(env.BROWSER_EXTENSION_CONTEXT_TOKENS, 128_000),
     vision: env.BROWSER_EXTENSION_VISION?.trim().toLowerCase() !== 'false',
     reasoning: effort(env.BROWSER_EXTENSION_REASONING),
+    disabledTools: list(env.BROWSER_EXTENSION_DISABLED_TOOLS, DEFAULT_DISABLED),
   };
 }
 

@@ -106,6 +106,7 @@ export function createExtensionHandlers(deps: {
       maxOutputTokens: deps.config().maxOutputTokens,
       vision: deps.config().vision,
       reasoning: deps.config().reasoning,
+      disabledTools: deps.config().disabledTools,
     });
   };
 

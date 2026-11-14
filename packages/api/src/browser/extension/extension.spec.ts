@@ -27,6 +27,7 @@ const config: ExtensionConfig = {
   contextTokens: 400_000,
   vision: true,
   reasoning: 'none',
+  disabledTools: ['hover'],
 };
 
 let mongo: MongoMemoryServer;
@@ -163,6 +164,7 @@ describe('sign-in', () => {
       maxOutputTokens: 4_096,
       vision: true,
       reasoning: 'none',
+      disabledTools: ['hover'],
     });
   });
 
