@@ -19,6 +19,9 @@ function fakeChrome(replies: Record<string, Reply>) {
   return sent;
 }
 
+/** The hook asks a few times whether the extension's bridge is on the page before falling back to the direct call. */
+const AFTER_BRIDGE = { timeout: 4000 };
+
 const show = (ui: React.ReactElement) =>
   render(
     <RecoilRoot>
@@ -32,13 +35,13 @@ describe('the button that hands a task to Synapse Browser', () => {
   it('is not shown when the extension is missing', async () => {
     fakeChrome({});
     show(<BrowserTaskButton getText={() => 'fill my form'} onSent={jest.fn()} />);
-    await waitFor(() => expect(screen.queryByRole('button')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('button')).not.toBeInTheDocument(), AFTER_BRIDGE);
   });
 
   it('is not shown when the browser is not signed in to Synapse', async () => {
     fakeChrome({ ping: { installed: true, version: '1.0.0', connected: false, enabled: true } });
     show(<BrowserTaskButton getText={() => 'fill my form'} onSent={jest.fn()} />);
-    await waitFor(() => expect(screen.queryByRole('button')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('button')).not.toBeInTheDocument(), AFTER_BRIDGE);
   });
 
   it('sends what was typed, and clears the composer once it is handed over', async () => {
@@ -48,9 +51,9 @@ describe('the button that hands a task to Synapse Browser', () => {
     });
     const onSent = jest.fn();
     show(<BrowserTaskButton getText={() => '  fill my leave form  '} onSent={onSent} />);
-    const button = await screen.findByRole('button');
+    const button = await screen.findByRole('button', {}, AFTER_BRIDGE);
     await userEvent.click(button);
-    await waitFor(() => expect(onSent).toHaveBeenCalled());
+    await waitFor(() => expect(onSent).toHaveBeenCalled(), AFTER_BRIDGE);
     expect(sent.at(-1)).toEqual({
       id: expect.any(String),
       message: { type: 'task', text: 'fill my leave form' },
@@ -64,8 +67,8 @@ describe('the button that hands a task to Synapse Browser', () => {
       task: { ok: true },
     });
     show(<BrowserTaskButton getText={() => 'do it'} onSent={onSent} />);
-    await userEvent.click(await screen.findByRole('button'));
-    await waitFor(() => expect(onSent).toHaveBeenCalled());
+    await userEvent.click(await screen.findByRole('button', {}, AFTER_BRIDGE));
+    await waitFor(() => expect(onSent).toHaveBeenCalled(), AFTER_BRIDGE);
   });
 
   it('says what is wrong when the institution has browser tasks off', async () => {
@@ -75,9 +78,9 @@ describe('the button that hands a task to Synapse Browser', () => {
       task: { ok: false, reason: 'disabled' },
     });
     show(<BrowserTaskButton getText={() => 'do it'} onSent={onSent} />);
-    await userEvent.click(await screen.findByRole('button'));
+    await userEvent.click(await screen.findByRole('button', {}, AFTER_BRIDGE));
     // The composer keeps what the user typed: nothing was handed over.
-    await waitFor(() => expect(sent.at(-1)?.message.type).toBe('task'));
+    await waitFor(() => expect(sent.at(-1)?.message.type).toBe('task'), AFTER_BRIDGE);
     expect(onSent).not.toHaveBeenCalled();
   });
 });
