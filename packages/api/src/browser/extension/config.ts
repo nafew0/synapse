@@ -15,7 +15,19 @@ export interface ExtensionConfig {
   contextTokens: number;
   /** Whether the model reads screenshots. */
   vision: boolean;
+  /**
+   * How hard the model thinks at each step. A browser task is mostly mechanical — look, click, type — and each step
+   * waits on this, so `none` is the default; `low` and above buy judgement at seconds a step.
+   */
+  reasoning: 'none' | 'low' | 'medium' | 'high';
 }
+
+const EFFORTS = ['none', 'low', 'medium', 'high'] as const;
+
+const effort = (value: string | undefined): ExtensionConfig['reasoning'] => {
+  const given = value?.trim().toLowerCase();
+  return EFFORTS.find((e) => e === given) ?? 'none';
+};
 
 const positive = (value: string | undefined, fallback: number): number => {
   const parsed = Number(value);
@@ -35,6 +47,7 @@ export function getExtensionConfig(env: NodeJS.ProcessEnv = process.env): Extens
     maxSteps: positive(env.BROWSER_EXTENSION_MAX_STEPS, 50),
     contextTokens: positive(env.BROWSER_EXTENSION_CONTEXT_TOKENS, 128_000),
     vision: env.BROWSER_EXTENSION_VISION?.trim().toLowerCase() !== 'false',
+    reasoning: effort(env.BROWSER_EXTENSION_REASONING),
   };
 }
 

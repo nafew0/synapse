@@ -26,6 +26,7 @@ const config: ExtensionConfig = {
   maxSteps: 50,
   contextTokens: 400_000,
   vision: true,
+  reasoning: 'none',
 };
 
 let mongo: MongoMemoryServer;
@@ -161,6 +162,7 @@ describe('sign-in', () => {
       contextTokens: 400_000,
       maxOutputTokens: 4_096,
       vision: true,
+      reasoning: 'none',
     });
   });
 
