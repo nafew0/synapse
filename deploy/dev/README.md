@@ -158,6 +158,12 @@ whose CI fails is never deployed. Push a fix to move on.
 - Database changes: put scripts such as
   `node config/migrate-usage-policies.js` in `shared/post-build.sh`. It runs
   before the switch, against the dev database, with the new release's code.
+- Office Assistant agents are re-synced on every deploy: `deploy.sh` runs
+  `node config/sync-office-agents.js --apply` from the new release before the
+  restart (and from the old one on a rollback), so instruction changes in
+  `config/phase-one-office-agents.yaml` go live without a manual step. Output is in
+  `state/sync-agents.log`; a failed sync is logged and the deploy stays live.
+  `SYNC_AGENTS=0` or `SYNC_AGENTS_ARGS` in `shared/deploy.env` change it.
 - The app uses prod RAG and the prod sandbox. See the plan's §4 before testing
   heavy Office runs.
 

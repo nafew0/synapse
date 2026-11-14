@@ -24,6 +24,11 @@ INSTALL_CMD=${INSTALL_CMD:-"npm ci --prefer-offline --no-audit --no-fund"}
 BUILD_CMD=${BUILD_CMD:-"npx turbo run build --force"}
 ECOSYSTEM=${ECOSYSTEM:-deploy/dev/ecosystem.config.js}
 PUBLIC_URL=${PUBLIC_URL:-}
+# The Office Assistant's instructions live in the database, so each deploy re-syncs them from
+# config/phase-one-office-agents.yaml. --apply alone updates the agents in place and keeps their
+# tenant and access grants.
+SYNC_AGENTS=${SYNC_AGENTS:-1}
+SYNC_AGENTS_ARGS=${SYNC_AGENTS_ARGS:-"--apply"}
 
 MIRROR="$ROOT/repo.git"
 RELEASES="$ROOT/releases"
@@ -88,6 +93,19 @@ build() {
   touch "$release/.built"
 }
 
+sync_agents() {
+  local release=$1
+  [[ "$SYNC_AGENTS" == 1 && -f "$release/config/sync-office-agents.js" ]] || return 0
+  log "syncing Office Assistant agents from ${release##*/}"
+  # shellcheck disable=SC2086
+  if (cd "$release" && node config/sync-office-agents.js $SYNC_AGENTS_ARGS) >"$STATE/sync-agents.log" 2>&1; then
+    log "agents synced"
+  else
+    log "agent sync failed; the app is still deployed. See $STATE/sync-agents.log"
+    return 1
+  fi
+}
+
 switch_to() {
   local release=$1
   ln -sfn "$release" "$CURRENT.next"
@@ -149,6 +167,8 @@ main() {
   fi
 
   switch_to "$release"
+  local synced=1
+  sync_agents "$release" || synced=0
   restart
 
   if ! healthy; then
@@ -157,6 +177,7 @@ main() {
     if [[ -n "$previous" && -d "$previous" ]]; then
       log "$sha is unhealthy, rolling back to $previous"
       switch_to "$previous"
+      sync_agents "$previous" || true
       restart
       healthy || log "previous release is not healthy either; check pm2 logs $APP"
     fi
@@ -166,7 +187,11 @@ main() {
   [[ -n "$previous" ]] && echo "$previous" > "$STATE/previous"
   echo "$sha" > "$STATE/deployed"
   rm -f "$STATE/failed-$sha"
-  commit_status "$sha" success "Live on the dev server"
+  if (( synced )); then
+    commit_status "$sha" success "Live on the dev server"
+  else
+    commit_status "$sha" success "Live on the dev server; agent sync failed"
+  fi
   log "$sha is live"
   prune
 }
