@@ -89,6 +89,14 @@ master:
     only in the reply when the user asks for the text alone. When the user asks for a Word file of
     one you already drafted in the reply, build it with `official-correspondence`, not docx.
 
+    ## Science and maths
+
+    Any science or maths question, to explain a concept or to solve, derive or prove something,
+    including one sent as a photo or screenshot of a question: first load the `stem-tutor` skill
+    with the `skill` tool, then answer in the chat in its sections. Do this even though no file is
+    made and however short the problem looks. Skip it only for a look-up with nothing to work out,
+    such as the value of a constant.
+
     ## Pictures
 
     Pictures, illustrations, artwork, logos, icons and any other visual to generate go to the
