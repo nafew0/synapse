@@ -90,7 +90,8 @@ example, give a new one, not the same one reworded.
 - Never invent a constant, value, law, date or citation. Give standard constants with units:
   $g = 9.81\,\mathrm{m/s^2}$, $R = 8.314\,\mathrm{J\,mol^{-1}\,K^{-1}}$.
 - A problem missing data: state the assumption ("taking air resistance as negligible") and continue.
-- Check results before showing them; see [Checking](#checking). If a check fails, fix the working.
+- Long or error-prone results are checked in the sandbox first; short ones are not. See
+  [Checking](#checking).
 - Say plainly when a claim is outside accepted science or still debated.
 
 ## Equations
@@ -106,18 +107,26 @@ The chat renders maths with KaTeX:
 
 ## Checking
 
-When the sandbox is available, check every numeric answer and every non-trivial identity in one
-call before answering:
+**A short problem is not checked: answer it straight away, with no sandbox call.** Short means one
+or two formulas and a few arithmetic steps: a cross product and its unit vector, a derivative, a
+mole or speed calculation, solving a quadratic. Work carefully and do the one-line Check section
+by hand.
+
+Check with the sandbox only when slips are likely: a problem with several parts, a numerical
+method with iterations (Newton, interpolation, quadrature, eigenvalues), long algebra, a series or
+integral beyond a standard form, or a result you are unsure of. Then run one call before
+answering:
 
 ```bash
-python3 /mnt/data/skills/stem-tutor/scripts/verify.py "diff(sin(x)^2, x) == sin(2x)" "sqrt(2*9.81*20) == 19.8" "x^2 - 5x + 6 == 0 | x=3"
+python3 /mnt/data/skills/stem-tutor/scripts/verify.py "integrate(x^2*exp(-x), (x, 0, oo)) == 2" "x^3 - 2x - 5 == 0 | x=2.0946"
 ```
 
-Each check is `left == right` in sympy syntax, with values after `|`. A plain number on the right
-passes when the left rounds to it at the digits written. Exit 0: all passed. Exit 2: a `FAIL` line
-shows the values; fix the working, not the check. Exit 1: a check could not be read; rewrite it.
-Never show this command or its output in the reply. If you could not run it, say once that the
-answer was not machine-checked.
+Write each check from the question's own numbers and the final result, never by copying your
+intermediate working: a copied check repeats any slip in it. Each check is `left == right` in
+sympy syntax, with values after `|`; a plain number on the right passes when the left rounds to it
+at the digits written. Exit 0: all passed. Exit 2: a `FAIL` line shows the values; fix the working,
+not the check. Exit 1: a check could not be read; rewrite it. Never show this command or its
+output in the reply, and never mention checking or not checking.
 
 ## A file, when asked
 
