@@ -229,6 +229,17 @@ export const applicationMimeTypes =
 
 export const imageMimeTypes = /^image\/(jpeg|gif|png|webp|heic|heif)$/;
 
+/**
+ * Plain archives. Their bytes are compressed, so reading one as text gives noise; only code in the
+ * sandbox can open them. Office files and EPUB are ZIP containers too, but they have parsers and
+ * MIME types of their own, so they are not matched here.
+ */
+export const archiveMimeTypes =
+  /^application\/(zip|x-zip|x-zip-compressed|x-tar|gzip|x-gzip|x-bzip2|x-xz|x-7z-compressed|vnd\.rar|x-rar-compressed)$/;
+
+export const isArchiveType = (mimeType?: string): boolean =>
+  mimeType != null && archiveMimeTypes.test(mimeType);
+
 export const audioMimeTypes =
   /^audio\/(mp3|mpeg|mpeg3|wav|wave|x-wav|ogg|vorbis|mp4|m4a|x-m4a|flac|x-flac|webm|aac|wma|opus)$/;
 

@@ -8,6 +8,7 @@ const {
   megabyte,
   Constants,
   FileContext,
+  isArchiveType,
   FileSources,
   imageExtRegex,
   EModelEndpoint,
@@ -1252,6 +1253,10 @@ const extractPreparedText = async ({
     if (extracted?.text?.trim()) {
       return extracted;
     }
+  }
+
+  if (isArchiveType(file.mimetype)) {
+    return undefined;
   }
 
   if (!fileConfig.checkType(file.mimetype, fileConfig.text?.supportedMimeTypes || [])) {

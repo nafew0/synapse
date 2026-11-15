@@ -77,6 +77,18 @@ describe('validateFiles', () => {
         0: 'router.conf',
       });
     });
+
+    it.each([
+      ['radiuspanel.zip', 'application/zip'],
+      ['reports.zip', 'application/x-zip-compressed'],
+      ['backup.tar', ''],
+    ])('sends a refused archive (%s) to the Office Assistant', (name, type) => {
+      endpointFileConfig = makeEndpointConfig({ supportedExtensions: ['pdf', 'txt'] });
+      const fileList = [makeFile(name, type, 64)];
+      const result = validateFiles({ files, fileList, setError, endpointFileConfig, fileConfig });
+      expect(result).toBe(false);
+      expect(setError).toHaveBeenCalledWith('com_error_files_archive', { 0: name });
+    });
   });
 
   it('rejects when endpoint is disabled', () => {

@@ -1237,6 +1237,30 @@ describe('processAgentFileUpload', () => {
       );
     });
 
+    test.each(['application/zip', 'application/x-tar'])(
+      'copies an archive (%s) to the sandbox without reading its bytes as text',
+      async (mimetype) => {
+        const { parseText } = require('@librechat/api');
+        parseText.mockResolvedValue({ text: 'PK\u0003\u0004 compressed bytes', bytes: 24 });
+        const req = makeReq({ mimetype, ocrConfig: null, path: uploadPath });
+
+        await processAgentFileUpload({ req, res: mockRes, metadata: autoMetadata() });
+
+        expect(parseText).not.toHaveBeenCalled();
+        expect(db.createFile).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: mimetype,
+            metadata: expect.objectContaining({
+              codeEnvRef: expect.objectContaining({ file_id: 'code-file-1' }),
+              preparation: expect.objectContaining({ delivery: 'sandbox', contextText: false }),
+            }),
+          }),
+          true,
+        );
+        parseText.mockResolvedValue({ text: '', bytes: 0 });
+      },
+    );
+
     describe('routes the assistant cannot reach', () => {
       const oversized = () => ({
         handleFileUpload: jest.fn().mockResolvedValue({
