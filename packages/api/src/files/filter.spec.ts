@@ -847,6 +847,49 @@ describe('filterFilesByEndpointConfig', () => {
       expect(result).toEqual([pdfFile, pngFile]);
     });
 
+    it('keeps files the provider never receives whatever their type', () => {
+      const req = {
+        config: {
+          fileConfig: {
+            endpoints: {
+              [Providers.OPENROUTER]: {
+                disabled: false,
+                supportedMimeTypes: ['^application/pdf$'],
+              },
+            },
+          },
+        },
+      } as unknown as ServerRequest;
+
+      const codeEnvRef = { kind: 'user', id: 'u1', storage_session_id: 's1', file_id: 'f1' };
+      const sandboxZip = {
+        ...createMockFile('Archive.zip'),
+        type: 'application/zip',
+        metadata: { codeEnvRef },
+      } as IMongoFile;
+      const profiledTar = {
+        ...createMockFile('backup.tar'),
+        type: 'application/x-tar',
+        metadata: { codeEnvRefs: { default: codeEnvRef } },
+      } as IMongoFile;
+      const indexedText = {
+        ...createMockFile('notes.rtf'),
+        type: 'application/rtf',
+        embedded: true,
+      } as IMongoFile;
+      const plainZip = {
+        ...createMockFile('loose.zip'),
+        type: 'application/zip',
+      } as IMongoFile;
+
+      const result = filterFilesByEndpointConfig(req, {
+        files: [sandboxZip, profiledTar, indexedText, plainZip],
+        endpoint: Providers.OPENROUTER,
+      });
+
+      expect(result).toEqual([sandboxZip, profiledTar, indexedText]);
+    });
+
     it('should keep all files when supportedMimeTypes is not set', () => {
       const req = {
         config: {

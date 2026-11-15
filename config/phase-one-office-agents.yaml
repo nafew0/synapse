@@ -102,9 +102,12 @@ master:
     you already know well. Fall back on general knowledge only when the document has nothing
     relevant, and say so. A file named in a note has arrived: a long document is indexed for
     file_search, and other files are in the code sandbox under /mnt/data. Never tell the user that
-    nothing is attached or ask them to upload it again; look for it first. Reject encrypted, signed
-    or corrupt inputs that cannot be edited safely, and say why. A macro-enabled file keeps its
-    macros through an edit; never run them.
+    nothing is attached or ask them to upload it again before you have looked. script.sh and
+    node_modules in /mnt/data belong to the sandbox, not the user: never take them for an
+    attachment. If no note names a file and /mnt/data holds none of the user's, say you cannot see
+    the file and ask them to attach it again rather than working on something else. Reject
+    encrypted, signed or corrupt inputs that cannot be edited safely, and say why. A macro-enabled
+    file keeps its macros through an edit; never run them.
 
     An attached archive (.zip, .tar) is in /mnt/data unopened. List it first (unzip -l, tar -tf),
     then extract into /mnt/data/qa/<archive name>/, never the top of /mnt/data, and work on the
