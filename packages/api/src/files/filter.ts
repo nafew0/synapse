@@ -17,10 +17,24 @@ function isMimeTypeSupported(mimeType: string, supportedMimeTypes?: RegexLike[])
 }
 
 /**
+ * Whether the file's bytes stay on our side: a sandbox copy the model opens with code, or a
+ * search index. `processAttachments` never sends these to the
+ * provider, so the provider's MIME list does not apply to them; an archive, which only the
+ * sandbox can open, would otherwise be dropped before the run.
+ */
+function staysOffProvider(file: IMongoFile): boolean {
+  return (
+    file.embedded === true ||
+    file.metadata?.codeEnvRef != null ||
+    file.metadata?.codeEnvRefs != null
+  );
+}
+
+/**
  * Filters out files based on endpoint configuration including:
  * - Disabled status
  * - File size limits
- * - MIME type restrictions
+ * - MIME type restrictions, for files whose bytes are sent to the provider
  * - Total size limits
  * @param req - The server request object containing config
  * @param params - Object containing files, endpoint, and endpointType
@@ -73,7 +87,7 @@ export function filterFilesByEndpointConfig(
   /** Filter by MIME type */
   if (supportedMimeTypes && supportedMimeTypes.length > 0) {
     filteredFiles = filteredFiles.filter((file) => {
-      return isMimeTypeSupported(file.type, supportedMimeTypes);
+      return staysOffProvider(file) || isMimeTypeSupported(file.type, supportedMimeTypes);
     });
   }
 
