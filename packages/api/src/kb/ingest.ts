@@ -5,7 +5,7 @@ import type { KbIndexClient } from './rag';
 import type { KbChunk, KbElement, KbParsed } from './types';
 import type { PageKind } from '~/files/scan/classify';
 import type { KbOcrReader } from './ocr';
-import { DoclingRejectedError, type DoclingClient } from './docling';
+import { DoclingRejectedError, type DoclingClient, type DoclingFile } from './docling';
 import { forgetInstitutionKb } from './availability';
 import { chunkElements } from './chunk';
 import { toElements } from './elements';
@@ -29,11 +29,17 @@ export const KB_SUPPORTED_TYPES: ReadonlySet<string> = new Set([
 
 const DEFAULT_POLL_MS = 15_000;
 const DEFAULT_RECONCILE_MS = 30 * 60 * 1000;
+const DEFAULT_CONCURRENCY = 2;
+const DEFAULT_SLICE_PAGES = 50;
+/** Well inside the job lease, so a long document is never reclaimed while it runs. */
+const LEASE_RENEW_MS = 5 * 60 * 1000;
+const PDF = 'application/pdf';
 
 export interface KbIngestDeps {
   methods: Pick<
     KbMethods,
     | 'claimKbIngestJob'
+    | 'renewKbIngestJob'
     | 'completeKbIngestJob'
     | 'failKbIngestJob'
     | 'getKbDocument'
@@ -52,6 +58,8 @@ export interface KbIngestDeps {
   ocr?: KbIngestOcr;
   /** Page kinds of a PDF (text, scan or garbled); defaults to the upload classifier. */
   classifyPages?: (buffer: Buffer) => Promise<PageKind[]>;
+  /** PDFs longer than this go to Docling in page ranges of this size. */
+  pdfSlicePages?: number;
 }
 
 export interface KbIngestOcr extends KbOcrReader {
@@ -94,6 +102,42 @@ function parsePlainText(buffer: Buffer): KbParsed {
   return { elements, pageCount: 0 };
 }
 
+/** 1-based page ranges of at most `size` pages; one range or none when no split is needed. */
+export function pageRanges(pageCount: number, size: number): [number, number][] {
+  if (pageCount <= size) {
+    return [];
+  }
+  return Array.from({ length: Math.ceil(pageCount / size) }, (_, i): [number, number] => [
+    i * size + 1,
+    Math.min((i + 1) * size, pageCount),
+  ]);
+}
+
+/**
+ * Converts a long PDF in page ranges: each range is a smaller Docling task, so ranges convert
+ * side by side, use less memory, and stay well inside Docling's time limit. Page numbers in
+ * each range's result are the file's own, so the ranges join in order.
+ */
+async function convertWithDocling(
+  deps: KbIngestDeps,
+  file: DoclingFile,
+  pageCount: number,
+): Promise<KbParsed> {
+  const ranges = pageRanges(pageCount, deps.pdfSlicePages ?? DEFAULT_SLICE_PAGES);
+  if (ranges.length === 0) {
+    return toElements(await deps.docling.convert(file));
+  }
+  const slices = await Promise.all(
+    ranges.map((pageRange) =>
+      deps.docling.convert({ ...file, pageRange }).then((document) => toElements(document)),
+    ),
+  );
+  return {
+    elements: slices.flatMap((slice) => slice.elements),
+    pageCount: Math.max(pageCount, ...slices.map((slice) => slice.pageCount)),
+  };
+}
+
 /** Pages no element came from: scans, which Docling does not read with OCR off. */
 function unreadablePages({ elements, pageCount }: KbParsed): number[] {
   const read = new Set<number>();
@@ -117,20 +161,28 @@ async function runJob(job: IKbIngestJob, deps: KbIngestDeps): Promise<void> {
   }
 
   const buffer = await deps.readFile(version.fileRef);
+  const isPdf = version.mimeType === PDF;
+  const kinds = isPdf ? await classifyPages(deps, buffer, version.filename) : [];
   let parsed =
     version.mimeType === 'text/plain'
       ? parsePlainText(buffer)
-      : toElements(
-          await deps.docling.convert({
-            buffer,
-            filename: version.filename,
-            mimeType: version.mimeType,
-          }),
+      : await convertWithDocling(
+          deps,
+          { buffer, filename: version.filename, mimeType: version.mimeType },
+          kinds.length,
         );
   let ocrUsed = false;
   let ocrOff = false;
-  if (version.mimeType === 'application/pdf') {
-    const result = await readScannedPages({ deps, job, parsed, buffer, version, documentId });
+  if (isPdf) {
+    const result = await readScannedPages({
+      deps,
+      job,
+      parsed,
+      kinds,
+      buffer,
+      version,
+      documentId,
+    });
     parsed = result.parsed;
     ocrUsed = result.ocrUsed;
     ocrOff = result.ocrOff;
@@ -212,6 +264,14 @@ function noTextReason(hasPages: boolean, ocrUsed: boolean, ocrOff: boolean): str
   return 'This PDF is a scan (pictures of pages, no text), and scanned pages cannot be read on this server';
 }
 
+/** Page kinds, which also give the page count; empty when the PDF cannot be read here. */
+function classifyPages(deps: KbIngestDeps, buffer: Buffer, filename: string): Promise<PageKind[]> {
+  return (deps.classifyPages ?? classifyWithPdfjs)(buffer).catch((error: Error) => {
+    logger.warn(`[kb/ingest] could not classify ${filename}: ${error.message}`);
+    return [] as PageKind[];
+  });
+}
+
 /**
  * Sends a PDF's scanned pages, and pages whose text layer is garbled (old Bangla encodings),
  * to OCR when the institution may use it. Garbled text is never indexed, read or not.
@@ -220,6 +280,7 @@ async function readScannedPages({
   deps,
   job,
   parsed,
+  kinds,
   buffer,
   version,
   documentId,
@@ -227,14 +288,11 @@ async function readScannedPages({
   deps: KbIngestDeps;
   job: IKbIngestJob;
   parsed: KbParsed;
+  kinds: PageKind[];
   buffer: Buffer;
   version: { filename: string; sha256: string; uploadedBy?: unknown };
   documentId: string;
 }): Promise<{ parsed: KbParsed; ocrUsed: boolean; ocrOff: boolean }> {
-  const kinds = await (deps.classifyPages ?? classifyWithPdfjs)(buffer).catch((error: Error) => {
-    logger.warn(`[kb/ingest] could not classify ${version.filename}: ${error.message}`);
-    return [] as PageKind[];
-  });
   const garbled = new Set(kinds.flatMap((kind, i) => (kind === 'garbled' ? [i + 1] : [])));
   const kept = parsed.elements.filter((element) => !garbled.has(firstPageOf(element)));
   const pageCount = Math.max(parsed.pageCount, kinds.length);
@@ -299,6 +357,14 @@ export async function processNextKbJob(deps: KbIngestDeps): Promise<boolean> {
   if (!job) {
     return false;
   }
+  const renew = setInterval(() => {
+    deps
+      .runAsSystem(() => deps.methods.renewKbIngestJob(job._id))
+      .catch((error: Error) =>
+        logger.warn(`[kb/ingest] could not renew job lease: ${error.message}`),
+      );
+  }, LEASE_RENEW_MS);
+  renew.unref();
   await deps.runAsTenant(job.tenantId, async () => {
     try {
       await runJob(job, deps);
@@ -313,25 +379,47 @@ export async function processNextKbJob(deps: KbIngestDeps): Promise<boolean> {
       logger.warn(
         `[kb/ingest] ${job.tenantId}/${String(job.documentId)} v${job.version} failed${retrying ? ', will retry' : ''}: ${message}`,
       );
+    } finally {
+      clearInterval(renew);
     }
   });
   return true;
 }
 
-/** Polls for jobs one at a time; Docling is the bottleneck, and it queues its own work. */
+export interface KbIngestWorkerOptions {
+  pollMs?: number;
+  reconcileMs?: number;
+  /** Jobs run at once. Docling's own limit decides how many convert at the same moment. */
+  concurrency?: number;
+}
+
+/**
+ * Polls for jobs and runs up to `concurrency` at once, each lane draining the queue. Claims
+ * are atomic, so lanes, and other server processes, never take the same job.
+ */
 export function startKbIngestWorker(
   deps: KbIngestDeps,
-  pollMs: number = DEFAULT_POLL_MS,
-  reconcileMs: number = DEFAULT_RECONCILE_MS,
+  {
+    pollMs = DEFAULT_POLL_MS,
+    reconcileMs = DEFAULT_RECONCILE_MS,
+    concurrency = DEFAULT_CONCURRENCY,
+  }: KbIngestWorkerOptions = {},
 ): () => void {
   let stopped = false;
   let timer: NodeJS.Timeout | undefined;
   let nextReconcile = 0;
-  const tick = async () => {
+  const lane = async (): Promise<void> => {
     try {
       while (!stopped && (await processNextKbJob(deps))) {
         /* drain the queue */
       }
+    } catch (error) {
+      logger.error('[kb/ingest] worker error', error);
+    }
+  };
+  const tick = async () => {
+    try {
+      await Promise.all(Array.from({ length: Math.max(1, concurrency) }, lane));
       if (!stopped && Date.now() >= nextReconcile) {
         nextReconcile = Date.now() + reconcileMs;
         await reconcileKbIndex(deps);

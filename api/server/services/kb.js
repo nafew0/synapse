@@ -20,6 +20,11 @@ const index = ragApiUrl ? createKbIndexClient(ragApiUrl) : null;
 
 const runAsTenant = (tenantId, fn) => tenantStorage.run({ tenantId }, fn);
 
+const positiveInt = (value, fallback) => {
+  const parsed = Number.parseInt(value ?? '', 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+};
+
 /**
  * OCR for scanned and garbled PDF pages, when this deployment configures `documentOcr`. Each
  * institution must also have its OCR switch on; reads are recorded against it like the
@@ -73,17 +78,26 @@ function startKnowledgeBaseWorker(appConfig) {
     return null;
   }
   const ocr = createKnowledgeBaseOcr(appConfig);
-  logger.info(`[kb] ingestion worker started${ocr ? ', scanned pages read with OCR' : ''}`);
-  return startKbIngestWorker({
-    ocr,
-    methods: db,
-    docling: createDoclingClient({ baseUrl: doclingUrl, apiKey: doclingKey }),
-    index,
-    readFile: store.read,
-    deleteFile: store.remove,
-    runAsSystem,
-    runAsTenant,
-  });
+  const concurrency = positiveInt(process.env.KB_INGEST_CONCURRENCY, 2);
+  const maxConcurrent = positiveInt(process.env.KB_DOCLING_CONCURRENCY, 2);
+  const pdfSlicePages = positiveInt(process.env.KB_DOCLING_SLICE_PAGES, 50);
+  logger.info(
+    `[kb] ingestion worker started: ${concurrency} jobs, ${maxConcurrent} Docling conversions at once, PDFs split every ${pdfSlicePages} pages${ocr ? ', scanned pages read with OCR' : ''}`,
+  );
+  return startKbIngestWorker(
+    {
+      ocr,
+      methods: db,
+      docling: createDoclingClient({ baseUrl: doclingUrl, apiKey: doclingKey, maxConcurrent }),
+      index,
+      readFile: store.read,
+      deleteFile: store.remove,
+      runAsSystem,
+      runAsTenant,
+      pdfSlicePages,
+    },
+    { concurrency },
+  );
 }
 
 module.exports = { store, index, startKnowledgeBaseWorker };

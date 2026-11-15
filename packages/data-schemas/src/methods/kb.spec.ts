@@ -184,6 +184,21 @@ describe('knowledge base documents', () => {
     expect(kept?.fileRef).toBe('kb/file-3.pdf');
   });
 
+  it('keeps a renewed job from being reclaimed until its lease lapses', async () => {
+    await asTenant('uni-a', () => methods.createKbDocument({ title: 'Policy', file: file(1) }));
+    const start = new Date();
+    const later = (ms: number) => new Date(start.getTime() + ms);
+    const job = await runAsSystem(() => methods.claimKbIngestJob(start));
+    await runAsSystem(() => methods.renewKbIngestJob(job!._id, later(KbLimits.ingestLeaseMs - 1)));
+    expect(
+      await runAsSystem(() => methods.claimKbIngestJob(later(KbLimits.ingestLeaseMs + 1))),
+    ).toBeNull();
+    const reclaimed = await runAsSystem(() =>
+      methods.claimKbIngestJob(later(2 * KbLimits.ingestLeaseMs)),
+    );
+    expect(String(reclaimed?._id)).toBe(String(job!._id));
+  });
+
   it('retries a failed job, then marks the document failed', async () => {
     const { document } = await asTenant('uni-a', () =>
       methods.createKbDocument({ title: 'Policy', file: file(1) }),
