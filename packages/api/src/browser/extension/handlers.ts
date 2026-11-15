@@ -1,14 +1,17 @@
+import { join } from 'path';
+import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
-import { unlink } from 'fs/promises';
+import { unlink, writeFile } from 'fs/promises';
 import { logger } from '@librechat/data-schemas';
 import { inferMimeType } from 'librechat-data-provider';
 import type { Response } from 'express';
-import type { BrowserExtensionMethods, IInstitution } from '@librechat/data-schemas';
+import type { BrowserExtensionMethods, IInstitution, IMongoFile } from '@librechat/data-schemas';
 import type { ExtensionConfig } from './config';
 import type { CredentialStore } from './credentials';
 import type { ExtensionRequest } from './auth';
 import { exchangeCode, issueCode } from './credentials';
 import { parseText } from '~/files/text';
+import { DeliveryMethod } from '~/files/prepare';
 import { parseDocument } from '~/files/documents/crud';
 
 /** Documents the extension may send to be read: the formats tax and VAT papers arrive in. */
@@ -25,12 +28,24 @@ export interface ExtensionHandlers {
   signOutEverywhere: Handler;
   settings: Handler;
   extract: Handler;
+  attachment: Handler;
+}
+
+/** The one body this router reads: the id of a file the user already uploaded. */
+type AttachmentRequest = ExtensionRequest & { body?: { fileId?: string } };
+
+/** A file this user uploaded in Synapse, read for a task handed over to the extension. */
+export interface StoredFileReader {
+  find: (params: { user: string; fileId: string }) => Promise<IMongoFile | null>;
+  /** The uploaded original's bytes, or null where its storage cannot serve them. */
+  read: (req: ExtensionRequest, file: IMongoFile) => Promise<Buffer | null>;
 }
 
 export function createExtensionHandlers(deps: {
   config: () => ExtensionConfig;
   store: CredentialStore & Pick<BrowserExtensionMethods, 'deleteBrowserExtensionTokens'>;
   getInstitutionByTenantId: (tenantId: string) => Promise<IInstitution | null>;
+  files?: StoredFileReader;
   parse?: typeof parseText;
   parseDocument?: typeof parseDocument;
 }): ExtensionHandlers {
@@ -149,5 +164,82 @@ export function createExtensionHandlers(deps: {
     }
   };
 
-  return { createCode, exchange, signOut, signOutEverywhere, settings, extract };
+  /**
+   * The text of a file the user already uploaded in Synapse, for a task handed to the extension from the composer.
+   * The extension sends the id, never the bytes: the file is the user's and stays on the server, and this reads it
+   * only for the user the request signed in as.
+   */
+  const attachment = async (req: ExtensionRequest, res: Response): Promise<void> => {
+    const reader = deps.files;
+    const { fileId: asked } = (req as AttachmentRequest).body ?? {};
+    const fileId = typeof asked === 'string' ? asked.trim() : '';
+    if (!reader || !fileId) {
+      res.status(400).json({ error: { code: 'no_file', message: 'No file was named.' } });
+      return;
+    }
+    const file = await reader.find({ user: String(req.user?.id ?? ''), fileId });
+    // Someone else's file is not theirs to know about, so it is missing rather than refused.
+    if (!file) {
+      res.status(404).json({ error: { code: 'not_found', message: 'That file was not found.' } });
+      return;
+    }
+    const name = file.filename;
+    if (!DOCUMENT_TYPES.test(name) && !file.type?.startsWith('text/')) {
+      res.status(415).json({
+        error: {
+          code: 'unsupported',
+          message: 'Only PDF, Word, Excel and similar documents can be read.',
+        },
+      });
+      return;
+    }
+    const answer = (text: string): void => {
+      res.json({
+        name,
+        mimeType: file.type,
+        text: text.slice(0, MAX_EXTRACT_CHARS),
+        truncated: text.length > MAX_EXTRACT_CHARS,
+      });
+    };
+    // The upload already holds the whole text when it was delivered that way. A preview or an HTML rendering is not
+    // the document, so those are read again from the original.
+    if (
+      file.text &&
+      file.textFormat !== 'html' &&
+      file.metadata?.preparation?.delivery === DeliveryMethod.full_text
+    ) {
+      answer(file.text);
+      return;
+    }
+    const temp = join(tmpdir(), `ext-${randomUUID()}-${name.replace(/[^\w.-]+/g, '_')}`);
+    try {
+      const bytes = await reader.read(req, file);
+      if (!bytes) {
+        res.status(422).json({
+          error: { code: 'unreadable', message: 'Synapse could not read this document.' },
+        });
+        return;
+      }
+      await writeFile(temp, bytes);
+      const text = await readDocument(req, {
+        path: temp,
+        originalname: name,
+        mimetype: file.type || inferMimeType(name, file.type) || 'application/octet-stream',
+        size: bytes.length,
+      } as Express.Multer.File);
+      answer(text);
+    } catch (error) {
+      logger.error(
+        '[browserExtension] uploaded file not read',
+        error instanceof Error ? error.message : '',
+      );
+      res
+        .status(422)
+        .json({ error: { code: 'unreadable', message: 'Synapse could not read this document.' } });
+    } finally {
+      await unlink(temp).catch(() => undefined);
+    }
+  };
+
+  return { createCode, exchange, signOut, signOutEverywhere, settings, extract, attachment };
 }

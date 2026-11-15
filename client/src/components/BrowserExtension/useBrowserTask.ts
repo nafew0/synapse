@@ -38,13 +38,24 @@ export interface TaskResult {
   reason?: 'not_connected' | 'disabled' | 'empty';
 }
 
+/**
+ * A file already uploaded in this chat, named for the extension to read. Only the id travels: the extension asks
+ * Synapse for the text with its own sign-in, so the bytes never cross the browser's message channel.
+ */
+export interface TaskFile {
+  fileId: string;
+  name: string;
+  mimeType: string;
+  size: number;
+}
+
 function runtime(): ChromeRuntime | undefined {
   return (window as ExtensionWindow).chrome?.runtime;
 }
 
 /** Through the content script, so the click still counts. Null when no bridge answers in time. */
 function viaBridge<T>(
-  message: { type: 'hello' | 'ping' | 'task'; text?: string },
+  message: { type: 'hello' | 'ping' | 'task'; text?: string; files?: TaskFile[] },
   timeout = BRIDGE_TIMEOUT_MS,
 ): Promise<T | null> {
   return new Promise((resolve) => {
@@ -103,7 +114,9 @@ export function useBrowserTask() {
       }
       if (!live) return;
       setChannel(here ? 'bridge' : 'direct');
-      const ping = here ? await viaBridge<Ping>({ type: 'ping' }) : await direct<Ping>({ type: 'ping' });
+      const ping = here
+        ? await viaBridge<Ping>({ type: 'ping' })
+        : await direct<Ping>({ type: 'ping' });
       if (live) setState(ping);
     })();
     return () => {
@@ -112,10 +125,10 @@ export function useBrowserTask() {
   }, []);
 
   const handOver = useCallback(
-    async (text: string) =>
+    async (text: string, files: TaskFile[] = []) =>
       channel === 'bridge'
-        ? await viaBridge<TaskResult>({ type: 'task', text })
-        : await direct<TaskResult>({ type: 'task', text }),
+        ? await viaBridge<TaskResult>({ type: 'task', text, files })
+        : await direct<TaskResult>({ type: 'task', text, files }),
     [channel],
   );
 

@@ -57,6 +57,7 @@ function app(
   fetchImpl: FetchLike,
   parse?: HandlerDeps['parse'],
   parseDocument?: HandlerDeps['parseDocument'],
+  read?: NonNullable<HandlerDeps['files']>['read'],
 ) {
   const server = express();
   server.use(express.json());
@@ -73,6 +74,12 @@ function app(
     config: () => config,
     store: db,
     getInstitutionByTenantId: db.getInstitutionByTenantId,
+    // The real query, so a file is found only for the user who uploaded it; only the bytes are faked.
+    files: {
+      find: async ({ user: owner, fileId }) =>
+        (await db.getFiles({ user: owner, file_id: fileId }, null, {}))?.[0] ?? null,
+      read: read ?? (async () => Buffer.from('original bytes')),
+    },
     parse,
     parseDocument,
   });
@@ -87,6 +94,7 @@ function app(
     next();
   };
   server.post('/extract', route(auth), route(enabled), route(attach), route(handlers.extract));
+  server.post('/attachment', route(auth), route(enabled), route(handlers.attachment));
   server.get(
     '/tenant',
     route(auth),
@@ -224,7 +232,10 @@ describe('sign-in', () => {
     );
     const res = await request(server).get('/settings').set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(401);
-    await mongoose.models.User.updateOne({ _id: user._id }, { $set: { membershipStatus: 'active' } });
+    await mongoose.models.User.updateOne(
+      { _id: user._id },
+      { $set: { membershipStatus: 'active' } },
+    );
     expect(
       (await request(server).get('/settings').set('Authorization', `Bearer ${token}`)).status,
     ).toBe(401);
@@ -450,5 +461,101 @@ describe('document reading', () => {
     expect(parse).toHaveBeenCalledWith(expect.objectContaining({ allowNativeFallback: false }));
     const [[{ file }]] = builtIn.mock.calls as unknown as Array<[{ file: Express.Multer.File }]>;
     expect(file.mimetype).toContain('wordprocessingml');
+  });
+});
+
+describe('a file already uploaded in Synapse', () => {
+  const stored = async (over: Record<string, unknown> = {}, owner = user) =>
+    mongoose.models.File.create({
+      user: owner._id,
+      tenantId: owner.tenantId,
+      file_id: `f-${Math.random().toString(36).slice(2)}`,
+      filename: 'return.pdf',
+      filepath: 'uploads/return.pdf',
+      type: 'application/pdf',
+      bytes: 11,
+      object: 'file',
+      source: 'local',
+      ...over,
+    });
+
+  it('answers with the text the upload already extracted in full', async () => {
+    const file = await stored({
+      text: 'VAT return 2026',
+      textFormat: 'text',
+      metadata: { preparation: { delivery: 'full_text' } },
+    });
+    const parse = jest.fn();
+    const server = app(noFetch, parse);
+    const token = await signIn(server);
+    const res = await request(server)
+      .post('/attachment')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ fileId: file.file_id });
+    expect(res.body).toEqual({
+      name: 'return.pdf',
+      mimeType: 'application/pdf',
+      text: 'VAT return 2026',
+      truncated: false,
+    });
+    // Nothing is read again: the stored text is the whole document.
+    expect(parse).not.toHaveBeenCalled();
+  });
+
+  it('reads the original again when the record holds only a preview', async () => {
+    const file = await stored({
+      text: 'first rows only',
+      metadata: { preparation: { delivery: 'sandbox' } },
+    });
+    const parse = jest.fn(async () => ({
+      text: 'every page of the return',
+      bytes: 24,
+      source: 'test',
+    }));
+    const server = app(noFetch, parse);
+    const token = await signIn(server);
+    const res = await request(server)
+      .post('/attachment')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ fileId: file.file_id });
+    expect(res.body.text).toBe('every page of the return');
+    expect(parse).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not find another user’s file', async () => {
+    const file = await stored(
+      { text: 'theirs', metadata: { preparation: { delivery: 'full_text' } } },
+      otherUser,
+    );
+    const server = app(noFetch);
+    const token = await signIn(server);
+    const res = await request(server)
+      .post('/attachment')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ fileId: file.file_id });
+    expect(res.status).toBe(404);
+  });
+
+  it('refuses a type it cannot read', async () => {
+    const file = await stored({ filename: 'setup.exe', type: 'application/x-msdownload' });
+    const server = app(noFetch);
+    const token = await signIn(server);
+    const res = await request(server)
+      .post('/attachment')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ fileId: file.file_id });
+    expect(res.status).toBe(415);
+  });
+
+  it('says so when the original cannot be fetched', async () => {
+    const file = await stored({ metadata: { preparation: { delivery: 'search' } } });
+    const server = app(noFetch, jest.fn(), undefined, async () => null);
+    const token = await signIn(server);
+    const res = await request(server)
+      .post('/attachment')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ fileId: file.file_id });
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe('unreadable');
   });
 });

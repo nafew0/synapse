@@ -695,6 +695,7 @@ const ChatForm = memo(function ChatForm({
                 {/* Synapse Browser: hands the typed task to the extension, which opens it in a new tab. */}
                 <BrowserTaskButton
                   getText={() => methods.getValues('text') ?? ''}
+                  getFiles={() => liveFilesRef.current}
                   onSent={() => methods.reset()}
                   disabled={disableInputs || isNotAppendable || isSubmitting}
                 />

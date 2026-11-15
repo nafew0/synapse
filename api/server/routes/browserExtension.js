@@ -9,9 +9,35 @@ const {
   isExtensionConfigured,
   createExtensionHandlers,
   createExtensionEnabledCheck,
+  getStorageSource,
 } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const db = require('~/models');
+
+const streamToBuffer = async (stream) => {
+  const chunks = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+};
+
+/** A file the user uploaded in Synapse, for a task handed over to the extension. */
+const files = {
+  find: async ({ user, fileId }) => {
+    /** An empty projection, because `getFiles` leaves the extracted text out by default. */
+    const found = await db.getFiles({ user, file_id: fileId }, null, {});
+    return found?.[0] ?? null;
+  },
+  read: async (req, file) => {
+    const { getDownloadStream } = getStrategyFunctions(getStorageSource(file));
+    if (!getDownloadStream) {
+      return null;
+    }
+    return streamToBuffer(await getDownloadStream(req, file.filepath));
+  },
+};
 
 const MAX_DOCUMENT_BYTES = 25 * 1024 * 1024;
 
@@ -47,6 +73,7 @@ const handlers = createExtensionHandlers({
   config: getExtensionConfig,
   store: db,
   getInstitutionByTenantId: db.getInstitutionByTenantId,
+  files,
 });
 const model = createModelHandlers({ config: getExtensionConfig, store: db });
 
@@ -59,6 +86,8 @@ ext.post('/token', exchangeLimiter, handlers.exchange);
 ext.delete('/token', auth, handlers.signOut);
 ext.get('/settings', auth, handlers.settings);
 ext.post('/extract', auth, enabled, documentLimiter, upload.single('file'), handlers.extract);
+/** A file already uploaded in Synapse, named by a task handed over from the composer. */
+ext.post('/attachment', auth, enabled, documentLimiter, express.json(), handlers.attachment);
 
 /** The model endpoint. Mounted before the app's JSON parser: requests carry screenshots past its 3 MB limit. */
 const llm = express.Router();
