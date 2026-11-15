@@ -88,6 +88,24 @@ function AttachFileChat({
       }),
     [fileConfigEndpoint, fileConfig, endpointType],
   );
+  /**
+   * The picker offers the file types the upload check accepts. Uploads are validated against the
+   * conversation's endpoint (`useFileHandling`), not the agent's provider: an Office Assistant zip
+   * goes to the sandbox and never reaches the provider, so the provider's list would grey it out
+   * in the file chooser although the upload is allowed. Limits still come from the provider.
+   */
+  const menuFileConfig = useMemo(() => {
+    const uploadConfig = getEndpointFileConfig({
+      fileConfig,
+      endpoint: endpoint ?? 'default',
+      endpointType: conversation?.endpointType,
+    });
+    return {
+      ...endpointFileConfig,
+      supportedExtensions: uploadConfig.supportedExtensions,
+      supportedMimeTypes: uploadConfig.supportedMimeTypes,
+    };
+  }, [endpointFileConfig, fileConfig, endpoint, conversation?.endpointType]);
   const endpointSupportsFiles: boolean = useMemo(
     () => supportsFiles[endpointType ?? endpoint ?? ''] ?? false,
     [endpointType, endpoint],
@@ -115,7 +133,7 @@ function AttachFileChat({
         endpointType={endpointType}
         conversationId={conversationId}
         agentId={conversation?.agent_id}
-        endpointFileConfig={endpointFileConfig}
+        endpointFileConfig={menuFileConfig}
         useResponsesApi={useResponsesApi}
         files={files}
         setFiles={setFiles}
