@@ -275,6 +275,26 @@ describe('AttachFileChat', () => {
       expect(config?.fileLimit).toBe(10);
     });
 
+    it("offers the agents file types in the picker, keeping the provider's limits", () => {
+      mockFileConfig = mergeFileConfig({
+        endpoints: {
+          Moonshot: { fileLimit: 5, supportedExtensions: ['pdf'] },
+          [EModelEndpoint.agents]: { fileLimit: 20, supportedExtensions: ['pdf', 'zip', 'tar'] },
+          default: { fileLimit: 10 },
+        },
+      });
+      mockAgentsMap = {
+        'agent-1': { provider: 'Moonshot', model_parameters: {} } as Partial<Agent>,
+      };
+      renderComponent({ endpoint: EModelEndpoint.agents, agent_id: 'agent-1' });
+      const config = mockAttachFileMenuProps.endpointFileConfig as {
+        fileLimit?: number;
+        supportedExtensions?: string[];
+      };
+      expect(config?.fileLimit).toBe(5);
+      expect(config?.supportedExtensions).toEqual(['pdf', 'zip', 'tar']);
+    });
+
     it('passes agents file config when no agent provider', () => {
       renderComponent({ endpoint: EModelEndpoint.agents });
       const config = mockAttachFileMenuProps.endpointFileConfig as { fileLimit?: number };
