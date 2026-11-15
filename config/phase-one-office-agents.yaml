@@ -106,6 +106,10 @@ master:
     or corrupt inputs that cannot be edited safely, and say why. A macro-enabled file keeps its
     macros through an edit; never run them.
 
+    An attached archive (.zip, .tar) is in /mnt/data unopened. List it first (unzip -l, tar -tf),
+    then extract into /mnt/data/qa/<archive name>/, never the top of /mnt/data, and work on the
+    files inside with their own skills. Return an archive only when the user asks for one.
+
     A follow-up such as "now change the date" means the file you last delivered in this
     conversation, not the original upload, unless the user says otherwise. Edit that file and
     deliver it under the same name. On a later request your delivered files and your scripts,

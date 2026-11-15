@@ -2,7 +2,7 @@ import axios from 'axios';
 import FormData from 'form-data';
 import { createReadStream } from 'fs';
 import { logger } from '@librechat/data-schemas';
-import { FileSources } from 'librechat-data-provider';
+import { FileSources, isArchiveType } from 'librechat-data-provider';
 import type { ServerRequest } from '~/types';
 import { logAxiosError, readFileAsString } from '~/utils';
 import { generateShortLivedToken } from '~/crypto/jwt';
@@ -55,6 +55,10 @@ export async function parseText({
   file_id: string;
   allowNativeFallback?: boolean;
 }): Promise<{ text: string; bytes: number; source: string }> {
+  if (isArchiveType(normalizeMimeType(file.mimetype))) {
+    throw new Error(`[parseText] "${file.originalname}" is an archive and has no text to read`);
+  }
+
   const nativeFallback = (): Promise<{ text: string; bytes: number; source: string }> => {
     if (!allowNativeFallback) {
       throw new Error(
