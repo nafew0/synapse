@@ -85,6 +85,8 @@ export interface KbMethods {
   listKbDocumentVersions(documentId: string): Promise<IKbDocumentVersion[]>;
   /** Claims the next runnable job across tenants. Call inside `runAsSystem`. */
   claimKbIngestJob(now?: Date): Promise<IKbIngestJob | null>;
+  /** Extends a running job's lease so no other worker reclaims it. Call inside `runAsSystem`. */
+  renewKbIngestJob(jobId: Types.ObjectId | string, now?: Date): Promise<void>;
   completeKbIngestJob(input: CompleteKbIngestInput): Promise<{ prunedFileRefs: string[] }>;
   failKbIngestJob(input: FailKbIngestInput): Promise<{ retrying: boolean }>;
   deleteKbDocument(documentId: string): Promise<{ fileRefs: string[] }>;
@@ -292,6 +294,16 @@ export function createKbMethods(mongoose: typeof import('mongoose')): KbMethods 
     return job.toObject() as IKbIngestJob;
   }
 
+  async function renewKbIngestJob(
+    jobId: Types.ObjectId | string,
+    now: Date = new Date(),
+  ): Promise<void> {
+    await jobs().updateOne(
+      { _id: jobId, status: KbIngestJobStatuses.PROCESSING },
+      { $set: { lockedAt: now } },
+    );
+  }
+
   /** Drops versions beyond the newest `maxVersionsKept`, never the current one. */
   async function pruneVersions(documentId: Types.ObjectId, current: number): Promise<string[]> {
     const stale = await versions()
@@ -450,6 +462,7 @@ export function createKbMethods(mongoose: typeof import('mongoose')): KbMethods 
     updateKbDocument,
     listKbDocumentVersions,
     claimKbIngestJob,
+    renewKbIngestJob,
     completeKbIngestJob,
     failKbIngestJob,
     deleteKbDocument,

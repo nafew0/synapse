@@ -14,7 +14,13 @@ import type { UnstructuredElement } from '~/files/unstructured/types';
 import type { KbIngestOcr } from './ingest';
 import type { DoclingClient } from './docling';
 import type { DoclingDocument } from './types';
-import { processNextKbJob, reconcileKbIndex, type KbIngestDeps } from './ingest';
+import {
+  pageRanges,
+  processNextKbJob,
+  reconcileKbIndex,
+  startKbIngestWorker,
+  type KbIngestDeps,
+} from './ingest';
 import contacts from './__fixtures__/contacts.docling.json';
 import { DoclingRejectedError } from './docling';
 
@@ -103,6 +109,43 @@ afterEach(async () => {
   );
 });
 
+/** A document with one text item per page, as Docling returns for a page range. */
+const pagesDocument = (first: number, last: number): DoclingDocument => {
+  const pages = Array.from({ length: last - first + 1 }, (_, i) => first + i);
+  return {
+    schema_name: 'DoclingDocument',
+    version: '1.0.0',
+    name: 'long',
+    body: {
+      self_ref: '#/body',
+      label: 'unspecified',
+      children: pages.map((_, i) => ({ $ref: `#/texts/${i}` })),
+    },
+    groups: [],
+    tables: [],
+    pictures: [],
+    texts: pages.map((page, i) => ({
+      self_ref: `#/texts/${i}`,
+      label: 'text',
+      text: `Text of page ${page}`,
+      prov: [{ page_no: page }],
+    })),
+    pages: Object.fromEntries(pages.map((page) => [String(page), {}])),
+  } as DoclingDocument;
+};
+
+describe('pageRanges', () => {
+  it('leaves a short PDF whole and splits a long one into ranges', () => {
+    expect(pageRanges(50, 50)).toEqual([]);
+    expect(pageRanges(0, 50)).toEqual([]);
+    expect(pageRanges(120, 50)).toEqual([
+      [1, 50],
+      [51, 100],
+      [101, 120],
+    ]);
+  });
+});
+
 describe('processNextKbJob', () => {
   it('returns false when nothing is queued', async () => {
     expect(await processNextKbJob(deps(readsContacts))).toBe(false);
@@ -163,6 +206,38 @@ describe('processNextKbJob', () => {
     await processNextKbJob(deps(docling(convert)));
     expect(convert).not.toHaveBeenCalled();
     expect(uploads[0].chunks[0].text).toBe('NOC email: noc@bdren.net.bd\n\nHours: 24/7');
+  });
+
+  it('converts a long PDF in page ranges and joins them in page order', async () => {
+    const file = await upload('uni-a', 1);
+    const { document } = await asTenant('uni-a', () =>
+      methods.createKbDocument({ title: 'Long', file }),
+    );
+    const convert = jest.fn<
+      ReturnType<DoclingClient['convert']>,
+      Parameters<DoclingClient['convert']>
+    >(async ({ pageRange }) => {
+      const [first, last] = pageRange ?? [1, 5];
+      /* Later ranges finish first, so order comes from the ranges, not completion. */
+      await new Promise((resolve) => setTimeout(resolve, (6 - first) * 5));
+      return pagesDocument(first, last);
+    });
+    await processNextKbJob({
+      ...deps(docling(convert)),
+      classifyPages: async () => ['text', 'text', 'text', 'text', 'text'],
+      pdfSlicePages: 2,
+    });
+
+    expect(convert.mock.calls.map(([call]) => call.pageRange)).toEqual([
+      [1, 2],
+      [3, 4],
+      [5, 5],
+    ]);
+    const text = uploads[0].chunks.map((chunk) => chunk.text).join('\n');
+    const order = [1, 2, 3, 4, 5].map((page) => text.indexOf(`Text of page ${page}`));
+    expect(order.every((at, i) => at >= 0 && (i === 0 || at > order[i - 1]))).toBe(true);
+    const ready = await asTenant('uni-a', () => methods.getKbDocument(String(document._id)));
+    expect(ready).toMatchObject({ status: KbDocumentStatuses.READY, pageCount: 5 });
   });
 
   it('fails a scanned file with a clear reason and no retry', async () => {
@@ -369,5 +444,40 @@ describe('processNextKbJob', () => {
     });
     expect(removed).toBe(1);
     expect(removedNow).toEqual([{ tenantId: 'uni-a', documentId: 'orphan-1' }]);
+  });
+});
+
+describe('startKbIngestWorker', () => {
+  it('runs as many jobs at once as its concurrency allows', async () => {
+    for (const n of [1, 2]) {
+      const file = await upload('uni-a', n);
+      await asTenant('uni-a', () => methods.createKbDocument({ title: `Doc ${n}`, file }));
+    }
+    let inFlight = 0;
+    let peak = 0;
+    let release: () => void = () => undefined;
+    const bothStarted = new Promise<void>((resolve) => (release = resolve));
+    /* Each conversion waits for the other: run one at a time, and neither finishes. */
+    const convert: DoclingClient['convert'] = async () => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      if (inFlight === 2) {
+        release();
+      }
+      await bothStarted;
+      inFlight--;
+      return contacts as unknown as DoclingDocument;
+    };
+    const stop = startKbIngestWorker(deps(docling(convert)), { concurrency: 2, pollMs: 60_000 });
+    try {
+      const deadline = Date.now() + 10_000;
+      while (activated.length < 2 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+    } finally {
+      stop();
+    }
+    expect(activated).toHaveLength(2);
+    expect(peak).toBe(2);
   });
 });

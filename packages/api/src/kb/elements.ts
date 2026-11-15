@@ -88,7 +88,11 @@ export function toElements(doc: DoclingDocument & { pages?: Record<string, unkno
   }
 
   const elements: KbElement[] = [];
-  let pageCount = Object.keys(doc.pages ?? {}).length;
+  /* Keys are page numbers; a page-range conversion has only its own pages. */
+  let pageCount = Object.keys(doc.pages ?? {}).reduce(
+    (max, key) => Math.max(max, Number(key) || 0),
+    0,
+  );
 
   const visit = (node: DoclingNode): void => {
     if (node.content_layer === 'furniture') {
