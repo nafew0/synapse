@@ -11,7 +11,7 @@ const {
   createExtensionEnabledCheck,
   getStorageSource,
 } = require('@librechat/api');
-const { requireJwtAuth } = require('~/server/middleware');
+const { requireJwtAuth, configMiddleware } = require('~/server/middleware');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const db = require('~/models');
 
@@ -87,7 +87,16 @@ ext.delete('/token', auth, handlers.signOut);
 ext.get('/settings', auth, handlers.settings);
 ext.post('/extract', auth, enabled, documentLimiter, upload.single('file'), handlers.extract);
 /** A file already uploaded in Synapse, named by a task handed over from the composer. */
-ext.post('/attachment', auth, enabled, documentLimiter, express.json(), handlers.attachment);
+/** `configMiddleware`, because reading the original from storage needs the app's upload paths. */
+ext.post(
+  '/attachment',
+  auth,
+  enabled,
+  documentLimiter,
+  configMiddleware,
+  express.json(),
+  handlers.attachment,
+);
 
 /** The model endpoint. Mounted before the app's JSON parser: requests carry screenshots past its 3 MB limit. */
 const llm = express.Router();

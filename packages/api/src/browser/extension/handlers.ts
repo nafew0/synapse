@@ -229,10 +229,7 @@ export function createExtensionHandlers(deps: {
       } as Express.Multer.File);
       answer(text);
     } catch (error) {
-      logger.error(
-        '[browserExtension] uploaded file not read',
-        error instanceof Error ? error.message : '',
-      );
+      logger.error('[browserExtension] uploaded file not read', error);
       res
         .status(422)
         .json({ error: { code: 'unreadable', message: 'Synapse could not read this document.' } });
