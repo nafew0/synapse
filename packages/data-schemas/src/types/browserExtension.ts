@@ -33,3 +33,38 @@ export interface BrowserExtensionUsageFields {
 export interface IBrowserExtensionUsage extends BrowserExtensionUsageFields, Document {
   _id: Types.ObjectId;
 }
+
+/** One step of a run as a report carries it: what the agent did and how it went, never what the page showed. */
+export interface BrowserExtensionReportStep {
+  tool: string;
+  /** The call's arguments with typed text, values and file contents replaced by their length. */
+  args: string;
+  ok: boolean;
+  /** The error code of a failed step. */
+  code?: string;
+}
+
+/** A run the user chose to send from the extension, so a failure can be studied without their screen. */
+export interface BrowserExtensionReportFields {
+  user: Types.ObjectId;
+  tenantId?: string;
+  extensionVersion: string;
+  build?: string;
+  llmModel?: string;
+  status: string;
+  outcome?: string;
+  reason?: string;
+  turns: number;
+  inputTokens: number;
+  outputTokens: number;
+  /** The sites the run visited, by host only. */
+  hosts: string[];
+  /** What the user says went wrong, in their words. */
+  comment?: string;
+  steps: BrowserExtensionReportStep[];
+  createdAt: Date;
+}
+
+export interface IBrowserExtensionReport extends BrowserExtensionReportFields, Document {
+  _id: Types.ObjectId;
+}

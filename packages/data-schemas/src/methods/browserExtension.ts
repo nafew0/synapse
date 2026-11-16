@@ -1,8 +1,10 @@
 import type { Model, Types } from 'mongoose';
 import type {
   BrowserExtensionCredentialKind,
+  BrowserExtensionReportFields,
   BrowserExtensionUsageFields,
   IBrowserExtensionCredential,
+  IBrowserExtensionReport,
   IBrowserExtensionUsage,
 } from '~/types';
 import { hashToken } from '~/crypto';
@@ -27,6 +29,8 @@ export interface BrowserExtensionMethods {
   touchBrowserExtensionCredential: (id: Types.ObjectId | string) => Promise<void>;
   /** Opens a usage row and returns its id, so the counts can be replaced once the provider reports them. */
   recordBrowserExtensionUsage: (fields: BrowserExtensionUsageFields) => Promise<Types.ObjectId>;
+  /** Keeps a run the user chose to send; it expires after 30 days. */
+  recordBrowserExtensionReport: (fields: BrowserExtensionReportFields) => Promise<Types.ObjectId>;
   /** Replaces the counts on a usage row opened before the call. */
   settleBrowserExtensionUsage: (
     id: Types.ObjectId | string,
@@ -98,6 +102,14 @@ export function createBrowserExtensionMethods(
     await usage().updateOne({ _id: id }, { $set: counts });
   }
 
+  async function recordBrowserExtensionReport(
+    fields: BrowserExtensionReportFields,
+  ): Promise<Types.ObjectId> {
+    const reports = mongoose.models.BrowserExtensionReport as Model<IBrowserExtensionReport>;
+    const row = await reports.create(fields);
+    return row._id as Types.ObjectId;
+  }
+
   async function sumBrowserExtensionTokens(
     user: Types.ObjectId | string,
     since: Date,
@@ -117,6 +129,7 @@ export function createBrowserExtensionMethods(
     touchBrowserExtensionCredential,
     recordBrowserExtensionUsage,
     settleBrowserExtensionUsage,
+    recordBrowserExtensionReport,
     sumBrowserExtensionTokens,
   };
 }

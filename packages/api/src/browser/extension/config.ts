@@ -30,10 +30,11 @@ export interface ExtensionConfig {
 const EFFORTS = ['none', 'low', 'medium', 'high'] as const;
 
 /**
- * Left out unless an institution asks for it: hovering, and saving files. `read_attachment` stays in, because a long
- * document's text is cut at the inline budget and the note that cuts it tells the agent to read on with that tool.
+ * Left out unless an institution asks for it: hovering. `read_attachment` stays in, because a long document's text is
+ * cut at the inline budget and the note that cuts it tells the agent to read on with that tool. `save_file` stays in:
+ * a task that collects records ends in a file, and the user approves each file in Ask mode before it is saved.
  */
-const DEFAULT_DISABLED = ['hover', 'save_file'];
+const DEFAULT_DISABLED = ['hover'];
 
 const list = (value: string | undefined, fallback: string[]): string[] => {
   const given = value

@@ -8,6 +8,7 @@ const {
   createExtensionAuth,
   isExtensionConfigured,
   createExtensionHandlers,
+  createReportHandler,
   createExtensionEnabledCheck,
   getStorageSource,
 } = require('@librechat/api');
@@ -76,6 +77,7 @@ const handlers = createExtensionHandlers({
   files,
 });
 const model = createModelHandlers({ config: getExtensionConfig, store: db });
+const report = createReportHandler({ store: db });
 
 /** Sign-in, settings and documents: Synapse's own pages call the first two, the extension the rest. */
 const ext = express.Router();
@@ -97,6 +99,9 @@ ext.post(
   express.json(),
   handlers.attachment,
 );
+
+/** A run the user chose to send when it went wrong: steps and outcomes only, kept 30 days. */
+ext.post('/report', auth, enabled, documentLimiter, express.json({ limit: '256kb' }), report);
 
 /** The model endpoint. Mounted before the app's JSON parser: requests carry screenshots past its 3 MB limit. */
 const llm = express.Router();

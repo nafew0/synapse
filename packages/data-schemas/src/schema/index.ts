@@ -8,6 +8,7 @@ export { default as balanceSchema } from './balance';
 export { default as bannerSchema } from './banner';
 export { default as browserExtensionCredentialSchema } from './browserExtensionCredential';
 export { default as browserExtensionUsageSchema } from './browserExtensionUsage';
+export { default as browserExtensionReportSchema } from './browserExtensionReport';
 export { default as bannerViewSchema } from './bannerView';
 export { default as categoriesSchema } from './categories';
 export { default as chatProjectSchema } from './chatProject';
