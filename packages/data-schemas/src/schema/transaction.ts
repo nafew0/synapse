@@ -11,6 +11,25 @@ export const TRANSACTION_SERVICES = [
 
 export type TransactionService = (typeof TRANSACTION_SERVICES)[number];
 
+/** What a request was for, decided from what it did when it settled. */
+export const TASK_TYPES = [
+  'chat',
+  'file_question',
+  'word',
+  'excel',
+  'powerpoint',
+  'pdf_edit',
+  'pdf_to_word',
+  'scan_to_word',
+  'email',
+  'web_search',
+  'research_document',
+  'image',
+  'voice',
+] as const;
+
+export type TaskType = (typeof TASK_TYPES)[number];
+
 // @ts-ignore
 export interface ITransaction extends Document {
   user: Types.ObjectId;
@@ -27,6 +46,8 @@ export interface ITransaction extends Document {
   service?: TransactionService;
   /** False for platform cost (memory, indexing) that never draws down an allowance. Absent means billable. */
   billable?: boolean;
+  /** Kind of task the request was; see {@link TASK_TYPES}. Set when the request settles. */
+  taskType?: TaskType;
   requestKey?: string;
   valueKey?: string;
   rate?: number;
@@ -96,6 +117,10 @@ const transactionSchema: Schema<ITransaction> = new Schema(
     billable: {
       type: Boolean,
     },
+    taskType: {
+      type: String,
+      enum: TASK_TYPES,
+    },
     requestKey: {
       type: String,
       index: true,
@@ -128,6 +153,8 @@ transactionSchema.index({ tenantId: 1, user: 1, createdAt: -1 });
 transactionSchema.index({ tenantId: 1, modelKey: 1, createdAt: -1 });
 transactionSchema.index({ tenantId: 1, providerKey: 1, createdAt: -1 });
 transactionSchema.index({ service: 1, createdAt: -1 });
+transactionSchema.index({ createdAt: 1 });
+transactionSchema.index({ taskType: 1, createdAt: -1 });
 
 /**
  * Ledger idempotency key (P1-3). A retried usage write carries the same

@@ -67,6 +67,7 @@ const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const createSpaFallback = require('./utils/fallback');
 const { getAppConfig } = require('./services/Config');
+const { startUsageJobs } = require('@librechat/api');
 const { assertEnforcementTopology, reconcileQuotaState } = require('./services/usageQuota');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
@@ -152,6 +153,7 @@ const startServer = async () => {
     Math.max(Number(process.env.QUOTA_RECONCILE_INTERVAL_MS) || 60_000, 10_000),
   );
   quotaReconcilerInterval.unref();
+  startUsageJobs();
   indexSync().catch((err) => {
     logger.error('[indexSync] Background sync failed:', err);
   });
@@ -339,6 +341,7 @@ const startServer = async () => {
   app.use('/api/admin/users', routes.adminUsers);
   app.use('/api/admin/audit-log', routes.adminAuditLog);
   app.use('/api/admin/banner', routes.adminBanner);
+  app.use('/api/bdren', routes.bdren);
   app.use('/api/platform/institutions', routes.platformInstitutions);
   app.use('/api/platform/users', routes.platformUsers);
   app.use('/api/platform/usage-packages', routes.platformUsagePackages);

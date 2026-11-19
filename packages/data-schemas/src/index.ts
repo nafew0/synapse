@@ -58,8 +58,8 @@ export {
   AUDIT_ACTOR_TYPES,
   AUDIT_ACTION_CATEGORY,
 } from './types/admin';
-export { TRANSACTION_SERVICES } from './schema/transaction';
-export type { TransactionService, ITransaction } from './schema/transaction';
+export { TRANSACTION_SERVICES, TASK_TYPES } from './schema/transaction';
+export type { TransactionService, TaskType, ITransaction } from './schema/transaction';
 export { GENESIS_HASH, PLATFORM_CHAIN_KEY } from './schema/auditLog';
 export { default as logger } from './config/winston';
 export { default as meiliLogger } from './config/meiliLogger';

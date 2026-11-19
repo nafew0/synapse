@@ -21,6 +21,9 @@ const {
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
+  classifyTask,
+  tagRequestTaskType,
+  extractTaskSignals,
   createDetachedSubagentUsageRecorder,
   sendEvent,
   creditRates,
@@ -2237,6 +2240,9 @@ class AgentClient extends BaseClient {
     } catch (error) {
       logger.error('[AgentClient] Failed to record memory usage', error);
     }
+    if (this.taskType) {
+      await this.tagTaskType();
+    }
   }
 
   async runMemory(messages) {
@@ -2321,6 +2327,37 @@ class AgentClient extends BaseClient {
       }
     } catch (error) {
       logger.error('Memory Agent failed to process memory', error);
+    }
+  }
+
+  /**
+   * Stamps this request's ledger rows with the kind of task it was, decided from the tools and skills
+   * it used. Runs when the reply settles; later charges for the same reply (title, labels, memory)
+   * call it again once a type is set, so they carry it too. Never throws.
+   */
+  async tagTaskType() {
+    try {
+      const req = this.options.req;
+      const user = this.user ?? req.user?.id;
+      if (!user || !this.conversationId || !this.responseMessageId) {
+        return;
+      }
+      this.taskSince ??= new Date();
+      this.taskType ??= classifyTask(
+        extractTaskSignals(
+          this.contentParts,
+          Boolean(req.body?.files?.length || this.options.attachments),
+        ),
+      );
+      await tagRequestTaskType({
+        user,
+        conversationId: this.conversationId,
+        messageId: this.responseMessageId,
+        taskType: this.taskType,
+        since: this.taskSince,
+      });
+    } catch (error) {
+      logger.error('[AgentClient] Failed to tag the task type', error);
     }
   }
 
@@ -3122,6 +3159,7 @@ class AgentClient extends BaseClient {
   }
 
   async chatCompletion({ payload, userMCPAuthMap, abortController = null }) {
+    this.taskSince ??= new Date();
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
     /** @type {ReturnType<createRun>} */
@@ -3652,6 +3690,7 @@ class AgentClient extends BaseClient {
             balance: balanceConfig,
             transactions: transactionsConfig,
           });
+          await this.tagTaskType();
         } else {
           logger.debug(
             '[api/server/controllers/agents/client.js #chatCompletion] Skipping token spending - handled by abort middleware',
@@ -3721,6 +3760,7 @@ class AgentClient extends BaseClient {
     discoveredToolNames,
     activityPhaseSnapshot,
   }) {
+    this.taskSince ??= new Date();
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
     /** @type {ReturnType<createRun>} */
@@ -3970,6 +4010,7 @@ class AgentClient extends BaseClient {
             balance: balanceConfig,
             transactions: transactionsConfig,
           });
+          await this.tagTaskType();
         }
       } catch (err) {
         logger.error(
@@ -4243,6 +4284,9 @@ class AgentClient extends BaseClient {
         transactions: transactionsConfig,
         messageId: this.responseMessageId,
       });
+      if (this.taskType) {
+        await this.tagTaskType();
+      }
 
       return sanitizeTitle(titleResult.title);
     } catch (err) {

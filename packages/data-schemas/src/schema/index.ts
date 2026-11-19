@@ -45,3 +45,6 @@ export { default as adminScopeAssignmentSchema } from './adminScopeAssignment';
 export { default as triggerDeliverySchema } from './triggerDelivery';
 export { default as triggerLaneSequenceSchema } from './triggerLaneSequence';
 export { default as triggerUserPurgeSchema } from './triggerUserPurge';
+export { default as usageDailySchema } from './usageDaily';
+export { default as taskCostProfileSchema } from './taskCostProfile';
+export { default as usageJobSchema } from './usageJob';

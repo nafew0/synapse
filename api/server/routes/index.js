@@ -16,6 +16,7 @@ const adminBanner = require('./admin/banner');
 const platformInstitutions = require('./platform/institutions');
 const platformUsers = require('./platform/users');
 const platformUsagePackages = require('./platform/usagePackages');
+const bdren = require('./bdren');
 const platformUsageAssignments = require('./platform/usageAssignments');
 const platformAgentsCatalog = require('./platform/agentsCatalog');
 const endpoints = require('./endpoints');
@@ -70,6 +71,7 @@ module.exports = {
   platformInstitutions,
   platformUsers,
   platformUsagePackages,
+  bdren,
   platformUsageAssignments,
   platformAgentsCatalog,
   keys,

@@ -11,3 +11,7 @@ export * from './accounts';
 export * from './charges';
 export * from './voice';
 export * from './embeddings';
+export * from './tasks';
+export * from './rollup';
+export * from './costs';
+export * from './jobs';
