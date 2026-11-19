@@ -3,6 +3,7 @@ import { logger } from '@librechat/data-schemas';
 import type { RequestInit } from 'undici';
 import type { firecrawlSources, firecrawlTimeRanges } from './definitions';
 import type { FirecrawlLimits } from './budget';
+import { firecrawlScrapeCredits, firecrawlSearchCredits } from '~/usage/charges';
 import { getEnvProxyDispatcher } from '~/utils/proxy';
 import { cleanMarkdown } from './markdown';
 
@@ -45,6 +46,9 @@ export interface FirecrawlScrapeInput {
   url: string;
 }
 
+/** Credits Firecrawl billed for one call that returned a document; never reported for a failed or empty call. */
+export type FirecrawlCreditsReporter = (credits: number) => void | Promise<void>;
+
 interface FirecrawlSearchResult {
   url?: string;
   title?: string;
@@ -70,6 +74,7 @@ interface FirecrawlScrapeResponse extends FirecrawlResponse {
   data?: {
     markdown?: string;
     metadata?: {
+      numPages?: number;
       title?: string | string[];
       url?: string;
       sourceURL?: string;
@@ -145,6 +150,10 @@ async function post<T extends FirecrawlResponse>(
   return json;
 }
 
+/** The credits Firecrawl itself reports, when it reports a usable figure. */
+const providerCredits = (credits?: number): number | undefined =>
+  typeof credits === 'number' && Number.isFinite(credits) && credits > 0 ? credits : undefined;
+
 const logCredits = (call: 'search' | 'scrape', target: string, credits?: number): void => {
   logger.info(`[Firecrawl] ${call} credits=${credits ?? 'unknown'} ${target.slice(0, 200)}`);
 };
@@ -166,6 +175,7 @@ export async function searchFirecrawl(
   config: FirecrawlConfig,
   input: FirecrawlSearchInput,
   signal?: AbortSignal,
+  onCredits?: FirecrawlCreditsReporter,
 ): Promise<string> {
   const json = await post<FirecrawlSearchResponse>(
     config,
@@ -187,6 +197,7 @@ export async function searchFirecrawl(
   if (results.length === 0) {
     return `No results found for "${input.query}".`;
   }
+  await onCredits?.(providerCredits(json.creditsUsed) ?? firecrawlSearchCredits(input.limit ?? 5));
   return results.map(formatSearchResult).join('\n\n');
 }
 
@@ -208,6 +219,7 @@ export async function scrapeFirecrawl(
   config: FirecrawlConfig,
   input: FirecrawlScrapeInput,
   signal?: AbortSignal,
+  onCredits?: FirecrawlCreditsReporter,
 ): Promise<string> {
   const url = assertHttpUrl(input.url);
   const json = await post<FirecrawlScrapeResponse>(
@@ -232,6 +244,11 @@ export async function scrapeFirecrawl(
     const reason = metadata?.error || `status ${metadata?.statusCode ?? 'unknown'}`;
     return `No readable content at ${finalUrl} (${reason}).`;
   }
+
+  const pdfPages = Math.min(metadata?.numPages ?? 0, config.pdfMaxPages);
+  await onCredits?.(
+    providerCredits(json.creditsUsed ?? metadata?.creditsUsed) ?? firecrawlScrapeCredits(pdfPages),
+  );
 
   const title = Array.isArray(metadata?.title) ? metadata?.title[0] : metadata?.title;
   const header = [title ? `# ${title}` : null, `URL: ${finalUrl}`].filter(Boolean).join('\n');

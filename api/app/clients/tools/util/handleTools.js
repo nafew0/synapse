@@ -7,6 +7,8 @@ const {
   mcpToolPattern,
   isFirecrawlTool,
   createFirecrawlTool,
+  resolveServicePricing,
+  getEmbeddingBilling,
   isFileAuthoringTool,
   READ_DOCUMENT_TOOL_NAME,
   resolveFirecrawlBudgetScope,
@@ -402,6 +404,9 @@ const loadTools = async ({
           files,
           entity_id: agent?.id,
           fileCitations,
+          billing: getEmbeddingBilling(options.req),
+          conversationId: options.req?.body?.conversationId,
+          messageId: options.req?.body?.messageId,
         });
       };
       continue;
@@ -452,6 +457,14 @@ const loadTools = async ({
             streamId: options.req?._resumableStreamId,
             jobCreatedAt: options.jobCreatedAt,
           }),
+          ledger: {
+            user,
+            tenantId: options.req?.user?.tenantId,
+            conversationId: options.req?.body?.conversationId,
+            messageId: options.req?.body?.messageId,
+            pricePerCreditUsd: resolveServicePricing(options.req?.config?.servicePricing).firecrawl
+              .pricePerCreditUsd,
+          },
         });
       continue;
     } else if (tool === SET_MEMORY_TOOL_NAME || tool === DELETE_MEMORY_TOOL_NAME) {

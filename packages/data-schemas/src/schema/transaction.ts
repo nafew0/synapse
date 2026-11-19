@@ -1,5 +1,16 @@
 import mongoose, { Schema, Document, Types } from 'mongoose';
 
+/** Which paid provider a ledger row was billed by. Rows written before this field existed have none. */
+export const TRANSACTION_SERVICES = [
+  'openrouter',
+  'unstructured',
+  'firecrawl',
+  'stt',
+  'embeddings',
+] as const;
+
+export type TransactionService = (typeof TRANSACTION_SERVICES)[number];
+
 // @ts-ignore
 export interface ITransaction extends Document {
   user: Types.ObjectId;
@@ -12,6 +23,10 @@ export interface ITransaction extends Document {
   context?: string;
   usageKind?: string;
   usageUnit?: 'tokens' | 'images' | 'seconds' | 'operations';
+  /** Provider that billed this row; see {@link TRANSACTION_SERVICES}. */
+  service?: TransactionService;
+  /** False for platform cost (memory, indexing) that never draws down an allowance. Absent means billable. */
+  billable?: boolean;
   requestKey?: string;
   valueKey?: string;
   rate?: number;
@@ -74,6 +89,13 @@ const transactionSchema: Schema<ITransaction> = new Schema(
       enum: ['tokens', 'images', 'seconds', 'operations'],
       default: 'tokens',
     },
+    service: {
+      type: String,
+      enum: TRANSACTION_SERVICES,
+    },
+    billable: {
+      type: Boolean,
+    },
     requestKey: {
       type: String,
       index: true,
@@ -105,6 +127,7 @@ transactionSchema.index({ tenantId: 1, createdAt: -1 });
 transactionSchema.index({ tenantId: 1, user: 1, createdAt: -1 });
 transactionSchema.index({ tenantId: 1, modelKey: 1, createdAt: -1 });
 transactionSchema.index({ tenantId: 1, providerKey: 1, createdAt: -1 });
+transactionSchema.index({ service: 1, createdAt: -1 });
 
 /**
  * Ledger idempotency key (P1-3). A retried usage write carries the same

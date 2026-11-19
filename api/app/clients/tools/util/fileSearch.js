@@ -1,7 +1,8 @@
 const axios = require('axios');
+const { randomUUID } = require('crypto');
 const { logger } = require('@librechat/data-schemas');
 const { tool } = require('@librechat/agents/langchain/tools');
-const { generateShortLivedToken, logAxiosError } = require('@librechat/api');
+const { logAxiosError, recordEmbeddingCharge, generateShortLivedToken } = require('@librechat/api');
 const { Tools, EToolResources } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { getFiles } = require('~/models');
@@ -88,9 +89,17 @@ const primeFiles = async (options) => {
  * @param {boolean} [options.fileCitations=false] - Whether to include citation instructions
  * @returns
  */
-const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = false }) => {
+const createFileSearchTool = async ({
+  userId,
+  files,
+  entity_id,
+  fileCitations = false,
+  billing,
+  conversationId,
+  messageId,
+}) => {
   return tool(
-    async ({ query }) => {
+    async ({ query }, runConfig) => {
       if (files.length === 0) {
         return ['No files to search. Instruct the user to add files for the search.', undefined];
       }
@@ -143,6 +152,19 @@ const createFileSearchTool = async ({ userId, files, entity_id, fileCitations = 
 
       const results = await Promise.all(queryPromises);
       const validResults = results.filter((result) => result !== null);
+
+      if (billing && validResults.length > 0) {
+        /* Each file's query embeds the same text once. */
+        await recordEmbeddingCharge({
+          ...billing,
+          phase: 'query',
+          jobId: [conversationId, messageId, runConfig?.toolCall?.id ?? randomUUID()]
+            .filter(Boolean)
+            .join(':'),
+          conversationId,
+          chars: query.length * validResults.length,
+        });
+      }
 
       if (validResults.length === 0) {
         return ['No results found or errors occurred while searching the files.', undefined];

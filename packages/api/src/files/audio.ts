@@ -7,6 +7,7 @@ import type {
   STTService,
   FileObject,
 } from '~/types';
+import { getVoiceCharge } from '~/usage/voice';
 
 /**
  * Processes audio files using Speech-to-Text (STT) service.
@@ -33,7 +34,7 @@ export async function processAudioFile({
     const text = await sttService.sttRequest(
       provider,
       sttSchema,
-      { audioBuffer, audioFile },
+      { audioBuffer, audioFile, charge: getVoiceCharge(req) },
       allowedAddresses,
     );
 

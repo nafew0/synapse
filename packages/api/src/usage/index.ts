@@ -8,3 +8,6 @@ export * from './credits';
 export * from './catalog';
 export * from './assignments';
 export * from './accounts';
+export * from './charges';
+export * from './voice';
+export * from './embeddings';

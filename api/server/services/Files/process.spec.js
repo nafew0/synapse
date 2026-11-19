@@ -72,6 +72,7 @@ jest.mock('@librechat/api', () => {
     parseTextNative: (...args) => real().parseTextNative(...args),
     isTextType: (...args) => real().isTextType(...args),
     processAudioFile: jest.fn(),
+    recordOcrCharge: jest.fn().mockResolvedValue({ recorded: true }),
     sendUploadSuccess: jest.fn((res, sseStream, message, result) => {
       if (sseStream) {
         sseStream.sendData({ message, ...result });
@@ -182,6 +183,7 @@ const {
   AUTO_TOOL_RESOURCE,
   defaultAutoPreparation,
 } = require('librechat-data-provider');
+const { recordOcrCharge } = require('@librechat/api');
 const { mergeFileConfig } = require('librechat-data-provider');
 const { checkCapability } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -325,9 +327,12 @@ describe('processAgentFileUpload', () => {
     test('escalates to the configured OCR strategy when the parser finds no text layer', async () => {
       mergeFileConfig.mockReturnValue(makeFileConfig({ ocrSupportedMimeTypes: [PDF_MIME] }));
       const parserUpload = jest.fn().mockRejectedValue(new Error('No text found in document'));
-      const ocrUpload = jest
-        .fn()
-        .mockResolvedValue({ text: 'recognised text', bytes: 15, filepath: 'ocr://result' });
+      const ocrUpload = jest.fn().mockResolvedValue({
+        text: 'recognised text',
+        bytes: 15,
+        filepath: 'ocr://result',
+        pages: 2,
+      });
       getStrategyFunctions
         .mockReturnValueOnce({ handleFileUpload: parserUpload })
         .mockReturnValueOnce({ handleFileUpload: ocrUpload });
@@ -335,9 +340,18 @@ describe('processAgentFileUpload', () => {
         mimetype: PDF_MIME,
         ocrConfig: { strategy: FileSources.mistral_ocr },
       });
+      const metadata = makeMetadata();
 
-      await processAgentFileUpload({ req, res: mockRes, metadata: makeMetadata() });
+      await processAgentFileUpload({ req, res: mockRes, metadata });
 
+      expect(recordOcrCharge).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fileId: metadata.file_id,
+          pages: 2,
+          pricePerPageUsd: 0.015,
+          modelKey: 'upload/mistral_ocr',
+        }),
+      );
       expect(checkCapability).toHaveBeenCalledWith(expect.anything(), AgentCapabilities.ocr);
       expect(getStrategyFunctions).toHaveBeenNthCalledWith(1, FileSources.document_parser);
       expect(getStrategyFunctions).toHaveBeenNthCalledWith(2, FileSources.mistral_ocr);

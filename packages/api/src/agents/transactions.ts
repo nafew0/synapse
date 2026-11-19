@@ -1,6 +1,6 @@
 import { CANCEL_RATE } from '@librechat/data-schemas';
+import type { TransactionData, TransactionService } from '@librechat/data-schemas';
 import type { TCustomConfig, TTransactionsConfig } from 'librechat-data-provider';
-import type { TransactionData } from '@librechat/data-schemas';
 import type { EndpointTokenConfig } from '~/types/tokens';
 
 type TokenType = 'prompt' | 'completion';
@@ -36,6 +36,8 @@ interface BaseTxData {
   context: string;
   usageKind?: string;
   usageUnit?: 'tokens' | 'images' | 'seconds' | 'operations';
+  service?: TransactionService;
+  billable?: boolean;
   requestKey?: string;
   messageId?: string;
   conversationId: string;
@@ -93,6 +95,8 @@ export interface TxMetadata {
   context: string;
   usageKind?: string;
   usageUnit?: 'tokens' | 'images' | 'seconds' | 'operations';
+  service?: TransactionService;
+  billable?: boolean;
   requestKey?: string;
   messageId?: string;
   conversationId: string;

@@ -1950,6 +1950,28 @@ export const documentOcrSchema = z.object({
 
 export type TDocumentOcrConfig = z.infer<typeof documentOcrSchema>;
 
+/**
+ * What the paid services outside the model price table cost us. The cost of a call is worked out
+ * from these when its ledger row is written, so changing a price never rewrites history.
+ * Defaults: Firecrawl Hobby ($19 for 5,000 credits), xAI speech-to-text ($0.10 an hour), Gemini
+ * Embedding 001 ($0.15 per 1M tokens). Re-check them against the providers' pricing pages.
+ */
+export const servicePricingSchema = z.object({
+  firecrawl: z.object({ pricePerCreditUsd: z.number().nonnegative().default(0.0038) }).default({}),
+  stt: z
+    .object({
+      pricePerSecondUsd: z
+        .number()
+        .nonnegative()
+        .default(0.1 / 3600),
+    })
+    .default({}),
+  embeddings: z.object({ pricePer1MTokensUsd: z.number().nonnegative().default(0.15) }).default({}),
+});
+
+export type TServicePricingConfig = z.infer<typeof servicePricingSchema>;
+export type TServicePricingInput = z.input<typeof servicePricingSchema>;
+
 export const balanceSchema = z.object({
   enabled: z.boolean().optional().default(false),
   startBalance: z.number().optional().default(20000),
@@ -2124,6 +2146,7 @@ export const configSchema = z.object({
   cache: z.boolean().default(true),
   ocr: ocrSchema.optional(),
   documentOcr: documentOcrSchema.optional(),
+  servicePricing: servicePricingSchema.optional(),
   webSearch: webSearchSchema.optional(),
   langfuse: langfuseConfigSchema.optional(),
   memory: memorySchema.optional(),

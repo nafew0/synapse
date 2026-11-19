@@ -22,13 +22,13 @@ import type {
 } from './transactions';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { EndpointTokenConfig } from '~/types/tokens';
-import { matchModelName } from '~/utils/tokens';
 import {
   prepareStructuredTokenSpend,
   bulkWriteTransactions,
   prepareTokenSpend,
 } from './transactions';
 import { collectDetachedSubagentUsage } from './subagentTaskContext';
+import { matchModelName } from '~/utils/tokens';
 
 type SpendTokensFn = (txData: TxMetadata, tokenUsage: TokenUsage) => Promise<unknown>;
 type SpendStructuredTokensFn = (
@@ -523,6 +523,8 @@ export interface RecordUsageParams {
   collectedUsage: UsageMetadata[];
   model?: string;
   context?: string;
+  /** False for platform cost (memory extraction) that never draws down an allowance. Default true. */
+  billable?: boolean;
   messageId?: string;
   balance?: Partial<TCustomConfig['balance']> | null;
   transactions?: Partial<TTransactionsConfig>;
@@ -579,6 +581,7 @@ export async function recordCollectedUsage(
     endpointTokenConfig,
     resolveEndpointTokenConfig,
     context = 'message',
+    billable = true,
   } = params;
 
   if (!collectedUsage || !collectedUsage.length) {
@@ -654,6 +657,8 @@ export async function recordCollectedUsage(
         context: usageContext,
         usageKind: usageContext,
         usageUnit: 'tokens',
+        service: 'openrouter',
+        billable,
         model: usage.model ?? model,
         modelKey:
           matchModelName(usage.model ?? model ?? '') ??

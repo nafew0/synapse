@@ -51,6 +51,7 @@ export interface AppConfig {
   /** OCR configuration */
   ocr?: TCustomConfig['ocr'];
   documentOcr?: TCustomConfig['documentOcr'];
+  servicePricing?: TCustomConfig['servicePricing'];
   /** File paths configuration */
   paths?: {
     uploads: string;

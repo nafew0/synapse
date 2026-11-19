@@ -2311,7 +2311,10 @@ async function getShadowReadiness({ tenantId, minimumDays = 7, minimumCalls = 10
   /** This key's billed calls since the cutoff, followed by `stages`. */
   const ledger = (stages) =>
     mongoose.models.Transaction.aggregate([
-      ...ledgerScope(tenantId, { createdAt: { $gte: cutoff } }),
+      ...ledgerScope(tenantId, {
+        createdAt: { $gte: cutoff },
+        tokenType: { $in: ['prompt', 'completion'] },
+      }),
       ...stages,
     ]);
   const [

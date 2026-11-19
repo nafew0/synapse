@@ -107,6 +107,22 @@ function getBaseMatch(range) {
 }
 
 /**
+ * Paid-service rows (Firecrawl, voice, embeddings, OCR): written as credits rather than tokens, so
+ * `getBaseMatch` skips them. Legacy OCR rows carry no `service`, only `usageKind: 'ocr'`.
+ */
+function getServiceMatch(range) {
+  return {
+    createdAt: { $gte: range.start, $lt: range.end },
+    tokenType: 'credits',
+    $or: [{ service: { $in: SERVICE_ROW_PROVIDERS } }, { usageKind: 'ocr' }],
+  };
+}
+
+const SERVICE_ROW_PROVIDERS = ['unstructured', 'firecrawl', 'stt', 'embeddings'];
+
+const sumValues = (record) => Object.values(record).reduce((total, value) => total + value, 0);
+
+/**
  * Canonical provider for a ledger row, resolved in the pipeline.
  *
  * Rows written before provider attribution was mandatory carry no
@@ -255,6 +271,7 @@ function stripRestrictedFields(row, restrictToLabeled) {
   const {
     totalCost: _totalCost,
     ocrCost: _ocrCost,
+    serviceCost: _serviceCost,
     providerKey: _providerKey,
     providerModelId: _providerModelId,
     ...visible
@@ -329,7 +346,7 @@ async function getUsageSummary({ tenantId, start, end, labels }) {
 
   /** "Models used" counts the models members can pick today: the table's rows,
    *  less the one row superadmins see for retired models. */
-  const [[summary], models, [ocr]] = await Promise.all([
+  const [[summary], models, [ocr], serviceRows] = await Promise.all([
     tenantStorage.run({ tenantId }, async () =>
       Transaction.aggregate([
         { $match: getBaseMatch(range) },
@@ -355,7 +372,19 @@ async function getUsageSummary({ tenantId, start, end, labels }) {
         { $project: { _id: 0, ocrPages: 1, ocrCost: 1 } },
       ]),
     ),
+    tenantStorage.run({ tenantId }, async () =>
+      Transaction.aggregate([
+        { $match: getServiceMatch(range) },
+        {
+          $group: {
+            _id: { $ifNull: ['$service', 'unstructured'] },
+            cost: { $sum: { $abs: { $ifNull: ['$tokenValue', 0] } } },
+          },
+        },
+      ]),
+    ),
   ]);
+  const serviceCost = Object.fromEntries(serviceRows.map((row) => [row._id, row.cost]));
 
   const resolved = {
     ocrPages: 0,
@@ -370,6 +399,8 @@ async function getUsageSummary({ tenantId, start, end, labels }) {
     ...(summary ?? {}),
     modelCount: models.filter((row) => !row.retired).length,
   };
+  resolved.serviceCost = serviceCost;
+  resolved.totalCost += sumValues(serviceCost);
 
   return { range, summary: stripRestrictedFields(resolved, restrictToLabeled) };
 }

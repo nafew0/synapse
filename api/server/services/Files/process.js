@@ -27,6 +27,9 @@ const {
   isPermissiveMimeConfig,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
+
+/** Unstructured's per-page price, used when `documentOcr` is not configured for the recogniser. */
+const DEFAULT_OCR_PRICE_PER_PAGE_USD = 0.015;
 const {
   parseText,
   isTextType,
@@ -38,6 +41,7 @@ const {
   categorizeFile,
   planPreparation,
   sanitizeFilename,
+  recordOcrCharge,
   processAudioFile,
   sendUploadSuccess,
   getStorageSource,
@@ -755,6 +759,7 @@ const uploadToCodeEnvironment = async ({ req, file, agent_id, messageAttachment 
  * @param {boolean} params.ocrAvailable - A configured OCR service may be used for this file.
  * @param {number} params.ocrMinCharsPerPage
  * @param {() => void} [params.onRecognize] - Called just before the OCR request goes out.
+ * @param {string} [params.fileId] - The file the text is for; keys the page charge so a retry records once.
  * @param {(scan: import('librechat-data-provider').FilePageScan) => void} [params.onClassify] - Gets
  *   the per-page verdicts. A callback because a fully scanned PDF has no text to return them with.
  * @returns {Promise<{ text: string, bytes: number, filepath?: string, pages?: number, ocrApplied: boolean } | undefined>}
@@ -766,6 +771,7 @@ const extractDocumentText = async ({
   ocrMinCharsPerPage,
   onRecognize,
   onClassify,
+  fileId,
 }) => {
   let parsed;
   let scan;
@@ -804,7 +810,20 @@ const extractDocumentText = async ({
     const { handleFileUpload } = getStrategyFunctions(ocrStrategy);
     const recognized = await handleFileUpload({ req, file, loadAuthValues });
     if (recognized?.text?.trim()) {
-      return { ...recognized, ocrApplied: ocrStrategy !== FileSources.document_parser };
+      const applied = ocrStrategy !== FileSources.document_parser;
+      if (applied && fileId && req.user?.id) {
+        await recordOcrCharge({
+          user: req.user.id,
+          tenantId: req.user.tenantId,
+          fileId,
+          pages: recognized.pages ?? 0,
+          pricePerPageUsd:
+            req.config?.documentOcr?.pricePerPageUsd ?? DEFAULT_OCR_PRICE_PER_PAGE_USD,
+          modelKey: `upload/${ocrStrategy}`,
+          conversationId: req.body?.conversationId,
+        });
+      }
+      return { ...recognized, ocrApplied: applied };
     }
   } catch (err) {
     logger.error(
@@ -869,6 +888,7 @@ const resolveContextExtraction = async ({
       ocrMinCharsPerPage: autoConfig.ocrMinCharsPerPage,
       onRecognize,
       onClassify,
+      fileId: file_id,
     });
     if (extracted) {
       return extracted;
@@ -1252,6 +1272,7 @@ const extractPreparedText = async ({
       ocrMinCharsPerPage: autoConfig.ocrMinCharsPerPage,
       onRecognize: () => sseStream?.sendProgress(UploadStage.recognizing),
       onClassify,
+      fileId: metadata?.file_id,
     });
     if (extracted?.text?.trim()) {
       return extracted;

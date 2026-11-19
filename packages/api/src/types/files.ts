@@ -9,7 +9,12 @@ export interface STTService {
   sttRequest(
     provider: string,
     schema: object,
-    params: { audioBuffer: Buffer; audioFile: AudioFileInfo },
+    params: {
+      audioBuffer: Buffer;
+      audioFile: AudioFileInfo;
+      /** Who the call is billed to in the ledger; omitted calls are not recorded. */
+      charge?: { user: string; tenantId?: string; pricePerSecondUsd: number };
+    },
     allowedAddresses?: string[],
   ): Promise<string>;
 }

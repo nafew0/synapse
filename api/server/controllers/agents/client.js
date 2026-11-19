@@ -2192,11 +2192,59 @@ class AgentClient extends BaseClient {
    * @param {BaseMessage[]} messages
    * @returns {Promise<void | (TAttachment | null)[]>}
    */
+  /**
+   * What the memory agent's usage row needs, read up front: extraction can outlive the request, and
+   * `disposeClient` then clears `this.options`.
+   */
+  getMemoryUsageContext() {
+    const req = this.options.req;
+    return {
+      user: this.user ?? req.user?.id,
+      tenantId: req.user?.tenantId,
+      conversationId: this.conversationId,
+      model: this.model ?? this.options.agent.model_parameters.model,
+      messageId: this.responseMessageId,
+      transactions: getTransactionsConfig(req.config),
+      endpointTokenConfig: this.options.endpointTokenConfig,
+    };
+  }
+
+  /**
+   * Writes the memory agent's tokens to the ledger (`context: 'memory'`, `billable: false`). They
+   * are our cost, not the member's: balance and the usage allowance are left alone, so this calls
+   * the package recorder directly instead of `recordCollectedUsage`, which charges non-message
+   * contexts to the allowance.
+   * @param {UsageMetadata[]} collectedUsage
+   * @param {ReturnType<AgentClient['getMemoryUsageContext']>} usageContext
+   */
+  async recordMemoryUsage(collectedUsage, usageContext) {
+    try {
+      await recordCollectedUsage(
+        {
+          spendTokens: db.spendTokens,
+          spendStructuredTokens: db.spendStructuredTokens,
+          pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+          bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
+        },
+        {
+          ...usageContext,
+          collectedUsage,
+          context: 'memory',
+          billable: false,
+          balance: { enabled: false },
+        },
+      );
+    } catch (error) {
+      logger.error('[AgentClient] Failed to record memory usage', error);
+    }
+  }
+
   async runMemory(messages) {
     try {
       if (this.processMemory == null) {
         return;
       }
+      const usageContext = this.getMemoryUsageContext();
       const appConfig = this.options.req.config;
       const memoryConfig = appConfig.memory;
       const messageWindowSize = memoryConfig?.messageWindowSize ?? 5;
@@ -2265,7 +2313,12 @@ class AgentClient extends BaseClient {
         });
       }
       const bufferMessage = new HumanMessage(limitedMemoryInput);
-      return await this.processMemory([bufferMessage]);
+      const collectedUsage = [];
+      try {
+        return await this.processMemory([bufferMessage], { collectedUsage });
+      } finally {
+        await this.recordMemoryUsage(collectedUsage, usageContext);
+      }
     } catch (error) {
       logger.error('Memory Agent failed to process memory', error);
     }
