@@ -7,6 +7,7 @@ export { createAdminSkillsSyncAccess, createAdminSkillsSyncHandlers } from './sk
 export { createAdminUsersHandlers } from './users';
 export { createAdminAuditLogHandlers } from './auditLog';
 export { createAdminMembersHandlers, buildMemberWorkbook } from './members';
+export * from './alerts';
 export { createGlobalConfigHandlers } from './global/config';
 export { resolveConfigSecret, redactConfigSecretMaps } from './secrets';
 export type { AdminConfigDeps } from './config';

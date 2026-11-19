@@ -45,6 +45,7 @@ const {
   configureFileConfigRegexEngine,
   waitForKeyvRedisClient,
   captureLoggedErrors,
+  startAlertScheduler,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const {
@@ -152,6 +153,7 @@ const startServer = async () => {
     Math.max(Number(process.env.QUOTA_RECONCILE_INTERVAL_MS) || 60_000, 10_000),
   );
   quotaReconcilerInterval.unref();
+  startAlertScheduler();
   indexSync().catch((err) => {
     logger.error('[indexSync] Background sync failed:', err);
   });
@@ -342,6 +344,7 @@ const startServer = async () => {
   app.use('/api/platform/institutions', routes.platformInstitutions);
   app.use('/api/platform/users', routes.platformUsers);
   app.use('/api/platform/usage-packages', routes.platformUsagePackages);
+  app.use('/api/platform/alerts', routes.platformAlerts);
   app.use('/api/platform', routes.platformUsageAssignments);
   app.use('/api/platform/agents/catalog', routes.platformAgentsCatalog);
   app.use('/api/actions', routes.actions);
