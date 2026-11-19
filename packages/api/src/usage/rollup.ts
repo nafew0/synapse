@@ -224,7 +224,7 @@ function daysBetween(first: string, last: string): string[] {
 async function touchedDays(after: Types.ObjectId | undefined): Promise<string[]> {
   const groups = await runAsSystem(async () =>
     mongoose.models.Transaction.aggregate<{ _id: string }>([
-      ...(after ? [{ $match: { _id: { $gt: after } } }] : []),
+      { $match: { createdAt: { $type: 'date' }, ...(after ? { _id: { $gt: after } } : {}) } },
       { $group: { _id: dhakaDayOfCreation } },
     ]),
   );
@@ -351,7 +351,10 @@ export async function backfillUsageDaily(
 ): Promise<BackfillResult> {
   const { dryRun = false, now = new Date() } = options;
   const [first] = await runAsSystem(async () =>
-    mongoose.models.Transaction.find({}, { createdAt: 1 }).sort({ createdAt: 1 }).limit(1).lean(),
+    mongoose.models.Transaction.find({ createdAt: { $type: 'date' } }, { createdAt: 1 })
+      .sort({ createdAt: 1 })
+      .limit(1)
+      .lean(),
   );
   if (!first?.createdAt) {
     return { dryRun, days: 0, months: [], reconciliations: [] };

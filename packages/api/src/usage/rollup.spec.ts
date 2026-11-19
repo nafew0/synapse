@@ -303,6 +303,19 @@ describe('runUsageRollup', () => {
     expect(buckets[0].taskType).toBe('chat');
   });
 
+  it('ignores a ledger row that has no creation date instead of failing every run', async () => {
+    await seedWeek();
+    await Transaction.collection.insertOne({
+      user,
+      tokenType: 'credits',
+      tokenValue: -5,
+      requestKey: 'nodate',
+    });
+    const result = await runUsageRollup(NOW);
+    expect(result.reconciliations.every((check) => check.ok)).toBe(true);
+    expect((await backfillUsageDaily({ dryRun: true, now: NOW })).from).toBe('2026-11-10');
+  });
+
   it('skips while another run holds the lease', async () => {
     await seedWeek();
     await mongoose.models.UsageJob.create({

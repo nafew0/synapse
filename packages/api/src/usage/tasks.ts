@@ -139,6 +139,7 @@ export async function tagRequestTaskType(input: TagRequestInput): Promise<number
           user,
           conversationId,
           messageId: { $exists: false },
+          service: 'unstructured',
           taskType: { $exists: false },
           createdAt: { $gte: since },
         },

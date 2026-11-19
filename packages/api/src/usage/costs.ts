@@ -65,7 +65,7 @@ async function requestCosts(now: Date): Promise<Map<TaskType, RequestCost[]>> {
   const since = new Date(now.getTime() - PROFILE_WINDOW_DAYS * DAY_MS);
   const rows = await runAsSystem(async () =>
     mongoose.models.Transaction.aggregate<{
-      _id: { request: unknown; taskType: TaskType };
+      _id: { request: string; taskType: TaskType };
       credits: number;
       pages: number;
       webCredits: number;
@@ -83,6 +83,7 @@ async function requestCosts(now: Date): Promise<Map<TaskType, RequestCost[]>> {
           _id: {
             taskType: '$taskType',
             request: { $ifNull: ['$messageId', '$_id'] },
+            conversationId: '$conversationId',
             user: '$user',
           },
           credits: { $sum: { $multiply: [-1, { $ifNull: ['$tokenValue', 0] }] } },
