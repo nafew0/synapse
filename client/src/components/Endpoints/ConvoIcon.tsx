@@ -1,11 +1,12 @@
 import React, { useMemo } from 'react';
 import { getEndpointField } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
+import { getModelBrand, ModelIcon } from '~/components/Chat/Menus/Endpoints/components/ModelIcon';
+import OfficeAssistantAvatar, { isOfficeAssistant } from '~/components/OfficeAssistantAvatar';
 import { getIconKey, getEntity, getIconEndpoint } from '~/utils';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import { icons } from '~/hooks/Endpoint/Icons';
 import { isImageURL } from '~/utils/icons';
-import OfficeAssistantAvatar, { isOfficeAssistant } from '~/components/OfficeAssistantAvatar';
 
 export default function ConvoIcon({
   conversation,
@@ -53,6 +54,17 @@ export default function ConvoIcon({
 
   if (isAgent && isOfficeAssistant(entity as t.Agent | undefined) && !isImageURL(iconURL)) {
     return <OfficeAssistantAvatar size={size ?? 30} className={className} />;
+  }
+
+  const hasCustomIcon =
+    isImageURL(iconURL) || (iconURL !== '' && iconURL !== conversation?.endpoint);
+  if (
+    !hasCustomIcon &&
+    !avatar &&
+    conversation?.model &&
+    getModelBrand(conversation.model, endpoint ?? '')
+  ) {
+    return <ModelIcon modelId={conversation.model} endpoint={endpoint ?? ''} size={size} />;
   }
 
   return (

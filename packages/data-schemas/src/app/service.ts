@@ -154,6 +154,7 @@ export const AppService = async (params?: {
 
   const defaultConfig = {
     ocr,
+    documentOcr: config.documentOcr,
     paths,
     config,
     memory,

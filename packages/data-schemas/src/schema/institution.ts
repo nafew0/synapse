@@ -1,6 +1,6 @@
 import { Schema } from 'mongoose';
-import { InstitutionStatuses } from '~/common';
 import type { IInstitution } from '~/types';
+import { InstitutionStatuses } from '~/common';
 
 const institutionSchema: Schema<IInstitution> = new Schema<IInstitution>(
   {
@@ -33,6 +33,11 @@ const institutionSchema: Schema<IInstitution> = new Schema<IInstitution>(
       type: String,
       default: 'Asia/Dhaka',
       trim: true,
+    },
+    /** Superadmin switch: may this institution's scans be sent to the OCR service. */
+    ocrAccess: {
+      type: Boolean,
+      default: false,
     },
     usagePolicyVersion: {
       type: Number,
@@ -80,6 +85,17 @@ const institutionSchema: Schema<IInstitution> = new Schema<IInstitution>(
     suspendedBy: {
       type: Schema.Types.ObjectId,
       ref: 'User',
+      default: null,
+    },
+    chatAccess: {
+      type: {
+        ended: { type: Boolean, default: false },
+        message: { type: String, trim: true, maxlength: 500, default: '' },
+        contact: { type: String, trim: true, maxlength: 200, default: '' },
+        changedAt: { type: Date, default: null },
+        changedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
+        _id: false,
+      },
       default: null,
     },
   },

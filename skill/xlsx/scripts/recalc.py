@@ -17,6 +17,7 @@ import zipfile
 from pathlib import Path
 
 from office.soffice import get_soffice_env, run_soffice
+from cache import graft
 
 from openpyxl import load_workbook
 
@@ -128,7 +129,7 @@ def recalc(filename, timeout=30, force=False):
     abs_path = str(Path(filename).absolute())
 
     if not os.access(abs_path, os.W_OK):
-        return {"error": f"{filename} is not writable; recalculation rewrites the file in place"}
+        return {"error": f"{filename} is not writable; recalculation writes the computed values into it"}
 
     try:
         get_soffice_env()
@@ -155,10 +156,22 @@ def recalc(filename, timeout=30, force=False):
                 "external_link_cells_truncated": max(0, len(at_risk) - len(shown)),
             }
 
+    # LibreOffice's save rewrites the whole workbook (sparklines, text boxes and rich text gone,
+    # data bars restyled, theme fonts unlinked), so it only ever touches a copy; the user's file
+    # gets nothing but the computed values (cache.graft).
     with tempfile.TemporaryDirectory(
         prefix="recalc-lo-profile-", ignore_cleanup_errors=True
-    ) as profile_dir:
-        return _recalc_with_profile(filename, abs_path, timeout, Path(profile_dir))
+    ) as profile_dir, tempfile.TemporaryDirectory(prefix="recalc-copy-") as work:
+        copy = Path(work) / Path(filename).name
+        shutil.copy2(abs_path, copy)
+        result = _recalc_with_profile(str(copy), str(copy), timeout, Path(profile_dir))
+        if "error" in result:
+            return result
+        try:
+            result["values_written"] = graft(copy, abs_path)
+        except Exception as e:
+            return {"error": f"Recalculated, but could not write the results into {filename}: {e}"}
+        return result
 
 
 def _recalc_with_profile(filename, abs_path, timeout, profile_dir: Path):

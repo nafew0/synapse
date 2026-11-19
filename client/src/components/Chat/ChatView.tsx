@@ -15,9 +15,10 @@ import {
   useLocalize,
 } from '~/hooks';
 import { ChatContext, AddedChatContext, ChatFormProvider, useFileMapContext } from '~/Providers';
+import { useGetMessagesByConvoId, useGetUserQuery } from '~/data-provider';
 import ConversationStarters from './Input/ConversationStarters';
-import { useGetMessagesByConvoId } from '~/data-provider';
 import MessagesView from './Messages/MessagesView';
+import TaskTiles from './Input/TaskTiles';
 import Presentation from './Presentation';
 import ChatForm from './Input/ChatForm';
 import Landing from './Landing';
@@ -127,6 +128,8 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
    * Human continuation is a separate future fork/promotion flow, never an
    * in-place mutation of this canonical child transcript. */
   const isSubagentThreadReadOnly = activeSubagentThread != null;
+  const { data: user } = useGetUserQuery();
+  const accessEnded = user?.chatAccess?.ended === true;
 
   return (
     <ChatFormProvider {...methods}>
@@ -171,6 +174,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                         project={isProjectLandingPage ? project : undefined}
                       />
                     )}
+                    {isLandingPage && !isSubagentThreadReadOnly && !accessEnded && <TaskTiles />}
                     {!isLandingPage && <Footer />}
                   </div>
                 </div>

@@ -1,7 +1,7 @@
 import type { ExtendedJsonSchema } from '../registry/schema';
 
-export const FIRECRAWL_SEARCH_TOOL_NAME = 'firecrawl_search';
-export const FIRECRAWL_SCRAPE_TOOL_NAME = 'firecrawl_scrape';
+export const FIRECRAWL_SEARCH_TOOL_NAME = 'search_web';
+export const FIRECRAWL_SCRAPE_TOOL_NAME = 'read_web_page';
 
 export const firecrawlToolNames: ReadonlySet<string> = new Set([
   FIRECRAWL_SEARCH_TOOL_NAME,
@@ -71,16 +71,16 @@ interface FirecrawlToolDefinition {
 }
 
 export const firecrawlToolkit: {
-  firecrawl_search: FirecrawlToolDefinition;
-  firecrawl_scrape: FirecrawlToolDefinition;
+  search_web: FirecrawlToolDefinition;
+  read_web_page: FirecrawlToolDefinition;
 } = {
-  firecrawl_search: {
+  search_web: {
     name: FIRECRAWL_SEARCH_TOOL_NAME,
     description:
-      'Searches the web and returns the title, URL and a short snippet of each result. Use it for questions that need current or published information, such as the latest research on a topic. Results contain snippets only: read the pages you rely on with firecrawl_scrape before using their content.',
+      'Searches the web and returns the title, URL and a short snippet of each result. Use it for questions that need current or published information, such as the latest research on a topic. Results contain snippets only: read the pages you rely on with read_web_page before using their content.',
     schema: firecrawlSearchSchema,
   },
-  firecrawl_scrape: {
+  read_web_page: {
     name: FIRECRAWL_SCRAPE_TOOL_NAME,
     description:
       'Reads one web page or PDF and returns its main content as markdown. Use it for every URL the user gives and for the search results you rely on. Long pages are truncated.',

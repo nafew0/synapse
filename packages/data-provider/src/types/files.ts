@@ -31,6 +31,7 @@ export enum FileContext {
   assistants_output = 'assistants_output',
   message_attachment = 'message_attachment',
   skill_file = 'skill_file',
+  file_authoring = 'file_authoring',
   filename = 'filename',
   updatedAt = 'updatedAt',
   source = 'source',
@@ -48,6 +49,12 @@ export type EndpointFileConfig = {
   fileSizeLimit?: number;
   totalSizeLimit?: number;
   supportedMimeTypes?: RegexLike[];
+  /**
+   * Lowercase extensions without the dot (`py`, `docx`). When set, a file is accepted only if its
+   * name ends in one of them, whatever MIME type the browser reports: many extensions share
+   * `text/plain`, so a MIME list alone cannot tell `.txt` from `.conf`.
+   */
+  supportedExtensions?: string[];
 };
 
 /**
@@ -130,6 +137,15 @@ export type FileConfigInput = {
   checkType?: (fileType: string, supportedTypes: RegexLike[]) => boolean;
 };
 
+/** Per-page verdict from the upload's local classifier. Page numbers are 1-based. */
+export type FilePageScan = {
+  pages: number;
+  /** Pages whose text cannot be used as it is, so only OCR can read them. */
+  ocrPages: number[];
+  /** The part of `ocrPages` that has a text layer, but a damaged one. */
+  garbledPages: number[];
+};
+
 /**
  * What automatic preparation did with an upload: how its text was obtained and how that text
  * reaches the model. Read by the attachment chip and by the conversation's full-text budget.
@@ -147,6 +163,8 @@ export type FilePreparationMetadata = {
   contextTokens?: number;
   /** Pages the extractor saw, used to judge whether a PDF is a scan. */
   pageCount?: number;
+  /** Which pages need OCR. Absent for anything but a PDF the parser could open. */
+  scan?: FilePageScan;
 };
 
 export type TFile = {
@@ -208,6 +226,7 @@ export type TFile = {
     codeEnvRef?: CodeEnvRef;
     codeEnvRefs?: CodeEnvRefMap;
     preparation?: FilePreparationMetadata;
+    storageSource?: string;
   };
   createdAt?: string | Date;
   updatedAt?: string | Date;

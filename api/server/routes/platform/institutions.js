@@ -1,5 +1,5 @@
 const express = require('express');
-const { isUsageAccount, isReservedTenantId } = require('@librechat/api');
+const { isUsageAccount, isReservedTenantId, isChatAccessContact } = require('@librechat/api');
 const { logger, runAsSystem, INSTITUTION_ADMIN_ROLE } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const requirePlatformSuperadmin = require('~/server/middleware/platformAdmin');
@@ -404,6 +404,59 @@ router.get('/:tenantId', async (req, res) => {
   }
 });
 
+/** Whether this institution's scanned documents may be sent to the OCR service. */
+router.get('/:tenantId/ocr-access', async (req, res) => {
+  try {
+    const institution = await runAsSystem(() =>
+      db.getInstitutionByTenantId(req.params.tenantId, 'ocrAccess'),
+    );
+    if (!institution) {
+      return res.status(404).json({ error: 'Institution not found' });
+    }
+    return res.status(200).json({ enabled: institution.ocrAccess === true });
+  } catch (error) {
+    logger.error('[platform/institutions] Failed to load OCR access', error);
+    return res.status(500).json({ error: 'Failed to load OCR access' });
+  }
+});
+
+router.patch('/:tenantId/ocr-access', async (req, res) => {
+  const { tenantId } = req.params;
+  const { enabled } = req.body ?? {};
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ error: 'enabled must be a boolean' });
+  }
+
+  try {
+    const before = await runAsSystem(() =>
+      models.Institution.findOneAndUpdate(
+        { tenantId: tenantId.trim() },
+        { $set: { ocrAccess: enabled } },
+        { new: false, projection: { ocrAccess: 1, name: 1 } },
+      )
+        .lean()
+        .exec(),
+    );
+    if (!before) {
+      return res.status(404).json({ error: 'Institution not found' });
+    }
+    await recordPlatformAudit(req, {
+      action: 'institution.updated',
+      severity: 'warning',
+      target: { type: 'institution', id: tenantId, name: before.name },
+      metadata: {
+        operation: enabled ? 'ocr_access_granted' : 'ocr_access_revoked',
+        before: before.ocrAccess === true,
+        after: enabled,
+      },
+    });
+    return res.status(200).json({ enabled });
+  } catch (error) {
+    logger.error('[platform/institutions] Failed to update OCR access', error);
+    return res.status(500).json({ error: 'Failed to update OCR access' });
+  }
+});
+
 function sendAgentAccessError(res, error, fallback) {
   if (error instanceof HttpError || error instanceof TenantAgentAccessError) {
     return res.status(error.statusCode).json({ error: error.message });
@@ -758,6 +811,58 @@ router.post('/:tenantId/reactivate', async (req, res) => {
   } catch (error) {
     logger.error('[platform/institutions] reactivate failed', error);
     return res.status(500).json({ error: 'Failed to reactivate institution' });
+  }
+});
+
+const CHAT_ACCESS_MESSAGE_MAX = 500;
+
+/**
+ * Ends or restores chat for every member of an institution, e.g. when a free trial is over.
+ * Members can still sign in and read their chats; new turns are refused with `message`.
+ */
+router.put('/:tenantId/chat-access', async (req, res) => {
+  const { tenantId } = req.params;
+  const { ended, message = '', contact = '' } = req.body ?? {};
+  if (typeof ended !== 'boolean') {
+    return res.status(400).json({ error: 'ended must be a boolean' });
+  }
+  if (typeof message !== 'string' || message.trim().length > CHAT_ACCESS_MESSAGE_MAX) {
+    return res
+      .status(400)
+      .json({ error: `message must be text of at most ${CHAT_ACCESS_MESSAGE_MAX} characters` });
+  }
+  if (typeof contact !== 'string' || contact.trim().length > 200 || !isChatAccessContact(contact)) {
+    return res.status(400).json({ error: 'contact must be an email address or an http(s) link' });
+  }
+
+  try {
+    const institution = await runAsSystem(() =>
+      db.setInstitutionChatAccess(tenantId, {
+        ended,
+        message,
+        contact,
+        changedBy: req.user.id ?? req.user._id?.toString(),
+      }),
+    );
+    if (!institution) {
+      return res.status(404).json({ error: 'Institution not found' });
+    }
+
+    await recordPlatformAudit(req, {
+      action: 'institution.updated',
+      severity: 'warning',
+      target: { type: 'institution', id: tenantId, name: institution.name },
+      metadata: {
+        operation: ended ? 'chat_access_ended' : 'chat_access_restored',
+        message: institution.chatAccess?.message || undefined,
+        contact: institution.chatAccess?.contact || undefined,
+      },
+    });
+
+    return res.status(200).json({ institution });
+  } catch (error) {
+    logger.error('[platform/institutions] chat access update failed', error);
+    return res.status(500).json({ error: 'Failed to update chat access' });
   }
 });
 

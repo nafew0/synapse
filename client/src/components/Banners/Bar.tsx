@@ -1,18 +1,21 @@
 import { forwardRef } from 'react';
 import { XIcon } from 'lucide-react';
-import { Button, cn } from '@librechat/client';
+import { Button } from '@librechat/client';
 import type { BannerViewProps } from './styles';
+import { LinkLabel, Marker, When, useSchedule } from './parts';
 import { getCategoryStyle } from './styles';
 import { useLocalize } from '~/hooks';
 import BannerLink from './Link';
 
 /**
  * Slim bar across the top of the page; its height is reported so the layout can shrink.
- * The content is centred on the page: an invisible spacer mirrors the close button's width.
+ * A solid category block leads, then the words, then the time, link and close button.
+ * On phones the words drop to their own row under the block.
  */
 const Bar = forwardRef<HTMLDivElement, BannerViewProps>(({ banner, message, onDismiss }, ref) => {
   const localize = useLocalize();
   const style = getCategoryStyle(banner.category);
+  const { window } = useSchedule(banner, style);
   const canDismiss = banner.display !== 'always';
 
   return (
@@ -20,47 +23,45 @@ const Bar = forwardRef<HTMLDivElement, BannerViewProps>(({ banner, message, onDi
       ref={ref}
       role="region"
       aria-label={localize('com_ui_banner_label')}
-      className={cn(
-        'sticky top-0 z-20 flex min-h-11 items-center gap-2 py-2 text-sm text-text-primary md:relative',
-        canDismiss ? 'px-2' : 'px-4',
-        style.bar,
-      )}
+      data-category={banner.category}
+      className="lc-banner lc-banner-bar sticky top-0 z-20 flex min-h-12 flex-wrap items-stretch text-sm md:relative md:flex-nowrap"
     >
-      {canDismiss && <span aria-hidden="true" className="size-8 shrink-0" />}
-      <div className="flex min-w-0 flex-1 flex-wrap items-center justify-center gap-x-2 gap-y-1 text-center">
+      <span className="lc-banner-block flex shrink-0 items-center gap-2 py-2 pl-4 pr-7 text-xs font-bold uppercase tracking-wider">
+        <Marker style={style} />
+        {localize(style.label)}
+      </span>
+      <div className="lc-banner-words order-3 flex min-w-0 basis-full flex-wrap items-center gap-x-2.5 gap-y-0.5 px-3.5 pb-3 pt-2 leading-snug md:order-none md:flex-1 md:basis-auto md:pb-2">
+        {banner.title && (
+          <strong className="font-semibold text-text-primary">{banner.title}</strong>
+        )}
         <span
-          className={cn(
-            'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase leading-4 tracking-wide',
-            style.chip,
-          )}
-        >
-          {localize(style.label)}
-        </span>
-        {banner.title && <strong className="font-semibold">{banner.title}</strong>}
-        <span
-          className="text-text-secondary [&_a]:text-link [&_a]:underline"
+          className="text-text-secondary [&_a]:underline [&_a]:underline-offset-2"
           dangerouslySetInnerHTML={{ __html: message }}
         />
+        {window && <When {...window} className="inline-flex md:hidden" />}
+      </div>
+      <div className="ml-auto flex shrink-0 items-center gap-2.5 pl-2 pr-2">
+        {window && <When {...window} className="hidden md:inline-flex" />}
         {banner.linkUrl && (
           <BannerLink
             url={banner.linkUrl}
-            className="lc-banner-link whitespace-nowrap font-medium underline underline-offset-4"
+            className="lc-banner-cta inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-[13px] font-semibold"
           >
-            {`${banner.linkLabel || banner.linkUrl} →`}
+            <LinkLabel url={banner.linkUrl} label={banner.linkLabel || banner.linkUrl} />
           </BannerLink>
         )}
+        {canDismiss && (
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label={localize('com_ui_banner_dismiss')}
+            className="size-8 shrink-0"
+            onClick={onDismiss}
+          >
+            <XIcon className="h-4 w-4 text-text-secondary" aria-hidden="true" />
+          </Button>
+        )}
       </div>
-      {canDismiss && (
-        <Button
-          size="icon"
-          variant="ghost"
-          aria-label={localize('com_ui_banner_dismiss')}
-          className="size-8 shrink-0"
-          onClick={onDismiss}
-        >
-          <XIcon className="h-4 w-4 text-text-secondary" aria-hidden="true" />
-        </Button>
-      )}
     </div>
   );
 });

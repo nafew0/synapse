@@ -7,6 +7,7 @@ import {
   toErrorReference,
 } from 'librechat-data-provider';
 import type { ContextType } from 'react';
+import type { TQuotaExceeded } from './QuotaNotice';
 import type { TErrorInfo } from '~/utils/errors';
 import type { TranslationKeys } from '~/hooks';
 import { getErrorInfo, publicErrorKeys, recordError } from '~/utils/errors';
@@ -15,8 +16,8 @@ import { ChatContext, useMessageContext } from '~/Providers';
 import { ReportButton } from '~/components/Report';
 import { useGetAddedConvo } from '~/hooks/Chat';
 import { extractJson } from '~/utils/json';
+import Deliverables from './Deliverables';
 import QuotaNotice from './QuotaNotice';
-import type { TQuotaExceeded } from './QuotaNotice';
 
 /** Code stored on a response that stopped before it finished (see `UnfinishedMessage`). */
 export const UNFINISHED_ERROR_CODE = 'response_incomplete';
@@ -56,6 +57,7 @@ const errorKeys: Record<string, TranslationKeys> = {
   insufficient_quota: 'com_error_model_unavailable',
   concurrent: 'com_error_concurrent',
   message_limit: 'com_error_message_limit',
+  [ErrorTypes.CHAT_ACCESS_ENDED]: 'com_error_access_ended',
   [UNFINISHED_ERROR_CODE]: 'com_error_response_incomplete',
 };
 
@@ -150,6 +152,7 @@ const Error = ({ text, messageId, conversationId }: TErrorProps) => {
   return (
     <>
       <p>{message}</p>
+      <Deliverables attachments={messageContext.attachments} />
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {chat && targetMessageId ? <RetryButton chat={chat} messageId={targetMessageId} /> : null}
         <ReportButton

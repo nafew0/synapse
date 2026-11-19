@@ -188,7 +188,7 @@ function UnifiedSidebar() {
             />
             <nav
               id="chat-history-nav"
-              className="min-h-0 flex-1 overflow-hidden bg-surface-primary-alt"
+              className="lc-chat-sidebar min-h-0 flex-1 overflow-hidden bg-surface-primary-alt"
             >
               <SidePanelNav links={links} />
             </nav>

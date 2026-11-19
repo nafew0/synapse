@@ -94,7 +94,7 @@ export function reserveFirecrawlCall(
   const usage = getUsage(scope);
   const limit = limitFor(limits, call);
   if (usage[call] >= limit) {
-    const tool = call === 'search' ? 'firecrawl_search' : 'firecrawl_scrape';
+    const tool = call === 'search' ? 'Web search' : 'Reading web pages';
     return `Budget reached: ${tool} has been used ${limit} of ${limit} times for this request. Do not call it again; continue with the sources you already have and say which parts could not be checked.`;
   }
   usage[call] += 1;

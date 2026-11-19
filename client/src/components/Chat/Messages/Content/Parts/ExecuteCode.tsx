@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { SquareTerminal } from 'lucide-react';
+import { Tools } from 'librechat-data-provider';
 import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import { parseBackgroundHandle, splitBackgroundAttachments } from './handle';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
@@ -12,6 +13,7 @@ import useFollowScroll from './useFollowScroll';
 import { AttachmentGroup } from './Attachment';
 import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
+import StepRow from './StepRow';
 import Stdout from './Stdout';
 import { cn } from '~/utils';
 
@@ -84,7 +86,7 @@ export default function ExecuteCode({
   const { lang = 'py', code } = useParseArgs(args) ?? ({} as ParsedArgs);
   /** Model-authored live label, streamed as the first args key; persists as
    *  the settled label (completion is a UI state, not a tense change). */
-  const intent = useToolCallIntent(args);
+  const intent = useToolCallIntent(args, Tools.execute_code);
   const sandboxStarting = useRecoilValue(sandboxStartingByToolCallId(toolCallId ?? ''));
 
   const outputHasError = useMemo(() => ERROR_PATTERNS.test(output), [output]);
@@ -110,15 +112,16 @@ export default function ExecuteCode({
       )
     : null;
 
-  const { showCode, toggleCode, expandStyle, expandRef, phase, hasOutput } = useToolCallState({
-    initialProgress,
-    isSubmitting,
-    output,
-    hasInput: !!code,
-    onExpand,
-    runStepStatus,
-    extraError: backgroundFailed,
-  });
+  const { showCode, toggleCode, expandStyle, expandRef, phase, hasOutput, detailsEnabled } =
+    useToolCallState({
+      initialProgress,
+      isSubmitting,
+      output,
+      hasInput: !!code,
+      onExpand,
+      runStepStatus,
+      extraError: backgroundFailed,
+    });
 
   const highlighted = useLazyHighlight(code, lang);
   const { ref: codePaneRef, onScroll: onCodePaneScroll } = useFollowScroll<HTMLPreElement>(
@@ -129,7 +132,7 @@ export default function ExecuteCode({
 
   return (
     <>
-      <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
+      <StepRow>
         <ProgressText
           phase={phase}
           onClick={toggleCode}
@@ -163,43 +166,45 @@ export default function ExecuteCode({
           hasInput={!!code?.length}
           isExpanded={showCode}
         />
-      </div>
-      <div style={expandStyle}>
-        <div className="overflow-hidden" ref={expandRef}>
-          <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
-            {code && <CodeWindowHeader language={lang} code={code} />}
-            {code && (
-              <pre
-                ref={codePaneRef}
-                onScroll={onCodePaneScroll}
-                className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt"
-              >
-                <code className={`hljs language-${lang} !whitespace-pre`}>{highlighted}</code>
-              </pre>
-            )}
-            {hasOutput && backgroundHandle == null && (
-              <div
-                className={cn(
-                  'bg-surface-primary-alt p-4 text-xs dark:bg-transparent',
-                  code && 'border-t border-border-light',
-                )}
-              >
-                <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-text-secondary">
-                  {localize('com_ui_output')}
-                </div>
+      </StepRow>
+      {detailsEnabled && (
+        <div style={expandStyle}>
+          <div className="overflow-hidden" ref={expandRef}>
+            <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
+              {code && <CodeWindowHeader language={lang} code={code} />}
+              {code && (
+                <pre
+                  ref={codePaneRef}
+                  onScroll={onCodePaneScroll}
+                  className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt"
+                >
+                  <code className={`hljs language-${lang} !whitespace-pre`}>{highlighted}</code>
+                </pre>
+              )}
+              {hasOutput && backgroundHandle == null && (
                 <div
                   className={cn(
-                    'max-h-[200px] overflow-auto',
-                    outputHasError ? 'text-status-error' : 'text-text-primary',
+                    'bg-surface-primary-alt p-4 text-xs dark:bg-transparent',
+                    code && 'border-t border-border-light',
                   )}
                 >
-                  <Stdout output={output} />
+                  <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-text-secondary">
+                    {localize('com_ui_output')}
+                  </div>
+                  <div
+                    className={cn(
+                      'max-h-[200px] overflow-auto',
+                      outputHasError ? 'text-status-error' : 'text-text-primary',
+                    )}
+                  >
+                    <Stdout output={output} />
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
       {!hideAttachments && fileAttachments && fileAttachments.length > 0 && (
         <AttachmentGroup attachments={fileAttachments} />
       )}

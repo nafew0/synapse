@@ -4,7 +4,7 @@ export * from './bedrock';
 export * from './balance';
 export * from './config';
 export * from './file-config';
-export type { UploadStageName, UploadStageHandler } from './upload';
+export type { UploadStageName, UploadStageHandler, UploadProgressHandler } from './upload';
 /* messages  */
 export * from './messages';
 /* run steps */

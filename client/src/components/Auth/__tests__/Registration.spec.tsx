@@ -2,12 +2,12 @@ import * as reactRouter from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import * as mockDataProvider from 'librechat-data-provider/react-query';
 import type { TStartupConfig } from 'librechat-data-provider';
+import Registration, { getRegistrationError } from '~/components/Auth/Registration';
 import * as endpointQueries from '~/data-provider/Endpoints/queries';
-import { act, render, screen } from 'test/layout-test-utils';
 import * as miscDataProvider from '~/data-provider/Misc/queries';
 import * as authMutations from '~/data-provider/Auth/mutations';
+import { act, render, screen } from 'test/layout-test-utils';
 import * as authQueries from '~/data-provider/Auth/queries';
-import Registration, { getRegistrationError } from '~/components/Auth/Registration';
 import AuthLayout from '~/components/Auth/AuthLayout';
 
 jest.mock('librechat-data-provider/react-query');
@@ -201,6 +201,42 @@ test('shows validation error messages', async () => {
   expect(alerts[3]).toHaveTextContent(/You must enter a valid email address/i);
   expect(alerts[4]).toHaveTextContent(/Password must be at least 8 characters/i);
   expect(alerts[5]).toHaveTextContent(/Passwords do not match/i);
+});
+
+const MISMATCH = /Passwords do not match/i;
+
+test('flags a mismatch while the confirmation is typed and clears it once it matches', async () => {
+  const { getByTestId, queryByText } = setup();
+  await userEvent.type(getByTestId('password'), 'password123');
+  await userEvent.type(getByTestId('confirm_password'), 'password12');
+  expect(queryByText(MISMATCH)).toBeInTheDocument();
+  await userEvent.type(getByTestId('confirm_password'), '3');
+  expect(queryByText(MISMATCH)).not.toBeInTheDocument();
+});
+
+test('rechecks the confirmation when the password is edited after it', async () => {
+  const { getByTestId, queryByText } = setup();
+  await userEvent.type(getByTestId('password'), 'password123');
+  await userEvent.type(getByTestId('confirm_password'), 'password123');
+  expect(queryByText(MISMATCH)).not.toBeInTheDocument();
+  await userEvent.type(getByTestId('password'), '4');
+  expect(queryByText(MISMATCH)).toBeInTheDocument();
+  await userEvent.type(getByTestId('confirm_password'), '4');
+  expect(queryByText(MISMATCH)).not.toBeInTheDocument();
+});
+
+test('checks a confirmation typed before the password', async () => {
+  const { getByTestId, queryByText } = setup();
+  await userEvent.type(getByTestId('confirm_password'), 'password123');
+  expect(queryByText(MISMATCH)).toBeInTheDocument();
+  await userEvent.type(getByTestId('password'), 'password123');
+  expect(queryByText(MISMATCH)).not.toBeInTheDocument();
+});
+
+test('does not flag an untouched confirmation while the password is typed', async () => {
+  const { getByTestId, queryByText } = setup();
+  await userEvent.type(getByTestId('password'), 'password123');
+  expect(queryByText(MISMATCH)).not.toBeInTheDocument();
 });
 
 test('shows only a localized message when registration fails', async () => {

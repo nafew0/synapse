@@ -5,6 +5,10 @@ version: 1.3.13
 
 cache: true
 
+memory:
+  tokenLimit: 2000
+  personalize: true
+
 # Prevents old large tool results (e.g. full document dumps from execute_code,
 # OCR'd PDF text, or `context`-attached files) from compounding token cost on
 # every subsequent turn of a long editing session.
@@ -121,6 +125,15 @@ balance:
 
 interface:
   customWelcome: 'Welcome to Synapse!'
+  privacyPolicy:
+    externalUrl: '/legal/privacy.html'
+    openNewTab: true
+  termsOfService:
+    externalUrl: '/legal/terms.html'
+    openNewTab: true
+  userGuide:
+    externalUrl: '/legal/guide.html'
+    openNewTab: true
   fileSearch: true
   modelSelect: true
   parameters: false
@@ -140,6 +153,9 @@ interface:
   marketplace:
     use: false
   fileCitations: true
+  # Tool steps show a short label (and sources for web reads), never their code,
+  # arguments or raw output.
+  toolDetails: false
   # Stated explicitly on purpose. `create` is only written to the role when this key is
   # present, or on a role's first seed (packages/api/src/app/permissions.ts). A role that
   # once had CREATE turned off keeps it until an explicit key overrides it, so omitting
@@ -158,71 +174,86 @@ interface:
 # without the user choosing a mode: short documents are read in full, long ones are searched,
 # spreadsheets and data files go to the code sandbox. Thresholds are in tokens.
 fileConfig:
-  # Uploads are limited to what this deployment can actually do something with. Anything not
-  # listed is refused by the attach menu, by client validation and by the server's upload filter.
-  # Types left out on purpose:
-  #   video/*            nothing reads it — no ffmpeg in the sandbox, no vision model takes it
-  #   audio/* on agents  the sandbox has no speech-to-text; audio belongs to the Transcriber
-  #   aac audio          untested; m4a, mp4 and webm were verified 2026-09-23
-  #   archives on single models — nothing can open them without the code sandbox
+  # Uploads are limited to the file types ChatGPT or Claude document as supported (checked
+  # 2026-10-29; docs/chat-file-editing-plan.md), and only where this deployment can do something
+  # with them. Exceptions neither documents but users rely on: .yaml/.yml (configuration files),
+  # .heic/.heif photos (the iPhone default) and .ogg/.webm/.flac audio for the Transcriber
+  # (verified with the STT model).
+  #
+  # supportedExtensions is the gate: the attach menu, client validation and the server's upload
+  # filter all refuse a name whose extension is not listed. Many extensions share text/plain, so
+  # the MIME patterns below cannot tell .txt from .conf; they stay broad enough for the types
+  # browsers report for the listed extensions and are used to route a file (parser, OCR, vision,
+  # sandbox).
+  #
+  # Left out on purpose: .pkl (opening a pickle runs code in it); archives on single models
+  # (nothing opens them without the sandbox); video (nothing reads it).
   endpoints:
     # Office Assistant: the code sandbox, LibreOffice and the document skills.
     agents:
+      supportedExtensions: [pdf, doc, docx, odt, rtf, epub, pptx,
+                            txt, md, html, htm, tex,
+                            csv, tsv, xls, xlsx, json, xml, yaml, yml,
+                            c, cpp, cs, java, php, py, rb, js, ts, sh, css, go,
+                            jpg, jpeg, png, gif, webp, heic, heif,
+                            zip, tar]
       supportedMimeTypes:
-        # Vision for the model; Pillow, OpenCV and cairosvg in the sandbox
-        - '^image/(jpeg|png|gif|webp|heic|heif|svg\+xml)$'
-        # pdfplumber, pypdf, qpdf, poppler, and the pdf-to-docx skill
+        - '^image/(jpeg|png|gif|webp|heic|heif)$'
         - '^application/pdf$'
-        # Word, Excel and PowerPoint — legacy and OOXML, via the docx/xlsx/pptx skills
-        - '^application/(msword|vnd\.ms-excel|vnd\.ms-powerpoint)$'
-        - '^application/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.(presentation|template))$'
-        # OpenDocument — LibreOffice Writer, Calc and Impress are installed
-        - '^application/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation|graphics)$'
-        - '^application/(epub\+zip|rtf)$'
-        # Text, markup and tabular data — pandas, pyarrow, chdb
-        - '^text/(plain|markdown|csv|tab-separated-values|html|xml|css|calendar|vtt)$'
-        - '^application/(json|xml|yaml|sql|csv)$'
-        - '^application/(x-parquet|vnd\.apache\.parquet)$'
-        # Source files the sandbox can read or run
-        - '^text/(javascript|x-c|x-c\+\+|x-h|x-csharp|x-java|x-php|x-python|x-script\.python|x-ruby|x-tex)$'
-        - '^application/(typescript|x-sh|vnd\.coffeescript)$'
-        # Archives and mail, opened with code
+        - '^application/(msword|vnd\.ms-excel|rtf|epub\+zip)$'
+        - '^application/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation)$'
+        - '^application/vnd\.oasis\.opendocument\.text$'
+        # Text, markup, data and source files: browsers name these many ways (text/x-c++src,
+        # text/x-go, application/x-tex), and the extension list already decides what is allowed.
+        - '^text/[\w.+-]+$'
+        - '^application/(json|xml|csv|yaml|x-yaml|javascript|x-javascript|typescript|x-sh|x-tex)$'
+        # Archives, opened with code in the sandbox
         - '^application/(zip|x-zip-compressed|x-tar)$'
-        - '^message/rfc822$'
 
-    # Single models read files, they cannot edit them: only what the parser or the RAG API can
-    # turn into text, plus images for vision.
-    custom: &readOnlyUploads
+    # Single models: no sandbox. They read what the parser or the RAG API can turn into text,
+    # plus images for vision.
+    custom: &chatUploads
+      supportedExtensions: [pdf, doc, docx, odt, rtf, epub, pptx,
+                            txt, md, html, htm, tex,
+                            csv, tsv, xls, xlsx, json, xml, yaml, yml,
+                            c, cpp, cs, java, php, py, rb, js, ts, sh, css, go,
+                            jpg, jpeg, png, gif, webp, heic, heif]
       supportedMimeTypes:
         - '^image/(jpeg|png|gif|webp|heic|heif)$'
         - '^application/pdf$'
-        - '^application/(msword|vnd\.ms-excel|vnd\.ms-powerpoint)$'
+        - '^application/(msword|vnd\.ms-excel|rtf|epub\+zip)$'
         - '^application/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation)$'
-        - '^application/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation)$'
-        - '^application/epub\+zip$'
-        - '^text/(plain|markdown|csv|tab-separated-values|html|xml)$'
-        - '^application/(json|xml|csv)$'
+        - '^application/vnd\.oasis\.opendocument\.text$'
+        - '^text/[\w.+-]+$'
+        - '^application/(json|xml|csv|yaml|x-yaml|javascript|x-javascript|typescript|x-sh|x-tex)$'
 
-    # Same as above, plus the audio formats verified with the STT model, for the Transcriber.
+    # The single models and the Transcriber share this endpoint, so it takes the single-model
+    # types plus the audio formats verified with the STT model.
     OpenRouter:
+      supportedExtensions: [pdf, doc, docx, odt, rtf, epub, pptx,
+                            txt, md, html, htm, tex,
+                            csv, tsv, xls, xlsx, json, xml, yaml, yml,
+                            c, cpp, cs, java, php, py, rb, js, ts, sh, css, go,
+                            jpg, jpeg, png, gif, webp, heic, heif,
+                            mp3, wav, m4a, ogg, webm, flac]
       supportedMimeTypes:
         - '^image/(jpeg|png|gif|webp|heic|heif)$'
         - '^application/pdf$'
-        - '^application/(msword|vnd\.ms-excel|vnd\.ms-powerpoint)$'
+        - '^application/(msword|vnd\.ms-excel|rtf|epub\+zip)$'
         - '^application/vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|spreadsheetml\.sheet|presentationml\.presentation)$'
-        - '^application/vnd\.oasis\.opendocument\.(text|spreadsheet|presentation)$'
-        - '^application/epub\+zip$'
-        - '^text/(plain|markdown|csv|tab-separated-values|html|xml)$'
-        - '^application/(json|xml|csv)$'
-        - '^audio/(mpeg|mp3|wav|wave|x-wav|ogg|vorbis|flac|x-flac|mp4|x-m4a|m4a|webm)$'
+        - '^application/vnd\.oasis\.opendocument\.text$'
+        - '^text/[\w.+-]+$'
+        - '^application/(json|xml|csv|yaml|x-yaml|javascript|x-javascript|typescript|x-sh|x-tex)$'
+        - '^audio/(mpeg|mp3|wav|wave|x-wav|ogg|vorbis|flac|x-flac|x-m4a|m4a|mp4|webm)$'
 
     # Image generation takes pictures and nothing else.
     OpenRouter Image:
+      supportedExtensions: [jpg, jpeg, png, gif, webp, heic, heif]
       supportedMimeTypes:
         - '^image/(jpeg|png|gif|webp|heic|heif)$'
 
     # Any endpoint without its own entry falls here rather than to the sandbox list.
-    default: *readOnlyUploads
+    default: *chatUploads
 
   autoPreparation:
     # Per-file ceiling for reading a document's text straight into the conversation.
@@ -247,6 +278,23 @@ fileConfig:
 #   apiKey: '${OCR_API_KEY}'
 #   baseURL: 'https://api.mistral.ai/v1'
 #   mistralModel: 'mistral-ocr-latest'
+
+# The Office Assistant's document reader (tool `read_document`). Sends scanned pages to Unstructured
+# (Parse API). Each institution stays off until a superadmin switches on "Document reading".
+documentOcr:
+  apiUrl: 'https://transform.unstructured.io'
+  apiKey: '${UNSTRUCTURED_API_KEY}'
+  profile: 'best'
+  maxPages: 50
+  concurrency: 5
+  agents: ['agent_office_assistant']
+  pricePerPageUsd: 0.015
+  # A vision model (about $0.004 a page) labels each read line's role and bold and finds pictures the
+  # reader dropped, so the scan-to-Word rebuild never makes a page number, addressee or letterhead
+  # line into a signature, sets bold it cannot measure on a photo, and keeps stamps and logos.
+  # structure:
+  #   apiKey: '${OPENROUTER_KEY}'
+  #   model: 'google/gemini-3.5-flash-lite'
 
 speech:
   stt:
@@ -288,7 +336,7 @@ modelSpecs:
       skills: false
       preset:
         endpoint: OpenRouter
-        model: openai/gpt-5.6-luna
+        model: openai/gpt-6-luna
         promptPrefix: |
           You return transcripts of audio files the user attaches.
 
@@ -303,12 +351,14 @@ modelSpecs:
           If no transcript is attached, tell the user to attach an audio file
           using "Upload as Text".
 
-    - name: gpt-5.6-luna
+    - name: gpt-6-luna
       label: ChatGPT
       askUserQuestion: true
-      # Retrieval only: long attachments are searchable, but editing a file needs the
-      # code sandbox, which belongs to the Office Assistant alone.
+      # Long attachments are searchable. Text and code files are edited with read_attachment,
+      # patch_file and save_file, which use file storage only: the code sandbox belongs to the
+      # Office Assistant alone (docs/chat-file-editing-plan.md).
       fileSearch: true
+      fileAuthoring: true
       # Single models are a plain "ask about your file" surface. The tool badge row and
       # the skills picker belong to building an assistant, not to using one — office work
       # goes to the Office Assistant, which carries its own tools and skills.
@@ -316,8 +366,39 @@ modelSpecs:
       skills: false
       preset:
         endpoint: OpenRouter
-        model: openai/gpt-5.6-luna
-        promptPrefix: |
+        model: openai/gpt-6-luna
+        # A long chat resends its whole history on every message, and compaction only runs once
+        # the history stops fitting this budget. Left at the model's 1M window it never runs, and
+        # a long chat costs up to ~944K input tokens a message. 256K keeps 6-12 full
+        # read_attachment results in context, so file editing rarely compacts mid-edit.
+        maxContextTokens: 262144
+        promptPrefix: &chatPrefix |
+          ## Language and tone
+
+          Look at the user's latest message. If it is written in any language other
+          than English, reply in that language, even when the attached document or
+          the earlier conversation is in English. Bangla typed in English letters
+          counts as Bangla: reply in Bangla script.
+
+          If the message is in English, answer in the language of the attached
+          document (a Bangla document gets a Bangla answer), and in English when no
+          document is attached. An explicit request for a particular language, or
+          for a translation, always wins. Keep names, numbers, code and exact quotes
+          from a document as written.
+
+          Match how the user talks in their latest message, in every language, and
+          keep to it for the whole reply, verbs included:
+          - Official or formal message: reply formally and plainly, with no slang or
+            jokes. In Bangla use আপনি and its verb forms (করুন, পারেন, দেখুন).
+          - Casual message: reply like a friendly colleague, short and relaxed. In
+            Bangla use তুমি and its verb forms (করো, পারো, দেখো), unless the user
+            says আপনি to you; then stay friendly but keep আপনি. If the user says তুই,
+            reply with তুমি. Never use slang the user did not use, or insults.
+          - Unclear: use polite, neutral wording (আপনি in Bangla).
+          Tone is about how you talk to the user. A letter, order, email or report
+          you draft for them keeps the tone that document needs, formal by default,
+          even when the request was casual.
+
           ## When a file is attached
 
           Short documents are included in full in the message, under "Attached
@@ -335,12 +416,6 @@ modelSpecs:
 
           Build the answer from the document, and name the section or page it
           came from so the user can check it.
-
-          Answer in the language of the attached document. If the document is in
-          Bangla, answer in Bangla; if it is in English, answer in English. Follow
-          the document rather than the language the user happened to type in. The
-          one exception is an explicit request — if the user asks for a particular
-          language, or asks for a translation, that always wins.
 
           If neither the included text nor file_search has the answer, say exactly
           this before continuing: "I could not find that in the attached
@@ -362,17 +437,58 @@ modelSpecs:
           Do not ask for passwords, payment information, or other unnecessary
           sensitive data. Do not ask for greetings or simple factual questions.
 
-          You can read attached files and answer questions about them. You cannot
-          edit a document or build a spreadsheet — when the user asks for that,
-          say so plainly in one sentence and tell them to switch to the Office
-          Assistant, which can return the edited file.
+          ## Returning files
 
-    - name: anthropic/claude-haiku-4.5
+          You can read attached files, and you can return text and code files
+          with your tools. When the user asks you to change an attached text or
+          code file, read it with read_attachment if its full text is not in the
+          message, then call patch_file with only the parts that change. It
+          returns an edited copy in the same format, named "<name>-edited.<ext>"
+          unless the user asks for another name. When the user asks for a new
+          file, or a short file rewritten from scratch, call save_file with the
+          complete content and a file name with the right extension.
+
+          A saved file is shown to the user as a download. Do not paste its
+          content in your reply as well; say in one or two sentences what you
+          changed.
+
+          You cannot edit or build Word, Excel, PowerPoint or PDF files. When the
+          user asks for that, say so plainly in one sentence and tell them to
+          switch to the Office Assistant, which can return the edited file.
+
+          ## Explaining and teaching
+
+          When the user is trying to understand something, teach rather than only
+          answer:
+
+          - Continue from where they are stuck. If they say "clear up to here",
+            explain only from that point; do not restart from the beginning.
+          - If they say it is not clear, do not repeat or expand your last explanation.
+            Use a different method, and start with one small example with real
+            numbers before any general statement. Keep it short, but say why each
+            step works.
+          - If they ask whether their understanding is right, say yes or no first,
+            then correct or confirm it in a sentence or two.
+          - Match their level (school, A/L, undergraduate, research) from how they
+            write, and use one small worked example with real numbers where it helps.
+          - Show every step of a derivation or proof, and say why each step follows.
+            Do not skip steps as "obvious". If you are unsure of a step, say so.
+          - Keep technical terms in English, whatever language you explain in.
+          - If they ask you to teach them or to practise, go one idea at a time, ask
+            one short question to check it, and wait for their answer. If they ask for
+            practice problems, give the answers only when they ask.
+
+          Do not add questions or practice to a request for a plain fact or a finished
+          document.
+
+    - name: anthropic/claude-haiku-5.5
       label: Claude
       askUserQuestion: true
-      # Retrieval only: long attachments are searchable, but editing a file needs the
-      # code sandbox, which belongs to the Office Assistant alone.
+      # Long attachments are searchable. Text and code files are edited with read_attachment,
+      # patch_file and save_file, which use file storage only: the code sandbox belongs to the
+      # Office Assistant alone (docs/chat-file-editing-plan.md).
       fileSearch: true
+      fileAuthoring: true
       # Single models are a plain "ask about your file" surface. The tool badge row and
       # the skills picker belong to building an assistant, not to using one — office work
       # goes to the Office Assistant, which carries its own tools and skills.
@@ -380,64 +496,19 @@ modelSpecs:
       skills: false
       preset:
         endpoint: OpenRouter
-        model: anthropic/claude-haiku-4.5
+        model: anthropic/claude-haiku-5.5
+        maxContextTokens: 262144
         promptCache: true
-        promptPrefix: |
-          ## When a file is attached
-
-          Short documents are included in full in the message, under "Attached
-          document(s):" with the file name as a heading. Longer documents are not
-          included; search them with file_search.
-
-          Read a document that is included in full directly. Do not call
-          file_search for it, and do not say it is missing.
-
-          For a document that is not included in full, call file_search first,
-          before you write anything else — even when you already know the topic
-          well, and even when the user's message is only a topic or two words,
-          such as "matrix multiplication". A bare topic with a file attached means
-          "tell me what the document says about this".
-
-          Build the answer from the document, and name the section or page it
-          came from so the user can check it.
-
-          Answer in the language of the attached document. If the document is in
-          Bangla, answer in Bangla; if it is in English, answer in English. Follow
-          the document rather than the language the user happened to type in. The
-          one exception is an explicit request — if the user asks for a particular
-          language, or asks for a translation, that always wins.
-
-          If neither the included text nor file_search has the answer, say exactly
-          this before continuing: "I could not find that in the attached
-          document." Then you may answer from your own knowledge.
-
-          Never answer from your own knowledge while a file is attached without
-          saying that is what you are doing. An answer that looks right but did not
-          come from the user's document is worse than no answer.
-
-          ## Everything else
-
-          You assist non-technical office users with emails, letters, reports,
-          research, document editing, meeting materials, and presentations.
-
-          Before answering, check whether an important detail is missing. When
-          it is, ask a short plain-language follow-up question with 2–4 options.
-          Allow the user to provide another answer and ask no more than three
-          clarification questions for one request.
-          Do not ask for passwords, payment information, or other unnecessary
-          sensitive data. Do not ask for greetings or simple factual questions.
-
-          You can read attached files and answer questions about them. You cannot
-          edit a document or build a spreadsheet — when the user asks for that,
-          say so plainly in one sentence and tell them to switch to the Office
-          Assistant, which can return the edited file.
+        promptPrefix: *chatPrefix
 
     - name: deepseek/deepseek-v4-flash-0731
       label: Coding Expert
       askUserQuestion: true
-      # Retrieval only: long attachments are searchable, but editing a file needs the
-      # code sandbox, which belongs to the Office Assistant alone.
+      # Long attachments are searchable. Text and code files are edited with read_attachment,
+      # patch_file and save_file, which use file storage only: the code sandbox belongs to the
+      # Office Assistant alone (docs/chat-file-editing-plan.md).
       fileSearch: true
+      fileAuthoring: true
       # Single models are a plain "ask about your file" surface. The tool badge row and
       # the skills picker belong to building an assistant, not to using one — office work
       # goes to the Office Assistant, which carries its own tools and skills.
@@ -446,13 +517,35 @@ modelSpecs:
       preset:
         endpoint: OpenRouter
         model: deepseek/deepseek-v4-flash-0731
+        maxContextTokens: 262144
         promptCache: true
         promptPrefix: |
+          If the user's message is in a language other than English, explain in that language. Match how they talk: formal with a formal message (আপনি and its verb forms in Bangla), relaxed with a casual one (তুমি and its verb forms in Bangla, unless they say আপনি to you). Code, identifiers and technical terms stay in English unless asked otherwise.
+
           You assist experienced software developers with architecture, implementation, debugging, code review, testing, performance, security, DevOps, and technical documentation.
 
           Before responding, determine whether any missing detail would materially affect the correctness, safety, or implementation approach. If so, ask one concise technical follow-up question with 2–4 practical options, while allowing a custom answer. Ask no more than three clarification questions per request.
 
           Do not ask for information that can be inferred from the codebase, existing context, or standard conventions. Do not request passwords, API keys, access tokens, private keys, or other unnecessary secrets. Skip clarification for simple factual questions, routine coding tasks, or cases where a reasonable assumption can be stated and used safely.
+
+          ## Returning files
+
+          You can read attached files, and you can return text and code files
+          with your tools. When the user asks you to change an attached text or
+          code file, read it with read_attachment if its full text is not in the
+          message, then call patch_file with only the parts that change. It
+          returns an edited copy in the same format, named "<name>-edited.<ext>"
+          unless the user asks for another name. When the user asks for a new
+          file, or a short file rewritten from scratch, call save_file with the
+          complete content and a file name with the right extension.
+
+          A saved file is shown to the user as a download. Do not paste its
+          content in your reply as well; say in one or two sentences what you
+          changed.
+
+          You cannot edit or build Word, Excel, PowerPoint or PDF files. When the
+          user asks for that, say so plainly in one sentence and tell them to
+          switch to the Office Assistant, which can return the edited file.
 
     - name: google/gemini-3.1-flash-lite-image
       label: Image Generation
@@ -464,6 +557,8 @@ modelSpecs:
         model: google/gemini-3.1-flash-lite-image
         streaming: false
         promptPrefix: |
+          Write your replies and questions in the language of the user's message, and match their tone. This does not change the text inside an image, which follows the request.
+
           You are an image-generation assistant. Create images from a text description, and when the user attaches an image, apply the changes they ask for to it.
 
           Before generating, confirm that the request provides enough information about the subject, intended purpose, visual style, aspect ratio, and any required text. If an important detail is missing and cannot be reasonably inferred, ask one concise follow-up question with 2–4 practical options while allowing a custom answer. Ask no more than three clarification questions per request.
@@ -479,9 +574,11 @@ modelSpecs:
     - name: google/gemini-3.8-flash
       label: Google Gemini (Latest)
       askUserQuestion: true
-      # Retrieval only: long attachments are searchable, but editing a file needs the
-      # code sandbox, which belongs to the Office Assistant alone.
+      # Long attachments are searchable. Text and code files are edited with read_attachment,
+      # patch_file and save_file, which use file storage only: the code sandbox belongs to the
+      # Office Assistant alone (docs/chat-file-editing-plan.md).
       fileSearch: true
+      fileAuthoring: true
       # Single models are a plain "ask about your file" surface. The tool badge row and
       # the skills picker belong to building an assistant, not to using one — office work
       # goes to the Office Assistant, which carries its own tools and skills.
@@ -490,55 +587,8 @@ modelSpecs:
       preset:
         endpoint: OpenRouter
         model: google/gemini-3.8-flash
-        promptPrefix: |
-          ## When a file is attached
-
-          Short documents are included in full in the message, under "Attached
-          document(s):" with the file name as a heading. Longer documents are not
-          included; search them with file_search.
-
-          Read a document that is included in full directly. Do not call
-          file_search for it, and do not say it is missing.
-
-          For a document that is not included in full, call file_search first,
-          before you write anything else — even when you already know the topic
-          well, and even when the user's message is only a topic or two words,
-          such as "matrix multiplication". A bare topic with a file attached means
-          "tell me what the document says about this".
-
-          Build the answer from the document, and name the section or page it
-          came from so the user can check it.
-
-          Answer in the language of the attached document. If the document is in
-          Bangla, answer in Bangla; if it is in English, answer in English. Follow
-          the document rather than the language the user happened to type in. The
-          one exception is an explicit request — if the user asks for a particular
-          language, or asks for a translation, that always wins.
-
-          If neither the included text nor file_search has the answer, say exactly
-          this before continuing: "I could not find that in the attached
-          document." Then you may answer from your own knowledge.
-
-          Never answer from your own knowledge while a file is attached without
-          saying that is what you are doing. An answer that looks right but did not
-          come from the user's document is worse than no answer.
-
-          ## Everything else
-
-          You assist non-technical office users with emails, letters, reports,
-          research, document editing, meeting materials, and presentations.
-
-          Before answering, check whether an important detail is missing. When
-          it is, ask a short plain-language follow-up question with 2–4 options.
-          Allow the user to provide another answer and ask no more than three
-          clarification questions for one request.
-          Do not ask for passwords, payment information, or other unnecessary
-          sensitive data. Do not ask for greetings or simple factual questions.
-
-          You can read attached files and answer questions about them. You cannot
-          edit a document or build a spreadsheet — when the user asks for that,
-          say so plainly in one sentence and tell them to switch to the Office
-          Assistant, which can return the edited file.
+        maxContextTokens: 262144
+        promptPrefix: *chatPrefix
 
 endpoints:
   agents:
@@ -548,6 +598,11 @@ endpoints:
     # this, a large-document read/edit can dump tens of thousands of characters
     # into context on one turn.
     maxToolResultChars: 25000
+    # Hard ceiling on graph steps for any agent run. Each tool call costs about two
+    # steps (model turn + tool run) and context summaries add more, so Office agents
+    # raise their own limit (recursion_limit in config/phase-one-office-agents.yaml);
+    # every other agent keeps the 50-step default.
+    maxRecursionLimit: 150
     capabilities:
       - 'subagents'
       - 'execute_code'
@@ -557,6 +612,9 @@ endpoints:
       - 'tools'
       - 'context'
       - 'ask_user_question'
+      # Each tool call carries a short model-written label ("Converting the PDF to Word"),
+      # shown as the step's line in the collapsed activity block. No extra model call.
+      - 'tool_intents'
       # Required before automatic preparation may send a scanned document to OCR.
       # Without it, uploads that need text recognition fail with
       # "OCR capability is not enabled for Agents".
@@ -572,13 +630,15 @@ endpoints:
       models:
         default:
           - openai/gpt-5.6-luna
+          - openai/gpt-6-luna
           - deepseek/deepseek-v4-flash-0731
           - anthropic/claude-haiku-4.5
+          - anthropic/claude-haiku-5.5
           - google/gemini-3.8-flash
         fetch: false
       titleConvo: true
       titleEndpoint: OpenRouter
-      titleModel: openai/gpt-5.6-luna
+      titleModel: openai/gpt-6-luna
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
       # OpenRouter list prices, USD per 1M tokens, checked 2026-10-18. Usage credits are
@@ -604,6 +664,21 @@ endpoints:
           read: 0.1
           write: 1.25
           context: 200000
+        # Neither model is in the built-in pricing table (tx.ts) or context map
+        # (tokens.ts); without these entries usage is billed at a fallback rate and
+        # gpt-6-luna gets no known context window. OpenRouter list prices, 2026-10-21.
+        'openai/gpt-6-luna':
+          prompt: 0.1
+          completion: 0.5
+          read: 0.01
+          write: 0.125
+          context: 1050000
+        'anthropic/claude-haiku-5.5':
+          prompt: 0.1
+          completion: 0.5
+          read: 0.01
+          write: 0.125
+          context: 1000000
 
     # Separate endpoint so `addParams` below (modalities/image_config) only ever
     # reaches the image models. Sending `modalities: ["image","text"]`
@@ -622,7 +697,7 @@ endpoints:
         fetch: false
       titleConvo: true
       titleEndpoint: OpenRouter
-      titleModel: openai/gpt-5.6-luna
+      titleModel: openai/gpt-6-luna
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter Image'
       tokenConfig:

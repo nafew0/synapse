@@ -96,12 +96,14 @@ export function useApplyAgentTemplate() {
         return;
       }
 
+      /** A spec without a badge row offers no toggles, so carried-over values are dropped. */
+      const carried = modelSpec.hideBadgeRow === true ? undefined : ephemeralAgent;
       const mergedAgent = {
         ...ephemeralAgent,
-        mcp: [...(ephemeralAgent?.mcp ?? []), ...(modelSpec.mcpServers ?? [])],
-        web_search: ephemeralAgent?.web_search ?? modelSpec.webSearch ?? false,
-        file_search: ephemeralAgent?.file_search ?? modelSpec.fileSearch ?? false,
-        execute_code: ephemeralAgent?.execute_code ?? modelSpec.executeCode ?? false,
+        mcp: [...(carried?.mcp ?? []), ...(modelSpec.mcpServers ?? [])],
+        web_search: carried?.web_search ?? modelSpec.webSearch ?? false,
+        file_search: carried?.file_search ?? modelSpec.fileSearch ?? false,
+        execute_code: carried?.execute_code ?? modelSpec.executeCode ?? false,
         artifacts:
           ephemeralAgent?.artifacts ??
           (modelSpec.artifacts === true ? 'default' : modelSpec.artifacts || ''),

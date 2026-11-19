@@ -11,6 +11,7 @@ import {
   Zap,
   Wrench,
 } from 'lucide-react';
+import { WEB_READ_TOOL_NAMES, WEB_SEARCH_TOOL_NAMES } from '~/utils/toolLabels';
 import LangIcon from '~/components/Messages/Content/LangIcon';
 import { cn } from '~/utils';
 
@@ -57,7 +58,7 @@ export function getToolIconType(name: string): ToolIconType {
   if (name === 'execute_code' || name === Constants.PROGRAMMATIC_TOOL_CALLING) {
     return 'execute_code';
   }
-  if (name === 'web_search') {
+  if (name === 'web_search' || WEB_SEARCH_TOOL_NAMES.has(name) || WEB_READ_TOOL_NAMES.has(name)) {
     return 'web_search';
   }
   if (name === 'image_gen_oai' || name === 'image_edit_oai' || name === 'gemini_image_gen') {

@@ -1,133 +1,85 @@
 import { XIcon } from 'lucide-react';
-import { Button, buttonVariants, cn } from '@librechat/client';
+import { Button } from '@librechat/client';
 import type { BannerViewProps } from './styles';
+import { LinkLabel, Marker, When, useSchedule } from './parts';
 import { getCategoryStyle } from './styles';
 import { useLocalize } from '~/hooks';
 import BannerLink from './Link';
 
-const NODES: [number, number][] = [
-  [20, 70],
-  [62, 34],
-  [104, 78],
-  [148, 28],
-  [190, 64],
-  [232, 30],
-  [270, 82],
-  [120, 50],
-  [210, 92],
-  [320, 46],
-];
-const EDGES: [number, number][] = [
-  [0, 1],
-  [1, 2],
-  [1, 7],
-  [7, 3],
-  [3, 4],
-  [4, 5],
-  [5, 6],
-  [2, 7],
-  [4, 8],
-  [8, 6],
-  [2, 8],
-  [5, 9],
-  [6, 9],
-];
-const ACCENT_NODE = 3;
-
-/** Connected-node motif for the card header — a nod to the Synapse name. */
-function Network() {
-  return (
-    <svg
-      viewBox="0 0 340 104"
-      preserveAspectRatio="xMidYMid slice"
-      className="absolute inset-0 h-full w-full"
-      aria-hidden="true"
-    >
-      {EDGES.map(([a, b]) => (
-        <line
-          key={`${a}-${b}`}
-          x1={NODES[a][0]}
-          y1={NODES[a][1]}
-          x2={NODES[b][0]}
-          y2={NODES[b][1]}
-          className="lc-banner-network-edge"
-        />
-      ))}
-      {NODES.map(([x, y], i) => (
-        <circle
-          key={`${x}-${y}`}
-          cx={x}
-          cy={y}
-          r={i === ACCENT_NODE ? 5 : 3}
-          className={i === ACCENT_NODE ? 'lc-banner-network-accent' : 'lc-banner-network-node'}
-        />
-      ))}
-      <circle
-        cx={NODES[ACCENT_NODE][0]}
-        cy={NODES[ACCENT_NODE][1]}
-        r={11}
-        className="lc-banner-network-ring"
-      />
-    </svg>
-  );
-}
-
-/** Floating card in the top-right corner; it overlays the page instead of pushing it down. */
+/**
+ * Floating card in the top-right corner; it overlays the page instead of pushing it down.
+ * Shaped like a ticket: a coloured header, the notice, then a tear-off stub with the time and actions.
+ */
 export default function Card({ banner, message, onDismiss }: BannerViewProps) {
   const localize = useLocalize();
   const style = getCategoryStyle(banner.category);
+  const { window, day } = useSchedule(banner, style);
   const canDismiss = banner.display !== 'always';
-  const hasActions = canDismiss || Boolean(banner.linkUrl);
+  const hasStub = canDismiss || Boolean(banner.linkUrl) || Boolean(window);
+  const { Watermark } = style;
 
   return (
     <section
       aria-label={localize('com_ui_banner_label')}
-      className="fixed inset-x-3 top-16 z-40 overflow-hidden rounded-2xl bg-surface-dialog text-text-primary shadow-2xl ring-1 ring-border-light motion-safe:duration-300 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-4 md:inset-x-auto md:right-6 md:w-[22rem]"
+      data-category={banner.category}
+      className="lc-banner lc-banner-card fixed inset-x-3 top-16 z-40 text-text-primary md:inset-x-auto md:right-6 md:w-96"
     >
-      <div className={cn('lc-banner-card-header relative h-24', style.header)}>
-        <Network />
-        {canDismiss && (
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            aria-label={localize('com_ui_banner_dismiss')}
-            className="lc-banner-card-close absolute right-2 top-2"
-            onClick={onDismiss}
-          >
-            <XIcon className="h-4 w-4" aria-hidden="true" />
-          </Button>
-        )}
+      <div className="lc-banner-sheet overflow-hidden rounded-t-2xl">
+        <div className="lc-banner-band relative flex items-center gap-2.5 overflow-hidden py-3.5 pl-[18px] pr-3">
+          <Marker style={style} />
+          <span className="text-xs font-bold uppercase tracking-wider">
+            {localize(style.label)}
+          </span>
+          {day && <span className="text-[12.5px] tabular-nums opacity-80">· {day}</span>}
+          <Watermark className="lc-banner-watermark pointer-events-none absolute -right-3.5 -top-5 size-[120px]" />
+          {canDismiss && (
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              aria-label={localize('com_ui_banner_dismiss')}
+              className="lc-banner-close relative ml-auto"
+              onClick={onDismiss}
+            >
+              <XIcon className="h-4 w-4" aria-hidden="true" />
+            </Button>
+          )}
+        </div>
+        <div className="px-5 pb-5 pt-[18px]">
+          {banner.title && (
+            <h2 className="mb-2 text-balance text-xl font-semibold leading-tight tracking-tight">
+              {banner.title}
+            </h2>
+          )}
+          <p
+            className="text-sm leading-relaxed text-text-secondary [&_a]:underline [&_a]:underline-offset-2"
+            dangerouslySetInnerHTML={{ __html: message }}
+          />
+        </div>
       </div>
-      <div className="flex flex-col gap-1.5 p-4">
-        <span className={cn('text-xs font-semibold uppercase tracking-wide', style.eyebrow)}>
-          {localize(style.label)}
-        </span>
-        {banner.title && (
-          <h2 className="text-base font-semibold leading-snug text-text-primary">{banner.title}</h2>
-        )}
-        <p
-          className="text-sm leading-relaxed text-text-secondary [&_a]:text-link [&_a]:underline"
-          dangerouslySetInnerHTML={{ __html: message }}
-        />
-        {hasActions && (
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {banner.linkUrl && (
-              <BannerLink
-                url={banner.linkUrl}
-                onClick={canDismiss ? onDismiss : undefined}
-                className={buttonVariants({ variant: 'submit', size: 'sm' })}
-              >
-                {banner.linkLabel || banner.linkUrl}
-              </BannerLink>
-            )}
+      {hasStub ? (
+        <>
+          <div className="lc-banner-perf h-[18px]" aria-hidden="true" />
+          <div className="lc-banner-sheet flex flex-wrap items-center gap-2.5 rounded-b-2xl pb-4 pl-5 pr-4 pt-3">
+            <span className="mr-auto">{window && <When {...window} />}</span>
             {canDismiss && (
               <Button variant="outline" size="sm" onClick={onDismiss}>
                 {localize('com_ui_banner_got_it')}
               </Button>
             )}
+            {banner.linkUrl && (
+              <BannerLink
+                url={banner.linkUrl}
+                onClick={canDismiss ? onDismiss : undefined}
+                className="lc-banner-go inline-flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg px-3.5 text-sm font-semibold"
+              >
+                <LinkLabel url={banner.linkUrl} label={banner.linkLabel || banner.linkUrl} />
+              </BannerLink>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      ) : (
+        <div className="lc-banner-sheet h-1.5 rounded-b-2xl" />
+      )}
     </section>
   );
 }

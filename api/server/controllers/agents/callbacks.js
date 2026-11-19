@@ -24,6 +24,7 @@ const {
   buildDescriptiveImageFilename,
   createBackgroundCodeResultHandler: createCodeHarvestHandler,
   HOST_FILE_AUTHORING_ARTIFACT_KEY,
+  SAVED_FILE_ARTIFACT_KEY,
   isCodeSessionToolName,
   isSandboxDirkeep,
   isSandboxWorkingFile,
@@ -956,6 +957,27 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null, jo
           return attachment;
         })().catch((error) => {
           logger.error('Error processing memory artifact content:', error);
+          return null;
+        }),
+      );
+    }
+
+    /** A file a chat model saved with `save_file` / `patch_file`: already stored, so only shown. */
+    if (output.artifact[SAVED_FILE_ARTIFACT_KEY]) {
+      artifactPromises.push(
+        (async () => {
+          const attachment = Object.assign({}, output.artifact[SAVED_FILE_ARTIFACT_KEY], {
+            messageId: metadata.run_id,
+            toolCallId: output.tool_call_id,
+            conversationId: metadata.thread_id,
+          });
+          if (!streamId && !res.headersSent) {
+            return attachment;
+          }
+          writeAttachment(res, streamId, attachment, jobCreatedAt);
+          return attachment;
+        })().catch((error) => {
+          logger.error('Error processing saved file artifact:', error);
           return null;
         }),
       );

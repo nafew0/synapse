@@ -105,6 +105,30 @@ describe('loadDefaultInterface', () => {
     expect(interfaceConfig?.contextCost).toBe(true);
   });
 
+  it('shows tool details by default', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.toolDetails).toBe(true);
+  });
+
+  it('preserves hidden tool details', async () => {
+    const config: Partial<TCustomConfig> = {
+      interface: {
+        toolDetails: false,
+      },
+    };
+
+    const interfaceConfig = await loadDefaultInterface({
+      config,
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.toolDetails).toBe(false);
+  });
+
   it('passes through a configured display currency', async () => {
     const config: Partial<TCustomConfig> = {
       interface: {

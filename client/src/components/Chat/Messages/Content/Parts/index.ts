@@ -6,6 +6,7 @@ export { default as Reasoning } from './Reasoning';
 export { default as EmptyText } from './EmptyText';
 export { default as LogContent } from './LogContent';
 export { default as ExecuteCode } from './ExecuteCode';
+export { default as WebToolCall } from './WebToolCall';
 export { default as Summary } from './Summary';
 export { default as AgentUpdate } from './AgentUpdate';
 export { default as SkillCall } from './SkillCall';

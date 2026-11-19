@@ -137,9 +137,10 @@ async function post<T extends FirecrawlResponse>(
   const response = await fetch(`${config.apiUrl}${path}`, options);
   const json = (await response.json().catch(() => ({}))) as T;
   if (!response.ok || json.success === false) {
-    throw new Error(
-      `Firecrawl request failed with status ${response.status}: ${json.error ?? response.statusText}`,
+    logger.warn(
+      `[Firecrawl] ${path} failed with status ${response.status}: ${json.error ?? response.statusText}`,
     );
+    throw new Error(`Web request failed with status ${response.status}`);
   }
   return json;
 }

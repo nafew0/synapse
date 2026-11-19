@@ -66,17 +66,34 @@ function quotaDisplay(code: string, payload: unknown): TQuotaDisplay {
   return display;
 }
 
+/** The institution's message on a `chat_access_ended` refusal: written by a platform admin, not a provider. */
+function accessEndedInfo(raw: unknown): string | undefined {
+  let body = raw;
+  if (typeof raw === 'string') {
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      return undefined;
+    }
+  }
+  const info = (body as { info?: unknown } | null)?.info;
+  return typeof info === 'string' && info.trim() ? info : undefined;
+}
+
 /**
  * Reduces any error payload (HTTP body, SSE event, thrown error, legacy raw text) to the
  * JSON text `{"type": code, "requestId"?}` that the chat error box renders. Raw text never
- * passes; a usage-limit refusal also keeps its display fields (limit, window, reset).
+ * passes; a usage-limit refusal also keeps its display fields (limit, window, reset), and a
+ * `chat_access_ended` refusal its admin-written `info`.
  */
 export function toErrorText(payload: unknown): string {
   const unwrapped = unwrapPayload(payload);
   const { code, requestId } = getErrorInfo(unwrapped);
+  const info = code === ErrorTypes.CHAT_ACCESS_ENDED ? accessEndedInfo(unwrapped) : undefined;
   return JSON.stringify({
     type: code,
     ...quotaDisplay(code, unwrapped),
     ...(requestId != null && { requestId }),
+    ...(info != null && { info }),
   });
 }

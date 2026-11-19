@@ -8,6 +8,7 @@ const mockCreateInstitution = jest.fn();
 const mockUpdateInstitution = jest.fn();
 const mockSuspendInstitution = jest.fn();
 const mockReactivateInstitution = jest.fn();
+const mockSetInstitutionChatAccess = jest.fn();
 const mockRecordAuditEntry = jest.fn();
 const mockGetTenantAgentAccess = jest.fn();
 const mockSetTenantAgentAccess = jest.fn();
@@ -100,6 +101,7 @@ jest.mock('~/models', () => ({
   updateInstitutionByTenantId: (...args) => mockUpdateInstitution(...args),
   suspendInstitution: (...args) => mockSuspendInstitution(...args),
   reactivateInstitution: (...args) => mockReactivateInstitution(...args),
+  setInstitutionChatAccess: (...args) => mockSetInstitutionChatAccess(...args),
   recordAuditEntry: (...args) => mockRecordAuditEntry(...args),
   listInstitutions: jest.fn(),
   countInstitutions: jest.fn(),
@@ -388,6 +390,56 @@ describe('platform institutions route', () => {
       mockRecordAuditEntry.mockReset();
     });
 
+    describe('ocr-access', () => {
+      const mockModels = require('~/db/models');
+      const findOneAndUpdate = (result) => {
+        mockModels.Institution.findOneAndUpdate.mockReturnValue({
+          lean: () => ({ exec: async () => result }),
+        });
+      };
+
+      it('switches it on and audits before and after', async () => {
+        findOneAndUpdate({ name: 'CUET', ocrAccess: false });
+        const response = await invokeRoute({
+          path: '/:tenantId/ocr-access',
+          method: 'patch',
+          params: { tenantId: 'tenant-a' },
+          body: { enabled: true },
+        });
+        expect(response).toEqual({ statusCode: 200, body: { enabled: true } });
+        const [audit] = mockRecordAuditEntry.mock.calls[0];
+        expect(audit.metadata).toEqual({
+          operation: 'ocr_access_granted',
+          before: false,
+          after: true,
+        });
+      });
+
+      it('rejects a non-boolean without writing', async () => {
+        mockModels.Institution.findOneAndUpdate.mockClear();
+        const response = await invokeRoute({
+          path: '/:tenantId/ocr-access',
+          method: 'patch',
+          params: { tenantId: 'tenant-a' },
+          body: { enabled: 'yes' },
+        });
+        expect(response.statusCode).toBe(400);
+        expect(mockModels.Institution.findOneAndUpdate).not.toHaveBeenCalled();
+      });
+
+      it('answers 404 for an unknown institution, without an audit', async () => {
+        findOneAndUpdate(null);
+        const response = await invokeRoute({
+          path: '/:tenantId/ocr-access',
+          method: 'patch',
+          params: { tenantId: 'missing' },
+          body: { enabled: false },
+        });
+        expect(response.statusCode).toBe(404);
+        expect(mockRecordAuditEntry).not.toHaveBeenCalled();
+      });
+    });
+
     it('enables an agent without a group and delegates with the authenticated actor', async () => {
       mockSetTenantAgentAccess.mockResolvedValue(enabledResult);
 
@@ -522,6 +574,117 @@ describe('platform institutions route', () => {
 
       expect(response.statusCode).toBe(403);
       expect(mockSetTenantAgentAccess).not.toHaveBeenCalled();
+    });
+  });
+  describe('chat access', () => {
+    const message = 'Your free trial has finished. Please contact LEARN to get more usage.';
+
+    it('ends chat access with a message and audits it', async () => {
+      mockSetInstitutionChatAccess.mockResolvedValue({
+        tenantId: 'learn',
+        name: 'LEARN',
+        chatAccess: { ended: true, message },
+      });
+
+      const response = await invokeRoute({
+        path: '/:tenantId/chat-access',
+        method: 'put',
+        params: { tenantId: 'learn' },
+        body: { ended: true, message },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockSetInstitutionChatAccess).toHaveBeenCalledWith('learn', {
+        ended: true,
+        message,
+        contact: '',
+        changedBy: 'platform-admin-1',
+      });
+      const [entry] = mockRecordAuditEntry.mock.calls[0];
+      expect(entry.action).toBe('institution.updated');
+      expect(entry.metadata).toEqual({
+        operation: 'chat_access_ended',
+        message,
+        contact: undefined,
+      });
+    });
+
+    it('audits restoring access as its own operation', async () => {
+      mockSetInstitutionChatAccess.mockResolvedValue({
+        tenantId: 'learn',
+        name: 'LEARN',
+        chatAccess: { ended: false, message: '' },
+      });
+
+      const response = await invokeRoute({
+        path: '/:tenantId/chat-access',
+        method: 'put',
+        params: { tenantId: 'learn' },
+        body: { ended: false },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockRecordAuditEntry.mock.calls[0][0].metadata).toEqual({
+        operation: 'chat_access_restored',
+        message: undefined,
+        contact: undefined,
+      });
+    });
+
+    it('saves a contact for members to ask for more usage', async () => {
+      mockSetInstitutionChatAccess.mockResolvedValue({
+        tenantId: 'learn',
+        name: 'LEARN',
+        chatAccess: { ended: true, message, contact: 'help@learn.ac.lk' },
+      });
+
+      const response = await invokeRoute({
+        path: '/:tenantId/chat-access',
+        method: 'put',
+        params: { tenantId: 'learn' },
+        body: { ended: true, message, contact: 'help@learn.ac.lk' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mockSetInstitutionChatAccess).toHaveBeenCalledWith(
+        'learn',
+        expect.objectContaining({ contact: 'help@learn.ac.lk' }),
+      );
+      expect(mockRecordAuditEntry.mock.calls[0][0].metadata.contact).toBe('help@learn.ac.lk');
+    });
+
+    it.each([
+      ['a contact that is neither an email nor a link', { ended: true, contact: 'call LEARN' }],
+      ['a script link as contact', { ended: true, contact: 'javascript:alert(1)' }],
+      ['a missing flag', { message }],
+      ['a non-boolean flag', { ended: 'yes' }],
+      ['a message that is not text', { ended: true, message: 42 }],
+      ['a message over 500 characters', { ended: true, message: 'x'.repeat(501) }],
+    ])('refuses %s', async (_label, body) => {
+      const response = await invokeRoute({
+        path: '/:tenantId/chat-access',
+        method: 'put',
+        params: { tenantId: 'learn' },
+        body,
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(mockSetInstitutionChatAccess).not.toHaveBeenCalled();
+      expect(mockRecordAuditEntry).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 for an unknown institution without auditing', async () => {
+      mockSetInstitutionChatAccess.mockResolvedValue(null);
+
+      const response = await invokeRoute({
+        path: '/:tenantId/chat-access',
+        method: 'put',
+        params: { tenantId: 'missing' },
+        body: { ended: true },
+      });
+
+      expect(response.statusCode).toBe(404);
+      expect(mockRecordAuditEntry).not.toHaveBeenCalled();
     });
   });
 });

@@ -17,6 +17,7 @@ export const useUploadFileMutation = (
   _options?: t.UploadMutationOptions,
   signal?: AbortSignal | null,
   onStage?: t.UploadStageHandler,
+  onProgress?: t.UploadProgressHandler,
 ): UseMutationResult<
   t.TFileUpload, // response data
   unknown, // error
@@ -34,14 +35,14 @@ export const useUploadFileMutation = (
       const version = body.get('version') ?? '';
       const endpoint = (body.get('endpoint') ?? '') as string;
       if (isAssistantsEndpoint(endpoint) && version === '2') {
-        return dataService.uploadFile(body, signal, sseEnabled, onStage);
+        return dataService.uploadFile(body, signal, sseEnabled, onStage, onProgress);
       }
 
       if (width !== '' && height !== '') {
-        return dataService.uploadImage(body, signal, sseEnabled, onStage);
+        return dataService.uploadImage(body, signal, sseEnabled, onStage, onProgress);
       }
 
-      return dataService.uploadFile(body, signal, sseEnabled, onStage);
+      return dataService.uploadFile(body, signal, sseEnabled, onStage, onProgress);
     },
     ...options,
     onSuccess: (data, formData, context) => {

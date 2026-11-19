@@ -4,8 +4,9 @@ const crypto = require('crypto');
 const multer = require('multer');
 const { sanitizeFilename, createCustomError } = require('@librechat/api');
 const {
-  mergeFileConfig,
   inferMimeType,
+  mergeFileConfig,
+  isExtensionAllowed,
   getEndpointFileConfig,
   fileConfig: defaultFileConfig,
 } = require('librechat-data-provider');
@@ -74,6 +75,13 @@ const createFileFilter = (customFileConfig) => {
       endpoint,
       endpointType,
     });
+
+    if (!isExtensionAllowed(file.originalname || '', endpointFileConfig.supportedExtensions)) {
+      return cb(
+        createCustomError(415, `"${file.originalname}" is not a supported file type here.`),
+        false,
+      );
+    }
 
     if (!defaultFileConfig.checkType(mimeType, endpointFileConfig.supportedMimeTypes)) {
       return cb(

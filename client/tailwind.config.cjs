@@ -79,6 +79,11 @@ module.exports = {
           from: { transform: 'rotate(0deg)' },
           to: { transform: 'rotate(-360deg)' },
         },
+        /** A scanner beam sweeping a thumbnail while its file uploads and is prepared. */
+        'upload-scan': {
+          from: { transform: 'translateY(-100%)' },
+          to: { transform: 'translateY(300%)' },
+        },
       },
       animation: {
         'fade-in': 'fadeIn 0.5s ease-out forwards',
@@ -94,6 +99,7 @@ module.exports = {
         'logo-blink': 'logo-blink 3s infinite',
         'refresh-link-spin': 'refresh-link-spin 650ms cubic-bezier(0.42, 0, 0.58, 1)',
         'reset-spin': 'reset-spin 500ms cubic-bezier(0.22, 1, 0.36, 1)',
+        'upload-scan': 'upload-scan 1.4s cubic-bezier(0.45, 0, 0.55, 1) infinite alternate',
       },
       colors: createTailwindColors(),
       borderRadius: {

@@ -30,11 +30,11 @@ import {
 } from '~/utils';
 import { getErrorInfo, getErrorMessage, recordError } from '~/utils/errors';
 import { useGetFileConfig, useUploadFileMutation } from '~/data-provider';
-import useLocalize from '~/hooks/useLocalize';
 import { useDelayedUploadToast } from './useDelayedUploadToast';
 import { useChatContext } from '~/Providers/ChatContext';
 import store, { ephemeralAgentByConvoId } from '~/store';
 import useClientResize from './useClientResize';
+import useLocalize from '~/hooks/useLocalize';
 import useUpdateFiles from './useUpdateFiles';
 import useUploadRoute from './useUploadRoute';
 
@@ -227,6 +227,24 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     [updateFileById, clearUploadTimer],
   );
 
+  /** Last whole percent shown per file, so a fast stream of progress events re-renders at most 100 times. */
+  const uploadPercentRef = useRef(new Map<string, number>());
+  const handleUploadProgress = useCallback(
+    (fileId: string, fraction: number) => {
+      const percent = Math.floor(fraction * 100);
+      if (uploadPercentRef.current.get(fileId) === percent) {
+        return;
+      }
+      if (percent >= 100) {
+        uploadPercentRef.current.delete(fileId);
+      } else {
+        uploadPercentRef.current.set(fileId, percent);
+      }
+      updateFileById(fileId, { uploadProgress: percent / 100 });
+    },
+    [updateFileById],
+  );
+
   const uploadFile = useUploadFileMutation(
     {
       onSuccess: (data) => {
@@ -300,6 +318,7 @@ const useFileHandlingCore = (params: UseFileHandling | undefined, fileState: Fil
     },
     abortControllerRef.current?.signal,
     handleUploadStage,
+    handleUploadProgress,
   );
 
   const uploadWithRecovery = (

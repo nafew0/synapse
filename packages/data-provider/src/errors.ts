@@ -15,6 +15,8 @@ export enum PublicErrorCodes {
   MODEL_UNAVAILABLE = 'model_unavailable',
   TOOLS_UNAVAILABLE = 'tools_unavailable',
   CONNECTION_LOST = 'connection_lost',
+  /** The agent used its whole step budget (LangGraph recursion limit) before finishing. */
+  STEP_LIMIT = 'step_limit',
   NOT_FOUND = 'not_found',
   FORBIDDEN = 'forbidden',
   REQUEST_FAILED = 'request_failed',

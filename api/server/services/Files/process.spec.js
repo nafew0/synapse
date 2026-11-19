@@ -68,6 +68,9 @@ jest.mock('@librechat/api', () => {
      *  filename disagrees with it hands the model a path that does not exist. */
     sanitizeFilename: (...args) => real().sanitizeFilename(...args),
     parseText: jest.fn().mockResolvedValue({ text: '', bytes: 0 }),
+    /** Real: reads the multer temp file byte for byte. */
+    parseTextNative: (...args) => real().parseTextNative(...args),
+    isTextType: (...args) => real().isTextType(...args),
     processAudioFile: jest.fn(),
     sendUploadSuccess: jest.fn((res, sseStream, message, result) => {
       if (sseStream) {
@@ -77,6 +80,7 @@ jest.mock('@librechat/api', () => {
       res.status(200).json({ message, ...result });
     }),
     getStorageMetadata: jest.fn(() => ({})),
+    getStorageSource: (...args) => real().getStorageSource(...args),
     getRetentionExpiry,
     getAgentFileRetentionExpiry: jest.fn(({ req, messageAttachment, toolResource }) => {
       const interfaceConfig = req?.config?.interfaceConfig;
@@ -189,6 +193,7 @@ const { convertImage } = require('~/server/services/Files/images');
 const db = require('~/models');
 const {
   processAgentFileUpload,
+  processImageFile,
   processDeleteRequest,
   processFileURL,
   sweepExpiredFiles,
@@ -982,6 +987,20 @@ describe('processAgentFileUpload', () => {
       );
     });
 
+    test('reads a code file byte for byte instead of through the RAG extractor', async () => {
+      const { parseText } = require('@librechat/api');
+      const source = 'def scan():\n    return 1\n';
+      const codePath = nodePath.join(uploadDir, 'scan.py');
+      nodeFs.writeFileSync(codePath, source);
+      const req = makeReq({ mimetype: 'text/x-python', ocrConfig: null, path: codePath });
+      req.file.size = Buffer.byteLength(source);
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: autoMetadata() });
+
+      expect(parseText).not.toHaveBeenCalled();
+      expect(db.createFile).toHaveBeenCalledWith(expect.objectContaining({ text: source }), true);
+    });
+
     test('stores the sanitized filename, the one the sandbox copy is mounted under', async () => {
       /**
        * `uploadToCodeEnvironment` uploads under `sanitizeFilename(originalname)`, and this
@@ -1105,6 +1124,40 @@ describe('processAgentFileUpload', () => {
       expect(db.createFile).toHaveBeenCalledWith(
         expect.objectContaining({
           metadata: expect.objectContaining({
+            codeEnvRef: expect.objectContaining({ file_id: 'code-file-1' }),
+            preparation: expect.objectContaining({ delivery: 'full_text' }),
+          }),
+        }),
+        true,
+      );
+    });
+
+    test('stores the original of a full-text document it copies to the sandbox', async () => {
+      /**
+       * The record used to keep multer's temp path, deleted when the upload request ends. Once
+       * the sandbox copy expired, re-uploading it read that path and failed with ENOENT, and
+       * every later turn in the conversation stopped on `resource_recovery_required`.
+       */
+      const storage = {
+        handleFileUpload: jest.fn().mockResolvedValue({
+          bytes: 42,
+          filepath: '/uploads/user-123/file-uuid-123__report.docx',
+        }),
+      };
+      routeStrategies({ storage });
+      const req = makeReq({ mimetype: DOCX_MIME, ocrConfig: null, path: uploadPath });
+
+      await processAgentFileUpload({ req, res: mockRes, metadata: autoMetadata() });
+
+      expect(storage.handleFileUpload).toHaveBeenCalledWith(
+        expect.objectContaining({ file_id: 'file-uuid-123', basePath: 'uploads' }),
+      );
+      expect(db.createFile).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: FileSources.text,
+          filepath: '/uploads/user-123/file-uuid-123__report.docx',
+          metadata: expect.objectContaining({
+            storageSource: FileSources.local,
             codeEnvRef: expect.objectContaining({ file_id: 'code-file-1' }),
             preparation: expect.objectContaining({ delivery: 'full_text' }),
           }),
@@ -1348,6 +1401,128 @@ describe('processAgentFileUpload', () => {
       );
     });
 
+    describe('images for an assistant with the sandbox', () => {
+      /**
+       * A scanned office order is read by the model as a picture, but cropping its logo or
+       * signatures, OCR-ing small print, and comparing a render against it all need the file in
+       * /mnt/data as well.
+       */
+      const imageReq = () => {
+        convertImage.mockResolvedValue({ filepath: '/images/upload.png', source: 'local' });
+        return makeReq({ mimetype: 'image/png', ocrConfig: null, path: uploadPath });
+      };
+
+      test('copies the image into the sandbox and still sends it to the provider', async () => {
+        db.getAgent.mockResolvedValueOnce({ id: 'agent_office', tools: ['execute_code'] });
+
+        await processAgentFileUpload({
+          req: imageReq(),
+          res: mockRes,
+          metadata: autoMetadata({ agent_id: 'agent_office' }),
+        });
+
+        expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.execute_code);
+        expect(db.createFile).toHaveBeenCalledWith(
+          expect.objectContaining({
+            type: 'image/png',
+            metadata: expect.objectContaining({ codeEnvRef: expect.anything() }),
+          }),
+          true,
+        );
+      });
+
+      test('copies an image uploaded through the image route', async () => {
+        db.getAgent.mockResolvedValueOnce({ id: 'agent_office', tools: ['execute_code'] });
+
+        await processImageFile({
+          req: imageReq(),
+          res: mockRes,
+          metadata: { file_id: 'img-1', agent_id: 'agent_office', message_file: 'true' },
+        });
+
+        expect(db.createFile).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: expect.objectContaining({ codeEnvRef: expect.anything() }),
+          }),
+          true,
+        );
+      });
+
+      test('copies the image before storing it, as local storage deletes the upload', async () => {
+        /* Local image storage converts the upload and unlinks the temp file. The sandbox copy
+         * read that path afterwards and failed with ENOENT, so a scanned order never reached
+         * /mnt/data and the scan rebuild had nothing to work on. */
+        db.getAgent.mockResolvedValueOnce({ id: 'agent_office', tools: ['execute_code'] });
+        const tempPath = nodePath.join(uploadDir, 'office-order.jpg');
+        nodeFs.writeFileSync(tempPath, 'jpeg bytes');
+        const received = [];
+        routeStrategies({
+          codeEnv: {
+            handleFileUpload: jest.fn(async ({ stream }) => {
+              for await (const chunk of stream) {
+                received.push(chunk);
+              }
+              return { storage_session_id: 'sess-1', file_id: 'code-file-1' };
+            }),
+          },
+          storage: {
+            handleImageUpload: jest.fn(async ({ file }) => {
+              await nodeFs.promises.unlink(file.path);
+              return { bytes: 10, width: 768, height: 1086, filepath: '/images/office-order.png' };
+            }),
+          },
+        });
+
+        await processImageFile({
+          req: makeReq({ mimetype: 'image/jpeg', ocrConfig: null, path: tempPath }),
+          res: mockRes,
+          metadata: { file_id: 'img-1', agent_id: 'agent_office', message_file: 'true' },
+        });
+
+        expect(Buffer.concat(received).toString()).toBe('jpeg bytes');
+        expect(db.createFile).toHaveBeenCalledWith(
+          expect.objectContaining({
+            metadata: expect.objectContaining({ codeEnvRef: expect.anything() }),
+          }),
+          true,
+        );
+      });
+
+      test('keeps the image out of the sandbox for an agent without execute_code', async () => {
+        db.getAgent.mockResolvedValueOnce({ id: 'agent_chat', tools: ['file_search'] });
+
+        await processImageFile({
+          req: imageReq(),
+          res: mockRes,
+          metadata: { file_id: 'img-1', agent_id: 'agent_chat', message_file: 'true' },
+        });
+
+        expect(getStrategyFunctions).not.toHaveBeenCalledWith(FileSources.execute_code);
+        expect(db.createFile).toHaveBeenCalledWith(
+          expect.objectContaining({ metadata: undefined }),
+          true,
+        );
+      });
+
+      test('still saves the image when the sandbox copy fails', async () => {
+        db.getAgent.mockResolvedValueOnce({ id: 'agent_office', tools: ['execute_code'] });
+        routeStrategies({
+          codeEnv: { handleFileUpload: jest.fn().mockRejectedValue(new Error('sandbox down')) },
+        });
+
+        await processImageFile({
+          req: imageReq(),
+          res: mockRes,
+          metadata: { file_id: 'img-1', agent_id: 'agent_office', message_file: 'true' },
+        });
+
+        expect(db.createFile).toHaveBeenCalledWith(
+          expect.objectContaining({ file_id: 'img-1', metadata: undefined }),
+          true,
+        );
+      });
+    });
+
     test('falls back to full text when neither retrieval nor a sandbox is reachable', async () => {
       delete process.env.RAG_API_URL;
       db.getAgent.mockResolvedValueOnce({ id: 'agent_reader', tools: [] });
@@ -1494,6 +1669,75 @@ describe('processAgentFileUpload', () => {
         }),
         true,
       );
+    });
+
+    describe('only assistants with the sandbox may upload to it', () => {
+      const chatSpecs = {
+        enforce: true,
+        list: [
+          { name: 'chat-spec', fileSearch: true },
+          { name: 'sandbox-spec', executeCode: true },
+        ],
+      };
+      const sandboxUpload = (req, metadata) =>
+        processAgentFileUpload({
+          req,
+          res: mockRes,
+          metadata: {
+            tool_resource: EToolResources.execute_code,
+            file_id: 'file-uuid',
+            message_file: true,
+            ...metadata,
+          },
+        });
+
+      it('refuses a chat spec without executeCode, even when the request names execute_code', async () => {
+        const codeEnvUpload = setupCodeEnvUpload({ storage_session_id: 's', file_id: 'f' });
+        const req = makeReq();
+        req.config.modelSpecs = chatSpecs;
+
+        await expect(
+          sandboxUpload(req, { agent_id: 'ephemeral', spec: 'chat-spec' }),
+        ).rejects.toThrow('This assistant cannot use the code sandbox');
+        expect(codeEnvUpload).not.toHaveBeenCalled();
+      });
+
+      it('refuses an upload that names no assistant while model specs are enforced', async () => {
+        const codeEnvUpload = setupCodeEnvUpload({ storage_session_id: 's', file_id: 'f' });
+        const req = makeReq();
+        req.config.modelSpecs = chatSpecs;
+
+        await expect(sandboxUpload(req, { agent_id: 'ephemeral' })).rejects.toThrow(
+          'This assistant cannot use the code sandbox',
+        );
+        expect(codeEnvUpload).not.toHaveBeenCalled();
+      });
+
+      it('accepts a spec with executeCode', async () => {
+        const codeEnvUpload = setupCodeEnvUpload({ storage_session_id: 's', file_id: 'f' });
+        const req = makeReq();
+        req.config.modelSpecs = chatSpecs;
+
+        await sandboxUpload(req, { agent_id: 'ephemeral', spec: 'sandbox-spec' });
+        expect(codeEnvUpload).toHaveBeenCalled();
+      });
+
+      it('accepts an agent whose handoff specialist has execute_code', async () => {
+        const codeEnvUpload = setupCodeEnvUpload({ storage_session_id: 's', file_id: 'f' });
+        db.getAgent.mockResolvedValueOnce({
+          id: 'agent_office',
+          tools: ['ask_user_question'],
+          edges: [{ from: 'agent_office', to: 'agent_office_documents', edgeType: 'handoff' }],
+        });
+        db.getAgents.mockResolvedValueOnce([
+          { id: 'agent_office_documents', tools: ['execute_code'] },
+        ]);
+        const req = makeReq();
+        req.config.modelSpecs = chatSpecs;
+
+        await sandboxUpload(req, { agent_id: 'agent_office' });
+        expect(codeEnvUpload).toHaveBeenCalled();
+      });
     });
 
     it('skips retention metadata for persistent agent execute_code files outside all-data retention', async () => {
@@ -1832,6 +2076,44 @@ describe('processFileURL', () => {
 describe('processDeleteRequest', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  const deleteReq = { body: {}, config: {}, user: { id: 'user-123', tenantId: 'tenant-a' } };
+  const textRecord = {
+    file_id: 'text-file',
+    filepath: '/uploads/user-123/text-file__deck.pptx',
+    source: FileSources.text,
+    metadata: {
+      codeEnvRef: { kind: 'user', id: 'user-123', storage_session_id: 's', file_id: 'f' },
+    },
+  };
+
+  it('deletes the stored original and sandbox copy of a full-text document', async () => {
+    const deleteFile = jest.fn().mockResolvedValue(undefined);
+    getStrategyFunctions.mockReturnValue({ deleteFile });
+    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+    const file = {
+      ...textRecord,
+      metadata: { ...textRecord.metadata, storageSource: FileSources.local },
+    };
+
+    const result = await processDeleteRequest({ req: deleteReq, files: [file] });
+
+    expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.local);
+    expect(getStrategyFunctions).toHaveBeenCalledWith(FileSources.execute_code);
+    expect(deleteFile).toHaveBeenCalledWith(deleteReq, file, undefined);
+    expect(result).toEqual({ deletedFileIds: ['text-file'], failedFileIds: [] });
+  });
+
+  it('removes only the record of a text file that kept no original', async () => {
+    const deleteFile = jest.fn();
+    getStrategyFunctions.mockReturnValue({ deleteFile });
+    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+
+    const result = await processDeleteRequest({ req: deleteReq, files: [textRecord] });
+
+    expect(deleteFile).not.toHaveBeenCalled();
+    expect(result).toEqual({ deletedFileIds: ['text-file'], failedFileIds: [] });
   });
 
   it('removes metadata when backing storage is already missing', async () => {

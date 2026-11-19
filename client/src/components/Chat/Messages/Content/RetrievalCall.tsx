@@ -4,7 +4,7 @@ import { Tools } from 'librechat-data-provider';
 import { TooltipAnchor } from '@librechat/client';
 import { FileText, FileSpreadsheet, FileCode, FileImage, File } from 'lucide-react';
 import type { TAttachment, TFile, PartMetadata } from 'librechat-data-provider';
-import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
+import { useLocalize, useProgress, useToolDetails, useExpandCollapse } from '~/hooks';
 import { ToolIcon, OutputRenderer, isError } from './ToolOutput';
 import { resolveToolCallPhase } from '~/utils/toolCallPhase';
 import FilePreviewDialog from './FilePreviewDialog';
@@ -371,7 +371,8 @@ export default function RetrievalCall({
     hasError: typeof output === 'string' && isError(output),
   });
   const hasOutput = !!output && !isError(output);
-  const autoExpand = useRecoilValue(store.autoExpandTools);
+  const toolDetails = useToolDetails();
+  const autoExpand = useRecoilValue(store.autoExpandTools) && toolDetails;
   const [showOutput, setShowOutput] = useState(() => autoExpand && hasOutput);
   const { style: expandStyle, ref: expandRef } = useExpandCollapse(showOutput);
 
@@ -480,38 +481,40 @@ export default function RetrievalCall({
           isExpanded={showOutput}
         />
       </div>
-      <div style={expandStyle}>
-        <div className="overflow-hidden" ref={expandRef}>
-          {hasOutput && hasResults && (
-            <div className="my-2 flex flex-col gap-2">
-              {displayResults.map((item, i) => {
-                return (
-                  <div
-                    key={`${item.fileId ?? item.fileName}-${i}`}
-                    className={cn(
-                      'overflow-hidden rounded-lg border border-border-light bg-surface-secondary',
-                    )}
-                  >
-                    <FileHeader
-                      fileName={item.fileName}
-                      relevance={item.relevance}
-                      pages={item.pages}
-                      pageRelevance={item.pageRelevance}
-                      fileType={item.fileType}
-                      onOpenPreview={item.fileId ? () => openPreview(i) : undefined}
-                    />
-                    {item.content && (
-                      <div className="border-t border-border-light px-3 py-3">
-                        <OutputRenderer text={item.content} />
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
+      {toolDetails && (
+        <div style={expandStyle}>
+          <div className="overflow-hidden" ref={expandRef}>
+            {hasOutput && hasResults && (
+              <div className="my-2 flex flex-col gap-2">
+                {displayResults.map((item, i) => {
+                  return (
+                    <div
+                      key={`${item.fileId ?? item.fileName}-${i}`}
+                      className={cn(
+                        'overflow-hidden rounded-lg border border-border-light bg-surface-secondary',
+                      )}
+                    >
+                      <FileHeader
+                        fileName={item.fileName}
+                        relevance={item.relevance}
+                        pages={item.pages}
+                        pageRelevance={item.pageRelevance}
+                        fileType={item.fileType}
+                        onOpenPreview={item.fileId ? () => openPreview(i) : undefined}
+                      />
+                      {item.content && (
+                        <div className="border-t border-border-light px-3 py-3">
+                          <OutputRenderer text={item.content} />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <FilePreviewDialog
         open={previewData !== null}

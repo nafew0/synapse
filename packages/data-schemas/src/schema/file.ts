@@ -11,6 +11,14 @@ const preparationSchema = new Schema(
     ocrApplied: { type: Boolean },
     contextTokens: { type: Number },
     pageCount: { type: Number },
+    scan: {
+      type: {
+        pages: { type: Number },
+        ocrPages: { type: [Number] },
+        garbledPages: { type: [Number] },
+      },
+      _id: false,
+    },
   },
   { _id: false },
 );
@@ -151,6 +159,12 @@ const file: Schema<IMongoFile> = new Schema(
        * delivered. Drives the attachment chip and the conversation's full-text budget. */
       preparation: {
         type: preparationSchema,
+        default: undefined,
+      },
+      /** Storage strategy holding the uploaded original at `filepath`, for a record whose
+       * `source` names how its text is delivered (`text`) rather than where its bytes live. */
+      storageSource: {
+        type: String,
         default: undefined,
       },
     },

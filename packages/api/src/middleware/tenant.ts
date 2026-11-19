@@ -185,6 +185,7 @@ export function tenantContextMiddleware(
         return;
       }
 
+      req.institution = result.institution;
       runWithTenantContext(context, next);
     })
     .catch((error) => {

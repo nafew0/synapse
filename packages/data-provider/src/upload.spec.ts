@@ -1,4 +1,4 @@
-import { uploadEventStream } from './upload';
+import { uploadEventStream, getUploadConfig } from './upload';
 import request from './request';
 
 jest.mock('./request', () => ({
@@ -142,11 +142,51 @@ describe('uploadEventStream', () => {
 
     await uploadEventStream('/api/files', createFormData(), controller.signal);
 
-    expect(authenticatedFetch).toHaveBeenCalledWith('/api/files', {
-      method: 'POST',
-      body: expect.any(FormData),
-      headers: { Accept: 'text/event-stream' },
-      signal: controller.signal,
+    expect(authenticatedFetch).toHaveBeenCalledWith(
+      '/api/files',
+      {
+        method: 'POST',
+        body: expect.any(FormData),
+        headers: { Accept: 'text/event-stream' },
+        signal: controller.signal,
+      },
+      undefined,
+    );
+  });
+
+  it('sends through a progress-reporting transport when bytes-sent progress is wanted', async () => {
+    const onProgress = jest.fn();
+    authenticatedFetch.mockResolvedValue(
+      new Response('{"file_id":"stored-id","temp_file_id":"temporary-id"}', {
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    await uploadEventStream('/api/files', createFormData(), null, undefined, onProgress);
+
+    const transport = authenticatedFetch.mock.calls[0][2];
+    expect(transport).toEqual(expect.any(Function));
+  });
+});
+
+describe('getUploadConfig', () => {
+  it('reports axios upload progress as a share of the file, keyed by its temporary id', () => {
+    const onProgress = jest.fn();
+    const config = getUploadConfig(createFormData(), null, onProgress);
+
+    config?.onUploadProgress?.({ loaded: 25, total: 100, bytes: 25, lengthComputable: true });
+    config?.onUploadProgress?.({
+      loaded: 10,
+      total: undefined,
+      bytes: 10,
+      lengthComputable: false,
     });
+
+    expect(onProgress).toHaveBeenCalledTimes(1);
+    expect(onProgress).toHaveBeenCalledWith('temporary-id', 0.25);
+  });
+
+  it('adds nothing when there is neither a signal nor a progress handler', () => {
+    expect(getUploadConfig(createFormData())).toBeUndefined();
   });
 });

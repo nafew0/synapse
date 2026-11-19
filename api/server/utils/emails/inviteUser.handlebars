@@ -1,126 +1,137 @@
 <!doctype html>
-<html xmlns='http://www.w3.org/1999/xhtml' xmlns:v='urn:schemas-microsoft-com:vml'>
-  <head>
-    <meta http-equiv='Content-Type' content='text/html; charset=UTF-8' />
-    <meta name='viewport' content='width=device-width, initial-scale=1.0' />
-    <meta name='x-apple-disable-message-reformatting' />
-    <meta name='color-scheme' content='light' />
-    <meta name='supported-color-schemes' content='light' />
-    <title>{{appName}}</title>
-    <style type='text/css'>
-      body { margin: 0; padding: 0; background-color: #ffffff; }
-      table, tr, td { border-collapse: collapse; }
-      p { margin: 0; }
-      a[x-apple-data-detectors='true'] { color: inherit !important; text-decoration: none !important; }
-      @media only screen and (max-width: 520px) {
-        .u-container { width: 100% !important; }
-        .u-pad { padding-left: 24px !important; padding-right: 24px !important; }
-      }
-    </style>
-  </head>
+<html lang="en" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
+<meta name="color-scheme" content="light dark">
+<meta name="supported-color-schemes" content="light dark">
+<title>Synapse</title>
+<!--[if mso]>
+<xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml>
+<![endif]-->
+<style>
+  /* Client resets */
+  body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+  table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+  img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
+  body { margin: 0 !important; padding: 0 !important; width: 100% !important; }
+  a { color: #0E4B4A; }
+  ::selection { background: #0E4B4A; color: #FCF9F4; }
 
-  <body
-    style='margin:0;padding:0;background-color:#ffffff;-webkit-font-smoothing:antialiased;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'
-  >
-    <div
-      style='display:none;font-size:1px;color:#ffffff;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;'
-    >
-      You have been invited to join {{appName}}.
-    </div>
+  /* Phones */
+  @media only screen and (max-width: 620px) {
+    .sheet { width: 100% !important; }
+    .pad { padding-left: 24px !important; padding-right: 24px !important; }
+    .lede { font-size: 15px !important; line-height: 25px !important; }
+    .btn-table { width: 100% !important; }
+    .btn-wrap, .btn-a { display: block !important; width: 100% !important; box-sizing: border-box; }
+    .btn-a { text-align: center !important; }
+  }
 
-    <table role='presentation' width='100%' cellpadding='0' cellspacing='0' border='0'
-      style='background-color:#ffffff;'>
-      <tr>
-        <td align='center' style='padding:32px 12px;'>
+  /* Dark mode: paper, text, links and the button invert */
+  @media (prefers-color-scheme: dark) {
+    .bg { background-color: #0B1413 !important; }
+    .sheet { background-color: #13201F !important; border-color: #233634 !important; }
+    .logo-light { display: none !important; }
+    .logo-dark { display: block !important; max-height: none !important; overflow: visible !important; }
+    .body { color: #C5D2CE !important; }
+    .strong { color: #EAF1EE !important; }
+    .muted { color: #9DB0AB !important; }
+    .rule { background-color: #233634 !important; }
+    .link { color: #8FD6CE !important; }
+    .btn { background-color: #8FD6CE !important; }
+    .btn-a { color: #0B1413 !important; }
+  }
+</style>
+</head>
+<body class="bg" style="margin: 0; padding: 0; background-color: #EFE7DA;">
 
-          <table role='presentation' class='u-container' width='500' cellpadding='0' cellspacing='0'
-            border='0'
-            style='width:500px;max-width:500px;background-color:#ffffff;border:1px solid #ece7f0;border-radius:14px;'>
+<!-- Preheader: shown in the inbox preview, hidden in the email -->
+<div style="display: none; max-height: 0; overflow: hidden; mso-hide: all; font-size: 1px; line-height: 1px; color: #EFE7DA;">
+  Set your password and your {{#if institutionName}}{{institutionName}} {{/if}}account on Synapse is ready.{{#if expiresOn}} The link is open until {{expiresOn}}.{{/if}}
+  &#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;&#847;&zwnj;&nbsp;
+</div>
 
-            <tr>
-              <td align='center' class='u-pad' style='padding:36px 40px 8px 40px;'>
-                <a href='{{appUrl}}' target='_blank'
-                  style='display:inline-block;border:0;outline:none;text-decoration:none;'>
-                  <img src='{{appUrl}}/assets/synapse-email-logo-v2.png' alt='{{appName}}' width='150'
-                    style='display:block;width:150px;max-width:150px;height:auto;border:0;outline:none;text-decoration:none;' />
-                </a>
-              </td>
-            </tr>
+<table role="presentation" class="bg" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #EFE7DA;">
+  <tr>
+    <td align="center" style="padding: 40px 12px;">
 
-            <tr>
-              <td class='u-pad' align='center' style='padding:16px 40px 0 40px;'>
-                <h1
-                  style='margin:0;font-size:24px;line-height:32px;font-weight:700;color:#9a278e;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                  You&rsquo;re invited
-                </h1>
-              </td>
-            </tr>
+      <table role="presentation" class="sheet" cellpadding="0" cellspacing="0" border="0" width="600" style="width: 600px; max-width: 600px; background-color: #FCF9F4; border: 1px solid #E1D6C4;">
 
-            <tr>
-              <td class='u-pad' align='center' style='padding:14px 40px 0 40px;'>
-                <p
-                  style='margin:0;font-size:15px;line-height:24px;color:#3f3646;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                  Hello{{#if name}} {{name}}{{/if}}, your institution has invited you to
-                  {{appName}}. Set your password to activate your account.
-                </p>
-              </td>
-            </tr>
+        <!-- Masthead and greeting -->
+        <tr>
+          <td class="pad" style="padding: 32px 44px 0 44px;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+              <tr>
+                <td align="center" valign="middle">
+                  <a href="{{appUrl}}" target="_blank" style="text-decoration: none;">
+                    <img class="logo-light" src="{{appUrl}}/assets/synapse-email-logo-v3.png" width="96" height="105" alt="Synapse" style="display: block; margin: 0 auto; width: 96px; height: auto; border: 0;">
+                    <img class="logo-dark" src="{{appUrl}}/assets/synapse-email-logo-v3-dark.png" width="96" height="105" alt="Synapse" style="display: none; margin: 0 auto; width: 96px; height: auto; max-height: 0; overflow: hidden; mso-hide: all; border: 0;">
+                  </a>
+                </td>
+              </tr>
+            </table>
 
-            <tr>
-              <td align='center' style='padding:28px 40px 0 40px;'>
-                <table role='presentation' cellpadding='0' cellspacing='0' border='0'>
-                  <tr>
-                    <td align='center' bgcolor='#f5871f' style='border-radius:10px;'>
-                      <!--[if mso]><v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{inviteLink}}" style="height:48px;v-text-anchor:middle;width:200px;" arcsize="20%" stroke="f" fillcolor="#f5871f"><w:anchorlock/><center style="color:#ffffff;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;"><![endif]-->
-                      <a href='{{inviteLink}}' target='_blank'
-                        style='display:inline-block;padding:14px 34px;font-size:16px;font-weight:600;color:#ffffff;text-decoration:none;border-radius:10px;background-color:#f5871f;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                        Accept invitation
-                      </a>
-                      <!--[if mso]></center></v:roundrect><![endif]-->
-                    </td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top: 28px;"><tr><td class="rule" style="height: 1px; line-height: 1px; font-size: 0; background-color: #E8DECD;">&nbsp;</td></tr></table>
 
-            <tr>
-              <td class='u-pad' align='center' style='padding:24px 40px 0 40px;'>
-                <p
-                  style='margin:0;font-size:12px;line-height:20px;color:#7c7286;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                  If the button does not work, copy this link into your browser:
-                </p>
-                <p style='margin:8px 0 0 0;font-size:12px;line-height:20px;word-break:break-all;'>
-                  <a href='{{inviteLink}}' target='_blank'
-                    style='color:#9a278e;text-decoration:underline;'>{{inviteLink}}</a>
-                </p>
-              </td>
-            </tr>
+            <div class="strong" style="padding-top: 36px; font-family: Georgia, 'Times New Roman', serif; font-size: 19px; line-height: 26px; color: #2F3A37;">Hi{{#if name}} {{name}}{{/if}},</div>
+            <p class="strong" style="margin: 2px 0 0 0; font-family: Georgia, 'Times New Roman', serif; font-size: 19px; line-height: 26px; color: #2F3A37;">You are invited to join Synapse.</p>
+          </td>
+        </tr>
 
-            <tr>
-              <td class='u-pad' align='center' style='padding:24px 40px 0 40px;'>
-                <p
-                  style='margin:0;font-size:12px;line-height:20px;color:#7c7286;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                  This invitation expires in 7 days. If you were not expecting it, you can ignore
-                  this message.
-                </p>
-              </td>
-            </tr>
+        <!-- Letter -->
+        <tr>
+          <td class="pad" style="padding: 32px 44px 0 44px; font-family: Helvetica, Arial, sans-serif;">
+            <p class="lede body" style="margin: 0; font-size: 16px; line-height: 27px; color: #45504C;">Synapse is an AI workspace built by the {{#if orgUrl}}<a class="link" href="{{orgUrl}}" target="_blank" style="color: #0E4B4A; text-decoration: underline;">BdREN Innovation Team</a>{{else}}BdREN Innovation Team{{/if}} for universities across Bangladesh.</p>
+          </td>
+        </tr>
 
-            <tr>
-              <td class='u-pad' align='center' style='padding:28px 40px 36px 40px;'>
-                <div style='border-top:1px solid #ece7f0;padding-top:18px;'>
-                  <p
-                    style='margin:0;font-size:11px;line-height:18px;color:#9a93a3;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;'>
-                    &copy; {{year}} {{appName}}
-                  </p>
-                </div>
-              </td>
-            </tr>
+        <!-- Invitation expiry, plain text -->
+{{#if expiresOn}}
+        <tr>
+          <td class="pad" style="padding: 14px 44px 0 44px; font-family: Helvetica, Arial, sans-serif;">
+            <p class="body" style="margin: 0; font-size: 15px; line-height: 24px; color: #45504C;">Invitation expires {{expiresOn}}.</p>
+          </td>
+        </tr>
+{{/if}}
 
-          </table>
+        <!-- Call to action -->
+        <tr>
+          <td class="pad" align="center" style="padding: 28px 44px 0 44px; font-family: Helvetica, Arial, sans-serif;">
+            <table role="presentation" class="btn-table" align="center" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td class="btn btn-wrap" bgcolor="#0E4B4A" style="background-color: #0E4B4A; border-radius: 4px;">
+                  <!--[if mso]><v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="{{inviteLink}}" style="height:56px;v-text-anchor:middle;width:212px;" arcsize="7%" stroke="f" fillcolor="#0E4B4A"><w:anchorlock/><center style="color:#FCF9F4;font-family:Arial,sans-serif;font-size:16px;font-weight:bold;"><![endif]-->
+                  <a class="btn-a" href="{{inviteLink}}" target="_blank" style="display: inline-block; padding: 17px 32px; font-family: Helvetica, Arial, sans-serif; font-size: 16px; line-height: 22px; font-weight: bold; color: #FCF9F4; text-decoration: none; border-radius: 4px;">Accept invitation</a>
+                  <!--[if mso]></center></v:roundrect><![endif]-->
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
 
-        </td>
-      </tr>
-    </table>
-  </body>
+        <!-- Fallback link: no box, but bold and sized up so it is easy to find when the button fails -->
+        <tr>
+          <td class="pad" style="padding: 40px 44px 0 44px; font-family: Helvetica, Arial, sans-serif;">
+            <div class="strong" style="font-size: 15px; line-height: 22px; font-weight: bold; color: #1B2A28;">Button not working? Use the following link</div>
+            <div style="padding-top: 6px; font-size: 15px; line-height: 22px;"><a class="link" href="{{inviteLink}}" target="_blank" style="font-weight: bold; color: #0E4B4A; text-decoration: underline; word-break: break-all;">{{inviteLink}}</a></div>
+          </td>
+        </tr>
+
+        <!-- Copyright -->
+        <tr>
+          <td class="pad" style="padding: 36px 44px 40px 44px; font-family: Helvetica, Arial, sans-serif;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%"><tr><td class="rule" style="height: 1px; line-height: 1px; font-size: 0; background-color: #E8DECD;">&nbsp;</td></tr></table>
+            <p class="muted" style="margin: 20px 0 0 0; font-size: 12px; line-height: 19px; color: #6A6458; text-align: center;">Copyright &copy; {{year}} BdREN. All rights reserved.</p>
+          </td>
+        </tr>
+
+      </table>
+
+    </td>
+  </tr>
+</table>
+
+</body>
 </html>

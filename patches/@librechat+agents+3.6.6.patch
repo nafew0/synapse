@@ -1,0 +1,36 @@
+diff --git a/node_modules/@librechat/agents/dist/cjs/llm/openai/index.cjs b/node_modules/@librechat/agents/dist/cjs/llm/openai/index.cjs
+index de7609a..eb22ff5 100644
+--- a/node_modules/@librechat/agents/dist/cjs/llm/openai/index.cjs
++++ b/node_modules/@librechat/agents/dist/cjs/llm/openai/index.cjs
+@@ -806,6 +806,13 @@ var LibreChatOpenAICompletions = class extends _langchain_openai.ChatOpenAICompl
+ 		};
+ 	}
+ 	async *_streamResponseChunks(messages, options, runManager) {
++		const seenScalarMetadata = /* @__PURE__ */ new Map();
++		for await (const chunk of this._streamUnguardedResponseChunks(messages, options, runManager)) {
++			require_streamMetadata.dropRepeatedScalarMetadata(chunk, seenScalarMetadata);
++			yield chunk;
++		}
++	}
++	async *_streamUnguardedResponseChunks(messages, options, runManager) {
+ 		if (this.includeReasoningContent !== true && this.includeReasoningDetails !== true) {
+ 			yield* super._streamResponseChunks(messages, options, runManager);
+ 			return;
+diff --git a/node_modules/@librechat/agents/dist/esm/llm/openai/index.mjs b/node_modules/@librechat/agents/dist/esm/llm/openai/index.mjs
+index 4f7280e..11b14c8 100644
+--- a/node_modules/@librechat/agents/dist/esm/llm/openai/index.mjs
++++ b/node_modules/@librechat/agents/dist/esm/llm/openai/index.mjs
+@@ -806,6 +806,13 @@ var LibreChatOpenAICompletions = class extends ChatOpenAICompletions {
+ 		};
+ 	}
+ 	async *_streamResponseChunks(messages, options, runManager) {
++		const seenScalarMetadata = /* @__PURE__ */ new Map();
++		for await (const chunk of this._streamUnguardedResponseChunks(messages, options, runManager)) {
++			dropRepeatedScalarMetadata(chunk, seenScalarMetadata);
++			yield chunk;
++		}
++	}
++	async *_streamUnguardedResponseChunks(messages, options, runManager) {
+ 		if (this.includeReasoningContent !== true && this.includeReasoningDetails !== true) {
+ 			yield* super._streamResponseChunks(messages, options, runManager);
+ 			return;

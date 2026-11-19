@@ -2,6 +2,7 @@ import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import copy from 'copy-to-clipboard';
 import { useRecoilValue } from 'recoil';
 import { LoaderCircle } from 'lucide-react';
+import { Tools } from 'librechat-data-provider';
 import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import { parseBackgroundHandle, splitBackgroundAttachments } from './handle';
 import ProgressText from '~/components/Chat/Messages/Content/ProgressText';
@@ -16,6 +17,7 @@ import { ERROR_PATTERNS } from './ExecuteCode';
 import { AttachmentGroup } from './Attachment';
 import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
+import StepRow from './StepRow';
 import { cn } from '~/utils';
 
 export default function BashCall({
@@ -73,18 +75,26 @@ export default function BashCall({
       )
     : null;
 
-  const { showCode, toggleCode, expandStyle, expandRef, phase, hasOutput, hasContent } =
-    useToolCallState({
-      initialProgress,
-      isSubmitting,
-      output,
-      hasInput: !!command,
-      onExpand,
-      runStepStatus,
-      extraError: backgroundFailed,
-      hideDetailsWhileRunning: true,
-      autoExpandDetails: false,
-    });
+  const {
+    showCode,
+    toggleCode,
+    expandStyle,
+    expandRef,
+    phase,
+    hasOutput,
+    hasContent,
+    detailsEnabled,
+  } = useToolCallState({
+    initialProgress,
+    isSubmitting,
+    output,
+    hasInput: !!command,
+    onExpand,
+    runStepStatus,
+    extraError: backgroundFailed,
+    hideDetailsWhileRunning: true,
+    autoExpandDetails: false,
+  });
 
   const highlighted = useLazyHighlight(showCode ? command || undefined : undefined, 'bash');
   const { ref: commandPaneRef, onScroll: onCommandPaneScroll } = useFollowScroll<HTMLDivElement>(
@@ -108,7 +118,7 @@ export default function BashCall({
    *  live label from the earliest delta — before the command exists and while
    *  it runs. It persists as the settled label too (completion is a UI state,
    *  not a tense change); the generic texts are the no-intent fallback. */
-  const intent = useToolCallIntent(args);
+  const intent = useToolCallIntent(args, Tools.bash_tool);
   const inProgressText = (() => {
     if (intent != null) {
       return intent;
@@ -124,7 +134,7 @@ export default function BashCall({
 
   return (
     <>
-      <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
+      <StepRow>
         <ProgressText
           phase={phase}
           onClick={toggleCode}
@@ -156,46 +166,48 @@ export default function BashCall({
           hasInput={hasContent}
           isExpanded={showCode}
         />
-      </div>
-      <div style={expandStyle}>
-        <div className="overflow-hidden" ref={expandRef}>
-          <div className="my-2 overflow-hidden rounded-lg border border-border-light">
-            {command && (
-              <div
-                ref={commandPaneRef}
-                onScroll={onCommandPaneScroll}
-                className="relative max-h-[300px] overflow-auto bg-surface-tertiary dark:bg-gray-950"
-              >
-                <CopyButton
-                  iconOnly
-                  isCopied={isCopied}
-                  onClick={handleCopy}
-                  className="sticky right-0 top-1 float-right mr-1.5 mt-1"
-                  label={localize('com_ui_copy_code')}
-                />
-                <pre className="whitespace-pre-wrap break-words px-3 py-2.5 pr-10 font-mono text-xs">
-                  <span className="select-none text-text-tertiary" aria-hidden="true">
-                    {'$ '}
-                  </span>
-                  <code className="hljs language-bash">{highlighted ?? command}</code>
-                </pre>
-              </div>
-            )}
-            {hasOutput && backgroundHandle == null && (
-              <div className={cn(command && 'border-t border-border-light')}>
-                <pre
-                  className={cn(
-                    'max-h-[300px] overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-xs',
-                    outputHasError ? 'text-status-error' : 'text-text-primary',
-                  )}
+      </StepRow>
+      {detailsEnabled && (
+        <div style={expandStyle}>
+          <div className="overflow-hidden" ref={expandRef}>
+            <div className="my-2 overflow-hidden rounded-lg border border-border-light">
+              {command && (
+                <div
+                  ref={commandPaneRef}
+                  onScroll={onCommandPaneScroll}
+                  className="relative max-h-[300px] overflow-auto bg-surface-tertiary dark:bg-gray-950"
                 >
-                  {output}
-                </pre>
-              </div>
-            )}
+                  <CopyButton
+                    iconOnly
+                    isCopied={isCopied}
+                    onClick={handleCopy}
+                    className="sticky right-0 top-1 float-right mr-1.5 mt-1"
+                    label={localize('com_ui_copy_code')}
+                  />
+                  <pre className="whitespace-pre-wrap break-words px-3 py-2.5 pr-10 font-mono text-xs">
+                    <span className="select-none text-text-tertiary" aria-hidden="true">
+                      {'$ '}
+                    </span>
+                    <code className="hljs language-bash">{highlighted ?? command}</code>
+                  </pre>
+                </div>
+              )}
+              {hasOutput && backgroundHandle == null && (
+                <div className={cn(command && 'border-t border-border-light')}>
+                  <pre
+                    className={cn(
+                      'max-h-[300px] overflow-auto whitespace-pre-wrap break-words px-3 py-2.5 font-mono text-xs',
+                      outputHasError ? 'text-status-error' : 'text-text-primary',
+                    )}
+                  >
+                    {output}
+                  </pre>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
       {!hideAttachments && fileAttachments && fileAttachments.length > 0 && (
         <AttachmentGroup attachments={fileAttachments} />
       )}

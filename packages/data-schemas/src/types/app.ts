@@ -50,6 +50,7 @@ export interface AppConfig {
   config: Partial<TCustomConfig>;
   /** OCR configuration */
   ocr?: TCustomConfig['ocr'];
+  documentOcr?: TCustomConfig['documentOcr'];
   /** File paths configuration */
   paths?: {
     uploads: string;

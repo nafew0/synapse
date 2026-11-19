@@ -9,6 +9,7 @@ import { AttachmentGroup } from './Attachment';
 import parseJsonField from './parseJsonField';
 import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
+import StepRow from './StepRow';
 import { cn } from '~/utils';
 
 const LANG_MAP: Record<string, string> = {
@@ -84,25 +85,30 @@ export default function ReadFileCall({
   onExpand?: () => void;
 }) {
   const localize = useLocalize();
-  const filePath = useMemo(() => parseJsonField(args, 'file_path'), [args]);
-  const intent = useToolCallIntent(args);
+  /** `read_file` names its argument `path`; `file_path` is kept for older saved calls. */
+  const filePath = useMemo(
+    () => parseJsonField(args, 'path') || parseJsonField(args, 'file_path'),
+    [args],
+  );
+  const intent = useToolCallIntent(args, 'read_file');
   const fileName = filePath.split('/').pop() || filePath;
   const lang = useMemo(() => langFromPath(filePath), [filePath]);
 
-  const { showCode, toggleCode, expandStyle, expandRef, phase, hasOutput } = useToolCallState({
-    initialProgress,
-    isSubmitting,
-    output,
-    hasInput: !!filePath,
-    onExpand,
-    runStepStatus,
-  });
+  const { showCode, toggleCode, expandStyle, expandRef, phase, hasOutput, detailsEnabled } =
+    useToolCallState({
+      initialProgress,
+      isSubmitting,
+      output,
+      hasInput: !!filePath,
+      onExpand,
+      runStepStatus,
+    });
 
   const highlighted = useLazyHighlight(hasOutput ? output : undefined, lang);
 
   return (
     <>
-      <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
+      <StepRow>
         <ProgressText
           phase={phase}
           onClick={toggleCode}
@@ -125,21 +131,23 @@ export default function ReadFileCall({
           hasInput={!!filePath || hasOutput}
           isExpanded={showCode}
         />
-      </div>
-      <div style={expandStyle}>
-        <div className="overflow-hidden" ref={expandRef}>
-          {hasOutput && (
-            <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
-              <CodeWindowHeader language={fileName} code={output} />
-              <pre className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt">
-                <code className={`hljs language-${lang} !whitespace-pre`}>
-                  {highlighted ?? output}
-                </code>
-              </pre>
-            </div>
-          )}
+      </StepRow>
+      {detailsEnabled && (
+        <div style={expandStyle}>
+          <div className="overflow-hidden" ref={expandRef}>
+            {hasOutput && (
+              <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
+                <CodeWindowHeader language={fileName} code={output} />
+                <pre className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt">
+                  <code className={`hljs language-${lang} !whitespace-pre`}>
+                    {highlighted ?? output}
+                  </code>
+                </pre>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
       {!hideAttachments && attachments && attachments.length > 0 && (
         <AttachmentGroup attachments={attachments} />
       )}

@@ -912,4 +912,34 @@ describe('useArtifacts', () => {
       expect(result.current.activeTab).toBe('preview');
     });
   });
+
+  describe('download while the reply runs', () => {
+    const docx = createArtifact({
+      id: 'tool-artifact-f1',
+      type: 'text/plain',
+      title: 'notice.docx',
+      messageId: 'msg-1',
+      download: { filepath: '/api/files/code/output/notice.docx', file_id: 'f1' },
+    });
+
+    const renderWith = (isSubmitting: boolean, artifact: Artifact) => {
+      (useArtifactsContext as jest.Mock).mockReturnValue({ ...defaultContext, isSubmitting });
+      (useRecoilValue as jest.Mock).mockReturnValue({ [artifact.id]: artifact });
+      (useRecoilState as jest.Mock).mockReturnValue([artifact.id, mockSetCurrentArtifactId]);
+      return renderHook(() => useArtifacts());
+    };
+
+    it('holds the download of a file the running reply delivered', () => {
+      expect(renderWith(true, docx).result.current.downloadPending).toBe(true);
+    });
+
+    it('offers it once the reply has finished', () => {
+      expect(renderWith(false, docx).result.current.downloadPending).toBe(false);
+    });
+
+    it('keeps downloads of files from earlier replies', () => {
+      const earlier = { ...docx, messageId: 'msg-0' };
+      expect(renderWith(true, earlier).result.current.downloadPending).toBe(false);
+    });
+  });
 });

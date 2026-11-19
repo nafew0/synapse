@@ -2326,6 +2326,7 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
       'conv-1',
       ['file-pptx-skill', 'file-output-csv'],
       { userId: 'user-1', tenantId: undefined },
+      ['msgN', 'msgRoot'],
     );
     /* Both functions now share the same primary anchor — symmetric
      * design that closes the sibling-branch hole. */
@@ -2387,10 +2388,9 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
     expect(selectFields).toMatch(/\bparentMessageId\b/);
   });
 
-  it('skips the code-generated fetch entirely when threadFileIds is empty', async () => {
-    /* Empty `messages.files[]` across the thread — nothing to look up.
-     * The function returns early without hitting Mongo, mirroring the
-     * pre-fix behavior for empty-thread cases. */
+  it('looks up working files by message when threadFileIds is empty', async () => {
+    /* `qa/` files are never attachments, so a thread with no file ids can still have some.
+     * Only `getUserCodeFiles` has nothing to look up. */
     const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
 
     mockGetThreadData.mockReturnValue({
@@ -2420,10 +2420,12 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
       { ...db, getMessages, getCodeGeneratedFiles, getUserCodeFiles },
     );
 
-    expect(getCodeGeneratedFiles).toHaveBeenCalledWith('conv-1', [], {
-      userId: 'user-1',
-      tenantId: undefined,
-    });
+    expect(getCodeGeneratedFiles).toHaveBeenCalledWith(
+      'conv-1',
+      [],
+      { userId: 'user-1', tenantId: undefined },
+      ['msgN', 'msgRoot'],
+    );
     /* `getUserCodeFiles` is gated on a non-empty array at the call site,
      * so it shouldn't be invoked at all. `getCodeGeneratedFiles`'s own
      * empty-guard is exercised by data-schemas tests. */

@@ -543,6 +543,7 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
     conversationId: string,
     threadFileIds?: string[],
     ownerScope?: FileOwnerScope,
+    threadMessageIds?: string[],
   ) => Promise<unknown[]>;
   /** Get user-uploaded execute_code files by file IDs (from message.files in thread) */
   getUserCodeFiles?: (fileIds: string[], ownerScope: FileOwnerScope) => Promise<unknown[]>;
@@ -795,10 +796,11 @@ export async function initializeAgent(
      *  anchor for both `getCodeGeneratedFiles` and
      *  `getUserCodeFiles` — message ids no longer needed at
      *  this layer. */
-    const threadFileIds =
+    const threadData =
       threadMessages && threadMessages.length > 0
-        ? getThreadData(threadMessages, threadAnchor).fileIds
+        ? getThreadData(threadMessages, threadAnchor)
         : undefined;
+    const threadFileIds = threadData?.fileIds;
 
     /**
      * Retrieve execute_code files filtered to the current thread.
@@ -822,6 +824,7 @@ export async function initializeAgent(
             conversationId,
             threadFileIds,
             requestFileOwnerScope,
+            threadData?.messageIds,
           ) as Promise<IMongoFile[]>)
         : ([] as IMongoFile[]),
       wantsCodeFiles &&

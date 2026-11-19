@@ -42,6 +42,7 @@ export const ThinkingButton = memo(
     contentId,
     showCopyButton = true,
     animateLabel = false,
+    compact = false,
   }: {
     isExpanded: boolean;
     onClick: (e: MouseEvent<HTMLButtonElement>) => void;
@@ -50,6 +51,8 @@ export const ThinkingButton = memo(
     contentId: string;
     showCopyButton?: boolean;
     animateLabel?: boolean;
+    /** Sized as a tool step row, for thoughts inside an activity block. */
+    compact?: boolean;
   }) => {
     const localize = useLocalize();
     const fontSize = useAtomValue(fontSizeAtom);
@@ -76,11 +79,16 @@ export const ThinkingButton = memo(
           aria-expanded={isExpanded}
           aria-controls={contentId}
           className={cn(
-            'group/button flex flex-1 items-center justify-start rounded-lg leading-[18px]',
-            fontSize,
+            'group/button flex min-w-0 flex-1 items-center justify-start rounded-lg leading-[18px]',
+            compact ? 'tool-status-text h-5 text-text-secondary' : fontSize,
           )}
         >
-          <span className="relative mr-1.5 inline-flex h-[18px] w-[18px] items-center justify-center">
+          <span
+            className={cn(
+              'relative inline-flex shrink-0 items-center justify-center',
+              compact ? 'mr-2.5 size-4' : 'mr-1.5 h-[18px] w-[18px]',
+            )}
+          >
             <Lightbulb
               className="icon-sm absolute text-text-secondary opacity-100 transition-opacity group-hover/button:opacity-0"
               aria-hidden="true"

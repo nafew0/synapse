@@ -12,7 +12,8 @@ license: Proprietary. LICENSE.txt has complete terms
 | The request | The skill |
 |---|---|
 | A PDF in, a Word file out — "convert to Word", "make this editable" | **this skill** |
-| Read, search, split, merge, fill or OCR a PDF; produce a PDF | `pdf` |
+| Read, search, split, merge, rotate or OCR a PDF; produce a PDF | `pdf` |
+| Fill in a form (PDF or Word) | `form-filling` |
 | Write a new Word document, or edit one the user already has | `docx` |
 | "Just give me a picture of each page in Word" | this skill, `--mode visual-fidelity` |
 
@@ -103,8 +104,8 @@ Read the `bangla` block in the JSON:
 
 - `verified` equal to `recovered`, `mismatched` 0 — every Bangla word was recovered and checked.
 - `fonts_missing` not empty — the PDF uses a Bangla font that is not installed, and the text set in
-  it cannot be recovered. The gate fails on it. Tell the user which font, and do not deliver.
-- `unchecked` above 0 — HarfBuzz is not installed; the text was recovered but not verified. Say so.
+  it cannot be recovered. The gate fails on it. Do not deliver, and follow "If the gate fails" below.
+- `unchecked` above 0 — HarfBuzz is not installed; the text was recovered but not verified. Ask the user to read the Bangla closely.
 
 `layout-editable` goes through LibreOffice's own PDF import, which reads the broken layer as-is.
 For a Bangla PDF, use `semantic-editable`.
@@ -144,23 +145,32 @@ Pass the same `--mode` you converted with; three checks change with it.
 - Exit 0 prints a one-line summary. Exit 2 lists every defect. Exit 1 means bad arguments.
 - **Do not return or attach the .docx unless the gate exits 0.** Do not widen `--min-text` to make
   a failing run pass — the floor is the promise.
-- On a defect, fix the cause or say which check failed and stop. Falling back to page images is
-  not a fix; if the user wants the picture they can ask for `visual-fidelity`.
+- On a defect, follow "If the gate fails" below. Falling back to page images is not a fix; if the
+  user wants the picture they can ask for `visual-fidelity`.
+
+### If the gate fails
+
+Rerun once only if the defect shows you passed the wrong mode or path. Otherwise stop: do not read
+these scripts, test their internals or write your own decoder. Then tell the user in plain words
+that the PDF could not be turned into a clean editable file and what part is affected, and offer
+the next steps they can choose. Leave out check names, defect text, counts, font names and codes
+such as `(cid:2)`.
+
+> I couldn't turn this PDF into a clean editable Word file, because its Bangla text can't be read
+> reliably from the file. I can rebuild it by reading the page, which you would need to proofread,
+> or give you a Word file with page pictures that can't be edited. Which would you like?
 
 ## What the final response says
 
-State the mode delivered, the pages converted, and what the gate verified — quoting its numbers,
-not adjectives:
+Say in one or two plain sentences that the PDF is now an editable Word file, and ask the user to
+look it over before they use it. The gate's results are for you: leave out the mode name, the gate,
+page, character, word and image counts, percentages, and font names.
 
-> Converted to Word in `semantic-editable` mode: 1 page, 572 of the PDF's 579 characters recovered
-> as editable paragraphs, 3 of 3 images carried over, 1 table rebuilt. The verification gate
-> passed: the text reflows as paragraphs, all images present, QR code still decodable, page size
-> unchanged.
+> Your PDF is now an editable Word file, Report.docx. Please look it over before you send it out.
 
-For a Bangla PDF, add the Bangla line: "978 Bangla words recovered from the PDF's broken text layer
-and each verified against the glyphs it drew; fonts kept as SolaimanLipi and Nikosh." Page numbers
-in a repeated footer become Word fields, which count in Latin digits (১ / ৪ becomes 1 / 4); say so
-when the source numbered its pages in Bangla.
+Name only what the user has to act on, in plain words: a part you could not bring across, or page
+numbers that now show in Latin digits (1 / 4) where the PDF numbered them in Bangla. If the Bangla
+text could not be verified, ask them to read it closely.
 
 Never describe a file as editable, or its layout as preserved, without a clean gate run behind the
 claim.
@@ -179,7 +189,8 @@ claim.
 - LibreOffice writes every text box twice — DrawingML in `mc:Choice`, VML in `mc:Fallback`. Any
   text you extract yourself will be doubled unless you skip the fallback branch; `probe.py` does.
 - A PDF of scanned pages has no text to recover. The gate says so rather than pretending; that
-  document needs OCR (the `pdf` skill) before any conversion is worth attempting.
+  document is not for this skill: render its pages to images and follow the docx skill's
+  `references/scan.md`.
 
 ## Files
 

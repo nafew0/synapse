@@ -11,6 +11,7 @@ import {
 } from '@librechat/client';
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
+import { hideOfficeWorkNotes } from '~/utils/workNotes';
 import { Fork } from '~/components/Conversations';
 import { hoverButtonClasses } from './styles';
 import MessageAudio from './MessageAudio';
@@ -53,7 +54,7 @@ const extractMessageContent = (message: TMessage): string => {
   }
 
   if (Array.isArray(message.content)) {
-    return message.content
+    return (hideOfficeWorkNotes(message.model, message.content, false) ?? [])
       .map((part) => {
         if (part == null) {
           return '';

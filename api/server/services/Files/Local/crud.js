@@ -327,8 +327,10 @@ async function uploadLocalFile({ req, file, file_id }) {
 async function getLocalFileStream(req, filepath) {
   try {
     const appConfig = req.config;
-    if (filepath.includes('/uploads/')) {
-      const basePath = filepath.split('/uploads/')[1];
+    /** Stored image paths may carry a cache-busting `?v=` suffix that is not part of the file name */
+    const urlPath = filepath.split('?')[0];
+    if (urlPath.includes('/uploads/')) {
+      const basePath = urlPath.split('/uploads/')[1];
 
       if (!basePath) {
         logger.warn(`Invalid base path: ${filepath}`);
@@ -345,8 +347,8 @@ async function getLocalFileStream(req, filepath) {
       }
 
       return fs.createReadStream(fullPath);
-    } else if (filepath.includes('/images/')) {
-      const basePath = filepath.split('/images/')[1];
+    } else if (urlPath.includes('/images/')) {
+      const basePath = urlPath.split('/images/')[1];
 
       if (!basePath) {
         logger.warn(`Invalid base path: ${filepath}`);

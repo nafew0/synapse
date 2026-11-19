@@ -120,6 +120,37 @@ describe('File Methods', () => {
     });
   });
 
+  describe('preparation scan verdicts', () => {
+    const create = (preparation: Record<string, unknown>) =>
+      fileMethods.createFile({
+        user: new mongoose.Types.ObjectId(),
+        file_id: uuidv4(),
+        bytes: 1,
+        filename: 'order.pdf',
+        filepath: '/uploads/order.pdf',
+        type: 'application/pdf',
+        object: 'file',
+        metadata: { preparation },
+      } as never);
+
+    it('stores which pages need OCR', async () => {
+      const scan = { pages: 3, ocrPages: [2, 3], garbledPages: [3] };
+      const file = await create({ delivery: 'search', scan });
+      const { metadata } = await File.findOne({ file_id: file?.file_id })
+        .lean<{ metadata: { preparation: { scan: unknown } } }>()
+        .orFail();
+      expect(metadata.preparation.scan).toEqual(scan);
+    });
+
+    it('adds nothing to a file that was not classified', async () => {
+      const file = await create({ delivery: 'search' });
+      const { metadata } = await File.findOne({ file_id: file?.file_id })
+        .lean<{ metadata: { preparation: Record<string, unknown> } }>()
+        .orFail();
+      expect(metadata.preparation).not.toHaveProperty('scan');
+    });
+  });
+
   describe('claimCodeFile', () => {
     it('claims code output files independently per tenant', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
@@ -550,6 +581,43 @@ describe('File Methods', () => {
       const files = await fileMethods.getCodeGeneratedFiles(conversationId, [fileId]);
       expect(files).toHaveLength(1);
       expect(files[0].file_id).toBe(fileId);
+    });
+
+    it('restores small qa/ working files from this branch only', async () => {
+      const userId = new mongoose.Types.ObjectId();
+      const conversationId = uuidv4();
+      const working = async (filename: string, messageId: string, bytes: number) => {
+        const fileId = uuidv4();
+        await fileMethods.createFile({
+          file_id: fileId,
+          user: userId,
+          conversationId,
+          messageId,
+          filename,
+          filepath: `/uploads/${fileId}`,
+          type: 'application/json',
+          bytes,
+          context: FileContext.execute_code,
+          metadata: {
+            codeEnvRef: {
+              kind: 'user',
+              id: userId.toString(),
+              storage_session_id: 'sess',
+              file_id: fileId,
+            },
+          },
+        });
+      };
+      await working('qa/spec.json', 'msg-this-branch', 5000);
+      await working('qa/page-1.png', 'msg-this-branch', 500000);
+      await working('qa/other.json', 'msg-other-branch', 5000);
+      await working('output.csv', 'msg-this-branch', 100);
+
+      const files = await fileMethods.getCodeGeneratedFiles(conversationId, [], undefined, [
+        'msg-this-branch',
+      ]);
+
+      expect(files.map((file) => file.filename)).toEqual(['qa/spec.json']);
     });
 
     it('reaches a file whose creator messageId is on a sibling branch (regression)', async () => {

@@ -13,11 +13,12 @@ import { useLocalize, useProgress, useExpandCollapse, useLazyCollapseBody } from
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { resolveToolCallPhase } from '~/utils/toolCallPhase';
+import { logger, getToolDisplayLabel } from '~/utils';
 import { useToolCallIntent } from './Parts/intent';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
-import { logger } from '~/utils';
+import StepRow from './Parts/StepRow';
 
 export default function ToolCall({
   initialProgress = 0.1,
@@ -104,6 +105,8 @@ export default function ToolCall({
       mcpServerName: '',
     };
   }, [name, parsedAuthUrl, mcpServerNames]);
+
+  const toolLabel = isMCPToolCall ? function_name : getToolDisplayLabel(function_name, localize);
 
   const toolIconType = useMemo(() => getToolIconType(name), [name]);
   const mcpIconMap = useMCPIconMap();
@@ -229,20 +232,18 @@ export default function ToolCall({
      * a screen-reader user the opposite of what the card shows.
      */
     if (phase === 'failed') {
-      return function_name
-        ? `${localize('com_ui_failed')}: ${function_name}`
-        : localize('com_ui_failed');
+      return toolLabel ? `${localize('com_ui_failed')}: ${toolLabel}` : localize('com_ui_failed');
     }
     if (intent != null) {
       return intent;
     }
     if (isMCPToolCall === true) {
-      return localize('com_assistants_completed_function', { 0: function_name });
+      return localize('com_assistants_completed_function', { 0: toolLabel });
     }
     if (domain != null && domain && domain.length !== Constants.ENCODED_DOMAIN_LENGTH) {
       return localize('com_assistants_completed_action', { 0: domain });
     }
-    return localize('com_assistants_completed_function', { 0: function_name });
+    return localize('com_assistants_completed_function', { 0: toolLabel });
   };
 
   if (!isLast && (!function_name || function_name.length === 0) && !output) {
@@ -258,25 +259,21 @@ export default function ToolCall({
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {(() => {
           if (phase === 'running') {
-            return function_name
-              ? localize('com_assistants_running_var', { 0: function_name })
+            return toolLabel
+              ? localize('com_assistants_running_var', { 0: toolLabel })
               : localize('com_assistants_running_action');
           }
           return getFinishedText();
         })()}
       </span>
-      <div
-        className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5"
-        data-testid="tool-call"
-        data-tool-call-id={toolCallId}
-      >
+      <StepRow data-testid="tool-call" data-tool-call-id={toolCallId}>
         <ProgressText
           phase={phase}
           onClick={handleToggleInfo}
           inProgressText={
             intent ??
-            (function_name
-              ? localize('com_assistants_running_var', { 0: function_name })
+            (toolLabel
+              ? localize('com_assistants_running_var', { 0: toolLabel })
               : localize('com_assistants_running_action'))
           }
           authText={
@@ -293,7 +290,7 @@ export default function ToolCall({
           hasInput={hasInfo}
           isExpanded={showInfo}
         />
-      </div>
+      </StepRow>
       <div
         style={expandStyle}
         onTransitionEnd={handleTransitionEnd}

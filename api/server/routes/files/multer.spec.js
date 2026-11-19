@@ -283,6 +283,42 @@ describe('Multer Configuration', () => {
       }
     });
 
+    describe('extension allowlist', () => {
+      const { mergeFileConfig } = require('librechat-data-provider');
+      const fileFilter = createFileFilter(
+        mergeFileConfig({
+          endpoints: {
+            default: {
+              supportedMimeTypes: ['^text/plain$', '^text/x-python$', '^application/typescript$'],
+              supportedExtensions: ['txt', 'py', 'ts'],
+            },
+          },
+        }),
+      );
+
+      it.each([
+        ['notes.txt', 'text/plain'],
+        ['scan.py', 'text/x-python'],
+        ['main.ts', 'video/mp2t'],
+      ])('accepts %s reported as %s', (originalname, mimetype) => {
+        const cb = jest.fn();
+        fileFilter(mockReq, { ...mockFile, originalname, mimetype }, cb);
+        expect(cb).toHaveBeenCalledWith(null, true);
+      });
+
+      it.each(['router.conf', 'Dockerfile', 'model.pkl', 'notes.txt.exe'])(
+        'refuses %s even when sent as text/plain',
+        (originalname) => {
+          const cb = jest.fn();
+          fileFilter(mockReq, { ...mockFile, originalname, mimetype: 'text/plain' }, cb);
+          const [error, accepted] = cb.mock.calls[0];
+          expect(accepted).toBe(false);
+          expect(error.statusCode ?? error.status).toBe(415);
+          expect(error.message).toContain(originalname);
+        },
+      );
+    });
+
     it('should infer ZIP MIME type when multipart upload omits it', (done) => {
       const { mergeFileConfig } = require('librechat-data-provider');
       const fileFilter = createFileFilter(mergeFileConfig());

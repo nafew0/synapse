@@ -28,6 +28,7 @@ let createStructuredTransaction: ReturnType<
 let reportDuplicateRequestKeys: ReturnType<
   typeof createTransactionMethods
 >['reportDuplicateRequestKeys'];
+let createOcrTransaction: ReturnType<typeof createTransactionMethods>['createOcrTransaction'];
 let getMultiplier: ReturnType<typeof createTxMethods>['getMultiplier'];
 let getCacheMultiplier: ReturnType<typeof createTxMethods>['getCacheMultiplier'];
 
@@ -54,6 +55,7 @@ beforeAll(async () => {
   createTransaction = transactionMethods.createTransaction;
   createStructuredTransaction = transactionMethods.createStructuredTransaction;
   reportDuplicateRequestKeys = transactionMethods.reportDuplicateRequestKeys;
+  createOcrTransaction = transactionMethods.createOcrTransaction;
 
   const spendMethods = createSpendTokensMethods(mongoose, {
     createTransaction: transactionMethods.createTransaction,
@@ -403,6 +405,44 @@ describe('Structured Token Spending Tests', () => {
     // Assert:
     // (Assuming a multiplier for completion of 15 and a cancel rate of 1.15 as noted in the original test.)
     expect(result?.completion?.completion).toBeCloseTo(-50 * 15 * 1.15, 0);
+  });
+});
+
+describe('createOcrTransaction', () => {
+  const charge = {
+    user: new mongoose.Types.ObjectId(),
+    tenantId: 'tenant-a',
+    fileId: 'file-1',
+    pages: 3,
+    contentHash: 'abc',
+    profile: 'best',
+    pricePerPageUsd: 0.015,
+    now: new Date('2026-11-02T10:00:00Z'),
+  };
+
+  it('records pages, cost and credits without touching the balance', async () => {
+    await createOcrTransaction(charge);
+    const [row] = await Transaction.find({ user: charge.user }).lean();
+    expect(row).toMatchObject({
+      tokenType: 'credits',
+      usageKind: 'ocr',
+      usageUnit: 'operations',
+      pages: 3,
+      fileId: 'file-1',
+      tokenValue: -45000,
+    });
+    expect(row.costUsd).toBeCloseTo(0.045);
+    expect(await Balance.countDocuments({ user: charge.user })).toBe(0);
+  });
+
+  it('charges a retry once, and again on a later day', async () => {
+    await Transaction.syncIndexes();
+    const user = new mongoose.Types.ObjectId();
+    await createOcrTransaction({ ...charge, user });
+    await createOcrTransaction({ ...charge, user });
+    expect(await Transaction.countDocuments({ user })).toBe(1);
+    await createOcrTransaction({ ...charge, user, now: new Date('2026-11-03T10:00:00Z') });
+    expect(await Transaction.countDocuments({ user })).toBe(2);
   });
 });
 

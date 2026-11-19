@@ -41,6 +41,33 @@ describe('applyModelSpecEphemeralAgent', () => {
     updateEphemeralAgent = jest.fn();
   });
 
+  describe('specs that hide the badge row', () => {
+    it('ignores a stale stored code toggle on an existing conversation', () => {
+      const modelSpec = createModelSpec({
+        hideBadgeRow: true,
+        executeCode: false,
+        fileSearch: true,
+        webSearch: false,
+        mcpServers: [],
+        artifacts: false,
+      });
+      writeToolToggle(LocalStorageKeys.LAST_CODE_TOGGLE_, 'convo-old', true);
+      writeToolToggle(LocalStorageKeys.LAST_WEB_SEARCH_TOGGLE_, 'convo-old', true);
+      localStorage.setItem(`${LocalStorageKeys.LAST_MCP_}convo-old`, JSON.stringify(['stale']));
+
+      applyModelSpecEphemeralAgent({ convoId: 'convo-old', modelSpec, updateEphemeralAgent });
+
+      expect(updateEphemeralAgent).toHaveBeenCalledWith('convo-old', {
+        mcp: [],
+        execute_code: false,
+        web_search: false,
+        file_search: true,
+        memory: false,
+        artifacts: '',
+      });
+    });
+  });
+
   // ─── New Conversations ─────────────────────────────────────────────
 
   describe('new conversations always get fresh admin spec config', () => {

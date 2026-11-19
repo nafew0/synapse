@@ -1,7 +1,8 @@
 import { useState, useEffect, memo, useRef } from 'react';
-import { useRecoilState, useSetRecoilState } from 'recoil';
 import * as Menu from '@ariakit/react/menu';
+import { useRecoilState, useSetRecoilState } from 'recoil';
 import { GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
+import { SystemRoles, INSTITUTION_ADMIN_ROLE } from 'librechat-data-provider';
 import {
   Archive,
   ChevronRight,
@@ -10,11 +11,11 @@ import {
   LifeBuoy,
   LogOut,
   Scale,
+  BookOpen,
   ShieldCheck,
 } from 'lucide-react';
 import { ArchivedChatsModal } from '~/components/Nav/SettingsTabs/General/ArchivedChatsModal';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
-import { SystemRoles, INSTITUTION_ADMIN_ROLE } from 'librechat-data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useLocalize } from '~/hooks';
 import Settings from './Settings';
@@ -22,11 +23,13 @@ import store from '~/store';
 
 function HelpSubmenu({
   helpAndFaqURL,
+  userGuideURL,
   termsOfServiceURL,
   privacyPolicyURL,
   onShowShortcuts,
 }: {
   helpAndFaqURL?: string;
+  userGuideURL?: string;
   termsOfServiceURL?: string;
   privacyPolicyURL?: string;
   onShowShortcuts: () => void;
@@ -61,6 +64,15 @@ function HelpSubmenu({
           >
             <LifeBuoy className="icon-md" aria-hidden="true" />
             {localize('com_nav_help_faq')}
+          </Menu.MenuItem>
+        )}
+        {!!userGuideURL && (
+          <Menu.MenuItem
+            onClick={() => window.open(userGuideURL, '_blank', 'noopener,noreferrer')}
+            className="select-item text-sm"
+          >
+            <BookOpen className="icon-md" aria-hidden="true" />
+            {localize('com_nav_user_guide')}
           </Menu.MenuItem>
         )}
         <Menu.MenuItem onClick={onShowShortcuts} className="select-item text-sm">
@@ -169,6 +181,7 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
         )}
         <HelpSubmenu
           helpAndFaqURL={startupConfig?.helpAndFaqURL}
+          userGuideURL={startupConfig?.interface?.userGuide?.externalUrl}
           termsOfServiceURL={startupConfig?.interface?.termsOfService?.externalUrl}
           privacyPolicyURL={startupConfig?.interface?.privacyPolicy?.externalUrl}
           onShowShortcuts={() => setShowShortcutsDialog(true)}

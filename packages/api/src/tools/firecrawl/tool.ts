@@ -29,13 +29,13 @@ export function createFirecrawlTool(
       (input: FirecrawlSearchInput, runConfig?: ToolRunConfig) =>
         reserveFirecrawlCall(budgetScope, 'search', config) ??
         searchFirecrawl(config, input, runConfig?.signal),
-      firecrawlToolkit.firecrawl_search,
+      firecrawlToolkit.search_web,
     ) as DynamicStructuredTool;
   }
   return tool(
     (input: FirecrawlScrapeInput, runConfig?: ToolRunConfig) =>
       reserveFirecrawlCall(budgetScope, 'scrape', config) ??
       scrapeFirecrawl(config, input, runConfig?.signal),
-    firecrawlToolkit.firecrawl_scrape,
+    firecrawlToolkit.read_web_page,
   ) as DynamicStructuredTool;
 }

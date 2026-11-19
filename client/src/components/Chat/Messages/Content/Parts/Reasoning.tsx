@@ -7,6 +7,7 @@ import { useLocalize, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import { showThinkingAtom } from '~/store/showThinking';
 import { useMessageContext } from '~/Providers';
+import { useDenseSteps } from './StepRow';
 import { cn } from '~/utils';
 
 type ReasoningProps = {
@@ -37,6 +38,14 @@ type ReasoningProps = {
  *
  * For legacy text-based messages, see Thinking.tsx component.
  */
+const MARKDOWN_MARKS = /[*_`#>]+/g;
+
+/** A thought's first line without markdown, used as its label in an activity block. */
+export function summarizeThought(text: string): string {
+  const line = text.split('\n').find((candidate) => candidate.trim().length > 0) ?? '';
+  return line.replace(MARKDOWN_MARKS, '').replace(/\s+/g, ' ').trim();
+}
+
 const Reasoning = memo((props: ReasoningProps) => {
   const { reasoning, isLast, reasoningLabel } = props;
   const contentId = useId();
@@ -49,6 +58,7 @@ const Reasoning = memo((props: ReasoningProps) => {
   const { style: expandStyle, ref: expandRef } = useExpandCollapse(isExpanded);
   const { shouldRenderBody, mountBody, handleTransitionEnd } = useLazyCollapseBody(isExpanded);
   const { isSubmitting, isLatestMessage, nextType } = useMessageContext();
+  const dense = useDenseSteps();
 
   // Strip <think> tags from the reasoning content (modern format)
   const reasoningText = useMemo(() => {
@@ -94,10 +104,14 @@ const Reasoning = memo((props: ReasoningProps) => {
     if (generated) {
       return generated;
     }
+    const summary = dense ? summarizeThought(reasoningText) : '';
+    if (summary) {
+      return summary;
+    }
     return effectiveIsSubmitting && isLast
       ? localize('com_ui_thinking')
       : localize('com_ui_thoughts');
-  }, [effectiveIsSubmitting, isLast, localize, reasoningLabel]);
+  }, [dense, effectiveIsSubmitting, isLast, localize, reasoningLabel, reasoningText]);
 
   if (!reasoningText) {
     return null;
@@ -113,8 +127,9 @@ const Reasoning = memo((props: ReasoningProps) => {
       onBlur={handleBlur}
     >
       <div className="group/thinking-container">
-        <div className="mb-2 pb-2 pt-2">
+        <div className={dense ? 'my-0.5' : 'mb-2 pb-2 pt-2'}>
           <ThinkingButton
+            compact={dense}
             isExpanded={isExpanded}
             onClick={handleClick}
             label={label}
@@ -130,7 +145,7 @@ const Reasoning = memo((props: ReasoningProps) => {
           role="group"
           aria-label={label}
           aria-hidden={!isExpanded || undefined}
-          className={cn(nextType !== ContentTypes.THINK && isExpanded && 'mb-4')}
+          className={cn(nextType !== ContentTypes.THINK && isExpanded && (dense ? 'mb-2' : 'mb-4'))}
           style={expandStyle}
           onTransitionEnd={handleTransitionEnd}
         >

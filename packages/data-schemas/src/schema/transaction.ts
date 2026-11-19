@@ -23,6 +23,9 @@ export interface ITransaction extends Document {
   messageId?: string;
   createdAt?: Date;
   updatedAt?: Date;
+  pages?: number;
+  costUsd?: number;
+  fileId?: string;
   tenantId?: string;
 }
 
@@ -81,6 +84,9 @@ const transactionSchema: Schema<ITransaction> = new Schema(
     rate: Number,
     rawAmount: Number,
     tokenValue: Number,
+    pages: { type: Number },
+    costUsd: { type: Number },
+    fileId: { type: String },
     inputTokens: { type: Number },
     writeTokens: { type: Number },
     readTokens: { type: Number },

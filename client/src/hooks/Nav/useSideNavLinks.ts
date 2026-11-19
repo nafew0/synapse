@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
-import { MCPIcon, AttachmentIcon, OpenAIMinimalIcon } from '@librechat/client';
+import { MCPIcon, OpenAIMinimalIcon } from '@librechat/client';
 import {
   Bot,
-  Brain,
+  Zap,
+  Folder,
   Bookmark,
-  NotebookPen,
-  ScrollText,
+  Lightbulb,
+  NotebookText,
   ArrowRightToLine,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -134,7 +135,7 @@ export default function useSideNavLinks({
       links.push({
         title: 'com_ui_skills',
         label: '',
-        icon: ScrollText,
+        icon: Zap,
         id: 'skills',
         Component: SkillsAccordion,
       });
@@ -144,7 +145,7 @@ export default function useSideNavLinks({
       links.push({
         title: 'com_ui_prompts',
         label: '',
-        icon: NotebookPen,
+        icon: NotebookText,
         id: 'prompts',
         Component: PromptsAccordion,
       });
@@ -154,7 +155,7 @@ export default function useSideNavLinks({
       links.push({
         title: 'com_ui_memories',
         label: '',
-        icon: Brain,
+        icon: Lightbulb,
         id: 'memories',
         Component: MemoryPanel,
       });
@@ -173,7 +174,7 @@ export default function useSideNavLinks({
     links.push({
       title: 'com_sidepanel_attach_files',
       label: '',
-      icon: AttachmentIcon,
+      icon: Folder,
       id: 'files',
       Component: FilesPanel,
     });

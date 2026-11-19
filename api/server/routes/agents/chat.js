@@ -11,6 +11,7 @@ const {
 const { PermissionTypes, Permissions, PermissionBits } = require('librechat-data-provider');
 const {
   moderateText,
+  checkChatAccess,
   // validateModel,
   validateConvoAccess,
   buildEndpointOption,
@@ -68,6 +69,7 @@ const restoreResumeContext = async (req, res, next) => {
   next();
 };
 
+router.use(checkChatAccess);
 router.use(restoreResumeContext);
 router.use(createMessageFilterPii({ getConfig: (req) => req.config?.messageFilter?.pii }));
 router.use(moderateText);

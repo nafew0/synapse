@@ -803,6 +803,57 @@ describe('AgentClient - startup telemetry', () => {
     expect(JSON.parse(part[ContentTypes.ERROR]).requestId).toBe('req-provider-429');
   });
 
+  it('reports a step-limit stop as step_limit and keeps the files already produced', async () => {
+    jest.clearAllMocks();
+    const recursionError = Object.assign(
+      new Error(
+        'Recursion limit of 58 reached without hitting a stop condition. You can increase the limit by setting the "recursionLimit" config key.',
+      ),
+      { name: 'GraphRecursionError', lc_error_code: 'GRAPH_RECURSION_LIMIT' },
+    );
+    const processStream = jest.fn().mockRejectedValue(recursionError);
+    mockCreateRun.mockResolvedValue({
+      Graph: { id: 'graph-step-limit' },
+      processStream,
+      getCalibrationRatio: jest.fn(() => 0),
+    });
+    mockIsHITLEnabled.mockReturnValue(false);
+
+    const producedFile = { file_id: 'f1', filename: 'Guide.docx', filepath: '/files/f1' };
+    const artifactPromises = [Promise.resolve(producedFile)];
+    const client = new AgentClient({
+      req: {
+        user: { id: 'user-123' },
+        body: {},
+        requestId: 'req-step-limit',
+        config: { endpoints: { [EModelEndpoint.agents]: {} } },
+      },
+      res: {},
+      agent: {
+        id: 'agent-123',
+        endpoint: EModelEndpoint.openAI,
+        provider: EModelEndpoint.openAI,
+        model_parameters: { model: 'gpt-x' },
+        hide_sequential_outputs: false,
+      },
+      endpointTokenConfig: {},
+      eventHandlers: {},
+      contentParts: [],
+      collectedUsage: [],
+      artifactPromises,
+    });
+    client.conversationId = 'conversation-step-limit';
+    client.responseMessageId = 'response-step-limit';
+    client.parentMessageId = 'parent-step-limit';
+    client.recordCollectedUsage = jest.fn().mockResolvedValue();
+
+    await client.chatCompletion({ payload: [] });
+
+    const part = expectPublicErrorPart(client.contentParts, 'step_limit', ['Recursion limit']);
+    expect(JSON.parse(part[ContentTypes.ERROR]).requestId).toBe('req-step-limit');
+    await expect(Promise.all(client.artifactPromises)).resolves.toEqual([producedFile]);
+  });
+
   it('does not let a stale v1 fresh prune delete a paused v2 replacement generation', async () => {
     jest.clearAllMocks();
     const checkpointGeneration = {

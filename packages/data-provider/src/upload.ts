@@ -1,6 +1,8 @@
+import type { AxiosProgressEvent, AxiosRequestConfig } from 'axios';
 import type { EToolResources } from './types/assistants';
 import type { TFileUpload } from './types/files';
 import { REQUEST_ID_HEADER } from './errors';
+import { xhrFetch } from './xhr';
 import request from './request';
 
 const EVENT_STREAM_MEDIA_TYPE = 'text/event-stream';
@@ -15,6 +17,9 @@ export type UploadStageName = 'uploading' | 'reading' | 'recognizing' | 'indexin
 
 /** Notified as the server moves an upload through preparation. */
 export type UploadStageHandler = (fileId: string, stage: UploadStageName) => void;
+
+/** Notified as the upload's bytes go out, with the share sent so far (0 to 1). */
+export type UploadProgressHandler = (fileId: string, fraction: number) => void;
 
 interface UploadErrorData {
   message?: string;
@@ -68,6 +73,30 @@ const getFileId = (formData: FormData) => String(formData.get('file_id') ?? '');
 
 const getToolResource = (formData: FormData) =>
   (formData.get('tool_resource') as EToolResources | null) ?? undefined;
+
+/** Axios config for a plain (not streamed) upload: the abort signal plus bytes-sent progress. */
+export const getUploadConfig = (
+  formData: FormData,
+  signal?: AbortSignal | null,
+  onProgress?: UploadProgressHandler,
+): AxiosRequestConfig | undefined => {
+  if (!signal && !onProgress) {
+    return undefined;
+  }
+  const fileId = getFileId(formData);
+  return {
+    ...(signal ? { signal } : {}),
+    ...(onProgress
+      ? {
+          onUploadProgress: (event: AxiosProgressEvent) => {
+            if (event.total) {
+              onProgress(fileId, event.loaded / event.total);
+            }
+          },
+        }
+      : {}),
+  };
+};
 
 const parseEvent = (message: string): ParsedEvent => {
   let type = 'message';
@@ -211,14 +240,24 @@ export async function uploadEventStream(
   formData: FormData,
   signal?: AbortSignal | null,
   onStage?: UploadStageHandler,
+  onProgress?: UploadProgressHandler,
 ): Promise<TFileUpload> {
+  const fileId = getFileId(formData);
+  const transport = onProgress
+    ? (target: string, options?: RequestInit) =>
+        xhrFetch(target, options, (fraction) => onProgress(fileId, fraction))
+    : undefined;
   try {
-    const response = await request.authenticatedFetch(url, {
-      method: 'POST',
-      body: formData,
-      headers: { Accept: EVENT_STREAM_MEDIA_TYPE },
-      signal: signal ?? undefined,
-    });
+    const response = await request.authenticatedFetch(
+      url,
+      {
+        method: 'POST',
+        body: formData,
+        headers: { Accept: EVENT_STREAM_MEDIA_TYPE },
+        signal: signal ?? undefined,
+      },
+      transport,
+    );
     if (!response.ok) {
       throw await createHttpError(response, formData);
     }

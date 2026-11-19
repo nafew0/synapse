@@ -117,6 +117,7 @@ export default function Artifacts() {
     currentArtifact,
     orderedArtifactIds,
     setCurrentArtifactId,
+    downloadPending,
   } = useArtifacts();
 
   const restoreArtifactTriggerFocus = useCallback(() => {
@@ -488,7 +489,7 @@ export default function Artifacts() {
                   portalElement={isFullscreen ? fullscreenPortalRef.current : undefined}
                 />
               )}
-              <DownloadArtifact artifact={currentArtifact} />
+              {downloadPending !== true && <DownloadArtifact artifact={currentArtifact} />}
               <Button
                 size="icon"
                 variant="ghost"

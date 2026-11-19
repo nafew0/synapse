@@ -29,6 +29,8 @@ const {
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   parseText,
+  isTextType,
+  parseTextNative,
   UploadStage,
   countTokens,
   DeliveryMethod,
@@ -38,6 +40,7 @@ const {
   sanitizeFilename,
   processAudioFile,
   sendUploadSuccess,
+  getStorageSource,
   getStorageMetadata,
   shouldEscalateToOcr,
   processTextWithTokenLimit,
@@ -259,7 +262,7 @@ const processDeleteRequest = async ({ req, files }) => {
   const agentFiles = [];
 
   for (const file of files) {
-    const source = file.source ?? FileSources.local;
+    const source = getStorageSource(file);
     if (req.body.agent_id && req.body.tool_resource) {
       agentFiles.push({
         tool_resource: req.body.tool_resource,
@@ -474,6 +477,10 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
   const { handleImageUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id, endpoint } = metadata;
 
+  /* Before storing: local image storage converts the upload and deletes the temp file. */
+  const sandboxMetadata = returnFile
+    ? undefined
+    : await getImageSandboxMetadata({ req, file, metadata });
   const { filepath, bytes, width, height, storageKey, storageRegion } = await handleImageUpload({
     req,
     file,
@@ -493,6 +500,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
       filename: file.originalname,
       context: FileContext.message_attachment,
       source,
+      metadata: sandboxMetadata,
       type: `image/${appConfig.imageOutputType}`,
       ...(await getRetentionExpiry(req)),
       width,
@@ -747,6 +755,8 @@ const uploadToCodeEnvironment = async ({ req, file, agent_id, messageAttachment 
  * @param {boolean} params.ocrAvailable - A configured OCR service may be used for this file.
  * @param {number} params.ocrMinCharsPerPage
  * @param {() => void} [params.onRecognize] - Called just before the OCR request goes out.
+ * @param {(scan: import('librechat-data-provider').FilePageScan) => void} [params.onClassify] - Gets
+ *   the per-page verdicts. A callback because a fully scanned PDF has no text to return them with.
  * @returns {Promise<{ text: string, bytes: number, filepath?: string, pages?: number, ocrApplied: boolean } | undefined>}
  */
 const extractDocumentText = async ({
@@ -755,18 +765,25 @@ const extractDocumentText = async ({
   ocrAvailable,
   ocrMinCharsPerPage,
   onRecognize,
+  onClassify,
 }) => {
   let parsed;
+  let scan;
   if (isDocumentParserType(file.mimetype)) {
     try {
       const { handleFileUpload } = getStrategyFunctions(FileSources.document_parser);
-      parsed = await handleFileUpload({ req, file, loadAuthValues });
+      parsed = await handleFileUpload({ req, file, loadAuthValues, ocrMinCharsPerPage });
+      scan = parsed?.scan;
     } catch (err) {
+      scan = err?.scan;
       logger.warn(
         `[processAgentFileUpload] Document parser found no text in "${file.originalname}":`,
         err,
       );
     }
+  }
+  if (scan) {
+    onClassify?.(scan);
   }
 
   const readsAsScan = shouldEscalateToOcr({
@@ -805,7 +822,14 @@ const extractDocumentText = async ({
  *
  * @returns {Promise<{ text: string, bytes: number, filepath?: string, type?: string, ocrApplied: boolean, pages?: number }>}
  */
-const resolveContextExtraction = async ({ req, file, metadata, appConfig, onRecognize }) => {
+const resolveContextExtraction = async ({
+  req,
+  file,
+  metadata,
+  appConfig,
+  onRecognize,
+  onClassify,
+}) => {
   const fileConfig = mergeFileConfig(appConfig.fileConfig);
   const { file_id } = metadata;
 
@@ -844,6 +868,7 @@ const resolveContextExtraction = async ({ req, file, metadata, appConfig, onReco
       ocrAvailable: isOcrConfigured,
       ocrMinCharsPerPage: autoConfig.ocrMinCharsPerPage,
       onRecognize,
+      onClassify,
     });
     if (extracted) {
       return extracted;
@@ -1077,6 +1102,33 @@ const registerSandboxResource = async ({
 };
 
 /**
+ * Copies the uploaded original out of the multer temp directory into the configured file
+ * storage. The temp copy is deleted once the upload request ends, so anything that must read the
+ * original later (re-uploading an expired sandbox copy, downloading it) needs this one.
+ *
+ * @returns {Promise<{ source: string, storageResult: object, storageMetadata: object }>}
+ */
+const storeOriginal = async ({ req, file, file_id, entity_id }) => {
+  const source = getFileStrategy(req.config, { isImage: false });
+  const { handleFileUpload } = getStrategyFunctions(source);
+  const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
+  const storageResult = await sanitizedUploadFn({
+    req,
+    file,
+    file_id,
+    basePath: 'uploads',
+    entity_id,
+  });
+  const storageMetadata = getStorageMetadata({
+    filepath: storageResult.filepath,
+    source,
+    storageKey: storageResult.storageKey,
+    storageRegion: storageResult.storageRegion,
+  });
+  return { source, storageResult, storageMetadata };
+};
+
+/**
  * Stores the original bytes and creates the record for a prepared file that keeps its own format:
  * a searchable document or a spreadsheet in the sandbox. One record can hold several roles at
  * once — a sandbox reference for editing, the vector-store flag for search, and a short preview
@@ -1098,24 +1150,12 @@ const persistPreparedFile = async ({
   sandboxRef,
   preparation,
 }) => {
-  const appConfig = req.config;
   const { file_id, temp_file_id = null, conversationId } = metadata;
-  const source = getFileStrategy(appConfig, { isImage: false });
-  const { handleFileUpload } = getStrategyFunctions(source);
-  const sanitizedUploadFn = createSanitizedUploadWrapper(handleFileUpload);
-  const storageResult = await sanitizedUploadFn({
+  const { source, storageResult, storageMetadata } = await storeOriginal({
     req,
     file,
     file_id,
-    basePath: 'uploads',
     entity_id,
-  });
-
-  const storageMetadata = getStorageMetadata({
-    filepath: storageResult.filepath,
-    source,
-    storageKey: storageResult.storageKey,
-    storageRegion: storageResult.storageRegion,
   });
 
   /* The upload's own name, never the one the vector store reports back. Search embeds the
@@ -1193,6 +1233,7 @@ const extractPreparedText = async ({
   autoConfig,
   category,
   sseStream,
+  onClassify,
 }) => {
   if (category === FileCategory.audio) {
     if (!fileConfig.checkType(file.mimetype, fileConfig.stt?.supportedMimeTypes || [])) {
@@ -1210,6 +1251,7 @@ const extractPreparedText = async ({
       ocrAvailable: availability.ocr,
       ocrMinCharsPerPage: autoConfig.ocrMinCharsPerPage,
       onRecognize: () => sseStream?.sendProgress(UploadStage.recognizing),
+      onClassify,
     });
     if (extracted?.text?.trim()) {
       return extracted;
@@ -1221,7 +1263,11 @@ const extractPreparedText = async ({
   }
 
   try {
-    const { text, bytes } = await parseText({ req, file, file_id: metadata.file_id });
+    /** Plain text and code are read byte for byte: the file tools edit this exact text, and a
+     * round trip through the RAG API's extractor can change whitespace such as the final newline. */
+    const { text, bytes } = isTextType(file.mimetype)
+      ? await parseTextNative(file)
+      : await parseText({ req, file, file_id: metadata.file_id });
     return text?.trim() ? { text, bytes, type: file.mimetype, ocrApplied: false } : undefined;
   } catch (err) {
     logger.warn(
@@ -1303,6 +1349,58 @@ const resolveAssistantTools = async ({ req, metadata }) => {
 };
 
 /**
+ * Whether an explicit `execute_code` upload may reach the sandbox. Only an assistant that carries
+ * `execute_code` (its agent record, its handoff targets, or its model spec) may send files there.
+ * When the assistant cannot be determined, the upload is refused while model specs are enforced,
+ * since every legitimate chat then names its spec.
+ *
+ * @param {{ req: ServerRequest, assistantTools: Set<string> | null }} params
+ * @returns {boolean}
+ */
+const isSandboxUploadAllowed = ({ req, assistantTools }) => {
+  if (assistantTools) {
+    return assistantTools.has(Tools.execute_code);
+  }
+  return req.config?.modelSpecs?.enforce !== true;
+};
+
+/**
+ * Copies an attached image into the code sandbox when the assistant has one, so it can crop a
+ * logo or signature out of a scan, OCR it, or compare a render against it. The model still sees
+ * the image as before; this only adds the `codeEnvRef`. Only assistants whose tools include
+ * `execute_code` get the copy, and a failed copy never fails the upload.
+ *
+ * @param {object} params
+ * @param {ServerRequest} params.req
+ * @param {Express.Multer.File} params.file
+ * @param {FileMetadata} params.metadata
+ * @returns {Promise<object | undefined>} `metadata` carrying the `codeEnvRef`, or undefined.
+ */
+const getImageSandboxMetadata = async ({ req, file, metadata }) => {
+  try {
+    const [codeExecution, assistantTools] = await Promise.all([
+      checkCapability(req, AgentCapabilities.execute_code),
+      resolveAssistantTools({ req, metadata }),
+    ]);
+    if (!codeExecution || !assistantTools?.has(Tools.execute_code)) {
+      return undefined;
+    }
+    return await uploadToCodeEnvironment({
+      req,
+      file,
+      agent_id: metadata.agent_id,
+      messageAttachment: !!metadata.message_file,
+    });
+  } catch (err) {
+    logger.warn(
+      `[getImageSandboxMetadata] Could not copy "${file.originalname}" to the sandbox:`,
+      err,
+    );
+    return undefined;
+  }
+};
+
+/**
  * Handles an upload the user attached without choosing a destination. Extraction and delivery are
  * decided here rather than in the composer: the browser knows a file's bytes but not how much text
  * it holds, whether a PDF is a scan, or how much of the conversation's budget is already spent.
@@ -1359,6 +1457,7 @@ const prepareUploadAutomatically = async ({ req, res, metadata, sseStream }) => 
   };
 
   sseStream?.sendProgress(UploadStage.reading);
+  let scan;
   const extracted = await extractPreparedText({
     req,
     file,
@@ -1368,6 +1467,9 @@ const prepareUploadAutomatically = async ({ req, res, metadata, sseStream }) => 
     autoConfig,
     category,
     sseStream,
+    onClassify: (verdicts) => {
+      scan = verdicts;
+    },
   });
 
   const [textTokens, conversationUsedTokens] = await Promise.all([
@@ -1413,10 +1515,15 @@ const prepareUploadAutomatically = async ({ req, res, metadata, sseStream }) => 
     delivery: plan.delivery,
     label: plan.label,
     ocrApplied: plan.ocrApplied,
-    pageCount: extracted?.pages,
+    pageCount: extracted?.pages ?? scan?.pages,
+    scan,
   };
 
   if (plan.delivery === DeliveryMethod.full_text) {
+    /** The sandbox copy expires; re-creating it needs the original, not the deleted temp file. */
+    const original = sandboxRef
+      ? await storeOriginal({ req, file, file_id: metadata.file_id, entity_id })
+      : undefined;
     const result = await persistExtractedText({
       req,
       file,
@@ -1426,10 +1533,12 @@ const prepareUploadAutomatically = async ({ req, res, metadata, sseStream }) => 
       agent_id,
       text: extracted.text,
       bytes: extracted.bytes,
-      filepath: extracted.filepath,
+      filepath: original?.storageResult.filepath ?? extracted.filepath,
+      storageMetadata: original?.storageMetadata,
       type: extracted.type,
       fileMetadata: {
         ...sandboxRef,
+        storageSource: original?.source,
         preparation: { ...preparation, contextText: true, contextTokens: textTokens },
       },
     });
@@ -1537,6 +1646,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     if (!isCodeEnabled) {
       throw new Error('Code execution is not enabled for Agents');
     }
+    const assistantTools = await resolveAssistantTools({ req, metadata });
+    if (!isSandboxUploadAllowed({ req, assistantTools })) {
+      throw new Error('This assistant cannot use the code sandbox');
+    }
     fileInfoMetadata = await uploadToCodeEnvironment({
       req,
       file,
@@ -1550,12 +1663,16 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     }
     // Note: File search processing continues to dual storage logic below
   } else if (tool_resource === EToolResources.context) {
+    let scan;
     const extracted = await resolveContextExtraction({
       req,
       file,
       metadata,
       appConfig,
       onRecognize: () => sseStream?.sendProgress(UploadStage.recognizing),
+      onClassify: (verdicts) => {
+        scan = verdicts;
+      },
     });
     const result = await persistExtractedText({
       req,
@@ -1573,6 +1690,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           delivery: DeliveryMethod.full_text,
           ocrApplied: extracted.ocrApplied === true,
           pageCount: extracted.pages,
+          scan,
         },
       },
     });
@@ -1657,6 +1775,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       tool_resource,
       updatingUserId: req?.user?.id,
     });
+  }
+
+  if (isImage && fileInfoMetadata == null) {
+    fileInfoMetadata = await getImageSandboxMetadata({ req, file, metadata });
   }
 
   if (isImage) {

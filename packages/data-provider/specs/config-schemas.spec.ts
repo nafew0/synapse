@@ -1004,6 +1004,15 @@ describe('interfaceSchema', () => {
     expect(result.modelSelect).toBe(false);
   });
 
+  it('parses the user guide link and keeps it optional', () => {
+    const result = interfaceSchema.parse({
+      userGuide: { externalUrl: '/legal/guide.html', openNewTab: true },
+    });
+
+    expect(result.userGuide).toEqual({ externalUrl: '/legal/guide.html', openNewTab: true });
+    expect(interfaceSchema.parse({}).userGuide).toBeUndefined();
+  });
+
   it('accepts retainAgentFiles with all-data retention', () => {
     const result = interfaceSchema.parse({
       retentionMode: RetentionMode.ALL,

@@ -1,0 +1,82 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=25mm]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+
+\theoremstyle{definition}
+\newtheorem{problem}{Problem}
+\newenvironment{solution}{\begin{proof}[Solution]}{\end{proof}}
+
+\DeclareMathOperator{\tr}{tr}
+
+\title{Course Code: Tutorial Solutions}% TODO: course code and title
+\author{Lecturer Name}% TODO: lecturer
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{problem}
+  \label{prob:chebyshev}
+  The Chebyshev polynomials satisfy $T_0(x) = 1$, $T_1(x) = x$ and
+  \begin{equation}
+    T_{n+1}(x) = 2x\,T_n(x) - T_{n-1}(x), \qquad n \geq 1.
+    \label{eq:recurrence}
+  \end{equation}
+  Find $T_2$ and $T_3$.
+\end{problem}
+
+\begin{solution}
+  Put $n = 1$ and then $n = 2$ in~\eqref{eq:recurrence}:
+  \begin{align*}
+    T_2(x) &= 2x\,T_1(x) - T_0(x) = 2x^2 - 1, \\
+    T_3(x) &= 2x\,T_2(x) - T_1(x) = 2x\,(2x^2 - 1) - x = 4x^3 - 3x.
+  \end{align*}
+\end{solution}
+
+\begin{problem}
+  \label{prob:matrix}
+  Let
+  \[
+    A = \begin{pmatrix} 2 & 1 \\ 1 & 2 \end{pmatrix}.
+  \]
+  \begin{enumerate}[label=(\alph*)]
+    \item Find $\tr A$ and $\det A$.
+    \item Find the eigenvalues of $A$.
+  \end{enumerate}
+\end{problem}
+
+\begin{solution}
+  \begin{enumerate}[label=(\alph*)]
+    \item $\tr A = 2 + 2 = 4$ and $\det A = 2 \cdot 2 - 1 \cdot 1 = 3$.
+    \item The characteristic polynomial is
+      \[
+        \det(A - \lambda I) = \lambda^2 - (\tr A)\,\lambda + \det A
+                            = \lambda^2 - 4\lambda + 3 = (\lambda - 1)(\lambda - 3),
+      \]
+      so the eigenvalues are $\lambda_1 = 1$ and $\lambda_2 = 3$.
+      As a check, $\lambda_1 + \lambda_2 = 4 = \tr A$.
+  \end{enumerate}
+\end{solution}
+
+\begin{problem}
+  \label{prob:piecewise}
+  Write $f(x) = \lvert x \rvert$ without the absolute value.
+\end{problem}
+
+\begin{solution}
+  \[
+    f(x) =
+    \begin{cases}
+      x  & \text{if } x \geq 0, \\
+      -x & \text{if } x < 0.
+    \end{cases}
+  \]
+\end{solution}
+
+\end{document}

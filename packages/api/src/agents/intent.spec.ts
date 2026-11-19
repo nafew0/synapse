@@ -197,6 +197,15 @@ describe('applyIntentLabels', () => {
     expect(intentToolNames.sort()).toEqual([...NATIVE_INTENT_TOOL_NAMES].sort());
   });
 
+  it('labels the web search and page reading tools by default', () => {
+    const { intentToolNames } = applyIntentLabels({
+      toolDefinitions: [mcpDef('search_web'), mcpDef('read_web_page')],
+      toolRegistry: undefined,
+      toolOptions: undefined,
+    });
+    expect(intentToolNames.sort()).toEqual(['read_web_page', 'search_web']);
+  });
+
   it('skips SDK-native defs that already declare intent (not counted as host-injected)', () => {
     const sdkNative = {
       name: 'read_file',

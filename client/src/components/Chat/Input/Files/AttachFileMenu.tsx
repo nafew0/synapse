@@ -19,6 +19,7 @@ import {
   Providers,
   EToolResources,
   EModelEndpoint,
+  getExtensionAccept,
   getUploadMimeAccept,
   getConfiguredMimeAccept,
   bedrockDocumentMimeTypes,
@@ -41,10 +42,10 @@ import {
 } from '~/hooks';
 import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
 import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
-import { PER_FILE_UPLOAD_ROUTE } from '~/utils';
 import { SharePointPickerDialog } from '~/components/SharePoint';
 import { useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
+import { PER_FILE_UPLOAD_ROUTE } from '~/utils';
 import { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
 
@@ -145,13 +146,17 @@ const AttachFileMenu = ({
         return;
       }
       inputRef.current.value = '';
+      const extensionAccept = getExtensionAccept(endpointFileConfig?.supportedExtensions, {
+        imagesOnly: fileType === 'image',
+      });
       const configuredAccept =
-        fileType !== undefined
+        extensionAccept ??
+        (fileType !== undefined
           ? getConfiguredMimeAccept(
               endpointFileConfig?.supportedMimeTypes,
               fileTypeCapabilities[fileType],
             )
-          : undefined;
+          : undefined);
       if (configuredAccept != null) {
         inputRef.current.accept = configuredAccept;
       } else if (fileType === 'image') {
@@ -172,7 +177,7 @@ const AttachFileMenu = ({
       inputRef.current.click();
       inputRef.current.accept = '';
     },
-    [endpointFileConfig?.supportedMimeTypes],
+    [endpointFileConfig?.supportedMimeTypes, endpointFileConfig?.supportedExtensions],
   );
 
   const dropdownItems = useMemo(() => {

@@ -1,12 +1,12 @@
 import type { AxiosResponse } from 'axios';
 import type { TInsightsAccessResponse, TInsightsParams, TInsightsResponse } from './types/insights';
+import type { UploadStageHandler, UploadProgressHandler } from './upload';
 import type { TIssueReportRequest } from './errors';
 import type { TFileConfig } from './file-config';
 import type * as t from './types';
+import { uploadEventStream, getUploadConfig } from './upload';
 import * as permissions from './accessPermissions';
 import * as endpoints from './api-endpoints';
-import { uploadEventStream } from './upload';
-import type { UploadStageHandler } from './upload';
 import * as mcp from './types/mcpServers';
 import * as a from './types/assistants';
 import * as m from './types/mutations';
@@ -512,12 +512,12 @@ export const uploadImage = (
   signal?: AbortSignal | null,
   sseEnabled = false,
   onStage?: UploadStageHandler,
+  onProgress?: UploadProgressHandler,
 ): Promise<f.TFileUpload> => {
-  const requestConfig = signal ? { signal } : undefined;
   if (sseEnabled) {
-    return uploadEventStream(endpoints.images(), data, signal, onStage);
+    return uploadEventStream(endpoints.images(), data, signal, onStage, onProgress);
   }
-  return request.postMultiPart(endpoints.images(), data, requestConfig);
+  return request.postMultiPart(endpoints.images(), data, getUploadConfig(data, signal, onProgress));
 };
 
 export const uploadFile = (
@@ -525,12 +525,12 @@ export const uploadFile = (
   signal?: AbortSignal | null,
   sseEnabled = false,
   onStage?: UploadStageHandler,
+  onProgress?: UploadProgressHandler,
 ): Promise<f.TFileUpload> => {
-  const requestConfig = signal ? { signal } : undefined;
   if (sseEnabled) {
-    return uploadEventStream(endpoints.files(), data, signal, onStage);
+    return uploadEventStream(endpoints.files(), data, signal, onStage, onProgress);
   }
-  return request.postMultiPart(endpoints.files(), data, requestConfig);
+  return request.postMultiPart(endpoints.files(), data, getUploadConfig(data, signal, onProgress));
 };
 
 /**

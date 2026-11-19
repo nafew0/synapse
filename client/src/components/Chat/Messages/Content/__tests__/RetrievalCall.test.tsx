@@ -4,7 +4,10 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import type { TAttachment } from 'librechat-data-provider';
 import RetrievalCall from '../RetrievalCall';
 
+const mockToolDetails = jest.fn(() => true);
+
 jest.mock('~/hooks', () => ({
+  useToolDetails: () => mockToolDetails(),
   useLocalize: () => (key: string) => {
     const translations: Record<string, string> = {
       com_ui_searching_files: 'Searching files...',

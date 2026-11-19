@@ -22,8 +22,10 @@ import {
   BashCall,
   SubagentCall,
   SteerPart,
+  WebToolCall,
 } from './Parts';
 import { getCachedPreview, getActivityLabelPart, getActivityLabelText } from '~/utils';
+import { WEB_READ_TOOL_NAMES, WEB_SEARCH_TOOL_NAMES } from '~/utils/toolLabels';
 import { getAskUserQuestionPart } from '~/utils/approval';
 import AskUserQuestionCall from './AskUserQuestionCall';
 import { isBashProgrammaticToolCall } from './routing';
@@ -351,6 +353,21 @@ const Part = memo(function Part({
               runStepStatus={toolCall.runStepStatus}
               attachments={attachments}
               isLast={isLast}
+              onExpand={onToolExpand}
+            />
+          );
+        } else if (
+          WEB_SEARCH_TOOL_NAMES.has(toolCall.name ?? '') ||
+          WEB_READ_TOOL_NAMES.has(toolCall.name ?? '')
+        ) {
+          return (
+            <WebToolCall
+              name={toolCall.name ?? ''}
+              args={toolCall.args}
+              output={toolCall.output ?? ''}
+              initialProgress={toolCall.progress ?? 0.1}
+              isSubmitting={isSubmitting}
+              runStepStatus={toolCall.runStepStatus}
               onExpand={onToolExpand}
             />
           );

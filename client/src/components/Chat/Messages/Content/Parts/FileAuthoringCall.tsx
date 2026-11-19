@@ -11,6 +11,7 @@ import { AttachmentGroup } from './Attachment';
 import { langFromPath } from './ReadFileCall';
 import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
+import StepRow from './StepRow';
 import { cn } from '~/utils';
 
 type FileAuthoringToolName = 'create_file' | 'edit_file';
@@ -134,7 +135,7 @@ export default function FileAuthoringCall({
    *  `Created`/`Updated`, so key the finished label off it for truthfulness. */
   const overwrote = isCreate && output.startsWith('Updated ');
   const filePath = useMemo(() => parseJsonField(args, 'file_path'), [args]);
-  const intent = useToolCallIntent(args);
+  const intent = useToolCallIntent(args, toolName);
   const authoredContent = useMemo(() => parseJsonField(args, 'content'), [args]);
   const editArgsPreview = useMemo(() => buildEditArgsPreview(args), [args]);
   const fileName = filePath.split('/').pop() || filePath;
@@ -152,16 +153,17 @@ export default function FileAuthoringCall({
     previewLang = fileLang;
   }
 
-  const { showCode, toggleCode, expandStyle, expandRef, phase, hasContent } = useToolCallState({
-    initialProgress,
-    isSubmitting,
-    output,
-    hasInput: !!filePath || !!preview,
-    onExpand,
-    runStepStatus,
-    hideDetailsWhileRunning: true,
-    autoExpandDetails: false,
-  });
+  const { showCode, toggleCode, expandStyle, expandRef, phase, hasContent, detailsEnabled } =
+    useToolCallState({
+      initialProgress,
+      isSubmitting,
+      output,
+      hasInput: !!filePath || !!preview,
+      onExpand,
+      runStepStatus,
+      hideDetailsWhileRunning: true,
+      autoExpandDetails: false,
+    });
 
   const highlighted = useLazyHighlight(showCode ? preview || undefined : undefined, previewLang);
   const { ref: previewPaneRef, onScroll: onPreviewPaneScroll } = useFollowScroll<HTMLPreElement>(
@@ -178,7 +180,7 @@ export default function FileAuthoringCall({
 
   return (
     <>
-      <div className="relative my-1.5 flex h-5 shrink-0 items-center gap-2.5">
+      <StepRow>
         <ProgressText
           phase={phase}
           onClick={toggleCode}
@@ -207,35 +209,37 @@ export default function FileAuthoringCall({
           hasInput={hasContent}
           isExpanded={showCode}
         />
-      </div>
-      <div style={expandStyle}>
-        <div className="overflow-hidden" ref={expandRef}>
-          {showCode && !!preview && (
-            <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
-              <CodeWindowHeader language={previewIsDiff ? 'diff' : fileName} code={preview} />
-              <pre
-                ref={previewPaneRef}
-                onScroll={onPreviewPaneScroll}
-                className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt"
-              >
-                <code className={`hljs language-${previewLang} !whitespace-pre`}>
-                  {highlighted ?? preview}
-                </code>
-              </pre>
-              {showOutputSection && (
+      </StepRow>
+      {detailsEnabled && (
+        <div style={expandStyle}>
+          <div className="overflow-hidden" ref={expandRef}>
+            {showCode && !!preview && (
+              <div className="my-2 overflow-hidden rounded-lg border border-border-light bg-surface-secondary">
+                <CodeWindowHeader language={previewIsDiff ? 'diff' : fileName} code={preview} />
                 <pre
-                  className={cn(
-                    'max-h-[300px] overflow-auto whitespace-pre-wrap break-words border-t border-border-light px-3 py-2.5 font-mono text-xs',
-                    phase === 'failed' ? 'text-status-error' : 'text-text-primary',
-                  )}
+                  ref={previewPaneRef}
+                  onScroll={onPreviewPaneScroll}
+                  className="max-h-[300px] overflow-auto bg-surface-chat p-4 font-mono text-xs dark:bg-surface-primary-alt"
                 >
-                  {output}
+                  <code className={`hljs language-${previewLang} !whitespace-pre`}>
+                    {highlighted ?? preview}
+                  </code>
                 </pre>
-              )}
-            </div>
-          )}
+                {showOutputSection && (
+                  <pre
+                    className={cn(
+                      'max-h-[300px] overflow-auto whitespace-pre-wrap break-words border-t border-border-light px-3 py-2.5 font-mono text-xs',
+                      phase === 'failed' ? 'text-status-error' : 'text-text-primary',
+                    )}
+                  >
+                    {output}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
       {!hideAttachments && attachments && attachments.length > 0 && (
         <AttachmentGroup attachments={attachments} />
       )}

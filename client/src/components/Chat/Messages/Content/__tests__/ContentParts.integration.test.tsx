@@ -5,6 +5,13 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import ContentParts from '../ContentParts';
 
+const mockToolDetails = jest.fn(() => true);
+
+jest.mock('~/hooks/Config/useToolDetails', () => ({
+  __esModule: true,
+  default: () => mockToolDetails(),
+}));
+
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, values?: Record<string | number, string>) => {
     if (key === 'com_ui_used_n_tools') {
@@ -363,5 +370,39 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
       'aria-expanded',
       'true',
     );
+  });
+});
+
+describe('ContentParts integration: compact activity', () => {
+  const baseProps = {
+    messageId: 'msg-compact',
+    isCreatedByUser: false,
+    isLast: true,
+    isSubmitting: false,
+    isLatestMessage: true,
+  };
+
+  afterEach(() => mockToolDetails.mockReturnValue(true));
+
+  it('folds thoughts, steps and notes into one block and keeps the answer visible', () => {
+    mockToolDetails.mockReturnValue(false);
+    const think = (text: string) =>
+      ({ type: ContentTypes.THINK, [ContentTypes.THINK]: text }) as unknown as TMessageContentParts;
+    const content = [
+      think('planning the order'),
+      makeMcpToolCall('t1'),
+      makeTextPart('Let me check the template.'),
+      think('checking'),
+      makeMcpToolCall('t2'),
+      makeTextPart('Here is your office order.'),
+    ];
+
+    renderContentParts({ ...baseProps, content });
+
+    expect(screen.getAllByRole('button', { expanded: false })).toHaveLength(1);
+    expect(screen.getByText('com_ui_worked_n_steps')).toBeInTheDocument();
+    expect(screen.getByText('Here is your office order.')).toBeInTheDocument();
+    expect(screen.queryByText('Let me check the template.')).not.toBeInTheDocument();
+    expect(screen.queryByText('planning the order')).not.toBeInTheDocument();
   });
 });

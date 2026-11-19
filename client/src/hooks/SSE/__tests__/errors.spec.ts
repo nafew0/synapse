@@ -8,6 +8,17 @@ describe('toErrorText', () => {
     expect(JSON.parse(toErrorText(event))).toEqual({ type: 'service_busy', requestId });
   });
 
+  it("keeps the institution's message on an ended-access refusal", () => {
+    const info = 'Your free trial has finished. Please contact LEARN to get more usage.';
+    const event = { error: JSON.stringify({ type: 'chat_access_ended', requestId, info }) };
+    expect(JSON.parse(toErrorText(event))).toEqual({ type: 'chat_access_ended', requestId, info });
+  });
+
+  it('drops a blank message on an ended-access refusal', () => {
+    const event = { text: JSON.stringify({ type: 'chat_access_ended', info: ' ' }) };
+    expect(JSON.parse(toErrorText(event))).toEqual({ type: 'chat_access_ended' });
+  });
+
   it('keeps only code and request id from an HTTP error body', () => {
     const body = { code: 'context_too_long', requestId, message: 'org-abc gpt-x' };
     expect(JSON.parse(toErrorText(body))).toEqual({ type: 'context_too_long', requestId });

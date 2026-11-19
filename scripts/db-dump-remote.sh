@@ -7,8 +7,11 @@
 #
 # Options:
 #   --host <ssh-target>     Required. SSH target, e.g. deploy@prod.example.com
-#   --db <name>             Remote database name (default: Synapse)
+#   --key <path>            SSH private key to use (default: your ssh config / ssh-agent keys)
+#   --db <name>            Remote database name (default: Synapse)
 #   --uri <mongo-uri>       Full remote mongodump --uri, overrides --db
+#   --uri-from-env <path>   Read MONGO_URI from this .env file on the remote host
+#                           (e.g. /opt/synapse/.env), so the password never leaves the server
 #   --out <dir>             Local directory to save the dump under (default: ~/Downloads)
 #   --exclude <collection>  Repeatable. Collection to skip (e.g. --exclude messages)
 #   -y, --yes               Skip the confirmation prompt
@@ -21,21 +24,25 @@ set -euo pipefail
 
 DB_NAME="Synapse"
 MONGO_URI=""
+URI_ENV_FILE=""
 OUT_DIR="$HOME/Downloads"
 SSH_HOST=""
+SSH_KEY=""
 ASSUME_YES=0
 EXCLUDES=()
 
 usage() {
-  sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-1}"
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --host) SSH_HOST="$2"; shift 2 ;;
+    --key) SSH_KEY="$2"; shift 2 ;;
     --db) DB_NAME="$2"; shift 2 ;;
     --uri) MONGO_URI="$2"; shift 2 ;;
+    --uri-from-env) URI_ENV_FILE="$2"; shift 2 ;;
     --out) OUT_DIR="$2"; shift 2 ;;
     --exclude) EXCLUDES+=("$2"); shift 2 ;;
     -y|--yes) ASSUME_YES=1; shift ;;
@@ -49,9 +56,27 @@ if [ -z "$SSH_HOST" ]; then
   usage
 fi
 
+if [ -n "$MONGO_URI" ] && [ -n "$URI_ENV_FILE" ]; then
+  echo "Error: use either --uri or --uri-from-env, not both"
+  usage
+fi
+
 for cmd in ssh scp; do
   command -v "$cmd" >/dev/null || { echo "Error: $cmd is required locally."; exit 1; }
 done
+
+SSH_OPTS=(-o BatchMode=yes -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no)
+if [ -n "$SSH_KEY" ]; then
+  [ -r "$SSH_KEY" ] || { echo "Error: SSH key not readable: $SSH_KEY"; exit 1; }
+  SSH_OPTS+=(-i "$SSH_KEY" -o IdentitiesOnly=yes)
+fi
+
+if ! ssh "${SSH_OPTS[@]}" "$SSH_HOST" true; then
+  echo "Error: key-based SSH login to $SSH_HOST failed."
+  echo "  Check the key is authorized on the server: ssh-copy-id ${SSH_KEY:+-i $SSH_KEY }$SSH_HOST"
+  echo "  If the key has a passphrase, load it first: ssh-add ${SSH_KEY:-<key>}"
+  exit 1
+fi
 
 STAMP="$(date +%Y%m%d-%H%M%S)"
 REMOTE_TMP_DIR="/tmp/db-dump-$STAMP"
@@ -59,13 +84,32 @@ REMOTE_TARBALL="$REMOTE_TMP_DIR.tar.gz"
 LOCAL_TARBALL="$OUT_DIR/synapse-dump-$STAMP.tar.gz"
 LOCAL_DUMP_DIR="$OUT_DIR/synapse-dump-$STAMP"
 
-DUMP_TARGET_ARGS=(--uri="${MONGO_URI:-mongodb://localhost:27017/$DB_NAME}")
+DUMP_ARGS=()
 for coll in "${EXCLUDES[@]:-}"; do
-  [ -n "$coll" ] && DUMP_TARGET_ARGS+=(--excludeCollection="$coll")
+  [ -n "$coll" ] && DUMP_ARGS+=(--excludeCollection="$coll")
 done
+DUMP_ARGS+=(--out="$REMOTE_TMP_DIR")
+
+# Runs on the remote host: $1 is the .env path, the rest are mongodump args.
+read -r -d '' REMOTE_ENV_DUMP <<'EOF' || true
+env_file=$1; shift
+[ -r "$env_file" ] || { echo "Cannot read $env_file on remote host" >&2; exit 1; }
+uri=$(sed -n 's/^MONGO_URI=//p' "$env_file" | head -n 1 | tr -d '\r')
+uri=${uri#\"}; uri=${uri%\"}; uri=${uri#\'}; uri=${uri%\'}
+[ -n "$uri" ] || { echo "MONGO_URI not found in $env_file" >&2; exit 1; }
+exec mongodump --uri="$uri" "$@"
+EOF
+
+if [ -n "$URI_ENV_FILE" ]; then
+  DB_LABEL="MONGO_URI from $SSH_HOST:$URI_ENV_FILE"
+  REMOTE_DUMP_CMD="$(printf '%q ' bash -c "$REMOTE_ENV_DUMP" _ "$URI_ENV_FILE" "${DUMP_ARGS[@]}")"
+else
+  DB_LABEL="${MONGO_URI:-$DB_NAME}"
+  REMOTE_DUMP_CMD="$(printf '%q ' mongodump --uri="${MONGO_URI:-mongodb://localhost:27017/$DB_NAME}" "${DUMP_ARGS[@]}")"
+fi
 
 echo "About to dump the LIVE database on $SSH_HOST"
-echo "  Database:        ${MONGO_URI:-$DB_NAME}"
+echo "  Database:        $DB_LABEL"
 echo "  Excluded:         ${EXCLUDES[*]:-(none)}"
 echo "  Remote temp path: $REMOTE_TMP_DIR"
 echo "  Local destination: $LOCAL_DUMP_DIR"
@@ -75,18 +119,18 @@ if [ "$ASSUME_YES" -ne 1 ]; then
 fi
 
 echo "[1/4] Running mongodump on $SSH_HOST ..."
-ssh "$SSH_HOST" "command -v mongodump >/dev/null || { echo 'mongodump not found on remote host'; exit 1; }"
-ssh "$SSH_HOST" mongodump "${DUMP_TARGET_ARGS[@]}" --out="$REMOTE_TMP_DIR"
+ssh "${SSH_OPTS[@]}" "$SSH_HOST" "command -v mongodump >/dev/null || { echo 'mongodump not found on remote host'; exit 1; }"
+ssh "${SSH_OPTS[@]}" "$SSH_HOST" "$REMOTE_DUMP_CMD"
 
 echo "[2/4] Compressing remote dump ..."
-ssh "$SSH_HOST" "tar czf '$REMOTE_TARBALL' -C '$(dirname "$REMOTE_TMP_DIR")' '$(basename "$REMOTE_TMP_DIR")'"
+ssh "${SSH_OPTS[@]}" "$SSH_HOST" "tar czf '$REMOTE_TARBALL' -C '$(dirname "$REMOTE_TMP_DIR")' '$(basename "$REMOTE_TMP_DIR")'"
 
 echo "[3/4] Copying dump to $LOCAL_TARBALL ..."
 mkdir -p "$OUT_DIR"
-scp "$SSH_HOST:$REMOTE_TARBALL" "$LOCAL_TARBALL"
+scp "${SSH_OPTS[@]}" "$SSH_HOST:$REMOTE_TARBALL" "$LOCAL_TARBALL"
 
 echo "[4/4] Cleaning up remote temp files ..."
-ssh "$SSH_HOST" "rm -rf '$REMOTE_TMP_DIR' '$REMOTE_TARBALL'"
+ssh "${SSH_OPTS[@]}" "$SSH_HOST" "rm -rf '$REMOTE_TMP_DIR' '$REMOTE_TARBALL'"
 
 echo "Extracting locally ..."
 mkdir -p "$LOCAL_DUMP_DIR"

@@ -435,12 +435,73 @@ export const mimeTypeAliases: Readonly<Record<string, string>> = {
  * @returns The normalized or inferred MIME type; empty string if unresolvable
  */
 export function inferMimeType(fileName: string, currentType: string): string {
-  if (currentType) {
+  const extension = fileName.split('.').pop()?.toLowerCase() ?? '';
+  if (currentType && !misreportedTypes.has(currentType)) {
     return mimeTypeAliases[currentType] ?? currentType;
   }
 
-  const extension = fileName.split('.').pop()?.toLowerCase() ?? '';
   return codeTypeMapping[extension] || imageTypeMapping[extension] || currentType;
+}
+
+/**
+ * Types browsers report for files whose extension says otherwise: `.ts` as an MPEG transport
+ * stream, `.bat` as a Windows program, or a language-specific type no allowlist matches. For
+ * these the extension mapping wins when it has one.
+ */
+const misreportedTypes: ReadonlySet<string> = new Set([
+  'video/mp2t',
+  'video/vnd.dlna.mpeg-tts',
+  'text/x-java-source',
+  'text/php',
+  'application/x-php',
+  'application/x-httpd-php',
+  'text/x-ruby-script',
+  'application/x-ruby',
+  'text/x-sh',
+  'application/x-msdownload',
+  'application/octet-stream',
+]);
+
+/** Lowercase extension without the dot; `''` when the name has none (`Dockerfile`, `.env`). */
+export function getFileExtension(fileName: string): string {
+  const base = fileName.split(/[\\/]/).pop() ?? '';
+  const dot = base.lastIndexOf('.');
+  if (dot <= 0 || dot === base.length - 1) {
+    return '';
+  }
+  return base.slice(dot + 1).toLowerCase();
+}
+
+/** Lowercases extensions and strips a leading dot, so `.PY` and `py` configure the same thing. */
+export function normalizeExtensions(extensions: string[]): string[] {
+  const normalized = extensions.map((ext) => ext.trim().replace(/^\./, '').toLowerCase());
+  return normalized.filter((ext, index) => ext !== '' && normalized.indexOf(ext) === index);
+}
+
+/** Whether a file name passes an extension allowlist. No list means no extension restriction. */
+export function isExtensionAllowed(fileName: string, extensions?: string[]): boolean {
+  if (!extensions) {
+    return true;
+  }
+  const extension = getFileExtension(fileName);
+  return extension !== '' && extensions.includes(extension);
+}
+
+/**
+ * Builds a file-input `accept` value from an extension allowlist, optionally limited to images.
+ * Returns `undefined` when no extension list is configured, so callers keep their MIME-based filter.
+ */
+export function getExtensionAccept(
+  extensions: string[] | undefined,
+  { imagesOnly = false }: { imagesOnly?: boolean } = {},
+): string | undefined {
+  if (!extensions) {
+    return undefined;
+  }
+  const picked = imagesOnly
+    ? extensions.filter((ext) => imageExtRegex.test(`.${ext}`))
+    : extensions;
+  return picked.map((ext) => `.${ext}`).join(',');
 }
 
 export const retrievalMimeTypes = [
@@ -551,6 +612,7 @@ export const endpointFileConfigSchema = z.object({
   fileSizeLimit: z.number().min(0).optional(),
   totalSizeLimit: z.number().min(0).optional(),
   supportedMimeTypes: supportedMimeTypesSchema.optional(),
+  supportedExtensions: z.array(z.string()).optional(),
 });
 
 const skillFileConfigSchema = z.object({
@@ -967,6 +1029,7 @@ function mergeWithDefault(
     fileSizeLimit: endpointConfig.fileSizeLimit ?? defaultConfig.fileSizeLimit,
     totalSizeLimit: endpointConfig.totalSizeLimit ?? defaultConfig.totalSizeLimit,
     supportedMimeTypes: endpointConfig.supportedMimeTypes ?? defaultMimeTypes,
+    supportedExtensions: endpointConfig.supportedExtensions ?? defaultConfig.supportedExtensions,
   };
 }
 
@@ -1178,6 +1241,7 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
       mergedEndpoint.fileSizeLimit = 0;
       mergedEndpoint.totalSizeLimit = 0;
       mergedEndpoint.supportedMimeTypes = [];
+      mergedEndpoint.supportedExtensions = [];
       continue;
     }
 
@@ -1204,6 +1268,10 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
       mergedEndpoint.supportedMimeTypes = convertStringsToRegex(
         dynamicEndpoint.supportedMimeTypes as unknown as string[],
       );
+    }
+
+    if (dynamicEndpoint.supportedExtensions) {
+      mergedEndpoint.supportedExtensions = normalizeExtensions(dynamicEndpoint.supportedExtensions);
     }
   }
 

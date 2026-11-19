@@ -12,6 +12,7 @@ import {
   QueryKeys,
   inferMimeType,
   excelMimeTypes,
+  isExtensionAllowed,
   EToolResources,
   EModelEndpoint,
   retrievalMimeTypes,
@@ -327,7 +328,7 @@ export const validateFiles = ({
   fileConfig: FileConfig | null;
   skipSizeValidation?: boolean;
 }) => {
-  const { fileLimit, supportedMimeTypes, disabled } = endpointFileConfig;
+  const { fileLimit, supportedMimeTypes, supportedExtensions, disabled } = endpointFileConfig;
   /** Block all uploads if the endpoint is explicitly disabled */
   if (disabled === true) {
     setError('com_ui_attach_error_disabled');
@@ -346,6 +347,11 @@ export const validateFiles = ({
 
   for (let i = 0; i < fileList.length; i++) {
     let originalFile = fileList[i];
+    if (!isExtensionAllowed(originalFile.name, supportedExtensions)) {
+      setError('com_error_files_unsupported_type', { 0: originalFile.name });
+      return false;
+    }
+
     const fileType = inferMimeType(originalFile.name, originalFile.type);
 
     // Check if the file type is still empty after the extension check

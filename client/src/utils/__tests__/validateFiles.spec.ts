@@ -50,6 +50,35 @@ describe('validateFiles', () => {
     expect(setError).not.toHaveBeenCalled();
   });
 
+  describe('extension allowlist', () => {
+    it('accepts a listed extension, including a .ts file the browser calls video', () => {
+      endpointFileConfig = makeEndpointConfig({
+        supportedExtensions: ['py', 'ts'],
+        supportedMimeTypes: [/^text\/x-python$/, /^application\/typescript$/],
+      });
+      const fileList = [
+        makeFile('scan.py', 'text/x-python-script', 64),
+        makeFile('main.ts', 'video/mp2t', 64),
+      ];
+      const result = validateFiles({ files, fileList, setError, endpointFileConfig, fileConfig });
+      expect(result).toBe(true);
+      expect(setError).not.toHaveBeenCalled();
+    });
+
+    it('refuses an unlisted extension even when its type is allowed, naming the file', () => {
+      endpointFileConfig = makeEndpointConfig({
+        supportedExtensions: ['txt'],
+        supportedMimeTypes: [/^text\/plain$/],
+      });
+      const fileList = [makeFile('router.conf', 'text/plain', 64)];
+      const result = validateFiles({ files, fileList, setError, endpointFileConfig, fileConfig });
+      expect(result).toBe(false);
+      expect(setError).toHaveBeenCalledWith('com_error_files_unsupported_type', {
+        0: 'router.conf',
+      });
+    });
+  });
+
   it('rejects when endpoint is disabled', () => {
     endpointFileConfig = makeEndpointConfig({ disabled: true });
     const fileList = [makeFile('doc.pdf', 'application/pdf', 1024)];

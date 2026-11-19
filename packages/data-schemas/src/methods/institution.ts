@@ -16,6 +16,7 @@ const PROTECTED_INSTITUTION_FIELDS = [
   'createdBy',
   'suspendedAt',
   'suspendedBy',
+  'chatAccess',
   'createdAt',
   'updatedAt',
 ] as const;
@@ -42,6 +43,10 @@ export interface InstitutionMethods {
     options?: { suspendedBy?: string },
   ) => Promise<IInstitution | null>;
   reactivateInstitution: (tenantId: string) => Promise<IInstitution | null>;
+  setInstitutionChatAccess: (
+    tenantId: string,
+    access: { ended: boolean; message?: string; contact?: string; changedBy?: string },
+  ) => Promise<IInstitution | null>;
   closeInstitution: (tenantId: string) => Promise<IInstitution | null>;
 }
 
@@ -162,6 +167,30 @@ export function createInstitutionMethods(mongoose: typeof import('mongoose')): I
       .exec();
   }
 
+  async function setInstitutionChatAccess(
+    tenantId: string,
+    access: { ended: boolean; message?: string; contact?: string; changedBy?: string },
+  ): Promise<IInstitution | null> {
+    return await getModel()
+      .findOneAndUpdate(
+        { tenantId: tenantId.trim() },
+        {
+          $set: {
+            chatAccess: {
+              ended: access.ended,
+              message: access.message?.trim() ?? '',
+              contact: access.contact?.trim() ?? '',
+              changedAt: new Date(),
+              changedBy: access.changedBy ?? null,
+            },
+          },
+        },
+        { new: true, runValidators: true },
+      )
+      .lean<IInstitution | null>()
+      .exec();
+  }
+
   async function closeInstitution(tenantId: string): Promise<IInstitution | null> {
     return await getModel()
       .findOneAndUpdate(
@@ -182,6 +211,7 @@ export function createInstitutionMethods(mongoose: typeof import('mongoose')): I
     updateInstitutionByTenantId,
     suspendInstitution,
     reactivateInstitution,
+    setInstitutionChatAccess,
     closeInstitution,
   };
 }

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Terminal } from 'lucide-react';
 import type { ToolCallPhase } from '~/utils/toolCallPhase';
-import { useProgress, useLocalize } from '~/hooks';
+import { useProgress, useLocalize, useToolDetails } from '~/hooks';
 import ProgressText from './ProgressText';
 import MarkdownLite from './MarkdownLite';
 import { cn } from '~/utils';
@@ -21,7 +21,8 @@ export default function CodeAnalyze({
 }) {
   const localize = useLocalize();
   const progress = useProgress(initialProgress);
-  const autoExpand = useRecoilValue(store.autoExpandTools);
+  const toolDetails = useToolDetails();
+  const autoExpand = useRecoilValue(store.autoExpandTools) && toolDetails;
   const [showCode, setShowCode] = useState(autoExpand);
 
   useEffect(() => {

@@ -6,6 +6,7 @@ import MarkdownErrorBoundary from './MarkdownErrorBoundary';
 import { FADE_HYDRATION_THRESHOLD } from './animate';
 import { useMessageContext } from '~/Providers';
 import MarkdownBlocks from './MarkdownBlocks';
+import { hideSandboxPaths } from './sandbox';
 import { preprocessLaTeX } from '~/utils';
 import store from '~/store';
 
@@ -43,7 +44,8 @@ const Markdown = memo(function Markdown({ content = '', isLatestMessage }: TCont
     if (isInitializing) {
       return '';
     }
-    return LaTeXParsing ? preprocessLaTeX(content) : content;
+    const visible = hideSandboxPaths(content);
+    return LaTeXParsing ? preprocessLaTeX(visible) : visible;
   }, [content, LaTeXParsing, isInitializing]);
 
   if (isInitializing) {

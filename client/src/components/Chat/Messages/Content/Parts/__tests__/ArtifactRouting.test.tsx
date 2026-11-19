@@ -732,7 +732,6 @@ describe('AttachmentGroup routing', () => {
       bytes: 1024,
     });
     const { container } = renderWith(<AttachmentGroup attachments={[empty, real]} />);
-    fireEvent.click(screen.getByRole('button', { name: 'com_ui_show_n_files' }));
     const chips = Array.from(container.querySelectorAll('[data-testid="file-container"]'));
     expect(chips.length).toBe(2);
     const filenames = chips.map((c) => c.textContent ?? '');
@@ -741,10 +740,26 @@ describe('AttachmentGroup routing', () => {
     expect(filenames[1]).toMatch(/placeholder\.zip/);
   });
 
-  it('keeps multiple downloadable files in their own collapsed group while images render outwardly', () => {
+  it('shows up to three downloadable files as their own chips without a toggle', () => {
+    const files = ['exam.tex', 'exam-markscheme.tex'].map((filename) =>
+      baseAttachment({ file_id: filename, filename, text: '\\documentclass{exam}' }),
+    );
+    renderWith(<AttachmentGroup attachments={files} />);
+
+    expect(screen.queryByRole('button', { name: 'com_ui_show_n_files' })).not.toBeInTheDocument();
+    const chips = screen.getAllByTestId('file-container').map((chip) => chip.textContent ?? '');
+    expect(chips.some((name) => name.includes('exam.tex'))).toBe(true);
+    expect(chips.some((name) => name.includes('exam-markscheme.tex'))).toBe(true);
+  });
+
+  it('keeps more than three downloadable files in their own collapsed group while images render outwardly', () => {
     const first = baseAttachment({
       file_id: 'file-a',
       filename: 'a.zip',
+    });
+    const fourth = baseAttachment({
+      file_id: 'file-d',
+      filename: 'd.zip',
     });
     const second = baseAttachment({
       file_id: 'file-b',
@@ -763,7 +778,7 @@ describe('AttachmentGroup routing', () => {
     });
 
     const { container } = renderWith(
-      <AttachmentGroup attachments={[first, second, json, image]} />,
+      <AttachmentGroup attachments={[first, second, fourth, json, image]} />,
     );
 
     const toggle = screen.getByRole('button', { name: 'com_ui_show_n_files' });
@@ -879,15 +894,11 @@ describe('AttachmentGroup routing', () => {
     expect(screen.getByText('index.html')).toBeInTheDocument();
     // Mermaid render
     expect(screen.getByTestId('mermaid-render')).toBeInTheDocument();
-    // JSON and plain zip are both downloadable file outputs, so they collapse together.
-    const toggle = screen.getByRole('button', { name: 'com_ui_show_n_files' });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    // Two downloadable outputs stay inline: each has its own chip, and the JSON keeps its preview.
+    expect(screen.queryByRole('button', { name: 'com_ui_show_n_files' })).not.toBeInTheDocument();
     const chipLabels = screen.getAllByTestId('file-container').map((chip) => chip.textContent);
     expect(chipLabels).toContain('archive.zip');
-    expect(chipLabels).not.toContain('data.json');
-
-    fireEvent.click(toggle);
-    expect(screen.getByText('data.json')).toBeInTheDocument();
+    expect(chipLabels).toContain('data.json');
     expect(container.querySelector('pre')?.textContent).toBe('{"a":1}');
   });
 });

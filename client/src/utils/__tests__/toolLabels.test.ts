@@ -74,6 +74,15 @@ describe('getToolDisplayLabel', () => {
     );
   });
 
+  it.each([
+    ['search_web', 'com_ui_tool_name_web_search'],
+    ['read_web_page', 'com_ui_tool_name_read_web_page'],
+    ['firecrawl_search', 'com_ui_tool_name_web_search'],
+    ['firecrawl_scrape', 'com_ui_tool_name_read_web_page'],
+  ])('labels the web tool %s without naming its provider', (name, key) => {
+    expect(getToolDisplayLabel(name, identityLocalize)).toBe(key);
+  });
+
   it('returns the raw name for an unknown native tool', () => {
     expect(getToolDisplayLabel('custom_tool', identityLocalize)).toBe('custom_tool');
   });

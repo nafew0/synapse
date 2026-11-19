@@ -144,7 +144,7 @@ export default defineConfig(({ command }) => ({
         short_name: 'Synapse',
         display: 'standalone',
         background_color: '#ffffff',
-        theme_color: '#9A278E',
+        theme_color: '#134F54',
         icons: [
           {
             src: 'assets/favicon-32x32.png',
@@ -361,6 +361,10 @@ export default defineConfig(({ command }) => ({
                   }
 
                   if (normalizedId.includes('@icons-pack/react-simple-icons/icons/')) {
+                    return null;
+                  }
+                  /** pdf.js only draws attachment thumbnails; keep it in its lazy chunk. */
+                  if (normalizedId.includes('node_modules/pdfjs-dist/')) {
                     return null;
                   }
 
