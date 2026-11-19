@@ -1,20 +1,36 @@
+import {
+  createUsageAccountModel,
+  createUsagePackageModel,
+  createUsagePricingModel,
+} from './usagePackage';
 import { createAgentTriggerLaneSequenceModel } from './triggerLaneSequence';
+import { createInstitutionImportJobModel } from './institutionImportJob';
+import { createAdminScopeAssignmentModel } from './adminScopeAssignment';
 import { createSkillSyncCredentialModel } from './skillSyncCredential';
 import { createAgentTriggerUserPurgeModel } from './triggerUserPurge';
 import { createAgentTriggerDeliveryModel } from './triggerDelivery';
+import { createInstitutionInviteModel } from './institutionInvite';
+import { createUsageReservationModel } from './usageReservation';
 import { createSkillSyncStatusModel } from './skillSyncStatus';
 import { createConversationTagModel } from './conversationTag';
+import { createTaskCostProfileModel } from './taskCostProfile';
 import { createAgentCategoryModel } from './agentCategory';
+import { createPlatformAdminModel } from './platformAdmin';
+import { createUsageWarningModel } from './usageWarning';
 import { createChatProjectModel } from './chatProject';
 import { createAgentApiKeyModel } from './agentApiKey';
 import { createTransactionModel } from './transaction';
 import { createPromptGroupModel } from './promptGroup';
 import { createSystemGrantModel } from './systemGrant';
+import { createInstitutionModel } from './institution';
+import { createUsagePolicyModel } from './usagePolicy';
+import { createUsageBucketModel } from './usageBucket';
 import { createPluginAuthModel } from './pluginAuth';
 import { createSharedLinkModel } from './sharedLink';
 import { createAccessRoleModel } from './accessRole';
 import { createToolFavoriteModel } from './favorite';
 import { createBannerViewModel } from './bannerView';
+import { createUsageDailyModel } from './usageDaily';
 import { createMCPServerModel } from './mcpServer';
 import { createAssistantModel } from './assistant';
 import { createSkillFileModel } from './skillFile';
@@ -22,6 +38,7 @@ import { createConversationModel } from './convo';
 import { createToolCallModel } from './toolCall';
 import { createAclEntryModel } from './aclEntry';
 import { createAuditLogModel } from './auditLog';
+import { createUsageJobModel } from './usageJob';
 import { createSessionModel } from './session';
 import { createBalanceModel } from './balance';
 import { createMessageModel } from './message';
@@ -31,28 +48,14 @@ import { createPresetModel } from './preset';
 import { createPromptModel } from './prompt';
 import { createMemoryModel } from './memory';
 import { createConfigModel } from './config';
-import { createInstitutionImportJobModel } from './institutionImportJob';
 import { createTokenModel } from './token';
 import { createAgentModel } from './agent';
-import { createInstitutionInviteModel } from './institutionInvite';
-import {
-  createUsageAccountModel,
-  createUsagePackageModel,
-  createUsagePricingModel,
-} from './usagePackage';
 import { createSkillModel } from './skill';
 import { createGroupModel } from './group';
-import { createInstitutionModel } from './institution';
-import { createPlatformAdminModel } from './platformAdmin';
 import { createUserModel } from './user';
 import { createRoleModel } from './role';
 import { createFileModel } from './file';
 import { createKeyModel } from './key';
-import { createUsagePolicyModel } from './usagePolicy';
-import { createUsageBucketModel } from './usageBucket';
-import { createUsageReservationModel } from './usageReservation';
-import { createUsageWarningModel } from './usageWarning';
-import { createAdminScopeAssignmentModel } from './adminScopeAssignment';
 import logger from '~/config/winston';
 
 /**
@@ -106,6 +109,9 @@ export function createModels(mongoose: typeof import('mongoose')): {
   PlatformAdmin: ReturnType<typeof createPlatformAdminModel>;
   UsagePolicy: ReturnType<typeof createUsagePolicyModel>;
   UsageBucket: ReturnType<typeof createUsageBucketModel>;
+  UsageJob: ReturnType<typeof createUsageJobModel>;
+  TaskCostProfile: ReturnType<typeof createTaskCostProfileModel>;
+  UsageDaily: ReturnType<typeof createUsageDailyModel>;
   UsageReservation: ReturnType<typeof createUsageReservationModel>;
   UsageWarning: ReturnType<typeof createUsageWarningModel>;
   AdminScopeAssignment: ReturnType<typeof createAdminScopeAssignmentModel>;
@@ -161,6 +167,9 @@ export function createModels(mongoose: typeof import('mongoose')): {
     PlatformAdmin: createPlatformAdminModel(mongoose),
     UsagePolicy: createUsagePolicyModel(mongoose),
     UsageBucket: createUsageBucketModel(mongoose),
+    UsageJob: createUsageJobModel(mongoose),
+    TaskCostProfile: createTaskCostProfileModel(mongoose),
+    UsageDaily: createUsageDailyModel(mongoose),
     UsageReservation: createUsageReservationModel(mongoose),
     UsageWarning: createUsageWarningModel(mongoose),
     AdminScopeAssignment: createAdminScopeAssignmentModel(mongoose),

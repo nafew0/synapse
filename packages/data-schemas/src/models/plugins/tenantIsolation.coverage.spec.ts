@@ -32,6 +32,7 @@ const MANUAL_TENANT_SCOPING = new Set<string>([
   'UsageReservation',
   'UsageWarning',
   'UsageAccount',
+  'UsageDaily',
 ]);
 
 function isPluginApplied(schema: mongoose.Schema): boolean {

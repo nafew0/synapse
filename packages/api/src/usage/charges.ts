@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { logger } from '@librechat/data-schemas';
 import { servicePricingSchema } from 'librechat-data-provider';
 import type { TServicePricingConfig, TServicePricingInput } from 'librechat-data-provider';
-import type { TransactionService } from '@librechat/data-schemas';
+import type { TaskType, TransactionService } from '@librechat/data-schemas';
 import { CREDITS_PER_USD } from './packages';
 
 const DUPLICATE_KEY_ERROR_CODE = 11000;
@@ -23,6 +23,8 @@ export interface ServiceChargeInput {
   tenantId?: string;
   /** False for platform cost (indexing, memory) that never draws down an allowance. */
   billable?: boolean;
+  /** Set when the charge is a task of its own, like a voice clip; chat requests are tagged when they settle. */
+  taskType?: TaskType;
   /** Stable across retries of the same call, so a replay is recorded once. */
   requestKey: string;
   conversationId?: string;
@@ -85,6 +87,7 @@ export async function recordServiceCharge(input: ServiceChargeInput): Promise<Se
       usageUnit: input.usageUnit,
       service: input.service,
       billable: input.billable ?? true,
+      taskType: input.taskType,
       model: modelKey,
       modelKey,
       providerKey: input.service,

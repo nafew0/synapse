@@ -99,6 +99,7 @@ function recordVoiceChargeUnsafe({
     unitPriceUsd: pricePerSecondUsd,
     user,
     tenantId,
+    taskType: 'voice',
     requestKey: `stt:${user}:${digest}:${Math.floor(now.getTime() / MINUTE_MS)}`,
   });
 }

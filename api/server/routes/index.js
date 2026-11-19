@@ -17,6 +17,7 @@ const platformInstitutions = require('./platform/institutions');
 const platformUsers = require('./platform/users');
 const platformUsagePackages = require('./platform/usagePackages');
 const platformAlerts = require('./platform/alerts');
+const bdren = require('./bdren');
 const platformUsageAssignments = require('./platform/usageAssignments');
 const platformAgentsCatalog = require('./platform/agentsCatalog');
 const endpoints = require('./endpoints');
@@ -72,6 +73,7 @@ module.exports = {
   platformUsers,
   platformUsagePackages,
   platformAlerts,
+  bdren,
   platformUsageAssignments,
   platformAgentsCatalog,
   keys,
