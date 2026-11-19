@@ -6,7 +6,15 @@ import { listAlerts, markSeen } from './store';
 import { runAlertChecks } from './runner';
 
 /** Routes for platform superadmins; the caller mounts them behind that check. */
-export function createAlertHandlers() {
+type AlertHandler = (req: ServerRequest, res: Response) => Promise<Response>;
+
+export interface AlertHandlers {
+  list: AlertHandler;
+  seen: AlertHandler;
+  check: AlertHandler;
+}
+
+export function createAlertHandlers(): AlertHandlers {
   const fail = (res: Response, message: string, error: unknown) => {
     logger.error(`[alerts] ${message}`, error);
     return res.status(500).json({ error: message });
@@ -44,5 +52,5 @@ export function createAlertHandlers() {
     }
   };
 
-  return { list, seen, check };
+  return { list, seen, check } satisfies AlertHandlers;
 }
