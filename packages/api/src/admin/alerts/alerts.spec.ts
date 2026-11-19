@@ -398,3 +398,68 @@ describe('alert routes', () => {
     expect(response.status).toBe(400);
   });
 });
+
+describe('review regressions', () => {
+  it('keeps an open balance alert when the balance cannot be read this time', async () => {
+    routes['/or/key'] = openRouterKeyBody({});
+    routes['/or/credits'] = { status: 200, body: { data: { total_credits: 10, total_usage: 10 } } };
+    await runAlertChecks(env(), NOW);
+    expect(await active()).toMatchObject([{ kind: 'openrouter_balance' }]);
+
+    routes['/or/credits'] = { status: 500, body: {} };
+    const summary = await runAlertChecks(env(), NOW);
+
+    expect(summary.resolved).toBe(0);
+    expect(await active()).toHaveLength(1);
+  });
+
+  it('treats an unexpanded ${...} key as not configured', async () => {
+    await runAlertChecks(env({ OPENROUTER_KEY: '${OPENROUTER_KEY}' }), NOW);
+
+    expect(requested).toHaveLength(0);
+    expect(await active()).toHaveLength(0);
+  });
+
+  it('counts only OpenRouter rows, from everyone, in the days-left estimate', async () => {
+    const rows = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].flatMap((daysAgo) =>
+      [
+        { service: 'openrouter', usd: 1 },
+        { service: 'firecrawl', usd: 50 },
+      ].map(({ service, usd }) => ({
+        user: new mongoose.Types.ObjectId(),
+        tokenType: 'credits',
+        service,
+        tokenValue: -usd * 1_000_000,
+        createdAt: new Date(NOW.getTime() - daysAgo * MS_PER_DAY),
+      })),
+    );
+    await mongoose.models.Transaction.collection.insertMany(rows);
+    routes['/or/key'] = openRouterKeyBody({});
+    routes['/or/credits'] = {
+      status: 200,
+      body: { data: { total_credits: 100, total_usage: 98 } },
+    };
+
+    await runAlertChecks(env(), NOW);
+
+    const [alert] = await active();
+    expect(alert.detail).toContain('$1.00 a day');
+  });
+
+  it('returns the unseen count from a manual check', async () => {
+    routes['/or/key'] = { status: 401, body: { error: { message: 'User not found.' } } };
+    const previous = { ...process.env };
+    Object.assign(process.env, env());
+    const app = express();
+    app.post('/check', createAlertHandlers().check as unknown as express.RequestHandler);
+    const server = app.listen(0, '127.0.0.1');
+    await new Promise((resolve) => server.once('listening', resolve));
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/check`;
+
+    const body = await (await fetch(url, { method: 'POST' })).json();
+    server.close();
+    process.env = previous;
+
+    expect(body.unseen).toBe(1);
+  });
+});

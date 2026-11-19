@@ -57,16 +57,43 @@ export async function loadSpend(since: Date): Promise<SpendRow[]> {
   return [...toRows('institution', institutions), ...toRows('user', users)];
 }
 
-/** Average spend per day over the `days` before today, across the whole platform. */
-export function averageDailyUsd(rows: SpendRow[], today: string, days: number): number {
-  const total = rows
-    .filter((row) => row.scope === 'institution' && row.day !== today)
-    .reduce((sum, row) => sum + row.usd, 0);
-  return days > 0 ? total / days : 0;
+/**
+ * Average OpenRouter spend per day over the `days` before today, across the whole platform, individuals
+ * included. Rows from before the `service` field existed are model calls, so a missing service counts.
+ */
+export async function loadOpenRouterAverage(
+  since: Date,
+  today: string,
+  days: number,
+): Promise<number> {
+  const { Transaction } = mongoose.models;
+  const groups = await runAsSystem(() =>
+    Transaction.aggregate<{ credits: number }>([
+      {
+        $match: {
+          createdAt: { $gte: since },
+          tokenValue: { $lt: 0 },
+          service: { $in: ['openrouter', null] },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: ROLLUP_TIMEZONE },
+          },
+          credits: { $sum: { $multiply: ['$tokenValue', -1] } },
+        },
+      },
+      { $match: { _id: { $ne: today } } },
+    ]),
+  );
+  const total = groups.reduce((sum, group) => sum + group.credits, 0);
+  return days > 0 ? total / CREDITS_PER_USD / days : 0;
 }
 
-export const windowStart = (now: Date, days: number): Date =>
-  new Date(now.getTime() - (days + 1) * DAY_MS);
+/** Midnight in the rollup timezone (a fixed UTC+6) that opens the `days` full days before `today`. */
+export const windowStart = (today: string, days: number): Date =>
+  new Date(new Date(`${today}T00:00:00+06:00`).getTime() - days * DAY_MS);
 
 interface Labelled {
   _id: unknown;

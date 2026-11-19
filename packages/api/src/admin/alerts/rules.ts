@@ -102,7 +102,9 @@ export function evaluateOpenRouter(
     expiryFinding(key.value, now, thresholds),
     remaining === null ? null : balanceFinding(remaining, share, averageDailyUsd, thresholds),
   ].filter((finding): finding is AlertFinding => finding !== null);
-  return { kinds: ['openrouter_key', 'openrouter_expiry', 'openrouter_balance'], findings };
+  const kinds: CheckOutcome['kinds'] = ['openrouter_key', 'openrouter_expiry'];
+  if (remaining !== null) kinds.push('openrouter_balance');
+  return { kinds, findings };
 }
 
 export function evaluateFirecrawl(

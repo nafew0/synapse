@@ -8,7 +8,13 @@ import {
   readOpenRouterCredits,
   readOpenRouterKey,
 } from './providers';
-import { averageDailyUsd, dayInRollupZone, loadLabels, loadSpend, windowStart } from './spend';
+import {
+  dayInRollupZone,
+  loadLabels,
+  loadOpenRouterAverage,
+  loadSpend,
+  windowStart,
+} from './spend';
 import { evaluateFirecrawl, evaluateOpenRouter, evaluateSpikes } from './rules';
 import { DEFAULT_THRESHOLDS } from './types';
 import { syncAlerts } from './store';
@@ -34,6 +40,10 @@ export function thresholdsFromEnv(env: NodeJS.ProcessEnv = process.env): AlertTh
   };
 }
 
+/** A blank value or an unexpanded `${NAME}` placeholder means the setting is not configured. */
+const configured = (value: string | undefined): string | undefined =>
+  value && !value.trim().startsWith('${') && value.trim() !== '' ? value.trim() : undefined;
+
 export interface CheckRunSummary extends SyncResult {
   checkedKinds: AlertKind[];
 }
@@ -46,10 +56,11 @@ export async function runAlertChecks(
   const thresholds = thresholdsFromEnv(env);
   const outcomes: CheckOutcome[] = [];
 
-  const openRouterKey = env.OPENROUTER_KEY || env.OPENROUTER_API_KEY;
-  const firecrawlKey = env.FIRECRAWL_API_KEY;
+  const openRouterKey = configured(env.OPENROUTER_KEY) ?? configured(env.OPENROUTER_API_KEY);
+  const firecrawlKey = configured(env.FIRECRAWL_API_KEY);
   const today = dayInRollupZone(now);
-  const spend = await loadSpend(windowStart(now, thresholds.spikeWindowDays)).catch((error) => {
+  const since = windowStart(today, thresholds.spikeWindowDays);
+  const spend = await loadSpend(since).catch((error) => {
     logger.error('[alerts] Failed to read spend', error);
     return null;
   });
@@ -57,8 +68,13 @@ export async function runAlertChecks(
   if (openRouterKey) {
     const config = {
       apiKey: openRouterKey,
-      baseUrl: env.OPENROUTER_API_URL || OPENROUTER_BASE_URL,
+      baseUrl: configured(env.OPENROUTER_API_URL) ?? OPENROUTER_BASE_URL,
     };
+    const averageDailyUsd = await loadOpenRouterAverage(
+      since,
+      today,
+      thresholds.spikeWindowDays,
+    ).catch(() => 0);
     const [key, credits] = await Promise.all([
       readOpenRouterKey(config),
       readOpenRouterCredits(config),
@@ -68,7 +84,7 @@ export async function runAlertChecks(
         {
           key,
           credits,
-          averageDailyUsd: spend ? averageDailyUsd(spend, today, thresholds.spikeWindowDays) : 0,
+          averageDailyUsd,
         },
         now,
         thresholds,
@@ -79,7 +95,7 @@ export async function runAlertChecks(
   if (firecrawlKey) {
     const reading = await readFirecrawlCredits({
       apiKey: firecrawlKey,
-      baseUrl: env.FIRECRAWL_API_URL || FIRECRAWL_BASE_URL,
+      baseUrl: configured(env.FIRECRAWL_API_URL) ?? FIRECRAWL_BASE_URL,
     });
     const plan = number(env.ALERT_FIRECRAWL_PLAN_CREDITS, NaN);
     outcomes.push(evaluateFirecrawl(reading, Number.isFinite(plan) ? plan : null, thresholds));

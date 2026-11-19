@@ -1,11 +1,15 @@
 import { isValidObjectId } from 'mongoose';
 import { logger } from '@librechat/data-schemas';
 import type { Response } from 'express';
+import type { PlatformAlertRecord } from './types';
 import type { ServerRequest } from '~/types/http';
 import { listAlerts, markSeen } from './store';
 import { runAlertChecks } from './runner';
 
 /** Routes for platform superadmins; the caller mounts them behind that check. */
+const countUnseen = (alerts: PlatformAlertRecord[]): number =>
+  alerts.filter((alert) => alert.status === 'open' && !alert.seenAt).length;
+
 type AlertHandler = (req: ServerRequest, res: Response) => Promise<Response>;
 
 export interface AlertHandlers {
@@ -23,8 +27,7 @@ export function createAlertHandlers(): AlertHandlers {
   const list = async (_req: ServerRequest, res: Response) => {
     try {
       const alerts = await listAlerts();
-      const unseen = alerts.filter((alert) => alert.status === 'open' && !alert.seenAt).length;
-      return res.status(200).json({ alerts, unseen });
+      return res.status(200).json({ alerts, unseen: countUnseen(alerts) });
     } catch (error) {
       return fail(res, 'Failed to load alerts', error);
     }
@@ -46,7 +49,8 @@ export function createAlertHandlers(): AlertHandlers {
   const check = async (_req: ServerRequest, res: Response) => {
     try {
       const summary = await runAlertChecks();
-      return res.status(200).json({ ...summary, alerts: await listAlerts() });
+      const alerts = await listAlerts();
+      return res.status(200).json({ ...summary, alerts, unseen: countUnseen(alerts) });
     } catch (error) {
       return fail(res, 'Failed to run alert checks', error);
     }
