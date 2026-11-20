@@ -3,7 +3,12 @@ import { OpenIDIcon, useToastContext } from '@librechat/client';
 import { ErrorTypes, registerPage } from 'librechat-data-provider';
 import { useOutletContext, useSearchParams, useLocation } from 'react-router-dom';
 import type { TLoginLayoutContext } from '~/common';
-import { getLoginError, persistRedirectToSession } from '~/utils';
+import {
+  getLoginError,
+  wasExplicitLogout,
+  clearExplicitLogout,
+  persistRedirectToSession,
+} from '~/utils';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
 import SocialButton from '~/components/Auth/SocialButton';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -23,8 +28,16 @@ function Login() {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const disableAutoRedirect = searchParams.get('redirect') === 'false';
+  const ssoOnly = startupConfig?.ssoOnly === true;
 
-  const [isAutoRedirectDisabled, setIsAutoRedirectDisabled] = useState(disableAutoRedirect);
+  const [isAutoRedirectDisabled, setIsAutoRedirectDisabled] = useState(
+    () => disableAutoRedirect || wasExplicitLogout(),
+  );
+  const [accountNotLinked, setAccountNotLinked] = useState(false);
+
+  useEffect(() => {
+    clearExplicitLogout();
+  }, []);
 
   useEffect(() => {
     const redirectTo = searchParams.get('redirect_to');
@@ -38,7 +51,12 @@ function Login() {
     }
 
     const oauthError = searchParams?.get('error');
-    if (oauthError && oauthError === ErrorTypes.AUTH_FAILED) {
+    if (oauthError === ErrorTypes.ACCOUNT_NOT_LINKED) {
+      setAccountNotLinked(true);
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('error');
+      setSearchParams(newParams, { replace: true });
+    } else if (oauthError && oauthError === ErrorTypes.AUTH_FAILED) {
       showToast({
         message: localize('com_auth_error_oauth_failed'),
         status: 'error',
@@ -58,6 +76,8 @@ function Login() {
     }
   }, [disableAutoRedirect, searchParams, setSearchParams]);
 
+  const openidLabel = ssoOnly ? localize('com_auth_sign_in_bdren') : startupConfig?.openidLabel;
+
   const shouldAutoRedirect =
     startupConfig?.openidLoginEnabled &&
     startupConfig?.openidAutoRedirect &&
@@ -75,7 +95,7 @@ function Login() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-4">
         <p className="text-lg font-semibold">
-          {localize('com_ui_redirecting_to_provider', { 0: startupConfig.openidLabel })}
+          {localize('com_ui_redirecting_to_provider', { 0: openidLabel })}
         </p>
         <div className="mt-4">
           <SocialButton
@@ -90,7 +110,7 @@ function Login() {
                 <OpenIDIcon />
               )
             }
-            label={startupConfig.openidLabel}
+            label={openidLabel ?? ''}
             id="openid"
           />
         </div>
@@ -101,6 +121,14 @@ function Login() {
   return (
     <>
       {error != null && <ErrorMessage>{localize(getLoginError(error))}</ErrorMessage>}
+      {accountNotLinked && (
+        <ErrorMessage>{localize('com_auth_error_account_not_linked')}</ErrorMessage>
+      )}
+      {ssoOnly && (
+        <p className="mt-6 text-center text-sm text-auth-muted lg:text-left">
+          {localize('com_auth_sign_in_bdren_hint')}
+        </p>
+      )}
       {startupConfig?.emailLoginEnabled === true && (
         <LoginForm
           onSubmit={login}

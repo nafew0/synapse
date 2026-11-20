@@ -47,6 +47,7 @@ const {
   captureLoggedErrors,
   startAlertScheduler,
   startProviderSync,
+  readSsoOnly,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const {
@@ -321,7 +322,12 @@ const startServer = async () => {
   }
   app.use('/api/agents/chat', agentStartupTelemetryMiddleware);
 
-  if (!ALLOW_SOCIAL_LOGIN) {
+  const ssoOnly = readSsoOnly();
+  if (ssoOnly.enabled) {
+    logger.info('[auth] SSO-only: chat sign-in is through BDREN OpenID only', {
+      issuer: ssoOnly.issuer ?? '(BDREN_ISSUER not set)',
+    });
+  } else if (!ALLOW_SOCIAL_LOGIN) {
     console.warn('Social logins are disabled. Set ALLOW_SOCIAL_LOGIN=true to enable them.');
   }
 
@@ -335,7 +341,7 @@ const startServer = async () => {
     passport.use(ldapLogin);
   }
 
-  if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
+  if (ssoOnly.enabled || isEnabled(ALLOW_SOCIAL_LOGIN)) {
     await configureSocialLogins(app);
   }
 

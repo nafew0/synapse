@@ -25,6 +25,7 @@ const { loginController } = require('~/server/controllers/auth/LoginController')
 const { findBalanceByUser, upsertBalanceFields } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const middleware = require('~/server/middleware');
+const sso = require('~/server/middleware/ssoOnly');
 
 const setBalanceConfig = createSetBalanceConfig({
   getAppConfig,
@@ -48,6 +49,7 @@ router.post('/logout', middleware.requireJwtAuth, logoutController);
 router.post(
   '/login',
   middleware.logHeaders,
+  sso.refuseLogin,
   middleware.loginLimiter,
   middleware.checkBan,
   middleware.validateEmailLogin,
@@ -69,7 +71,7 @@ router.post('/cloudfront/refresh', middleware.requireJwtAuth, (req, res) => {
     refreshAfterSec: result.refreshAfterSec,
   });
 });
-router.get('/invite/:token', middleware.registerLimiter, async (req, res) => {
+router.get('/invite/:token', sso.refuseInvitation, middleware.registerLimiter, async (req, res) => {
   try {
     const invite = await resolveInstitutionInviteByToken(req.params.token);
     if (!invite) {
@@ -93,6 +95,7 @@ router.get('/invite/:token', middleware.registerLimiter, async (req, res) => {
 
 router.post(
   '/register',
+  sso.refuseRegistration,
   middleware.registerLimiter,
   middleware.checkBan,
   middleware.checkInviteUser,
@@ -101,6 +104,7 @@ router.post(
 );
 router.post(
   '/requestPasswordReset',
+  sso.refusePasswordReset,
   middleware.resetPasswordLimiter,
   middleware.checkBan,
   middleware.validatePasswordReset,
@@ -108,6 +112,7 @@ router.post(
 );
 router.post(
   '/resetPassword',
+  sso.refusePasswordReset,
   middleware.resetPasswordSubmissionLimiter,
   middleware.checkBan,
   middleware.validatePasswordReset,
@@ -121,6 +126,7 @@ router.post(
   middleware.setTwoFactorTempUser,
   middleware.twoFactorTempLimiter,
   middleware.checkBan,
+  sso.requireTempUserAllowed,
   verify2FAWithTempToken,
 );
 router.post('/2fa/confirm', middleware.requireJwtAuth, confirm2FA);

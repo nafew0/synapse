@@ -10,6 +10,7 @@ const {
   createSetBalanceConfig,
   getOAuthFailureMessage,
   redirectToAuthFailure,
+  refuseOtherProvidersWhenSsoOnly,
 } = require('@librechat/api');
 const { checkDomainAllowed, loginLimiter, logHeaders } = require('~/server/middleware');
 const { createOAuthHandler } = require('~/server/controllers/auth/oauth');
@@ -35,6 +36,7 @@ const authFailureRedirectOptions = {
 };
 
 router.use(logHeaders);
+router.use(refuseOtherProvidersWhenSsoOnly());
 router.use(loginLimiter);
 
 const oauthHandler = createOAuthHandler();
@@ -42,6 +44,7 @@ const authenticateOpenIDCallback = createOpenIDCallbackAuthenticator({
   passport,
   logger,
   ...authFailureRedirectOptions,
+  forwardedErrors: [ErrorTypes.ACCOUNT_NOT_LINKED],
 });
 
 router.get('/error', (req, res) => {

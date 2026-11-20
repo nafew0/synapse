@@ -797,3 +797,65 @@ describe('GET /api/config', () => {
     });
   });
 });
+
+describe('GET /api/config with SSO-only sign-in', () => {
+  const ssoEnv = {
+    BDREN_ISSUER: 'https://auth.bdren.test',
+    OPENID_CLIENT_ID: 'synapse',
+    OPENID_CLIENT_SECRET: 'secret',
+    OPENID_ISSUER: 'https://auth.bdren.test',
+    OPENID_SESSION_SECRET: 'session',
+    GOOGLE_CLIENT_ID: 'google-id',
+    GOOGLE_CLIENT_SECRET: 'google-secret',
+    ALLOW_REGISTRATION: 'true',
+  };
+
+  beforeEach(() => {
+    Object.assign(process.env, ssoEnv);
+    mockGetAppConfig.mockResolvedValue(baseAppConfig);
+  });
+
+  afterEach(() => {
+    delete process.env.BDREN_ISSUER;
+    delete process.env.BDREN_SSO_ONLY;
+  });
+
+  it('shows only the BDREN sign-in, with auto-redirect, before login', async () => {
+    const res = await request(createApp(null)).get('/api/config');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      ssoOnly: true,
+      openidLoginEnabled: true,
+      openidAutoRedirect: true,
+      socialLoginEnabled: true,
+      socialLogins: ['openid'],
+      emailLoginEnabled: false,
+      registrationEnabled: false,
+      passwordResetEnabled: false,
+      googleLoginEnabled: false,
+      samlLoginEnabled: false,
+    });
+    expect(res.body.ldap).toBeUndefined();
+  });
+
+  it('reports the same after login', async () => {
+    mockHasCapability.mockResolvedValue(false);
+    const res = await request(createApp(mockUser)).get('/api/config');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ ssoOnly: true, socialLogins: ['openid'] });
+  });
+
+  it('leaves the login options alone when BDREN_SSO_ONLY=false', async () => {
+    process.env.BDREN_SSO_ONLY = 'false';
+    const res = await request(createApp(null)).get('/api/config');
+
+    expect(res.body.ssoOnly).toBeUndefined();
+    expect(res.body).toMatchObject({
+      registrationEnabled: true,
+      googleLoginEnabled: true,
+      socialLogins: ['google', 'github'],
+    });
+  });
+});

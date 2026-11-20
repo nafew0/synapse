@@ -17,6 +17,7 @@ const {
   requireJwtAuth,
 } = require('~/server/middleware');
 
+const { refuseEmailVerification } = require('~/server/middleware/ssoOnly');
 const settings = require('./settings');
 const {
   HttpError: UsageHttpError,
@@ -60,6 +61,11 @@ router.post('/terms/accept', requireJwtAuth, acceptTermsController);
 router.post('/plugins', requireJwtAuth, updateUserPluginsController);
 router.delete('/delete', requireJwtAuth, canDeleteAccount, configMiddleware, deleteUserController);
 router.post('/verify', verifyEmailSubmissionLimiter, verifyEmailController);
-router.post('/verify/resend', verifyEmailLimiter, resendVerificationController);
+router.post(
+  '/verify/resend',
+  refuseEmailVerification,
+  verifyEmailLimiter,
+  resendVerificationController,
+);
 
 module.exports = router;

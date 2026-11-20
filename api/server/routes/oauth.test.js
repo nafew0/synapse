@@ -66,6 +66,7 @@ jest.mock('librechat-data-provider', () => ({
   ...jest.requireActual('librechat-data-provider'),
   ErrorTypes: {
     AUTH_FAILED: 'auth_failed',
+    ACCOUNT_NOT_LINKED: 'account_not_linked',
   },
 }));
 
@@ -75,6 +76,8 @@ jest.mock('@librechat/api', () => ({
   createSetBalanceConfig: jest.fn(() => (_req, _res, next) => next()),
   getOAuthFailureMessage: (...args) => mockGetOAuthFailureMessage(...args),
   redirectToAuthFailure: (...args) => mockRedirectToAuthFailure(...args),
+  refuseOtherProvidersWhenSsoOnly:
+    jest.requireActual('@librechat/api').refuseOtherProvidersWhenSsoOnly,
 }));
 
 jest.mock('~/server/middleware', () => ({
@@ -153,6 +156,7 @@ describe('OAuth route failure logging', () => {
       logger: mockLogger,
       clientDomain: 'http://client.test',
       authFailedError: 'auth_failed',
+      forwardedErrors: ['account_not_linked'],
     });
     expect(mockOpenIDCallbackMiddleware).toHaveBeenCalledWith(
       expect.any(Object),

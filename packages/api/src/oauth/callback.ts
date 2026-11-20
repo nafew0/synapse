@@ -59,7 +59,15 @@ export type LogOpenIDCallbackFailureOptions = {
 export type OpenIDCallbackAuthenticatorOptions = AuthFailureRedirectOptions & {
   logger: OAuthCallbackLogger;
   passport: PassportLike;
+  /** Failure messages passed to the login page as-is (instead of `authFailedError`) so it can explain them. */
+  forwardedErrors?: readonly string[];
 };
+
+function getForwardedError(info: unknown, forwardedErrors: readonly string[]): string | undefined {
+  const message =
+    info != null && typeof info === 'object' ? (info as { message?: unknown }).message : undefined;
+  return typeof message === 'string' && forwardedErrors.includes(message) ? message : undefined;
+}
 
 export function redirectToAuthFailure(
   res: Response,
@@ -94,6 +102,7 @@ export function createOpenIDCallbackAuthenticator({
   logger,
   clientDomain,
   authFailedError,
+  forwardedErrors = [],
 }: OpenIDCallbackAuthenticatorOptions): (
   req: OpenIDCallbackRequest,
   res: Response,
@@ -119,7 +128,10 @@ export function createOpenIDCallbackAuthenticator({
 
         if (!user) {
           logOpenIDCallbackFailure({ logger, req, err, info });
-          return redirectToAuthFailure(res, { clientDomain, authFailedError });
+          return redirectToAuthFailure(res, {
+            clientDomain,
+            authFailedError: getForwardedError(info, forwardedErrors) ?? authFailedError,
+          });
         }
 
         if (typeof req.logIn !== 'function') {

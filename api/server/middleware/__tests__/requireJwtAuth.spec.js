@@ -70,6 +70,9 @@ jest.mock('@librechat/api', () => {
     isEnabled: jest.fn(() => false),
     recordRumProxyRequest: jest.fn(),
     getAuthFailureReasonCategory: actualApi.getAuthFailureReasonCategory,
+    SsoRefusals: actualApi.SsoRefusals,
+    sendSsoRefusal: actualApi.sendSsoRefusal,
+    needsSsoSession: actualApi.needsSsoSession,
     buildSafeAuthLogContext: actualApi.buildSafeAuthLogContext,
     getValidOpenIdReuseUserId: (token) => {
       if (!token || !process.env.JWT_REFRESH_SECRET) {

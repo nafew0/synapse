@@ -15,6 +15,8 @@ const { CacheKeys, ErrorTypes, SystemRoles } = require('librechat-data-provider'
 const {
   isEnabled,
   logHeaders,
+  readSsoOnly,
+  isBdrenIssuer,
   safeStringify,
   findOpenIDUser,
   getOpenIdEmail,
@@ -680,6 +682,13 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
 
   const email = getOpenIdEmail(userinfo);
   const openidIssuer = getOpenIdIssuer(claims, openidConfig);
+  const ssoOnly = readSsoOnly();
+  if (ssoOnly.enabled && !isBdrenIssuer(openidIssuer, ssoOnly)) {
+    logger.error('[openidStrategy] SSO-only: refused a login from an issuer other than BDREN', {
+      issuer: openidIssuer,
+    });
+    throw new Error(ErrorTypes.AUTH_FAILED);
+  }
 
   const baseConfig = await getAppConfig({ baseOnly: true });
   if (!isEmailDomainAllowed(email, baseConfig?.registration?.allowedDomains)) {
@@ -700,6 +709,12 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   let user = result.user;
   const error = result.error;
 
+  if (error && ssoOnly.enabled && result.conflictingProvider) {
+    logger.warn('[openidStrategy] SSO-only: the account for this email is not linked to bdren.ai', {
+      provider: result.conflictingProvider,
+    });
+    throw new Error(ErrorTypes.ACCOUNT_NOT_LINKED);
+  }
   if (error) {
     throw new Error(ErrorTypes.AUTH_FAILED);
   }
@@ -1012,7 +1027,7 @@ function createOpenIDCallback(existingUsersOnly) {
       if (err.message === 'Email domain not allowed') {
         return done(null, false, { message: err.message });
       }
-      if (err.message === ErrorTypes.AUTH_FAILED) {
+      if (err.message === ErrorTypes.AUTH_FAILED || err.message === ErrorTypes.ACCOUNT_NOT_LINKED) {
         return done(null, false, { message: err.message });
       }
       if (err.message && err.message.includes('role to log in')) {
@@ -1063,6 +1078,13 @@ const setupOpenIdAdmin = (openidConfig) => {
  */
 async function setupOpenId() {
   try {
+    const ssoOnly = readSsoOnly();
+    if (ssoOnly.enabled && !isBdrenIssuer(process.env.OPENID_ISSUER, ssoOnly)) {
+      logger.error(
+        '[openidStrategy] SSO-only: OPENID_ISSUER is not BDREN_ISSUER; OpenID login is not registered',
+      );
+      return null;
+    }
     const usePKCE = isEnabled(process.env.OPENID_USE_PKCE);
     const shouldGenerateNonce = isEnabled(process.env.OPENID_GENERATE_NONCE);
 

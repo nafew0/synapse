@@ -26,6 +26,10 @@ jest.mock('@librechat/data-schemas', () => ({
   tenantStorage: { run: jest.fn((ctx, fn) => fn()) },
 }));
 
+jest.mock('~/server/middleware/ssoOnly', () => ({
+  requireSuperadminWhenSsoOnly: (_req, _res, next) => next(),
+}));
+
 jest.mock('@librechat/api', () => {
   class AdminRefreshError extends Error {
     constructor(code, status, message) {

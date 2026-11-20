@@ -2,6 +2,7 @@ const express = require('express');
 const { runAsSystem } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const requirePlatformSuperadmin = require('~/server/middleware/platformAdmin');
+const { refuseManaged } = require('~/server/middleware/ssoOnly');
 const models = require('~/db/models');
 const { resendUserVerificationEmail } = require('~/server/services/AuthService');
 const { isPlatformAdminEmail } = require('~/server/services/platformAdmin');
@@ -153,7 +154,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.post('/standalone/invites', async (req, res) => {
+router.post('/standalone/invites', refuseManaged, async (req, res) => {
   try {
     const result = await createStandaloneInvite({
       email: req.body?.email,
@@ -195,7 +196,7 @@ router.get('/:id/usage', async (req, res) => {
   }
 });
 
-router.post('/standalone/invites/:inviteId/resend', async (req, res) => {
+router.post('/standalone/invites/:inviteId/resend', refuseManaged, async (req, res) => {
   try {
     const result = await resendStandaloneInvite({
       inviteId: req.params.inviteId,
@@ -245,7 +246,7 @@ router.get('/invites/resendable', async (req, res) => {
  * A superadmin may resend across every institution at once, so `tenantId` is
  * optional here — unlike the institution-admin route, which is always scoped.
  */
-router.post('/invites/resend-bulk', async (req, res) => {
+router.post('/invites/resend-bulk', refuseManaged, async (req, res) => {
   try {
     const result = await resendPendingInvites({
       tenantId: req.body?.tenantId?.trim() || undefined,
@@ -260,7 +261,7 @@ router.post('/invites/resend-bulk', async (req, res) => {
   }
 });
 
-router.post('/invites/:inviteId/resend', async (req, res) => {
+router.post('/invites/:inviteId/resend', refuseManaged, async (req, res) => {
   try {
     const result = await resendInstitutionInvite({
       tenantId: requireTenantId(req),
@@ -291,7 +292,7 @@ router.post('/invites/:inviteId/revoke', async (req, res) => {
   }
 });
 
-router.post('/:id/resend-verification', async (req, res) => {
+router.post('/:id/resend-verification', refuseManaged, async (req, res) => {
   try {
     const tenantId = requireTenantId(req);
     const user = await runAsSystem(() =>

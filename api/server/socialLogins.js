@@ -1,7 +1,7 @@
 const passport = require('passport');
 const session = require('express-session');
 const { CacheKeys } = require('librechat-data-provider');
-const { math, isEnabled, shouldUseSecureCookie } = require('@librechat/api');
+const { math, isEnabled, readSsoOnly, shouldUseSecureCookie } = require('@librechat/api');
 const { logger, DEFAULT_SESSION_EXPIRY } = require('@librechat/data-schemas');
 const {
   openIdJwtLogin,
@@ -71,12 +71,27 @@ async function configureOpenId(app) {
   logger.info('OpenID Connect configured successfully.');
 }
 
+const isOpenIdConfigured = () =>
+  !!process.env.OPENID_CLIENT_ID &&
+  (isEnabled(process.env.OPENID_USE_PKCE) || !!process.env.OPENID_CLIENT_SECRET?.trim()) &&
+  !!process.env.OPENID_ISSUER &&
+  !!process.env.OPENID_SCOPE &&
+  !!process.env.OPENID_SESSION_SECRET;
+
 /**
  *
  * @param {Express.Application} app
  */
 const configureSocialLogins = async (app) => {
   logger.info('Configuring social logins...');
+
+  if (readSsoOnly().enabled) {
+    logger.info('[socialLogins] SSO-only: only BDREN OpenID is registered');
+    if (isOpenIdConfigured()) {
+      await configureOpenId(app);
+    }
+    return;
+  }
 
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
     passport.use(googleLogin());
@@ -98,13 +113,7 @@ const configureSocialLogins = async (app) => {
     passport.use(appleLogin());
     passport.use('appleAdmin', appleAdminLogin());
   }
-  if (
-    process.env.OPENID_CLIENT_ID &&
-    (isEnabled(process.env.OPENID_USE_PKCE) || process.env.OPENID_CLIENT_SECRET?.trim()) &&
-    process.env.OPENID_ISSUER &&
-    process.env.OPENID_SCOPE &&
-    process.env.OPENID_SESSION_SECRET
-  ) {
+  if (isOpenIdConfigured()) {
     await configureOpenId(app);
   }
   if (

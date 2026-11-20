@@ -38,6 +38,7 @@ const { getAppConfig } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
 const { getOpenIdConfig } = require('~/strategies');
 const middleware = require('~/server/middleware');
+const { requireSuperadminWhenSsoOnly } = require('~/server/middleware/ssoOnly');
 const { ensurePlatformSuperadminForUser } = require('~/server/services/platformAdmin');
 
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
@@ -161,6 +162,7 @@ router.post(
   middleware.checkBan,
   middleware.validateEmailLogin,
   middleware.requireLocalAuth,
+  requireSuperadminWhenSsoOnly,
   tenantContextMiddleware,
   requireAdminAccess,
   setBalanceConfig,
