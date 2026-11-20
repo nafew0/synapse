@@ -43,6 +43,7 @@ function createAuthenticator(
     res: Response,
     next: NextFunction,
   ) => void,
+  extra: Partial<OpenIDCallbackAuthenticatorOptions> = {},
 ) {
   const passport = {
     authenticate: jest.fn((_strategy: 'openid', _options, callback: CallbackFn) => {
@@ -56,6 +57,7 @@ function createAuthenticator(
     logger,
     clientDomain: 'http://client.test',
     authFailedError: 'auth_failed',
+    ...extra,
   };
 
   return {
@@ -244,6 +246,36 @@ describe('OpenID OAuth callback helpers', () => {
       'http://client.test/login?redirect=false&error=auth_failed',
     );
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('passes a forwarded failure to the login page so it can explain it', () => {
+    const req = createRequest();
+    const res = createResponse();
+    const { middleware } = createAuthenticator(
+      (callback) => callback(null, false, { message: 'account_not_linked' }),
+      { forwardedErrors: ['account_not_linked'] },
+    );
+
+    middleware(req, res, createNext());
+
+    expect(res.redirect).toHaveBeenCalledWith(
+      'http://client.test/login?redirect=false&error=account_not_linked',
+    );
+  });
+
+  it('keeps the generic failure for messages that are not forwarded', () => {
+    const req = createRequest();
+    const res = createResponse();
+    const { middleware } = createAuthenticator(
+      (callback) => callback(null, false, { message: 'Email domain not allowed' }),
+      { forwardedErrors: ['account_not_linked'] },
+    );
+
+    middleware(req, res, createNext());
+
+    expect(res.redirect).toHaveBeenCalledWith(
+      'http://client.test/login?redirect=false&error=auth_failed',
+    );
   });
 
   it('logs login errors and sends them to the error handler', () => {

@@ -8,6 +8,7 @@ const {
 const { logger, runAsSystem, INSTITUTION_ADMIN_ROLE } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const requirePlatformSuperadmin = require('~/server/middleware/platformAdmin');
+const { refuseManaged } = require('~/server/middleware/ssoOnly');
 const {
   appointInstitutionAdmin,
   ensureInstitutionAdminRole,
@@ -257,7 +258,7 @@ router.delete('/:tenantId', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', refuseManaged, async (req, res) => {
   try {
     const {
       tenantId,
@@ -916,7 +917,7 @@ router.put('/:tenantId/chat-access', async (req, res) => {
   }
 });
 
-router.post('/:tenantId/admins', async (req, res) => {
+router.post('/:tenantId/admins', refuseManaged, async (req, res) => {
   const { tenantId } = req.params;
   try {
     const { userId, email, name } = req.body ?? {};

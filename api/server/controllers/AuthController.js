@@ -5,6 +5,9 @@ const { logger } = require('@librechat/data-schemas');
 const {
   math,
   isEnabled,
+  SsoRefusals,
+  mayHoldSession,
+  sendSsoRefusal,
   findOpenIDUser,
   getOpenIdIssuer,
   buildOpenIDRefreshParams,
@@ -25,6 +28,7 @@ const {
   findUser,
 } = require('~/models');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
+const { isPlatformSuperadmin } = require('~/server/services/platformAdmin');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
 
 const AUTH_REFRESH_USER_PROJECTION = '-password -__v -totpSecret -backupCodes -federatedTokens';
@@ -272,6 +276,9 @@ const refreshController = async (req, res) => {
     const user = await getUserById(payload.id, AUTH_REFRESH_USER_PROJECTION);
     if (!user) {
       return res.status(401).redirect('/login');
+    }
+    if (!(await mayHoldSession(user, isPlatformSuperadmin))) {
+      return sendSsoRefusal(res, SsoRefusals.session);
     }
 
     const userId = payload.id;

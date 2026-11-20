@@ -3,6 +3,9 @@ const passport = require('passport');
 const { logger } = require('@librechat/data-schemas');
 const {
   isEnabled,
+  SsoRefusals,
+  sendSsoRefusal,
+  needsSsoSession,
   tenantContextMiddleware,
   getAuthFailureReasonCategory,
   buildSafeAuthLogContext,
@@ -193,6 +196,9 @@ const requireJwtAuth = (req, res, next) => {
           message: 'Your account is moving to another institution. Try again in a moment.',
           code: ACCOUNT_MOVING_CODE,
         });
+      }
+      if (needsSsoSession(user, req.originalUrl)) {
+        return sendSsoRefusal(res, SsoRefusals.session);
       }
       req.user = user;
       req.authStrategy = strategy;

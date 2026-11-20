@@ -3,6 +3,7 @@ const { createAdminMembersHandlers } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { resolveAdminTenant, requireTenant } = require('~/server/middleware/adminTenant');
+const { refuseManaged } = require('~/server/middleware/ssoOnly');
 const { requireJwtAuth } = require('~/server/middleware');
 const {
   HttpError,
@@ -153,7 +154,7 @@ router.get('/search', requireReadUsers, async (req, res) => {
   }
 });
 
-router.post('/invite', requireManageUsers, async (req, res) => {
+router.post('/invite', refuseManaged, requireManageUsers, async (req, res) => {
   const tenantId = requireTenant(req, res);
   if (!tenantId) {
     return;
@@ -178,7 +179,7 @@ router.post('/invite', requireManageUsers, async (req, res) => {
   }
 });
 
-router.post('/invites/import/dry-run', requireManageUsers, async (req, res) => {
+router.post('/invites/import/dry-run', refuseManaged, requireManageUsers, async (req, res) => {
   const tenantId = requireTenant(req, res);
   if (!tenantId) {
     return;
@@ -195,7 +196,7 @@ router.post('/invites/import/dry-run', requireManageUsers, async (req, res) => {
   }
 });
 
-router.post('/invites/import', requireManageUsers, async (req, res) => {
+router.post('/invites/import', refuseManaged, requireManageUsers, async (req, res) => {
   const tenantId = requireTenant(req, res);
   if (!tenantId) {
     return;
@@ -246,7 +247,7 @@ router.get('/invites/resendable', requireReadUsers, async (req, res) => {
 });
 
 /** Reissues every invitation in one audience; see `resendPendingInvites`. */
-router.post('/invites/resend-bulk', requireManageUsers, async (req, res) => {
+router.post('/invites/resend-bulk', refuseManaged, requireManageUsers, async (req, res) => {
   const tenantId = requireTenant(req, res);
   if (!tenantId) {
     return;
@@ -265,7 +266,7 @@ router.post('/invites/resend-bulk', requireManageUsers, async (req, res) => {
   }
 });
 
-router.post('/invites/:inviteId/resend', requireManageUsers, async (req, res) => {
+router.post('/invites/:inviteId/resend', refuseManaged, requireManageUsers, async (req, res) => {
   const tenantId = requireTenant(req, res);
   if (!tenantId) {
     return;

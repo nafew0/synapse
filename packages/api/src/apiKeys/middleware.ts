@@ -4,6 +4,7 @@ import type { Request, Response, NextFunction } from 'express';
 import type { IUser } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
 import { getRemoteAgentPermissions } from './service';
+import { SsoRefusals, needsSsoSession } from '~/auth/sso';
 
 export interface ApiKeyAuthDependencies {
   validateAgentApiKey: (apiKey: string) => Promise<{
@@ -86,6 +87,16 @@ export function createRequireApiKeyAuth(deps: ApiKeyAuthDependencies) {
             message: 'User not found for this API key',
             type: 'invalid_request_error',
             code: 'invalid_api_key',
+          },
+        });
+      }
+
+      if (needsSsoSession(user, req.originalUrl)) {
+        return res.status(SsoRefusals.session.status).json({
+          error: {
+            message: `This API key belongs to an account that does not sign in through bdren.ai. ${SsoRefusals.session.message}`,
+            type: 'invalid_request_error',
+            code: SsoRefusals.session.code,
           },
         });
       }

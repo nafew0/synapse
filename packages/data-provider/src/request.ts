@@ -235,6 +235,28 @@ const startAuthRecovery = (retryRefresh?: boolean) => {
   return state.refreshPromise;
 };
 
+/** The server's answer to a session that did not come through bdren.ai SSO; refreshing cannot fix it. */
+const SSO_REQUIRED_CODE = 'SSO_REQUIRED';
+
+const isSsoRequiredBody = (body: unknown): boolean =>
+  body != null &&
+  typeof body === 'object' &&
+  (body as { code?: unknown }).code === SSO_REQUIRED_CODE;
+
+const isSsoRequiredError = (error: any): boolean =>
+  error?.response?.status === 401 && isSsoRequiredBody(error.response.data);
+
+const isSsoRequiredResponse = async (response: Response): Promise<boolean> => {
+  if (response.status !== 401) {
+    return false;
+  }
+  try {
+    return isSsoRequiredBody(await response.clone().json());
+  } catch {
+    return false;
+  }
+};
+
 const redirectToLoginOnce = () => {
   if (isAuthRedirectInProgress()) {
     return;
@@ -390,6 +412,11 @@ async function _authenticatedFetch(
     return response;
   }
 
+  if (await isSsoRequiredResponse(response)) {
+    redirectToLoginOnce();
+    return response;
+  }
+
   let refreshedToken: string | null;
   try {
     refreshedToken = await startAuthRecovery(false);
@@ -442,6 +469,12 @@ if (typeof window !== 'undefined') {
 
       const isRefreshRequest = originalRequest.url?.includes('/api/auth/refresh') === true;
       if (isAuthRecoveryEndpoint(originalRequest.url) && !isRefreshRequest) {
+        return Promise.reject(error);
+      }
+
+      /** The session did not come through bdren.ai SSO: sign in again instead of refreshing. */
+      if (!isRefreshRequest && isSsoRequiredError(error)) {
+        redirectToLoginOnce();
         return Promise.reject(error);
       }
 

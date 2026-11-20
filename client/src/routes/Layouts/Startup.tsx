@@ -6,6 +6,9 @@ import { useGetStartupConfig } from '~/data-provider';
 import AuthLayout from '~/components/Auth/AuthLayout';
 import { REDIRECT_PARAM, SESSION_KEY } from '~/utils';
 
+/** Pages with nothing to do while sign-in is only through bdren.ai. */
+const SSO_ONLY_HIDDEN_PATHS = new Set(['/register', '/forgot-password', '/reset-password']);
+
 const headerMap: Record<string, TranslationKeys> = {
   '/login': 'com_auth_welcome_back',
   '/register': 'com_auth_create_account',
@@ -42,6 +45,12 @@ export default function StartupLayout({ isAuthenticated }: { isAuthenticated?: b
       setStartupConfig(data);
     }
   }, [isAuthenticated, navigate, data]);
+
+  useEffect(() => {
+    if (startupConfig?.ssoOnly === true && SSO_ONLY_HIDDEN_PATHS.has(location.pathname)) {
+      navigate('/login', { replace: true });
+    }
+  }, [startupConfig?.ssoOnly, location.pathname, navigate]);
 
   useEffect(() => {
     document.title = startupConfig?.appTitle || 'LibreChat';

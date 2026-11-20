@@ -18,6 +18,7 @@ import {
   selectOpenIdRole,
 } from '../auth/openidRoleSync';
 import { findOpenIDUser, getOpenIdEmail, normalizeOpenIdIssuer } from '../auth/openid';
+import { SsoRefusals, sendSsoRefusal, needsSsoSession } from '../auth/sso';
 import { getEnvProxyDispatcher, getHttpsProxyAgent } from '~/utils/proxy';
 import { tenantContextMiddleware } from './tenant';
 import { isEnabled, math } from '~/utils';
@@ -686,6 +687,12 @@ export function createRemoteAgentAuth({
           return;
         }
         res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      if (needsSsoSession(userResolution.user, req.originalUrl)) {
+        logger.warn('[remoteAgentAuth] OIDC user does not sign in through bdren.ai SSO');
+        sendSsoRefusal(res, SsoRefusals.session);
         return;
       }
 

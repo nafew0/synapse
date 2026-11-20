@@ -1698,6 +1698,8 @@ export type TStartupConfig = {
   /** Path of the admin console when it is hosted alongside this app, e.g.
    *  `/adminpanel`. Unset when the console is not publicly reachable. */
   adminPanelPath?: string;
+  /** Sign-in only through BDREN OpenID: the login page shows only that button and redirects to it. */
+  ssoOnly?: boolean;
   emailLoginEnabled: boolean;
   registrationEnabled: boolean;
   socialLoginEnabled: boolean;
@@ -2878,6 +2880,10 @@ export enum ErrorTypes {
    * Generic Authentication failure
    */
   AUTH_FAILED = 'auth_failed',
+  /**
+   * An OpenID login matched an account that still signs in with a password (not yet moved to bdren.ai)
+   */
+  ACCOUNT_NOT_LINKED = 'account_not_linked',
   /**
    * Model refused to respond (content policy violation)
    */

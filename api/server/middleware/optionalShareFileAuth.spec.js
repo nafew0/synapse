@@ -2,11 +2,19 @@ const mockVerify = jest.fn();
 const mockGetUserById = jest.fn();
 const mockFindSession = jest.fn();
 const mockRunAsSystem = jest.fn((fn) => fn());
+const mockNeedsSsoSession = jest.fn(() => false);
 
 jest.mock('jsonwebtoken', () => ({ verify: (...args) => mockVerify(...args) }));
-jest.mock('@librechat/api', () => ({ isEnabled: (v) => v === 'true' || v === true }), {
-  virtual: true,
-});
+jest.mock(
+  '@librechat/api',
+  () => ({
+    isEnabled: (v) => v === 'true' || v === true,
+    needsSsoSession: (...args) => mockNeedsSsoSession(...args),
+  }),
+  {
+    virtual: true,
+  },
+);
 jest.mock(
   '@librechat/data-schemas',
   () => ({
@@ -57,6 +65,21 @@ describe('optionalShareFileAuth', () => {
     expect(mockFindSession).toHaveBeenCalledWith({ userId: 'viewer-1', refreshToken: 'good.jwt' });
     expect(mockRunAsSystem).toHaveBeenCalledTimes(2);
     expect(req.user).toMatchObject({ id: 'viewer-1', role: 'USER' });
+  });
+
+  it('treats a viewer who did not sign in through bdren.ai as anonymous while SSO-only is on', async () => {
+    mockNeedsSsoSession.mockReturnValueOnce(true);
+    mockVerify.mockReturnValue({ id: 'viewer-3' });
+    mockFindSession.mockResolvedValue({ _id: 'session-3' });
+    mockGetUserById.mockResolvedValue({ _id: 'viewer-3', provider: 'local' });
+    const req = { headers: { cookie: 'refreshToken=good.jwt' }, originalUrl: '/api/share/abc' };
+    const next = await run(req);
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(mockNeedsSsoSession).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'local' }),
+      '/api/share/abc',
+    );
+    expect(req.user).toBeUndefined();
   });
 
   it('defaults the role to USER when the record has none', async () => {

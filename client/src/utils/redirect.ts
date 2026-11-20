@@ -39,3 +39,32 @@ export function persistRedirectToSession(value: string): void {
     sessionStorage.setItem(SESSION_KEY, value);
   }
 }
+
+const LOGGED_OUT_KEY = 'explicit_logout';
+
+/** Remembers, for this tab, that the user signed out, so the login page does not send them straight back to SSO. */
+export function markExplicitLogout(): void {
+  try {
+    sessionStorage.setItem(LOGGED_OUT_KEY, '1');
+  } catch {
+    /* storage unavailable: the login page may redirect again, which is safe */
+  }
+}
+
+/** Whether the user signed out in this tab since the login page last cleared the mark. */
+export function wasExplicitLogout(): boolean {
+  try {
+    return sessionStorage.getItem(LOGGED_OUT_KEY) != null;
+  } catch {
+    return false;
+  }
+}
+
+/** Clears the sign-out mark, so the next visit to the login page redirects to SSO again. */
+export function clearExplicitLogout(): void {
+  try {
+    sessionStorage.removeItem(LOGGED_OUT_KEY);
+  } catch {
+    /* storage unavailable: nothing to clear */
+  }
+}

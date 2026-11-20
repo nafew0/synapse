@@ -2776,6 +2776,62 @@ describe('setupOpenId', () => {
       expect(activateProvisionedMember).not.toHaveBeenCalled();
     });
   });
+
+  describe('SSO-only through bdren.ai', () => {
+    const passportMock = () => require('openid-client/passport');
+
+    beforeEach(async () => {
+      process.env.BDREN_ISSUER = 'https://fake-issuer.com/';
+      process.env.BDREN_SSO_ONLY = 'true';
+      await setupOpenId();
+      verifyCallback = passportMock().__getVerifyCallbackByName('openid');
+    });
+
+    afterEach(() => {
+      delete process.env.BDREN_ISSUER;
+      delete process.env.BDREN_SSO_ONLY;
+    });
+
+    it('signs in a user from the BDREN issuer', async () => {
+      const { user } = await validate(tokenset);
+
+      expect(user).toMatchObject({ provider: 'openid', openidId: '1234' });
+      expect(createUser).toHaveBeenCalled();
+    });
+
+    it('refuses a token from any other issuer before looking up or creating an account', async () => {
+      getOpenIdIssuer.mockReturnValueOnce('https://login.example.com');
+
+      const { user, details } = await validate(tokenset);
+
+      expect(user).toBe(false);
+      expect(details).toEqual({ message: ErrorTypes.AUTH_FAILED });
+      expect(findUser).not.toHaveBeenCalled();
+      expect(createUser).not.toHaveBeenCalled();
+    });
+
+    it('tells a password account that is not yet linked to bdren.ai, and changes nothing', async () => {
+      findUser.mockImplementation(async (query) =>
+        query.email ? { _id: 'local-1', provider: 'local', email: query.email } : null,
+      );
+
+      const { user, details } = await validate(tokenset);
+
+      expect(user).toBe(false);
+      expect(details).toEqual({ message: ErrorTypes.ACCOUNT_NOT_LINKED });
+      expect(createUser).not.toHaveBeenCalled();
+      expect(updateUser).not.toHaveBeenCalled();
+    });
+
+    it('does not register OpenID when OPENID_ISSUER is not the BDREN issuer', async () => {
+      process.env.BDREN_ISSUER = 'https://auth.bdren.test';
+      const passport = require('passport');
+      passport.use.mockClear();
+
+      await expect(setupOpenId()).resolves.toBeNull();
+      expect(passport.use).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('getRoleSource', () => {
