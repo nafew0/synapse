@@ -90,6 +90,15 @@ export async function syncAlerts(
   return { raised, resolved: resolution.modifiedCount };
 }
 
+/** Resolves the open alert with this key, if any; returns whether one was open. */
+export async function resolveAlert(key: string, now: Date = new Date()): Promise<boolean> {
+  const result = await getAlertModel().updateOne(
+    { key, status: 'open' },
+    { $set: { status: 'resolved', resolvedAt: now } },
+  );
+  return result.modifiedCount > 0;
+}
+
 /** Open alerts first, then recently resolved ones, newest first. */
 export async function listAlerts(now: Date = new Date()): Promise<PlatformAlertRecord[]> {
   const since = new Date(now.getTime() - RESOLVED_VISIBLE_DAYS * 86_400_000);

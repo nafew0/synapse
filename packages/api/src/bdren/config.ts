@@ -43,3 +43,26 @@ export function readBdrenConfig(env: NodeJS.ProcessEnv = process.env): BdrenConf
     },
   };
 }
+
+/**
+ * ZITADEL scope that puts the user's own organization (`urn:zitadel:iam:user:resourceowner:*`)
+ * in the ID token. bdren.ai reads the organization from the token to route institution members, so
+ * with the link on Synapse asks for it too; without it the token never carries the claim.
+ */
+export const ZITADEL_ORGANIZATION_SCOPE = 'urn:zitadel:iam:user:resourceowner';
+
+const DEFAULT_OPENID_SCOPE = 'openid profile email';
+
+/** The login scope, plus the organization scope when the bdren.ai link is on and it is not already asked for. */
+export function withOrganizationScope(
+  scope: string | undefined,
+  config: BdrenConfig,
+): string | undefined {
+  if (!config.enabled) {
+    return scope;
+  }
+  const scopes = (scope?.trim() || DEFAULT_OPENID_SCOPE).split(/\s+/);
+  return scopes.includes(ZITADEL_ORGANIZATION_SCOPE)
+    ? scopes.join(' ')
+    : [...scopes, ZITADEL_ORGANIZATION_SCOPE].join(' ');
+}

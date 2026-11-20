@@ -10,6 +10,8 @@ export * from './credits';
 export * from './carryover';
 export * from './webhook';
 export * from './provision';
+export * from './place';
+export * from './ownership';
 export * from './meter';
 export * from './managed';
 export * from './usage';

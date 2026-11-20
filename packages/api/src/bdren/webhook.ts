@@ -20,6 +20,7 @@ import { carryOverUsage } from './carryover';
 const eventSchema = z.object({
   id: z.string().min(1).max(200),
   type: z.string().min(1).max(100),
+  reason: z.string().nullish(),
   user: z.object({ issuer: z.string(), subject: z.string() }).nullish(),
   organization: z
     .object({
@@ -43,10 +44,15 @@ export interface WebhookDeps {
 
 /** Events that mean an organization is live; teardown (expired, cancelled, downgraded, suspended) never creates one. */
 const LIVE_SUBSCRIPTION_EVENT = /^subscription\.(activated|renewed|upgraded|limits_changed)$/;
+/** `limits_changed` follows every change and names the original event in `reason`; a teardown must not create anything. */
+const TEARDOWN_REASON = /(^|\.)(expired|cancel+ed|downgraded)$/;
 const COVERAGE_EVENT = 'membership.coverage_changed';
 
 /** A membership change names a person; the same event type without one is an organization status change. */
-function shouldProvision(event: { type: string; user?: unknown }): boolean {
+function shouldProvision(event: { type: string; reason?: string | null; user?: unknown }): boolean {
+  if (TEARDOWN_REASON.test(event.reason ?? '')) {
+    return false;
+  }
   return (
     LIVE_SUBSCRIPTION_EVENT.test(event.type) ||
     (event.type === COVERAGE_EVENT && event.user != null)

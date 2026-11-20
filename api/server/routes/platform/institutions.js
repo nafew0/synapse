@@ -1,5 +1,10 @@
 const express = require('express');
-const { isUsageAccount, isReservedTenantId, isChatAccessContact } = require('@librechat/api');
+const {
+  isUsageAccount,
+  isReservedTenantId,
+  isChatAccessContact,
+  resolveAlert,
+} = require('@librechat/api');
 const { logger, runAsSystem, INSTITUTION_ADMIN_ROLE } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const requirePlatformSuperadmin = require('~/server/middleware/platformAdmin');
@@ -495,6 +500,11 @@ router.put('/:tenantId/bdren-organization', async (req, res) => {
         after: organizationId,
       },
     });
+    if (organizationId) {
+      await resolveAlert(`institution_link:${organizationId}`).catch((error) =>
+        logger.error('[platform/institutions] Failed to resolve the link alert', error),
+      );
+    }
     return res.status(200).json({ tenantId, bdrenOrganizationId: organizationId });
   } catch (error) {
     if (error?.code === 11000) {

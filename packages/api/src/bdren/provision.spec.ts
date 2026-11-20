@@ -7,8 +7,10 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IInstitution, IAuditLog, BdrenAllowancePayload } from '@librechat/data-schemas';
 import type { AddressInfo } from 'net';
 import type { BdrenConfig } from './types';
-import { getAlertModel } from '~/admin/alerts/store';
+import { getAlertModel, resolveAlert } from '~/admin/alerts/store';
+import { createMemberPlacer } from './place';
 import { createProvisioner, tenantIdFromSlug } from './provision';
+import { withOrganizationScope } from './config';
 import { createAllowanceService } from './allowance';
 import { createAllowanceClient } from './client';
 import { createWebhookHandler } from './webhook';
@@ -142,29 +144,27 @@ beforeEach(async () => {
     service: createAllowanceService({ config, client }),
     recordAuditEntry: createMethods(mongoose).recordAuditEntry,
     onCreated,
-    placeMember,
+    place,
   });
 });
 
 /** Stands in for the activation service: claims a seat or throws, like `activateProvisionedMember`. */
-async function placeMember(userId: string, tenantId: string) {
+async function activate({ userId, tenantId }: { userId: string; tenantId: string }) {
   const institution = await Institution().findOne({ tenantId }).lean<IInstitution>();
   const max = institution?.limits?.maxActiveMembers;
   if (max != null && (institution?.stats?.activeMembers ?? 0) >= max) {
-    return null;
+    throw new Error('Seat limit reached');
   }
   await Institution().updateOne({ tenantId }, { $inc: { 'stats.activeMembers': 1 } });
-  return runAsSystem(() =>
+  const user = await runAsSystem(() =>
     User()
-      .findOneAndUpdate(
-        { _id: userId, tenantId: null },
-        { $set: { tenantId, membershipStatus: 'active' } },
-        { new: true },
-      )
+      .findByIdAndUpdate(userId, { $set: { membershipStatus: 'active' } }, { new: true })
       .lean<Record<string, unknown>>()
       .exec(),
   );
+  return user as Record<string, unknown>;
 }
+const place = createMemberPlacer({ activate });
 
 const User = () => mongoose.models.User;
 let seq = 0;
@@ -432,12 +432,14 @@ describe('first login of a new member', () => {
       client: createAllowanceClient(config),
       service: createAllowanceService({ config, client: createAllowanceClient(config) }),
       recordAuditEntry: createMethods(mongoose).recordAuditEntry,
-      placeMember: async () => {
+      place: async () => {
         throw new Error('Seat limit reached');
       },
     });
 
-    expect(await failing.adoptNewMember(String(user._id), 'dhaka-university')).toBeNull();
+    expect(await failing.adoptNewMember(String(user._id), 'dhaka-university')).toEqual({
+      status: 'refused',
+    });
 
     const saved = await User().findById(user._id).lean<typeof user>();
     expect(saved?.tenantId).toBeUndefined();
@@ -449,7 +451,131 @@ describe('first login of a new member', () => {
     await linked();
     const user = await makeUser();
     const placed = await provisioner.adoptNewMember(String(user._id), 'dhaka-university');
-    expect(placed).toMatchObject({ tenantId: 'dhaka-university', membershipStatus: 'active' });
+    expect(placed.status).toBe('placed');
+    expect(placed).toMatchObject({
+      user: { tenantId: 'dhaka-university', membershipStatus: 'active' },
+    });
+  });
+});
+
+describe('placement safety', () => {
+  it('keeps a user tenantless when the target is full, with no suspended row left', async () => {
+    await linked({ limits: { maxActiveMembers: 1 }, stats: { activeMembers: 1 } });
+    const user = await makeUser();
+    expect(await place(String(user._id), 'dhaka-university')).toEqual({ status: 'refused' });
+    expect((await User().findById(user._id).lean<typeof user>())?.tenantId).toBeUndefined();
+    expect(await User().countDocuments({ membershipStatus: 'suspended' })).toBe(0);
+  });
+
+  it.each([
+    ['File', { user: new mongoose.Types.ObjectId(), filename: 'a', file_id: 'f', bytes: 1 }],
+    ['MemoryEntry', { key: 'k', value: 'v', tokenCount: 1 }],
+    ['PromptGroup', { name: 'g' }],
+    ['Preset', { presetId: 'p', title: 't' }],
+    ['SharedLink', { shareId: 's', conversationId: 'c' }],
+  ])('refuses to move a user who owns a %s', async (name, fields) => {
+    await linked();
+    const user = await makeUser();
+    const owner = { MemoryEntry: 'userId', PromptGroup: 'author' }[name] ?? 'user';
+    await mongoose.models[name].collection.insertOne({
+      ...fields,
+      [owner]: ['Preset', 'SharedLink'].includes(name) ? String(user._id) : user._id,
+    });
+
+    expect(await place(String(user._id), 'dhaka-university')).toEqual({ status: 'refused' });
+    expect((await User().findById(user._id).lean<typeof user>())?.tenantId).toBeUndefined();
+  });
+
+  it('rolls back, without undoing a later change, only while the member is still suspended', async () => {
+    await linked();
+    const user = await makeUser();
+    const racing = createMemberPlacer({
+      activate: async ({ userId }) => {
+        await runAsSystem(() =>
+          User()
+            .updateOne({ _id: userId }, { $set: { membershipStatus: 'active' } })
+            .exec(),
+        );
+        throw new Error('late failure');
+      },
+    });
+    expect(await racing(String(user._id), 'dhaka-university')).toEqual({ status: 'refused' });
+    const saved = await runAsSystem(() => User().findById(user._id).lean<typeof user>().exec());
+    expect(saved).toMatchObject({ tenantId: 'dhaka-university', membershipStatus: 'active' });
+  });
+
+  it('removes the duplicate a concurrent first login created and continues as the existing account', async () => {
+    await linked();
+    const first = await makeUser({ openidId: 'sub-race' });
+    expect((await place(String(first._id), 'dhaka-university')).status).toBe('placed');
+    const second = await makeUser({ openidId: 'sub-race', email: 'second@x.test' });
+
+    const result = await place(String(second._id), 'dhaka-university', { replaceDuplicate: true });
+
+    expect(result.status).toBe('duplicate');
+    expect(String((result as { existing: { _id: unknown } }).existing._id)).toBe(String(first._id));
+    expect(await User().countDocuments({ openidId: 'sub-race' })).toBe(1);
+  });
+
+  it('does not delete anything for a duplicate unless the account is the one just created', async () => {
+    await linked();
+    const first = await makeUser({ openidId: 'sub-race2' });
+    await place(String(first._id), 'dhaka-university');
+    const second = await makeUser({ openidId: 'sub-race2', email: 'again@x.test' });
+    expect(await place(String(second._id), 'dhaka-university')).toEqual({ status: 'refused' });
+    expect(await User().countDocuments({ openidId: 'sub-race2' })).toBe(2);
+  });
+});
+
+describe('an id token reaches bdren.ai even when the answer is cached', () => {
+  it('bypasses the fresh cache and the ETag', async () => {
+    const client = createAllowanceClient(config);
+    const service = createAllowanceService({ config, client });
+    const user = await makeUser();
+    bdren.answers.set(user.openidId as string, institutionAnswer(user.openidId as string));
+    const who = {
+      userId: String(user._id),
+      account: '__individuals__',
+      issuer: ISSUER,
+      subject: user.openidId as string,
+    };
+
+    await service.getAllowance(who);
+    await service.getAllowance(who);
+    expect(bdren.bodies).toHaveLength(1);
+
+    await service.getAllowance({ ...who, idToken: 'tok-cached' });
+    expect(bdren.bodies).toHaveLength(2);
+    expect(bdren.bodies[1].id_token).toBe('tok-cached');
+  });
+});
+
+describe('the link alert', () => {
+  it('is resolved once the institution is linked', async () => {
+    await Institution().create({ tenantId: 'du', slug: 'du', name: 'DU' });
+    await provisioner.ensureInstitutionForOrganization({ id: ORG.id, slug: 'du', name: 'DU' });
+
+    expect(await resolveAlert(`institution_link:${ORG.id}`)).toBe(true);
+    expect(await resolveAlert(`institution_link:${ORG.id}`)).toBe(false);
+    const alert = await mongoose.models.PlatformAlert.findOne({ kind: 'institution_link' }).lean<{
+      status: string;
+    }>();
+    expect(alert?.status).toBe('resolved');
+  });
+});
+
+describe('withOrganizationScope', () => {
+  it('adds the ZITADEL organization scope once, only when the link is on', () => {
+    expect(withOrganizationScope('openid profile email', config)).toBe(
+      'openid profile email urn:zitadel:iam:user:resourceowner',
+    );
+    expect(withOrganizationScope('openid urn:zitadel:iam:user:resourceowner', config)).toBe(
+      'openid urn:zitadel:iam:user:resourceowner',
+    );
+    expect(withOrganizationScope(undefined, config)).toContain('openid profile email urn:zitadel');
+    expect(withOrganizationScope('openid profile email', { ...config, enabled: false })).toBe(
+      'openid profile email',
+    );
   });
 });
 
@@ -521,6 +647,26 @@ describe('webhook for an unknown organization', () => {
     });
     expect(response.status).toBe(204);
     expect(await Institution().countDocuments()).toBe(0);
+  });
+
+  it('creates nothing for the limits_changed that follows a teardown, but does after an activation', async () => {
+    const org = { id: ORG.id, slug: 'du', name: 'Dhaka University' };
+    await deliver({ id: 'evt-exp', type: 'subscription.expired', organization: org });
+    await deliver({
+      id: 'evt-exp-limits',
+      type: 'subscription.limits_changed',
+      reason: 'subscription.expired',
+      organization: org,
+    });
+    expect(await Institution().countDocuments()).toBe(0);
+
+    await deliver({
+      id: 'evt-act-limits',
+      type: 'subscription.limits_changed',
+      reason: 'subscription.activated',
+      organization: org,
+    });
+    expect(await Institution().countDocuments()).toBe(1);
   });
 
   it('does not provision on other event types, and a redelivery adds nothing', async () => {

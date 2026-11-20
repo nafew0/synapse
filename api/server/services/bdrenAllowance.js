@@ -8,6 +8,7 @@ const {
   createAllowanceClient,
   createAllowanceService,
   createProvisioner,
+  createMemberPlacer,
   createWebhookHandler,
   normalizeOpenIdIssuer,
   quotaAccountFor,
@@ -17,39 +18,11 @@ const config = readBdrenConfig();
 const client = createAllowanceClient(config);
 const service = createAllowanceService({ config, client });
 
-/**
- * Puts a user who has no tenant into one as an active member through the same activation the
- * invitation and SSO paths use (seat limit included). On any failure the user is left exactly as
- * they were, without a tenant, and `null` is returned.
- */
-async function placeMember(userId, tenantId) {
-  const { activateProvisionedMember } = require('~/server/services/institutionMembers');
-  const { InstitutionMembershipStatuses } = require('@librechat/data-schemas');
-  const claimed = await runAsSystem(() =>
-    mongoose.models.User.updateOne(
-      { _id: userId, tenantId: null },
-      { $set: { tenantId, membershipStatus: InstitutionMembershipStatuses.SUSPENDED } },
-    ).exec(),
-  );
-  if (claimed.modifiedCount !== 1) {
-    return null;
-  }
-  try {
-    return await activateProvisionedMember({ userId, tenantId });
-  } catch (error) {
-    logger.error(
-      `[bdren] activating ${userId} in ${tenantId} failed; left without a tenant`,
-      error,
-    );
-    await runAsSystem(() =>
-      mongoose.models.User.updateOne(
-        { _id: userId, tenantId },
-        { $unset: { tenantId: 1, membershipStatus: 1 } },
-      ).exec(),
-    );
-    return null;
-  }
-}
+/** Resolved on use: the member service builds the whole model registry at import time. */
+const place = createMemberPlacer({
+  activate: (args) =>
+    require('~/server/services/institutionMembers').activateProvisionedMember(args),
+});
 
 /** Resolved on use: `tenancy` sits on routes' require chains that stub parts of data-schemas. */
 const provisioner = createProvisioner({
@@ -57,7 +30,7 @@ const provisioner = createProvisioner({
   client,
   service,
   recordAuditEntry: (input, options) => require('~/models').recordAuditEntry(input, options),
-  placeMember,
+  place,
   onCreated: (tenantId) =>
     require('~/server/services/tenancy').ensureInstitutionAdminRole(tenantId),
 });

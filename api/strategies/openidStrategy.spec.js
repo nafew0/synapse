@@ -107,7 +107,7 @@ jest.mock('@librechat/api', () => {
 jest.mock('~/server/services/bdrenAllowance', () => ({
   bdrenProvisioner: {
     tenantForNewMember: jest.fn().mockResolvedValue(null),
-    adoptNewMember: jest.fn().mockResolvedValue(null),
+    adoptNewMember: jest.fn().mockResolvedValue({ status: 'refused' }),
     reviewExistingMember: jest.fn().mockResolvedValue(undefined),
   },
 }));
@@ -2571,17 +2571,23 @@ describe('setupOpenId', () => {
 
     beforeEach(() => {
       bdrenProvisioner.tenantForNewMember.mockReset().mockResolvedValue(null);
-      bdrenProvisioner.adoptNewMember.mockReset().mockResolvedValue(null);
+      bdrenProvisioner.adoptNewMember.mockReset().mockResolvedValue({ status: 'refused' });
       bdrenProvisioner.reviewExistingMember.mockReset().mockResolvedValue(undefined);
       activateProvisionedMember.mockClear();
     });
 
     it('creates a first-time user without a tenant, then places them as an active member', async () => {
       bdrenProvisioner.tenantForNewMember.mockResolvedValue('dhaka-university');
-      bdrenProvisioner.adoptNewMember.mockImplementation(async (userId, tenantId) => ({
-        _id: userId,
-        tenantId,
+      /** The saved account keeps the placement, which the login never writes. */
+      updateUser.mockImplementation(async (id, data) => ({
+        _id: id,
+        tenantId: 'dhaka-university',
         membershipStatus: 'active',
+        ...data,
+      }));
+      bdrenProvisioner.adoptNewMember.mockImplementation(async (userId, tenantId) => ({
+        status: 'placed',
+        user: { _id: userId, tenantId, membershipStatus: 'active' },
       }));
 
       const { user } = await validate(tokenset);
@@ -2600,7 +2606,7 @@ describe('setupOpenId', () => {
 
     it('logs in tenantless, with no suspended member, when placement fails', async () => {
       bdrenProvisioner.tenantForNewMember.mockResolvedValue('dhaka-university');
-      bdrenProvisioner.adoptNewMember.mockResolvedValue(null);
+      bdrenProvisioner.adoptNewMember.mockResolvedValue({ status: 'refused' });
 
       const { user } = await validate(tokenset);
 
@@ -2618,6 +2624,67 @@ describe('setupOpenId', () => {
 
       expect(user).toBeTruthy();
       expect(user.tenantId).toBeUndefined();
+    });
+
+    it('continues as the existing account when a concurrent login already placed it', async () => {
+      bdrenProvisioner.tenantForNewMember.mockResolvedValue('dhaka-university');
+      bdrenProvisioner.adoptNewMember.mockResolvedValue({
+        status: 'duplicate',
+        existing: {
+          _id: 'firstAccount',
+          openidId: tokenset.claims().sub,
+          email: tokenset.claims().email,
+          tenantId: 'dhaka-university',
+          membershipStatus: 'active',
+        },
+      });
+
+      const { user } = await validate(tokenset);
+
+      expect(user._id).toBe('firstAccount');
+      expect(updateUser).toHaveBeenCalledWith('firstAccount', expect.anything());
+      expect(bdrenProvisioner.reviewExistingMember).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not create an account when one appeared in any tenant while bdren.ai was asked', async () => {
+      const raced = {
+        _id: 'racedAccount',
+        provider: 'openid',
+        email: tokenset.claims().email,
+        openidId: tokenset.claims().sub,
+        username: 'raced',
+        tenantId: 'dhaka-university',
+        membershipStatus: 'active',
+        role: 'USER',
+      };
+      findUser.mockImplementation(async (query) =>
+        query.openidId === tokenset.claims().sub && query.openidIssuer ? raced : null,
+      );
+
+      const { user } = await validate(tokenset);
+
+      expect(createUser).not.toHaveBeenCalled();
+      expect(user._id).toBe('racedAccount');
+    });
+
+    it('never writes tenant or membership status back from the login object', async () => {
+      const existing = {
+        _id: 'staleUser',
+        provider: 'openid',
+        email: tokenset.claims().email,
+        openidId: tokenset.claims().sub,
+        username: 'stale',
+        tenantId: 'old-tenant',
+        membershipStatus: 'suspended',
+        role: 'USER',
+      };
+      findUser.mockResolvedValue(existing);
+
+      await validate(tokenset);
+
+      const payload = updateUser.mock.calls.at(-1)[1];
+      expect(payload).not.toHaveProperty('tenantId');
+      expect(payload).not.toHaveProperty('membershipStatus');
     });
 
     it('leaves a first-time user without a tenant when bdren.ai names none', async () => {

@@ -11,7 +11,9 @@ import type { AllowanceService } from './allowance';
 import type { AllowanceClient, AllowanceIdentity } from './client';
 import type { BdrenConfig } from './types';
 import type { IdentityUser } from './identity';
+import type { MemberPlacer, Placement } from './place';
 import { allowanceSubjectFor } from './identity';
+import { userOwnsData } from './ownership';
 import { syncAlerts } from '~/admin/alerts/store';
 import { normalizeOpenIdIssuer } from '~/auth/openid';
 
@@ -32,15 +34,9 @@ export interface ProvisionDeps {
   ) => Promise<unknown>;
   /** Seeds what a new tenant needs before anyone is appointed in it (tenant roles). Idempotent. */
   onCreated?: (tenantId: string) => Promise<void>;
-  /**
-   * Puts an existing, tenantless user into a tenant as an active member (seat limit enforced) and
-   * returns them, or undoes everything and returns `null`.
-   */
-  placeMember: (userId: string, tenantId: string) => Promise<MemberRecord | null>;
+  /** Moves a tenantless user into a tenant (see `createMemberPlacer`). */
+  place: MemberPlacer;
 }
-
-/** A user as the login carries on with it after placement. */
-export type MemberRecord = Record<string, unknown> & { tenantId?: string };
 
 export interface Provisioner {
   /**
@@ -61,7 +57,7 @@ export interface Provisioner {
    * Places a user just created without a tenant. When that fails, for any reason, they stay
    * without one, the reason is recorded, and `null` is returned. Never throws.
    */
-  adoptNewMember: (userId: string, tenantId: string) => Promise<MemberRecord | null>;
+  adoptNewMember: (userId: string, tenantId: string) => Promise<Placement>;
   /**
    * For an existing user covered by an institution that is not their tenant. Never creates an
    * institution. A tenantless user with no chats yet is placed (a brief bdren.ai failure at
@@ -79,9 +75,6 @@ const MAX_TENANT_ID_LENGTH = 40;
 const MAX_ATTEMPTS = 6;
 const SERVICE_ACTOR = { type: 'service', name: 'bdren.ai' } as const;
 
-const conversations = (): Model<{ user: string }> =>
-  mongoose.models.Conversation as Model<{ user: string }>;
-const messages = (): Model<{ user: string }> => mongoose.models.Message as Model<{ user: string }>;
 const users = (): Model<IUser> => mongoose.models.User as Model<IUser>;
 const institutions = (): Model<IInstitution> => mongoose.models.Institution as Model<IInstitution>;
 
@@ -133,7 +126,7 @@ export function hasCapacity(institution: IInstitution): boolean {
 }
 
 export function createProvisioner(deps: ProvisionDeps): Provisioner {
-  const { config, client, service, recordAuditEntry, onCreated, placeMember } = deps;
+  const { config, client, service, recordAuditEntry, onCreated, place } = deps;
 
   async function audit(input: RecordAuditEntryInput): Promise<void> {
     try {
@@ -311,11 +304,11 @@ export function createProvisioner(deps: ProvisionDeps): Provisioner {
     );
   }
 
-  async function adoptNewMember(userId: string, tenantId: string): Promise<MemberRecord | null> {
+  async function adoptNewMember(userId: string, tenantId: string): Promise<Placement> {
     try {
-      const placed = await placeMember(userId, tenantId);
-      if (placed) {
-        return placed;
+      const placement = await place(userId, tenantId, { replaceDuplicate: true });
+      if (placement.status !== 'refused') {
+        return placement;
       }
     } catch (error) {
       logger.error(`[bdren] placing user ${userId} in ${tenantId} failed`, error);
@@ -332,17 +325,7 @@ export function createProvisioner(deps: ProvisionDeps): Provisioner {
       currentTenantId: null,
       reason: 'placement_failed',
     }).catch((error) => logger.error('[bdren] recording the failed placement failed', error));
-    return null;
-  }
-
-  async function hasChats(userId: string): Promise<boolean> {
-    const [conversation, message] = await runAsSystem(() =>
-      Promise.all([
-        conversations().exists({ user: userId }).exec(),
-        messages().exists({ user: userId }).exec(),
-      ]),
-    );
-    return conversation != null || message != null;
+    return { status: 'refused' };
   }
 
   async function reviewExistingMember(
@@ -372,8 +355,8 @@ export function createProvisioner(deps: ProvisionDeps): Provisioner {
         !user.tenantId &&
         institution.status === InstitutionStatuses.ACTIVE &&
         hasCapacity(institution) &&
-        !(await hasChats(who.userId));
-      if (placeable && (await placeMember(who.userId, institution.tenantId))) {
+        !(await userOwnsData(who.userId));
+      if (placeable && (await place(who.userId, institution.tenantId)).status === 'placed') {
         logger.info(
           `[bdren] placed user ${who.userId} in ${institution.tenantId} on a later login`,
         );
