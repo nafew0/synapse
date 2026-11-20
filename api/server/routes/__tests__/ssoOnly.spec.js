@@ -6,6 +6,12 @@ const request = require('supertest');
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
+/** The real OpenID client needs a live issuer; the admin callback only needs it to exist. */
+jest.mock('~/strategies', () => ({
+  ...jest.requireActual('~/strategies'),
+  getOpenIdConfig: () => ({}),
+}));
+
 jest.mock('~/server/services/Config', () => ({
   ...jest.requireActual('~/server/services/Config'),
   getAppConfig: jest.fn(async () => ({})),
@@ -72,6 +78,11 @@ describe('SSO-only sign-in through bdren.ai', () => {
     app.use('/api/admin/users', require('../admin/users'));
     app.use('/api/platform/institutions', require('../platform/institutions'));
     app.use('/api/platform/users', require('../platform/users'));
+    app.get('/api/share/viewer', require('~/server/middleware/optionalJwtAuth'), (req, res) =>
+      res.json({ signedIn: req.user != null }),
+    );
+    const { requireRemoteAgentAuth } = require('../agents/middleware');
+    app.get('/api/agents/v1/models', requireRemoteAgentAuth, (_req, res) => res.json({ ok: true }));
     app.use((err, _req, res, _next) => res.status(500).json({ message: err.message }));
 
     const password = await bcrypt.hash(PASSWORD, 10);
@@ -91,6 +102,27 @@ describe('SSO-only sign-in through bdren.ai', () => {
       provider: 'openid',
       openidId: 'zitadel-sub-1',
       openidIssuer: ISSUER,
+    });
+    users.ssoInstitutionAdmin = await make({
+      email: 'head@uni.test',
+      username: 'head',
+      role: 'ADMIN',
+      provider: 'openid',
+      openidId: 'zitadel-sub-2',
+      openidIssuer: ISSUER,
+    });
+    users.ssoSuperadmin = await make({
+      email: 'ops@bdren.test',
+      username: 'ops',
+      provider: 'openid',
+      openidId: 'zitadel-sub-3',
+      openidIssuer: ISSUER,
+    });
+    await require('~/models').upsertPlatformAdmin({
+      userId: users.ssoSuperadmin._id.toString(),
+      email: 'ops@bdren.test',
+      role: require('@librechat/data-schemas').PlatformRoles.SUPERADMIN,
+      active: true,
     });
     users.otherIssuer = await make({
       email: 'other@uni.test',
@@ -329,6 +361,98 @@ describe('SSO-only sign-in through bdren.ai', () => {
         body: { tempToken, token: '123456' },
       });
       expect(passedOn.status).toBe(400);
+    });
+  });
+
+  describe('synapse-admin through BDREN SSO', () => {
+    /** Stands in for the ZITADEL round trip: the callback signs in whoever the test names. */
+    let ssoAdminUser;
+    beforeAll(() => {
+      const { Strategy } = require('passport-strategy');
+      class FakeOpenIdAdmin extends Strategy {
+        authenticate() {
+          this.success(ssoAdminUser);
+        }
+      }
+      passport.use('openidAdmin', new FakeOpenIdAdmin());
+    });
+
+    const callback = async (user) => {
+      ssoAdminUser = { ...user.toObject(), id: user._id.toString() };
+      return request(app).get('/api/admin/oauth/openid/callback');
+    };
+
+    it('turns an institution admin away from the admin OpenID callback while on', async () => {
+      setSsoOnly(true);
+      const res = await callback(users.ssoInstitutionAdmin);
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toContain('error=superadmin_only');
+    });
+
+    it('lets a platform superadmin through the admin OpenID callback while on', async () => {
+      setSsoOnly(true);
+      const res = await callback(users.ssoSuperadmin);
+      expect(res.status).toBe(302);
+      expect(res.headers.location).not.toContain('error=');
+    });
+
+    it('lets an institution admin through the admin OpenID callback while off', async () => {
+      setSsoOnly(false);
+      const res = await callback(users.ssoInstitutionAdmin);
+      expect(res.headers.location).not.toContain('superadmin_only');
+    });
+
+    it('answers /api/admin/verify only for superadmins while on, ending other admin sessions', async () => {
+      setSsoOnly(true);
+      for (const user of [users.ssoInstitutionAdmin, users.staff]) {
+        const res = await send('get', '/api/admin/verify', { auth: user });
+        expect(res.status).toBe(403);
+        expect(res.body.code).toBe('SUPERADMIN_ONLY');
+      }
+      expect((await send('get', '/api/admin/verify', { auth: users.ssoSuperadmin })).status).toBe(
+        200,
+      );
+
+      setSsoOnly(false);
+      expect((await send('get', '/api/admin/verify', { auth: users.staff })).status).toBe(200);
+    });
+  });
+
+  describe('optional sign-in on shared links', () => {
+    it('treats a session that did not come through BDREN as anonymous while on', async () => {
+      setSsoOnly(true);
+      const local = await send('get', '/api/share/viewer', { auth: users.member });
+      expect(local.body.signedIn).toBe(false);
+      const sso = await send('get', '/api/share/viewer', { auth: users.sso });
+      expect(sso.body.signedIn).toBe(true);
+
+      setSsoOnly(false);
+      const off = await send('get', '/api/share/viewer', { auth: users.member });
+      expect(off.body.signedIn).toBe(true);
+    });
+  });
+
+  describe('agent API keys', () => {
+    const keyFor = async (user) =>
+      (await require('~/models').createAgentApiKey({ userId: user._id, name: 'old key' })).key;
+    const listModels = (key) =>
+      request(app).get('/api/agents/v1/models').set('Authorization', `Bearer ${key}`);
+
+    it('refuses a key of an account that does not sign in through BDREN while on', async () => {
+      const key = await keyFor(users.member);
+      setSsoOnly(true);
+      const refused = await listModels(key);
+      expect(refused.status).toBe(401);
+      expect(refused.body.error.code).toBe('SSO_REQUIRED');
+
+      setSsoOnly(false);
+      expect((await listModels(key)).status).toBe(200);
+    });
+
+    it("accepts an SSO user's key while on", async () => {
+      const key = await keyFor(users.sso);
+      setSsoOnly(true);
+      expect((await listModels(key)).status).toBe(200);
     });
   });
 

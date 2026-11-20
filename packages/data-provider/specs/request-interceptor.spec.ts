@@ -850,3 +850,74 @@ describe('authenticatedFetch — account moving between institutions', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('sessions refused because they did not come through bdren.ai SSO', () => {
+  const ssoRequired = { code: 'SSO_REQUIRED', message: 'Sign in with your bdren.ai account.' };
+
+  it('sends an axios request straight to login without trying to refresh', async () => {
+    setTokenHeader('local-session-token');
+    const hrefWrites = setTrackedWindowLocation({
+      href: 'http://localhost/c/new',
+      pathname: '/c/new',
+      search: '',
+      hash: '',
+    } as Partial<Location>);
+    mockAdapter.mockRejectedValueOnce({
+      response: { status: 401, data: ssoRequired },
+      config: { url: '/api/convos', headers: {} },
+    });
+
+    await expect(axios.get('/api/convos')).rejects.toBeDefined();
+
+    expect(getCallsForUrl('/api/auth/refresh')).toHaveLength(0);
+    expect(hrefWrites).toEqual(['/login?redirect_to=%2Fc%2Fnew']);
+  });
+
+  it('still refreshes on an ordinary 401', async () => {
+    setTokenHeader('expired-token');
+    setTrackedWindowLocation({
+      href: 'http://localhost/c/new',
+      pathname: '/c/new',
+      search: '',
+      hash: '',
+    } as Partial<Location>);
+    mockAdapter
+      .mockRejectedValueOnce({
+        response: { status: 401, data: { message: 'Unauthorized' } },
+        config: { url: '/api/convos', headers: {} },
+      })
+      .mockImplementation((config: InternalAxiosRequestConfig) =>
+        config.url?.includes('/api/auth/refresh') === true
+          ? createAdapterResponse(config, { token: 'fresh-token' })
+          : createAdapterResponse(config, { ok: true }),
+      );
+
+    await axios.get('/api/convos');
+
+    expect(getCallsForUrl('/api/auth/refresh')).toHaveLength(1);
+  });
+
+  it('sends an authenticated fetch straight to login without trying to refresh', async () => {
+    setTokenHeader('local-session-token');
+    const hrefWrites = setTrackedWindowLocation({
+      href: 'http://localhost/c/new',
+      pathname: '/c/new',
+      search: '',
+      hash: '',
+    } as Partial<Location>);
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify(ssoRequired), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    );
+
+    const response = await dataRequest.authenticatedFetch('/api/files', { method: 'POST' });
+
+    expect(response.status).toBe(401);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(getCallsForUrl('/api/auth/refresh')).toHaveLength(0);
+    expect(hrefWrites).toEqual(['/login?redirect_to=%2Fc%2Fnew']);
+    fetchSpy.mockRestore();
+  });
+});

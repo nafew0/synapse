@@ -11,24 +11,35 @@ const { getUserById } = require('~/models');
 
 const TEMP_USER_FIELDS = '_id email tenantId provider openidId openidIssuer';
 
-/** Admin password login while SSO-only is on: platform superadmins only. Runs after the password check. */
-async function requireSuperadminWhenSsoOnly(req, res, next) {
-  if (!readSsoOnly().enabled) {
-    return next();
-  }
-  try {
-    if (req.user && (await isPlatformSuperadmin(req.user))) {
+const refuseAdmin = (res) => sendSsoRefusal(res, SsoRefusals.adminLogin);
+
+/**
+ * synapse-admin while SSO-only is on is for platform superadmins only. `refuse` answers everyone
+ * else (JSON by default; the OpenID callback redirects back to the admin panel instead).
+ */
+function superadminOnlyWhenSsoOnly(refuse = refuseAdmin) {
+  return async (req, res, next) => {
+    if (!readSsoOnly().enabled) {
       return next();
     }
-    logger.warn('[ssoOnly] refused admin password login for a non-superadmin', {
-      userId: req.user?._id?.toString?.() ?? req.user?.id,
-    });
-    return sendSsoRefusal(res, SsoRefusals.adminLogin);
-  } catch (error) {
-    logger.error('[ssoOnly] superadmin check failed', error);
-    return sendSsoRefusal(res, SsoRefusals.adminLogin);
-  }
+    try {
+      if (req.user && (await isPlatformSuperadmin(req.user))) {
+        return next();
+      }
+      logger.warn('[ssoOnly] refused synapse-admin access for a non-superadmin', {
+        userId: req.user?._id?.toString?.() ?? req.user?.id,
+        path: req.originalUrl?.split('?')[0],
+      });
+      return refuse(res);
+    } catch (error) {
+      logger.error('[ssoOnly] superadmin check failed', error);
+      return refuse(res);
+    }
+  };
 }
+
+/** Admin password login and `/api/admin/verify` while SSO-only is on. Runs after authentication. */
+const requireSuperadminWhenSsoOnly = superadminOnlyWhenSsoOnly();
 
 /**
  * 2FA completion while SSO-only is on: the temporary token must belong to an SSO account or a
@@ -52,6 +63,7 @@ async function requireTempUserAllowed(req, res, next) {
 }
 
 module.exports = {
+  superadminOnlyWhenSsoOnly,
   requireSuperadminWhenSsoOnly,
   requireTempUserAllowed,
   refuseLogin: refuseWhenSsoOnly(SsoRefusals.login),

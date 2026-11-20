@@ -27,6 +27,7 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('~/server/middleware/ssoOnly', () => ({
+  superadminOnlyWhenSsoOnly: () => (_req, _res, next) => next(),
   requireSuperadminWhenSsoOnly: (_req, _res, next) => next(),
 }));
 

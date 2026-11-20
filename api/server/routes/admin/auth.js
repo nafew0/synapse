@@ -38,7 +38,10 @@ const { getAppConfig } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
 const { getOpenIdConfig } = require('~/strategies');
 const middleware = require('~/server/middleware');
-const { requireSuperadminWhenSsoOnly } = require('~/server/middleware/ssoOnly');
+const {
+  superadminOnlyWhenSsoOnly,
+  requireSuperadminWhenSsoOnly,
+} = require('~/server/middleware/ssoOnly');
 const { ensurePlatformSuperadminForUser } = require('~/server/services/platformAdmin');
 
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
@@ -169,17 +172,23 @@ router.post(
   loginController,
 );
 
-router.get('/verify', middleware.requireJwtAuth, requireAdminAccess, async (req, res) => {
-  const { password: _p, totpSecret: _t, __v, ...user } = req.user;
-  user.id = user._id.toString();
-  const platformState = await ensurePlatformSuperadminForUser(req.user);
-  res.status(200).json({
-    user: {
-      ...user,
-      isPlatformSuperadmin: platformState.isPlatformSuperadmin,
-    },
-  });
-});
+router.get(
+  '/verify',
+  middleware.requireJwtAuth,
+  requireSuperadminWhenSsoOnly,
+  requireAdminAccess,
+  async (req, res) => {
+    const { password: _p, totpSecret: _t, __v, ...user } = req.user;
+    user.id = user._id.toString();
+    const platformState = await ensurePlatformSuperadminForUser(req.user);
+    res.status(200).json({
+      user: {
+        ...user,
+        isPlatformSuperadmin: platformState.isPlatformSuperadmin,
+      },
+    });
+  },
+);
 
 router.get('/oauth/openid/check', (req, res) => {
   const openidConfig = getOptionalOpenIdConfig();
@@ -269,6 +278,11 @@ router.get(
   }),
   tenantContextMiddleware,
   retrievePkceChallenge('openid'),
+  superadminOnlyWhenSsoOnly((res) =>
+    res.redirect(
+      `${getAdminPanelUrl()}/auth/openid/callback?error=superadmin_only&error_description=Only+BdREN+platform+superadmins+can+sign+in+here`,
+    ),
+  ),
   requireAdminAccess,
   setBalanceConfig,
   middleware.checkDomainAllowed,
