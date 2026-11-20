@@ -16,6 +16,7 @@ import { createConversationTagModel } from './conversationTag';
 import { createTaskCostProfileModel } from './taskCostProfile';
 import { createAgentCategoryModel } from './agentCategory';
 import { createPlatformAdminModel } from './platformAdmin';
+import { createCostSettingsModel } from './costSettings';
 import { createUsageWarningModel } from './usageWarning';
 import { createChatProjectModel } from './chatProject';
 import { createAgentApiKeyModel } from './agentApiKey';
@@ -111,6 +112,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
   UsageBucket: ReturnType<typeof createUsageBucketModel>;
   UsageJob: ReturnType<typeof createUsageJobModel>;
   TaskCostProfile: ReturnType<typeof createTaskCostProfileModel>;
+  CostSettings: ReturnType<typeof createCostSettingsModel>;
   UsageDaily: ReturnType<typeof createUsageDailyModel>;
   UsageReservation: ReturnType<typeof createUsageReservationModel>;
   UsageWarning: ReturnType<typeof createUsageWarningModel>;
@@ -169,6 +171,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
     UsageBucket: createUsageBucketModel(mongoose),
     UsageJob: createUsageJobModel(mongoose),
     TaskCostProfile: createTaskCostProfileModel(mongoose),
+    CostSettings: createCostSettingsModel(mongoose),
     UsageDaily: createUsageDailyModel(mongoose),
     UsageReservation: createUsageReservationModel(mongoose),
     UsageWarning: createUsageWarningModel(mongoose),

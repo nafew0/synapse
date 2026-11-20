@@ -23,8 +23,9 @@ const dayFormat = new Intl.DateTimeFormat('en-CA', {
 /** The Asia/Dhaka calendar day of an instant, `YYYY-MM-DD`. */
 export const dhakaDay = (at: Date): string => dayFormat.format(at);
 
-const dayStart = (day: string): Date => new Date(`${day}T00:00:00${DHAKA_OFFSET}`);
-const nextDay = (day: string): string => dhakaDay(new Date(dayStart(day).getTime() + DAY_MS));
+export const dayStart = (day: string): Date => new Date(`${day}T00:00:00${DHAKA_OFFSET}`);
+export const nextDay = (day: string): string =>
+  dhakaDay(new Date(dayStart(day).getTime() + DAY_MS));
 
 export interface DayTotals {
   rows: number;
@@ -81,7 +82,7 @@ const dhakaDayOfCreation = {
 };
 
 /** Rows older than the service field: OCR is Unstructured, every other row is a model call. */
-const serviceOf = {
+export const serviceOf: Record<string, unknown> = {
   $ifNull: [
     '$service',
     {

@@ -46,3 +46,20 @@ export interface IUsageJob {
   lastRunAt?: Date;
   lastDay?: string;
 }
+
+export interface FixedCost {
+  id: string;
+  label: string;
+  /** Monthly amount in `currency`. */
+  amount: number;
+  currency: 'USD' | 'BDT';
+}
+
+/** Platform-wide cost settings besides the exchange rate and fee, which live on `UsagePricing`. */
+export interface ICostSettings {
+  key: string;
+  fixedCosts: FixedCost[];
+  updatedBy?: Types.ObjectId | null;
+  createdAt?: Date;
+  updatedAt?: Date;
+}

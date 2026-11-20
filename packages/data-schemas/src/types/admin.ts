@@ -129,6 +129,7 @@ export const AUDIT_ACTIONS = [
   'platform.usage_package_updated',
   'platform.usage_package_archived',
   'platform.usage_pricing_updated',
+  'platform.cost_settings_updated',
   'platform.usage_package_assigned',
   'platform.usage_package_revoked',
 ] as const;
@@ -176,6 +177,7 @@ export const AUDIT_ACTION_CATEGORY: Record<AuditAction, AuditCategory> = {
   'platform.usage_package_updated': 'platform',
   'platform.usage_package_archived': 'platform',
   'platform.usage_pricing_updated': 'platform',
+  'platform.cost_settings_updated': 'platform',
   'platform.usage_package_assigned': 'platform',
   'platform.usage_package_revoked': 'platform',
 };
