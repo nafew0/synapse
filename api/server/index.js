@@ -46,6 +46,7 @@ const {
   waitForKeyvRedisClient,
   captureLoggedErrors,
   startAlertScheduler,
+  startProviderSync,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const {
@@ -155,6 +156,7 @@ const startServer = async () => {
   );
   quotaReconcilerInterval.unref();
   startAlertScheduler();
+  startProviderSync();
   startUsageJobs();
   indexSync().catch((err) => {
     logger.error('[indexSync] Background sync failed:', err);
