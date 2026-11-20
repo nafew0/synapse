@@ -1,5 +1,5 @@
 import { Schema } from 'mongoose';
-import type { IBdrenAllowance, IBdrenEvent, IBdrenUploadTicket } from '~/types';
+import type { IBdrenAllowance, IBdrenEvent, IMemberMove, IBdrenUploadTicket } from '~/types';
 
 export const bdrenAllowanceSchema: Schema<IBdrenAllowance> = new Schema<IBdrenAllowance>(
   {
@@ -43,3 +43,33 @@ export const bdrenUploadTicketSchema: Schema<IBdrenUploadTicket> = new Schema<IB
   },
   { timestamps: { createdAt: true, updatedAt: false } },
 );
+
+export const memberMoveSchema: Schema<IMemberMove> = new Schema<IMemberMove>(
+  {
+    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    from: { type: String, default: null },
+    to: { type: String, default: null },
+    reason: { type: String, required: true },
+    status: { type: String, enum: ['running', 'done', 'refused'], required: true },
+    mode: { type: String, enum: ['transaction', 'sequential'], default: null },
+    leaseId: { type: String, default: null },
+    leaseUntil: { type: Date, default: null },
+    plan: { type: Schema.Types.Mixed, default: null },
+    completed: { type: [String], default: [] },
+    moved: { type: Schema.Types.Mixed, default: {} },
+    conflicts: { type: Schema.Types.Mixed, default: {} },
+    seatReserved: { type: Boolean, default: false },
+    seatReleased: { type: Boolean, default: false },
+    userSwitched: { type: Boolean, default: false },
+    wasActive: { type: Boolean, default: false },
+    refusal: { type: String, default: null },
+    finishedAt: { type: Date, default: null },
+  },
+  { timestamps: true, minimize: false },
+);
+/** One running move per user: the lock two triggers race for. */
+memberMoveSchema.index(
+  { userId: 1 },
+  { unique: true, partialFilterExpression: { status: 'running' }, name: 'one_running_move' },
+);
+memberMoveSchema.index({ userId: 1, createdAt: -1 });

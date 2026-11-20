@@ -79,3 +79,52 @@ export interface IBdrenUploadTicket {
   usedAt?: Date | null;
   createdAt?: Date;
 }
+
+export type MemberMoveStatus = 'running' | 'done' | 'refused';
+
+/**
+ * What a move decided before touching anything, so a resumed move applies the same split. On a
+ * leave, items the person shared in the institution stay there (`kept*`); the rest moves.
+ */
+export interface MemberMovePlan {
+  /** Agents (`_id`) shared in the institution: they stay, as do their files and actions. */
+  keptAgents: string[];
+  /** Prompt groups (`_id`) that stay: shared ones, and colleagues' groups the person wrote prompts in. */
+  keptPromptGroups: string[];
+  keptMcpServers: string[];
+  keptSkills: string[];
+  /** `file_id`s a kept agent uses. */
+  keptFiles: string[];
+  /** The `id` of every agent that moves, so its actions move with it. */
+  movedAgentIds: string[];
+  /** The `_id` of every skill that moves, so its files move with it. */
+  movedSkills: string[];
+}
+
+/**
+ * One move of a person between tenants (`null`: no tenant, an individual), as a resumable job. At
+ * most one is running per user; the lease says who is working on it. `completed` lists the steps
+ * already applied, `moved` how many records each step changed.
+ */
+export interface IMemberMove {
+  userId: Types.ObjectId;
+  from: string | null;
+  to: string | null;
+  reason: string;
+  status: MemberMoveStatus;
+  mode?: 'transaction' | 'sequential' | null;
+  leaseId?: string | null;
+  leaseUntil?: Date | null;
+  plan?: MemberMovePlan | null;
+  completed: string[];
+  moved: Record<string, number>;
+  conflicts: Record<string, number>;
+  seatReserved?: boolean;
+  seatReleased?: boolean;
+  userSwitched?: boolean;
+  wasActive?: boolean;
+  refusal?: string | null;
+  finishedAt?: Date | null;
+  createdAt?: Date;
+  updatedAt?: Date;
+}

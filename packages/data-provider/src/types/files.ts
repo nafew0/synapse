@@ -174,6 +174,8 @@ export type TFile = {
   tenantId?: string;
   storageRegion?: string;
   storageKey?: string;
+  /** Set by a member move: the tenant the stored object's key was written under (`null`: none). */
+  storageTenantId?: string | null;
   conversationId?: string;
   message?: string;
   file_id: string;

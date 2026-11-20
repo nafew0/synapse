@@ -94,14 +94,19 @@ async function adoptBdrenMember(userId, tenantId) {
 const findAccountAcrossTenants = (openidId, openidIssuer) =>
   runAsSystem(() => findUser({ openidId, openidIssuer }));
 
-/** Records, without waiting, an existing user covered by an institution other than their own. */
-function reviewBdrenCoverage(user, idToken) {
+/**
+ * Brings an existing user's institution in line with bdren.ai before the session starts, so the
+ * login carries on with their new scope. Resolves to the moved user, or `null`. Never throws.
+ */
+async function reviewBdrenCoverage(user, idToken) {
   try {
-    void require('~/server/services/bdrenAllowance').bdrenProvisioner.reviewExistingMember(user, {
-      idToken,
-    });
+    return await require('~/server/services/bdrenAllowance').bdrenProvisioner.reviewExistingMember(
+      user,
+      { idToken },
+    );
   } catch (error) {
     logger.error('[openidStrategy] bdren.ai coverage review failed', error);
+    return null;
   }
 }
 
@@ -940,7 +945,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   const { tenantId: _tenantId, membershipStatus: _membershipStatus, ...profile } = user;
   user = await updateUser(user._id, profile);
   if (!isNewUser) {
-    reviewBdrenCoverage(user, tokenset.id_token);
+    user = (await reviewBdrenCoverage(user, tokenset.id_token)) ?? user;
   }
   if (user?.tenantId && user.membershipStatus !== InstitutionMembershipStatuses.ACTIVE) {
     user = await activateProvisionedMember({

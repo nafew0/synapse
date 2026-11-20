@@ -7,15 +7,16 @@ import type {
   RecordAuditEntryOptions,
 } from '@librechat/data-schemas';
 import type { Model } from 'mongoose';
-import type { AllowanceService } from './allowance';
+import type { MemberPlacer, MemberRecord, Placement } from './place';
 import type { AllowanceClient, AllowanceIdentity } from './client';
-import type { BdrenConfig } from './types';
+import type { BdrenConfig, ResolvedAllowance } from './types';
+import type { MemberMover, MoveOutcome } from './move';
+import type { AllowanceService } from './allowance';
 import type { IdentityUser } from './identity';
-import type { MemberPlacer, Placement } from './place';
-import { allowanceSubjectFor } from './identity';
-import { userOwnsData } from './ownership';
-import { syncAlerts } from '~/admin/alerts/store';
 import { normalizeOpenIdIssuer } from '~/auth/openid';
+import { allowanceSubjectFor } from './identity';
+import { syncAlerts } from '~/admin/alerts/store';
+import { isPlatformStaff } from './move';
 
 /** The bdren.ai organization an institution is created for. */
 export interface OrganizationRef {
@@ -36,6 +37,22 @@ export interface ProvisionDeps {
   onCreated?: (tenantId: string) => Promise<void>;
   /** Moves a tenantless user into a tenant (see `createMemberPlacer`). */
   place: MemberPlacer;
+  /** Moves an existing person, with their data, between tenants (see `createMemberMover`). */
+  move: MemberMover;
+}
+
+/** An existing user as the review needs them. */
+export type ReviewedUser = IdentityUser & {
+  email?: string;
+  role?: string;
+  bdrenNotedOrganizationId?: string;
+};
+
+export interface ReviewOptions {
+  /** The login's ID token, passed on to bdren.ai; bypasses the cached answer. */
+  idToken?: string;
+  /** Ask bdren.ai now, ignoring the cache (a webhook said the answer changed). */
+  fresh?: boolean;
 }
 
 export interface Provisioner {
@@ -59,18 +76,23 @@ export interface Provisioner {
    */
   adoptNewMember: (userId: string, tenantId: string) => Promise<Placement>;
   /**
-   * For an existing user covered by an institution that is not their tenant. Never creates an
-   * institution. A tenantless user with no chats yet is placed (a brief bdren.ai failure at
-   * first login must not leave them out for good); anyone else is never moved, and the mismatch
-   * is recorded once for a superadmin. Never throws.
+   * Brings an existing user's institution in line with bdren.ai's coverage, moving their data
+   * with them: an individual covered by a linked institution joins it; a member of a linked
+   * institution no longer covered by it leaves (to the institution now covering them, or back to
+   * being an individual). Never acts on a Free fallback or a stale answer, never touches platform
+   * staff, users of another issuer or members of institutions not linked to bdren.ai, and never
+   * creates an institution. Refusals are recorded once as `member.coverage_mismatch`. Resolves to
+   * the user after a move, else `null`. Never throws.
    */
   reviewExistingMember: (
-    user: IdentityUser & { bdrenNotedOrganizationId?: string },
-    options?: { idToken?: string },
-  ) => Promise<void>;
+    user: ReviewedUser,
+    options?: ReviewOptions,
+  ) => Promise<MemberRecord | null>;
 }
 
 const DUPLICATE_KEY = 11000;
+/** Answers good enough to move someone on: never the Free fallback or an answer kept while bdren.ai is down. */
+const TRUSTED_ORIGINS = new Set<ResolvedAllowance['origin']>(['fresh', 'cache']);
 const MAX_TENANT_ID_LENGTH = 40;
 const MAX_ATTEMPTS = 6;
 const SERVICE_ACTOR = { type: 'service', name: 'bdren.ai' } as const;
@@ -125,8 +147,21 @@ export function hasCapacity(institution: IInstitution): boolean {
   return max == null || (institution.stats?.activeMembers ?? 0) < max;
 }
 
+type LinkedInstitution = IInstitution & { bdrenOrganizationId: string };
+
+function isLinked(institution: IInstitution | null): institution is LinkedInstitution {
+  return typeof institution?.bdrenOrganizationId === 'string';
+}
+
+function moveReason(from: string | null, to: string | null): string {
+  if (from && to) {
+    return 'coverage_changed';
+  }
+  return to ? 'coverage_joined' : 'coverage_left';
+}
+
 export function createProvisioner(deps: ProvisionDeps): Provisioner {
-  const { config, client, service, recordAuditEntry, onCreated, place } = deps;
+  const { config, client, service, recordAuditEntry, onCreated, place, move } = deps;
 
   async function audit(input: RecordAuditEntryInput): Promise<void> {
     try {
@@ -286,7 +321,11 @@ export function createProvisioner(deps: ProvisionDeps): Provisioner {
     userId: string,
     organizationId: string,
     details: { institutionTenantId: string | null; currentTenantId: string | null; reason: string },
+    noted?: string,
   ): Promise<void> {
+    if (noted === `${details.reason}:${organizationId}`) {
+      return;
+    }
     logger.warn(
       `[bdren] user ${userId} is covered by organization ${organizationId} (${details.reason}) but belongs to ${details.currentTenantId ?? 'no institution'}; not moved`,
     );
@@ -299,7 +338,10 @@ export function createProvisioner(deps: ProvisionDeps): Provisioner {
     });
     await runAsSystem(() =>
       users()
-        .updateOne({ _id: userId }, { $set: { bdrenNotedOrganizationId: organizationId } })
+        .updateOne(
+          { _id: userId },
+          { $set: { bdrenNotedOrganizationId: `${details.reason}:${organizationId}` } },
+        )
         .exec(),
     );
   }
@@ -328,50 +370,105 @@ export function createProvisioner(deps: ProvisionDeps): Provisioner {
     return { status: 'refused' };
   }
 
+  /** The user's institution when it is linked to a bdren.ai organization; `undefined` for an unlinked (legacy) one. */
+  async function linkedInstitutionOf(tenantId: string): Promise<LinkedInstitution | undefined> {
+    const institution = await runAsSystem(() =>
+      institutions().findOne({ tenantId }).lean<IInstitution>().exec(),
+    );
+    return isLinked(institution) ? institution : undefined;
+  }
+
+  /** Why a covered person cannot join their institution, or `null` when they can. */
+  function joinRefusal(institution: IInstitution | null): string | null {
+    if (!institution) {
+      return 'institution_not_linked';
+    }
+    if (institution.status !== InstitutionStatuses.ACTIVE) {
+      return 'institution_closed';
+    }
+    return hasCapacity(institution) ? null : 'institution_full';
+  }
+
+  async function runMove(
+    userId: string,
+    from: string | null,
+    to: string | null,
+    reason: string,
+  ): Promise<MoveOutcome> {
+    const outcome = await move({ userId, from, to, reason });
+    if (outcome.status === 'refused' || outcome.status === 'busy') {
+      logger.warn(`[bdren] moving user ${userId} to ${to ?? 'no institution'}: ${outcome.status}`);
+    }
+    return outcome;
+  }
+
   async function reviewExistingMember(
-    user: IdentityUser & { bdrenNotedOrganizationId?: string },
-    options: { idToken?: string } = {},
-  ): Promise<void> {
+    user: ReviewedUser,
+    options: ReviewOptions = {},
+  ): Promise<MemberRecord | null> {
     try {
       /** A tenantless SSO user may carry no account scope yet; only the identity matters for a lookup. */
       const who = allowanceSubjectFor(
         { ...user, accountScope: user.tenantId ? user.accountScope : 'standalone' },
         config,
       );
-      if (!who) {
-        return;
+      if (!who || (await isPlatformStaff(who.userId, user.role, user.email))) {
+        return null;
       }
-      const allowance = await service.getAllowance({ ...who, idToken: options.idToken });
-      const organizationId = allowance.institutionId;
-      if (allowance.planSource !== 'institution' || !organizationId) {
-        return;
+      const current = user.tenantId || null;
+      const currentInstitution = current ? await linkedInstitutionOf(current) : null;
+      const allowance = options.fresh
+        ? await service.refresh(who)
+        : await service.getAllowance({ ...who, idToken: options.idToken });
+      const organizationId =
+        allowance.planSource === 'institution' ? allowance.institutionId : null;
+      const target = organizationId ? await findByOrganization(organizationId) : null;
+      if (target && target.tenantId === current) {
+        return null;
       }
-      const institution = await findByOrganization(organizationId);
-      if (institution && user.tenantId === institution.tenantId) {
-        return;
-      }
-      const placeable =
-        institution != null &&
-        !user.tenantId &&
-        institution.status === InstitutionStatuses.ACTIVE &&
-        hasCapacity(institution) &&
-        !(await userOwnsData(who.userId));
-      if (placeable && (await place(who.userId, institution.tenantId)).status === 'placed') {
-        logger.info(
-          `[bdren] placed user ${who.userId} in ${institution.tenantId} on a later login`,
+      const noted = user.bdrenNotedOrganizationId;
+      const mismatch = (reason: string, org: string, institutionTenantId: string | null) =>
+        noteMismatch(
+          who.userId,
+          org,
+          { institutionTenantId, currentTenantId: current, reason },
+          noted,
         );
-        return;
+      if (currentInstitution === undefined) {
+        if (organizationId) {
+          await mismatch('legacy_tenant', organizationId, target?.tenantId ?? null);
+        }
+        return null;
       }
-      if (user.bdrenNotedOrganizationId === organizationId) {
-        return;
+      if (!TRUSTED_ORIGINS.has(allowance.origin)) {
+        if (currentInstitution) {
+          await mismatch(
+            'unverified_answer',
+            currentInstitution.bdrenOrganizationId,
+            currentInstitution.tenantId,
+          );
+        }
+        return null;
       }
-      await noteMismatch(who.userId, organizationId, {
-        institutionTenantId: institution?.tenantId ?? null,
-        currentTenantId: user.tenantId ?? null,
-        reason: institution ? 'not_moved' : 'institution_not_linked',
-      });
+      const refusal = organizationId ? joinRefusal(target) : null;
+      if (organizationId && refusal) {
+        await mismatch(refusal, organizationId, target?.tenantId ?? null);
+      }
+      const to = organizationId && !refusal && target ? target.tenantId : null;
+      if (to === current) {
+        return null;
+      }
+      let outcome = await runMove(who.userId, current, to, moveReason(current, to));
+      if (outcome.status === 'refused' && to && organizationId) {
+        await mismatch(`move_${outcome.reason}`, organizationId, to);
+        if (current) {
+          outcome = await runMove(who.userId, current, null, 'coverage_left');
+        }
+      }
+      return outcome.status === 'moved' ? outcome.user : null;
     } catch (error) {
       logger.error('[bdren] membership review failed', error);
+      return null;
     }
   }
 

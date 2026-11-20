@@ -959,6 +959,29 @@ describe('S3 CRUD', () => {
       expect(logger.error).toHaveBeenCalled();
     });
 
+    it("deletes a moved member's file by the tenant its key was stored under", async () => {
+      const movedOut = {
+        filepath: 'https://bucket.s3.amazonaws.com/t/tenantA/images/user123/file.jpg',
+        file_id: 'file123',
+        user: 'user123',
+        storageTenantId: 'tenantA',
+      } as TFile;
+      const movedIn = {
+        filepath: 'https://bucket.s3.amazonaws.com/images/user123/file.jpg',
+        file_id: 'file124',
+        user: 'user123',
+        tenantId: 'tenantB',
+        storageTenantId: null,
+      } as TFile;
+      s3Mock.on(HeadObjectCommand).resolves({});
+      s3Mock.on(DeleteObjectCommand).resolves({});
+
+      const { deleteFileFromS3 } = await import('../crud');
+      await expect(deleteFileFromS3(mockReq, movedOut)).resolves.toBeUndefined();
+      await expect(deleteFileFromS3(mockReq, movedIn)).resolves.toBeUndefined();
+      expect(s3Mock.commandCalls(DeleteObjectCommand)).toHaveLength(2);
+    });
+
     it('handles NoSuchKey error and cleans up RAG', async () => {
       const mockFile = {
         filepath: 'https://bucket.s3.amazonaws.com/images/user123/file.jpg',

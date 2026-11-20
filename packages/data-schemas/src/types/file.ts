@@ -53,6 +53,8 @@ export interface IMongoFile extends Omit<Document, 'model'> {
   filepath: string;
   storageKey?: string;
   storageRegion?: string;
+  /** Set by a member move: the tenant the stored object's key was written under (`null`: none). */
+  storageTenantId?: string | null;
   object: 'file';
   embedded?: boolean;
   type: string;

@@ -2689,6 +2689,8 @@ module.exports = {
   suspendStandaloneMember,
   reactivateStandaloneMember,
   activateProvisionedMember,
+  reserveActiveSeat,
+  releaseActiveSeat,
   InstitutionMembershipStatuses,
   INSTITUTION_ADMIN_ROLE,
   InstitutionInviteStatuses,

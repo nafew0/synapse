@@ -66,6 +66,11 @@ const file: Schema<IMongoFile> = new Schema(
     storageRegion: {
       type: String,
     },
+    /** The tenant in the object's storage key, kept when a member move re-scopes the record; `null` means no tenant segment. */
+    storageTenantId: {
+      type: String,
+      default: undefined,
+    },
     object: {
       type: String,
       required: true,

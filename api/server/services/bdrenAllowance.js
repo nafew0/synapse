@@ -8,6 +8,7 @@ const {
   createAllowanceClient,
   createAllowanceService,
   createProvisioner,
+  createMemberMover,
   createMemberPlacer,
   createWebhookHandler,
   normalizeOpenIdIssuer,
@@ -24,13 +25,35 @@ const place = createMemberPlacer({
     require('~/server/services/institutionMembers').activateProvisionedMember(args),
 });
 
+const members = () => require('~/server/services/institutionMembers');
+const recordAuditEntry = (input, options) => require('~/models').recordAuditEntry(input, options);
+
+/** Moves an existing person, with their data, between institutions; seats and audiences through the member services. */
+const move = createMemberMover({
+  reserveSeat: async (tenantId) => {
+    try {
+      await members().reserveActiveSeat(tenantId);
+      return true;
+    } catch (error) {
+      if (error?.statusCode === 409) {
+        return false;
+      }
+      throw error;
+    }
+  },
+  releaseSeat: (tenantId) => members().releaseActiveSeat(tenantId),
+  syncMember: (args) => require('~/server/services/tenantAgentAccess').syncTenantMemberSafely(args),
+  recordAuditEntry,
+});
+
 /** Resolved on use: `tenancy` sits on routes' require chains that stub parts of data-schemas. */
 const provisioner = createProvisioner({
   config,
   client,
   service,
-  recordAuditEntry: (input, options) => require('~/models').recordAuditEntry(input, options),
+  recordAuditEntry,
   place,
+  move,
   onCreated: (tenantId) =>
     require('~/server/services/tenancy').ensureInstitutionAdminRole(tenantId),
 });
@@ -105,11 +128,25 @@ async function getRequestAllowance(user, memberPackage = user?.usagePackage) {
   }
 }
 
+/** A `membership.coverage_changed` for a person: ask bdren.ai afresh and move them if it changed. */
+async function reviewMember(issuer, subject) {
+  const user = await runAsSystem(() =>
+    mongoose.models.User.findOne({ openidId: subject, openidIssuer: issuer })
+      .select('tenantId accountScope openidId openidIssuer email role bdrenNotedOrganizationId')
+      .lean()
+      .exec(),
+  );
+  if (user) {
+    await provisioner.reviewExistingMember(user, { fresh: true });
+  }
+}
+
 const webhookHandler = createWebhookHandler({
   config,
   service,
   findSubject,
   ensureInstitution: provisioner.ensureInstitutionForOrganization,
+  reviewMember,
 });
 
 module.exports = {

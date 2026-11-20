@@ -727,7 +727,11 @@ export async function deleteFileFromS3(req: ServerRequest, file: TFile): Promise
   const key = resolveStoredS3Key(file);
   const parsedKey = parseS3Key(key);
   const ownerId = file.user?.toString?.();
-  const fileTenantId = file.tenantId?.toString?.() ?? null;
+  /** A moved member's record keeps the key it was stored under; the key's tenant is then `storageTenantId`. */
+  const fileTenantId =
+    file.storageTenantId !== undefined
+      ? file.storageTenantId
+      : (file.tenantId?.toString?.() ?? null);
 
   if (!ownerId) {
     const message = `[deleteFileFromS3] File record has no owner: ${key}`;
