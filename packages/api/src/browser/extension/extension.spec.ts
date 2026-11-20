@@ -165,6 +165,7 @@ describe('sign-in', () => {
       .set('Authorization', `Bearer ${first.body.token}`);
     // The model's own facts come from Synapse: the extension only ever sends the name `synapse`.
     expect(settings.body).toEqual({
+      account: { id: String(user._id), name: 'a@pilot.test', email: 'a@pilot.test' },
       enabled: true,
       blockedDomains: ['bank.example'],
       maxSteps: 50,
@@ -173,6 +174,17 @@ describe('sign-in', () => {
       vision: true,
       reasoning: 'none',
       disabledTools: ['hover'],
+    });
+  });
+
+  it("names the token's own account, so a page can tell whose browser it is", async () => {
+    const server = app(noFetch);
+    const theirs = await signIn(server, 'other');
+    const settings = await request(server).get('/settings').set('Authorization', `Bearer ${theirs}`);
+    expect(settings.body.account).toEqual({
+      id: String(otherUser._id),
+      name: 'b@other.test',
+      email: 'b@other.test',
     });
   });
 

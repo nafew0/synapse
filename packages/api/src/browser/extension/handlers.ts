@@ -21,6 +21,22 @@ export const MAX_EXTRACT_CHARS = 400_000;
 
 type Handler = (req: ExtensionRequest, res: Response) => Promise<void>;
 
+/** The account a token signs in as: its id to compare, and the words to show the user. */
+export interface ExtensionAccount {
+  id: string;
+  name: string;
+  email: string;
+}
+
+const accountOf = (user: ExtensionRequest['user']): ExtensionAccount | null =>
+  user?.id
+    ? {
+        id: user.id,
+        name: user.name || user.username || user.email || '',
+        email: user.email ?? '',
+      }
+    : null;
+
 export interface ExtensionHandlers {
   createCode: Handler;
   exchange: Handler;
@@ -110,10 +126,15 @@ export function createExtensionHandlers(deps: {
     res.json({ removed });
   };
 
+  /**
+   * The settings name the account the token belongs to, so a Synapse page can tell whether the extension acts as the
+   * user signed in there, and offer to switch when it does not.
+   */
   const settings = async (req: ExtensionRequest, res: Response): Promise<void> => {
     const tenantId = req.user?.tenantId;
     const institution = tenantId ? await deps.getInstitutionByTenantId(tenantId) : null;
     res.json({
+      account: accountOf(req.user),
       enabled: !!institution?.browserControl?.extensionEnabled,
       blockedDomains: institution?.browserControl?.blockedDomains ?? [],
       maxSteps: deps.config().maxSteps,

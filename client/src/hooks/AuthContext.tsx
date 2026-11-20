@@ -26,6 +26,7 @@ import {
   useLogoutUserMutation,
   useRefreshTokenMutation,
 } from '~/data-provider';
+import { disconnectBrowserExtension } from '~/components/BrowserExtension/useBrowserTask';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
 import { SESSION_KEY, isSafeRedirect, getPostLoginRedirect } from '~/utils';
 import useTimeout from './useTimeout';
@@ -160,9 +161,10 @@ const AuthContextProvider = ({
       if (redirect) {
         logoutRedirectRef.current = redirect;
       }
+      disconnectBrowserExtension(user?.id);
       logoutUser.mutate(undefined);
     },
-    [logoutUser],
+    [logoutUser, user?.id],
   );
 
   const userQuery = useGetUserQuery({ enabled: !!(token ?? '') });

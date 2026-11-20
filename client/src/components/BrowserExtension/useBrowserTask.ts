@@ -25,12 +25,35 @@ interface ChromeRuntime {
 
 type ExtensionWindow = Window & { chrome?: { runtime?: ChromeRuntime } };
 
-interface Ping {
+/** The Synapse account the extension acts as, as its settings name it. */
+export interface ExtensionAccount {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export interface Ping {
   installed: true;
   version: string;
   connected: boolean;
   enabled: boolean;
+  /** Absent when it is not connected, or connected by a version that does not say as whom. */
+  account?: ExtensionAccount;
 }
+
+/** What a sign-in or sign-out sent through the bridge came to. */
+export interface LinkResult {
+  ok: boolean;
+  account?: ExtensionAccount;
+  /** `no_click`: the bridge takes a sign-in only inside a real click on the page. */
+  reason?: 'bad_code' | 'failed' | 'not_yours' | 'no_click';
+}
+
+type BridgeRequest =
+  | { type: 'hello' | 'ping' }
+  | { type: 'task'; text: string; files: TaskFile[] }
+  | { type: 'connect'; code: string }
+  | { type: 'disconnect'; userId: string };
 
 export interface TaskResult {
   ok: boolean;
@@ -54,8 +77,8 @@ function runtime(): ChromeRuntime | undefined {
 }
 
 /** Through the content script, so the click still counts. Null when no bridge answers in time. */
-function viaBridge<T>(
-  message: { type: 'hello' | 'ping' | 'task'; text?: string; files?: TaskFile[] },
+export function viaBridge<T>(
+  message: BridgeRequest,
   timeout = BRIDGE_TIMEOUT_MS,
 ): Promise<T | null> {
   return new Promise((resolve) => {
@@ -95,6 +118,18 @@ function direct<T>(message: unknown): Promise<T | null> {
   });
 }
 
+/** Whether the bridge content script is on this page: it marks the document as soon as it attaches. */
+export const hasBridge = (): boolean => !!document.documentElement.dataset.synapseBrowser;
+
+/**
+ * The user is signing out of Synapse in this browser: the extension's sign-in ends too when it is theirs, so the next
+ * person at this computer cannot run browser tasks as them. Nothing to wait for, and nothing to do without the bridge.
+ */
+export function disconnectBrowserExtension(userId: string | undefined): void {
+  if (!userId || !hasBridge()) return;
+  void viaBridge<LinkResult>({ type: 'disconnect', userId });
+}
+
 /**
  * Whether this browser has Synapse Browser installed and signed in, and how to hand it a task. The ping settles which
  * way to speak; the task then goes that way only. Trying both in turn would hand the same task over twice whenever the
@@ -108,7 +143,7 @@ export function useBrowserTask() {
     let live = true;
     void (async () => {
       // The relay marks the document as soon as it attaches, which may be after this page's script runs.
-      let here = !!document.documentElement.dataset.synapseBrowser;
+      let here = hasBridge();
       for (let tries = 0; tries < 4 && !here && live; tries++) {
         here = !!(await viaBridge<{ bridge: true }>({ type: 'hello' }, BRIDGE_HELLO_MS));
       }
@@ -132,5 +167,14 @@ export function useBrowserTask() {
     [channel],
   );
 
-  return { extension: state, handOver };
+  /** Asks the extension again, after it was connected or switched from this page. */
+  const refresh = useCallback(async () => {
+    const ping =
+      channel === 'bridge'
+        ? await viaBridge<Ping>({ type: 'ping' })
+        : await direct<Ping>({ type: 'ping' });
+    setState(ping);
+  }, [channel]);
+
+  return { extension: state, channel, handOver, refresh };
 }
