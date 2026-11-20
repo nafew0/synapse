@@ -105,6 +105,8 @@ export interface MigrationOptions {
   unmapped?: 'default' | 'skip';
   /** Platform staff (platform roles, active `PlatformAdmin` rows) keep the local login synapse-admin uses unless this is set. */
   includeAdmins?: boolean;
+  /** Superadmins named only by configuration (`PLATFORM_SUPERADMIN_EMAILS`); also staff. */
+  staffEmails?: string[];
   batchSize?: number;
   userIds?: string[];
   now?: () => Date;
@@ -196,14 +198,16 @@ interface Staff {
   emails: Set<string>;
 }
 
-async function loadStaff(db: mongo.Db): Promise<Staff> {
+async function loadStaff(db: mongo.Db, configured: string[] = []): Promise<Staff> {
   const rows = await db
     .collection<{ userId?: Types.ObjectId | string; email?: string }>('platformadmins')
     .find({ active: true }, { projection: { userId: 1, email: 1 } })
     .toArray();
   return {
     ids: new Set(rows.filter((row) => row.userId).map((row) => String(row.userId))),
-    emails: new Set(rows.map((row) => normalizeEmail(row.email)).filter(Boolean)),
+    emails: new Set(
+      [...rows.map((row) => row.email), ...configured].map(normalizeEmail).filter(Boolean),
+    ),
   };
 }
 
@@ -432,7 +436,7 @@ export async function migrateUsersToZitadel(
   const [institutions, duplicates, staff] = await Promise.all([
     loadInstitutions(deps.db),
     duplicateEmails(users),
-    options.includeAdmins ? null : loadStaff(deps.db),
+    options.includeAdmins ? null : loadStaff(deps.db, options.staffEmails),
   ]);
   const resolveTarget = organizationResolver(options, institutions);
   const report = emptyReport(options, issuer, deps.zitadel != null, now());

@@ -400,6 +400,20 @@ describe('apply', () => {
     await mongoose.connection.collection('platformadmins').deleteMany({});
   });
 
+  it('treats superadmins named only in configuration as staff', async () => {
+    const configured = await makeUser({ email: 'boss@example.test' });
+    const member = await makeUser();
+
+    const report = await migrateUsersToZitadel(
+      { db: db(), zitadel: client() },
+      options({ staffEmails: [' BOSS@example.test ', ''] }),
+    );
+
+    expect(entryFor(report, configured._id)?.status).toBe('platform_staff');
+    expect(entryFor(report, member._id)?.status).toBe('created');
+    expect((await load(configured._id))?.provider).toBe('local');
+  });
+
   it('includes admins only when asked', async () => {
     const admin = await makeUser({ role: 'ADMIN' });
     const report = await migrateUsersToZitadel(

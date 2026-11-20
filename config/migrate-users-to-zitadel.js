@@ -9,6 +9,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 
 const mongoose = require('mongoose');
 const {
+  withDatabase,
   isProductionDbName,
   createZitadelClient,
   unlinkMigratedUser,
@@ -119,13 +120,15 @@ function resolveDatabase(uri, db) {
   if (!uri) {
     throw new Error('MONGO_URI is not set');
   }
-  const url = new URL(uri);
-  if (db) {
-    url.pathname = `/${db}`;
-  }
-  const name = decodeURIComponent(url.pathname.replace(/^\//, '')) || 'test';
-  return { uri: url.toString(), name };
+  return withDatabase(uri, db);
 }
+
+/** Superadmins configured by email only; the migration treats them as staff like `PlatformAdmin` rows. */
+const configuredSuperadmins = () =>
+  (process.env.PLATFORM_SUPERADMIN_EMAILS || '')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
 
 function readOrganizationMap(file) {
   if (!file) {
@@ -248,6 +251,7 @@ async function main() {
       organizationMap: readOrganizationMap(args.orgMap),
       unmapped: args.unmapped,
       includeAdmins: args.includeAdmins === true,
+      staffEmails: configuredSuperadmins(),
       batchSize: args.batchSize,
       userIds: args.users,
       onBatch: (progress) => {

@@ -31,7 +31,7 @@ the same account (no new user, no institution placement).
 | Status | Meaning |
 |---|---|
 | `already_linked` | Already an OpenID account for this issuer (a rerun skips everyone already done). |
-| `platform_staff` | `ADMIN`/`PLATFORM_SUPERADMIN` role or an active `PlatformAdmin` row. They keep the local login synapse-admin uses. `--include-admins` migrates them too. |
+| `platform_staff` | `ADMIN`/`PLATFORM_SUPERADMIN` role, an active `PlatformAdmin` row, or an email in `PLATFORM_SUPERADMIN_EMAILS` (run the script with the app's `.env` so it sees that list). They keep the local login synapse-admin uses. `--include-admins` migrates them too. |
 | `other_provider` | Google, another issuer, etc. |
 | `no_email` | No email to sign in with. |
 | `unmapped_tenant` | Only with `--unmapped skip`. |
@@ -101,7 +101,9 @@ node config/migrate-users-to-zitadel.js \
   --org-id <individuals-org-id> --org-map map.json
 ```
 
-Any database whose name contains "prod" needs `--i-know-this-is-production`. Other options:
+Any database whose name contains "prod" needs `--i-know-this-is-production`. Replica-set
+strings with several hosts (`mongodb://a:27017,b:27017/db?replicaSet=rs0`) and `mongodb+srv://`
+work; `--db` replaces only the database part. Other options:
 `--batch-size <n>` (users handled concurrently, default 20), `--user <id>` (repeatable; try a few
 accounts first), `--unmapped skip`, `--include-admins`, `--report <file>`.
 
@@ -135,15 +137,23 @@ hashes.
 bdren.ai decides whether a person is covered by their institution. A migrated member is new to
 bdren.ai: their first SSO login makes them known there, but not covered until their institution
 admin adds them to the package. Synapse's coverage review would normally move a not-covered member
-out of an institution linked to bdren.ai, so the migration sets `bdrenHoldTenantId`: while it is set,
-a "not covered" answer records `member.coverage_mismatch` with reason `migrated_not_covered` and
-keeps them in place. The hold ends the first time bdren.ai covers them in that institution; after
-that the normal rules apply. Coverage by a different institution still moves them as usual.
-Institutions not linked to bdren.ai are never moved at all.
+out of an institution linked to bdren.ai, so the migration sets `bdrenHoldTenantId`: while the hold
+lasts, a "not covered" answer records `member.coverage_mismatch` with reason
+`migrated_not_covered` and keeps them in place. Coverage by a different institution still moves
+them as usual, and institutions not linked to bdren.ai are never moved at all.
 
-Until an institution admin covers them in bdren.ai, a held member's usage limits are whatever
-bdren.ai answers for them. Ask institution admins to add their members to the package soon after
-the migration.
+The hold ends, with a `member.migration_hold_ended` audit entry naming the reason, when:
+
+| Reason | When |
+|---|---|
+| `covered` | bdren.ai covers them in that institution. Nothing moves. |
+| `institution_inactive` | The held institution is closed or suspended. The normal rules apply (a not-covered member leaves it). |
+| `coverage_decided` | bdren.ai sends a `membership.coverage_changed` webhook naming them: it has made a decision, so the normal rules apply. |
+| `grace_expired` | `BDREN_MIGRATION_HOLD_DAYS` (default **30**) have passed since `ssoMigratedAt`. The next review (login or webhook) applies the normal rules, so someone never added in bdren.ai leaves the institution, keeping their private data. |
+
+Set `BDREN_MIGRATION_HOLD_DAYS` in Synapse's environment before the migration if institution admins
+need more or less time, and tell them to cover their people in bdren.ai within it. Until they are
+covered, a held member's usage limits are whatever bdren.ai answers for them.
 
 ## Users who need to act
 

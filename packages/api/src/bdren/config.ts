@@ -36,6 +36,7 @@ export function readBdrenConfig(env: NodeJS.ProcessEnv = process.env): BdrenConf
     timeoutMs: positive(env.BDREN_ALLOWANCE_TIMEOUT_MS, 2000),
     ttlMs: positive(env.BDREN_ALLOWANCE_TTL_SECONDS, 600) * 1000,
     maxStaleMs: positive(env.BDREN_ALLOWANCE_MAX_STALE_HOURS, 24) * 3_600_000,
+    migrationHoldMs: positive(env.BDREN_MIGRATION_HOLD_DAYS, 30) * 86_400_000,
     upgradeUrl: (env.BDREN_UPGRADE_URL ?? '').trim() || DEFAULT_UPGRADE_URL,
     fallback: {
       monthly: positive(env.BDREN_FREE_FALLBACK_MONTHLY_CREDITS, DEFAULT_FALLBACK_MONTHLY),

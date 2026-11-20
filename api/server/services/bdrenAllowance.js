@@ -137,18 +137,21 @@ async function getRequestAllowance(user, memberPackage = user?.usagePackage) {
   }
 }
 
-/** A `membership.coverage_changed` for a person: ask bdren.ai afresh and move them if it changed. */
+/**
+ * A `membership.coverage_changed` for a person: ask bdren.ai afresh and move them if it changed.
+ * It is bdren.ai's decision about them, so it also ends a migration hold.
+ */
 async function reviewMember(issuer, subject) {
   const user = await runAsSystem(() =>
     mongoose.models.User.findOne({ openidId: subject, openidIssuer: issuer })
       .select(
-        'tenantId accountScope openidId openidIssuer email role bdrenNotedOrganizationId bdrenHoldTenantId',
+        'tenantId accountScope openidId openidIssuer email role bdrenNotedOrganizationId bdrenHoldTenantId ssoMigratedAt',
       )
       .lean()
       .exec(),
   );
   if (user) {
-    await provisioner.reviewExistingMember(user, { fresh: true });
+    await provisioner.reviewExistingMember(user, { fresh: true, decided: true });
   }
 }
 

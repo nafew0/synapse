@@ -442,8 +442,11 @@ describe('a member migrated to SSO', () => {
       tenantId: 'dhaka-university',
       accountScope: 'institution',
       bdrenHoldTenantId: 'dhaka-university',
+      ssoMigratedAt: new Date(),
       ...over,
     });
+  const holdEnds = async () =>
+    (await audits('member.migration_hold_ended')).map((entry) => entry.metadata?.reason);
 
   it('keeps their institution while bdren.ai does not cover them yet, and records it once', async () => {
     await linked({ stats: { activeMembers: 1 } });
@@ -473,10 +476,60 @@ describe('a member migrated to SSO', () => {
     const covered = await User().findById(user._id).lean<typeof user>();
     expect(covered?.bdrenHoldTenantId).toBeUndefined();
     expect(covered?.tenantId).toBe('dhaka-university');
+    expect(await holdEnds()).toEqual(['covered']);
 
     bdren.answers.set(user.openidId as string, freeAnswer(user.openidId as string));
     await provisioner.reviewExistingMember(covered as typeof user, { fresh: true });
     expect((await User().findById(user._id).lean<typeof user>())?.tenantId).toBeUndefined();
+  });
+
+  it('ends when the institution is no longer active, and they leave it', async () => {
+    await linked({ status: 'closed', stats: { activeMembers: 1 } });
+    const user = await hold();
+    bdren.answers.set(user.openidId as string, freeAnswer(user.openidId as string));
+
+    await provisioner.reviewExistingMember(user);
+
+    const saved = await User().findById(user._id).lean<typeof user>();
+    expect(saved?.tenantId).toBeUndefined();
+    expect(saved?.bdrenHoldTenantId).toBeUndefined();
+    expect(await holdEnds()).toEqual(['institution_inactive']);
+  });
+
+  it('ends on a coverage decision from bdren.ai that names them', async () => {
+    await linked({ stats: { activeMembers: 1 } });
+    const user = await hold();
+    bdren.answers.set(user.openidId as string, freeAnswer(user.openidId as string));
+
+    await provisioner.reviewExistingMember(user, { fresh: true, decided: true });
+
+    expect((await User().findById(user._id).lean<typeof user>())?.tenantId).toBeUndefined();
+    expect(await holdEnds()).toEqual(['coverage_decided']);
+  });
+
+  it('ends after the grace period, and keeps holding before it', async () => {
+    await linked({ stats: { activeMembers: 2 } });
+    const day = 86_400_000;
+    const recent = await hold({ ssoMigratedAt: new Date(Date.now() - 29 * day) });
+    const old = await hold({ ssoMigratedAt: new Date(Date.now() - 31 * day) });
+    for (const user of [recent, old]) {
+      bdren.answers.set(user.openidId as string, freeAnswer(user.openidId as string));
+      await provisioner.reviewExistingMember(user);
+    }
+
+    expect((await User().findById(recent._id).lean<typeof recent>())?.tenantId).toBe(
+      'dhaka-university',
+    );
+    const ended = await User().findById(old._id).lean<typeof old>();
+    expect(ended?.tenantId).toBeUndefined();
+    expect(ended?.bdrenHoldTenantId).toBeUndefined();
+    expect(await holdEnds()).toEqual(['grace_expired']);
+  });
+
+  it('reads the grace period from BDREN_MIGRATION_HOLD_DAYS', () => {
+    const days = (value?: string) =>
+      readBdrenConfig({ BDREN_MIGRATION_HOLD_DAYS: value }).migrationHoldMs / 86_400_000;
+    expect([days('7'), days(undefined), days('0'), days('x')]).toEqual([7, 30, 30, 30]);
   });
 
   it('does not hold someone whose hold names another institution', async () => {
