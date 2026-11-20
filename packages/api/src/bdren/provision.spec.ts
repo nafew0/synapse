@@ -2,11 +2,12 @@ import http from 'http';
 import express from 'express';
 import mongoose from 'mongoose';
 import { createHmac } from 'crypto';
-import { createModels, createMethods } from '@librechat/data-schemas';
+import { createModels, createMethods, runAsSystem } from '@librechat/data-schemas';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { IInstitution, IAuditLog, BdrenAllowancePayload } from '@librechat/data-schemas';
 import type { AddressInfo } from 'net';
 import type { BdrenConfig } from './types';
+import { getAlertModel } from '~/admin/alerts/store';
 import { createProvisioner, tenantIdFromSlug } from './provision';
 import { createAllowanceService } from './allowance';
 import { createAllowanceClient } from './client';
@@ -25,6 +26,7 @@ const ORG = {
 function startBdren() {
   const answers = new Map<string, BdrenAllowancePayload>();
   const state = { down: false };
+  const bodies: Array<Record<string, string>> = [];
   const server = http.createServer((req, res) => {
     let raw = '';
     req.on('data', (chunk) => (raw += chunk));
@@ -33,7 +35,9 @@ function startBdren() {
         res.writeHead(503).end();
         return;
       }
-      const answer = answers.get(JSON.parse(raw).zitadel_subject);
+      const body = JSON.parse(raw);
+      bodies.push(body);
+      const answer = answers.get(body.zitadel_subject);
       if (!answer) {
         res.writeHead(404).end('{}');
         return;
@@ -46,6 +50,7 @@ function startBdren() {
     url: string;
     answers: typeof answers;
     state: typeof state;
+    bodies: typeof bodies;
     close: () => Promise<void>;
   }>((resolve) => {
     server.listen(0, '127.0.0.1', () => {
@@ -54,6 +59,7 @@ function startBdren() {
         url: `http://127.0.0.1:${port}`,
         answers,
         state,
+        bodies,
         close: () => new Promise((done) => server.close(() => done())),
       });
     });
@@ -90,8 +96,11 @@ beforeAll(async () => {
   mongo = await MongoMemoryServer.create();
   await mongoose.connect(mongo.getUri());
   createModels(mongoose);
+  getAlertModel();
   await Promise.all(
-    ['BdrenAllowance', 'BdrenEvent', 'Institution'].map((name) => mongoose.models[name].init()),
+    ['BdrenAllowance', 'BdrenEvent', 'Institution', 'User', 'PlatformAlert'].map((name) =>
+      mongoose.models[name]?.init(),
+    ),
   );
   bdren = await startBdren();
   config = readBdrenConfig({
@@ -113,10 +122,17 @@ afterAll(async () => {
 beforeEach(async () => {
   bdren.state.down = false;
   bdren.answers.clear();
+  bdren.bodies.length = 0;
   await Promise.all(
-    ['BdrenAllowance', 'BdrenEvent', 'Institution', 'AuditLog'].map((name) =>
-      mongoose.models[name].collection.deleteMany({}),
-    ),
+    [
+      'BdrenAllowance',
+      'BdrenEvent',
+      'Institution',
+      'AuditLog',
+      'User',
+      'Conversation',
+      'PlatformAlert',
+    ].map((name) => mongoose.models[name].collection.deleteMany({})),
   );
   const client = createAllowanceClient(config);
   onCreated = jest.fn().mockResolvedValue(undefined);
@@ -126,8 +142,45 @@ beforeEach(async () => {
     service: createAllowanceService({ config, client }),
     recordAuditEntry: createMethods(mongoose).recordAuditEntry,
     onCreated,
+    placeMember,
   });
 });
+
+/** Stands in for the activation service: claims a seat or throws, like `activateProvisionedMember`. */
+async function placeMember(userId: string, tenantId: string) {
+  const institution = await Institution().findOne({ tenantId }).lean<IInstitution>();
+  const max = institution?.limits?.maxActiveMembers;
+  if (max != null && (institution?.stats?.activeMembers ?? 0) >= max) {
+    return null;
+  }
+  await Institution().updateOne({ tenantId }, { $inc: { 'stats.activeMembers': 1 } });
+  return runAsSystem(() =>
+    User()
+      .findOneAndUpdate(
+        { _id: userId, tenantId: null },
+        { $set: { tenantId, membershipStatus: 'active' } },
+        { new: true },
+      )
+      .lean<Record<string, unknown>>()
+      .exec(),
+  );
+}
+
+const User = () => mongoose.models.User;
+let seq = 0;
+async function makeUser(over: Record<string, unknown> = {}) {
+  seq += 1;
+  const doc = await User().create({
+    provider: 'openid',
+    email: `u${seq}@x.test`,
+    username: `u${seq}`,
+    name: `U${seq}`,
+    openidId: `sub-${seq}`,
+    openidIssuer: ISSUER,
+    ...over,
+  });
+  return doc.toObject();
+}
 
 describe('tenantIdFromSlug', () => {
   it('keeps lowercase letters, digits and single hyphens and never starts with an underscore', () => {
@@ -169,24 +222,6 @@ describe('ensureInstitutionForOrganization', () => {
     expect(await provisioner.ensureInstitutionForOrganization(ORG)).toBe('du-old');
     expect(await Institution().countDocuments()).toBe(1);
     expect(await audits('institution.provisioned')).toHaveLength(0);
-  });
-
-  it('gives a colliding tenant id a suffix and never links the unlinked institution', async () => {
-    await Institution().create({
-      tenantId: 'dhaka-university',
-      name: 'Hand made',
-      slug: 'dhaka-university',
-    });
-
-    const tenantId = await provisioner.ensureInstitutionForOrganization(ORG);
-
-    expect(tenantId).not.toBe('dhaka-university');
-    expect(tenantId).toMatch(/^dhaka-university-[a-z0-9]+$/);
-    const handMade = await Institution()
-      .findOne({ tenantId: 'dhaka-university' })
-      .lean<IInstitution>();
-    expect(handMade?.bdrenOrganizationId).toBeUndefined();
-    expect(await Institution().countDocuments()).toBe(2);
   });
 
   it('falls back to the slug as the name when bdren.ai sends none', async () => {
@@ -239,45 +274,182 @@ describe('tenantForNewMember', () => {
   });
 });
 
+const linked = (over: Record<string, unknown> = {}) =>
+  Institution().create({
+    tenantId: 'dhaka-university',
+    slug: 'dhaka-university',
+    name: 'Dhaka University',
+    bdrenOrganizationId: ORG.id,
+    ...over,
+  });
+
+describe('an unlinked institution already holds the slug', () => {
+  it('creates nothing, records link_needed once and an alert, and members land in it after linking', async () => {
+    await Institution().create({ tenantId: 'du', slug: 'du', name: 'Dhaka University' });
+    const org = { id: ORG.id, slug: 'du', name: 'Dhaka University' };
+
+    expect(await provisioner.ensureInstitutionForOrganization(org)).toBeNull();
+    expect(await provisioner.ensureInstitutionForOrganization(org)).toBeNull();
+
+    expect(await Institution().countDocuments()).toBe(1);
+    const entries = await audits('institution.link_needed');
+    expect(entries).toHaveLength(1);
+    expect(entries[0].metadata).toMatchObject({ organizationId: ORG.id, unlinkedTenantId: 'du' });
+    const alerts = await mongoose.models.PlatformAlert.find({ kind: 'institution_link' }).lean();
+    expect(alerts).toHaveLength(1);
+    expect(await audits('institution.provisioned')).toHaveLength(0);
+
+    bdren.answers.set('sub-m', institutionAnswer('sub-m', org));
+    expect(await provisioner.tenantForNewMember({ issuer: ISSUER, subject: 'sub-m' })).toBeNull();
+
+    await Institution().updateOne({ tenantId: 'du' }, { $set: { bdrenOrganizationId: ORG.id } });
+    expect(await provisioner.tenantForNewMember({ issuer: ISSUER, subject: 'sub-m' })).toBe('du');
+    expect(await Institution().countDocuments()).toBe(1);
+  });
+
+  it('still suffixes when the holder is linked to a different organization', async () => {
+    await linked({ bdrenOrganizationId: 'someone-else' });
+    const tenantId = await provisioner.ensureInstitutionForOrganization(ORG);
+    expect(tenantId).toMatch(/^dhaka-university-/);
+    expect(await audits('institution.link_needed')).toHaveLength(0);
+  });
+});
+
 describe('reviewExistingMember', () => {
-  const userId = new mongoose.Types.ObjectId().toString();
-  const individual = {
-    id: userId,
-    openidId: 'sub-old',
-    openidIssuer: ISSUER,
-    accountScope: 'standalone' as const,
-  };
+  it('never creates an institution; it records an unlinked one once and moves nobody', async () => {
+    const user = await makeUser();
+    bdren.answers.set(user.openidId as string, institutionAnswer(user.openidId as string));
 
-  it('records, once, an individual who is covered by an institution, and moves nobody', async () => {
-    bdren.answers.set('sub-old', institutionAnswer('sub-old'));
+    await provisioner.reviewExistingMember(user);
+    const again = await User().findById(user._id).lean<typeof user>();
+    await provisioner.reviewExistingMember(again as typeof user);
 
-    await provisioner.reviewExistingMember(individual);
-    await provisioner.reviewExistingMember(individual);
-
+    expect(await Institution().countDocuments()).toBe(0);
     const entries = await audits('member.coverage_mismatch');
     expect(entries).toHaveLength(1);
-    expect(entries[0].target.id).toBe(userId);
     expect(entries[0].metadata).toMatchObject({
       organizationId: ORG.id,
-      institutionTenantId: 'dhaka-university',
+      institutionTenantId: null,
       currentTenantId: null,
     });
   });
 
-  it('records a member of a different tenant, and nothing for one already in the right tenant', async () => {
-    bdren.answers.set('sub-old', institutionAnswer('sub-old'));
-    await provisioner.reviewExistingMember({ ...individual, tenantId: 'other-uni' });
+  it('records a member of another tenant and nothing for one already in the right tenant', async () => {
+    await linked();
+    const other = await makeUser({ tenantId: 'other-uni' });
+    bdren.answers.set(other.openidId as string, institutionAnswer(other.openidId as string));
+    await provisioner.reviewExistingMember(other);
     expect(await audits('member.coverage_mismatch')).toHaveLength(1);
+    expect((await User().findById(other._id).lean<typeof other>())?.tenantId).toBe('other-uni');
 
     await mongoose.models.AuditLog.collection.deleteMany({});
-    await provisioner.reviewExistingMember({ ...individual, tenantId: 'dhaka-university' });
+    const inside = await makeUser({ tenantId: 'dhaka-university' });
+    bdren.answers.set(inside.openidId as string, institutionAnswer(inside.openidId as string));
+    await provisioner.reviewExistingMember(inside);
     expect(await audits('member.coverage_mismatch')).toHaveLength(0);
   });
 
-  it('never throws when bdren.ai is down', async () => {
-    bdren.state.down = true;
-    await expect(provisioner.reviewExistingMember(individual)).resolves.toBeUndefined();
+  it('places a tenantless user with no chats on a later login and sends the id token', async () => {
+    await linked();
+    const user = await makeUser();
+    bdren.answers.set(user.openidId as string, institutionAnswer(user.openidId as string));
+
+    await provisioner.reviewExistingMember(user, { idToken: 'tok-later' });
+
+    const saved = await User().findById(user._id).lean<typeof user>();
+    expect(saved).toMatchObject({ tenantId: 'dhaka-university', membershipStatus: 'active' });
+    expect(bdren.bodies[0].id_token).toBe('tok-later');
     expect(await audits('member.coverage_mismatch')).toHaveLength(0);
+  });
+
+  it('does not move a tenantless user who already has chats', async () => {
+    await linked();
+    const user = await makeUser();
+    await mongoose.models.Conversation.collection.insertOne({
+      conversationId: 'c1',
+      user: String(user._id),
+    });
+    bdren.answers.set(user.openidId as string, institutionAnswer(user.openidId as string));
+
+    await provisioner.reviewExistingMember(user);
+
+    expect((await User().findById(user._id).lean<typeof user>())?.tenantId).toBeUndefined();
+    expect(await audits('member.coverage_mismatch')).toHaveLength(1);
+  });
+
+  it('does not place into a full institution, and never throws when bdren.ai is down', async () => {
+    await linked({ limits: { maxActiveMembers: 1 }, stats: { activeMembers: 1 } });
+    const user = await makeUser();
+    bdren.answers.set(user.openidId as string, institutionAnswer(user.openidId as string));
+    await provisioner.reviewExistingMember(user);
+    expect((await User().findById(user._id).lean<typeof user>())?.tenantId).toBeUndefined();
+
+    bdren.state.down = true;
+    await expect(provisioner.reviewExistingMember(await makeUser())).resolves.toBeUndefined();
+  });
+});
+
+describe('first login of a new member', () => {
+  it('sends the id token to bdren.ai, and never logs it', async () => {
+    const { logger } = jest.requireActual('@librechat/data-schemas');
+    const spies = ['info', 'warn', 'error', 'debug'].map((level) => jest.spyOn(logger, level));
+    bdren.answers.set('sub-first', institutionAnswer('sub-first'));
+
+    const tenantId = await provisioner.tenantForNewMember({
+      issuer: ISSUER,
+      subject: 'sub-first',
+      idToken: 'secret-id-token',
+    });
+
+    expect(tenantId).toBe('dhaka-university');
+    expect(bdren.bodies[0]).toMatchObject({
+      zitadel_subject: 'sub-first',
+      id_token: 'secret-id-token',
+    });
+    const logged = JSON.stringify(spies.flatMap((spy) => spy.mock.calls));
+    expect(logged).not.toContain('secret-id-token');
+    spies.forEach((spy) => spy.mockRestore());
+  });
+
+  it('sends no id_token field when there is none', async () => {
+    await provisioner.tenantForNewMember({ issuer: ISSUER, subject: 'sub-none' });
+    expect(bdren.bodies[0]).not.toHaveProperty('id_token');
+  });
+
+  it('does not name a full institution, so the user is created without a tenant', async () => {
+    await linked({ limits: { maxActiveMembers: 1 }, stats: { activeMembers: 1 } });
+    bdren.answers.set('sub-full', institutionAnswer('sub-full'));
+    expect(
+      await provisioner.tenantForNewMember({ issuer: ISSUER, subject: 'sub-full' }),
+    ).toBeNull();
+  });
+
+  it('keeps a user tenantless, with no suspended row, when placement fails', async () => {
+    await linked();
+    const user = await makeUser();
+    const failing = createProvisioner({
+      config,
+      client: createAllowanceClient(config),
+      service: createAllowanceService({ config, client: createAllowanceClient(config) }),
+      recordAuditEntry: createMethods(mongoose).recordAuditEntry,
+      placeMember: async () => {
+        throw new Error('Seat limit reached');
+      },
+    });
+
+    expect(await failing.adoptNewMember(String(user._id), 'dhaka-university')).toBeNull();
+
+    const saved = await User().findById(user._id).lean<typeof user>();
+    expect(saved?.tenantId).toBeUndefined();
+    expect(await User().countDocuments({ membershipStatus: 'suspended' })).toBe(0);
+    expect(await audits('member.coverage_mismatch')).toHaveLength(1);
+  });
+
+  it('places a user created without a tenant when there is room', async () => {
+    await linked();
+    const user = await makeUser();
+    const placed = await provisioner.adoptNewMember(String(user._id), 'dhaka-university');
+    expect(placed).toMatchObject({ tenantId: 'dhaka-university', membershipStatus: 'active' });
   });
 });
 
@@ -326,6 +498,7 @@ describe('webhook for an unknown organization', () => {
       const response = await deliver({
         id: `evt-${type}`,
         type,
+        user: { issuer: ISSUER, subject: 'someone' },
         organization: { id: ORG.id, slug: 'du', name: 'Dhaka University' },
       });
 
@@ -334,6 +507,21 @@ describe('webhook for an unknown organization', () => {
       expect(row).toMatchObject({ tenantId: 'du', name: 'Dhaka University' });
     },
   );
+
+  it.each([
+    ['subscription.expired', undefined],
+    ['subscription.cancelled', undefined],
+    ['subscription.downgraded', undefined],
+    ['membership.coverage_changed', undefined],
+  ])('creates nothing on %s without a person', async (type) => {
+    const response = await deliver({
+      id: `evt-td-${type}`,
+      type,
+      organization: { id: ORG.id, slug: 'du', name: 'Dhaka University' },
+    });
+    expect(response.status).toBe(204);
+    expect(await Institution().countDocuments()).toBe(0);
+  });
 
   it('does not provision on other event types, and a redelivery adds nothing', async () => {
     await deliver({

@@ -62,7 +62,7 @@ export function createAllowanceService({
     }
 
     const result = await client.fetchAllowance(
-      { issuer: who.issuer, subject: who.subject },
+      { issuer: who.issuer, subject: who.subject, idToken: who.idToken },
       force ? undefined : entry?.etag,
     );
     if (result.status === 'ok') {

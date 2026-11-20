@@ -107,6 +107,7 @@ jest.mock('@librechat/api', () => {
 jest.mock('~/server/services/bdrenAllowance', () => ({
   bdrenProvisioner: {
     tenantForNewMember: jest.fn().mockResolvedValue(null),
+    adoptNewMember: jest.fn().mockResolvedValue(null),
     reviewExistingMember: jest.fn().mockResolvedValue(undefined),
   },
 }));
@@ -2570,31 +2571,53 @@ describe('setupOpenId', () => {
 
     beforeEach(() => {
       bdrenProvisioner.tenantForNewMember.mockReset().mockResolvedValue(null);
+      bdrenProvisioner.adoptNewMember.mockReset().mockResolvedValue(null);
       bdrenProvisioner.reviewExistingMember.mockReset().mockResolvedValue(undefined);
       activateProvisionedMember.mockClear();
     });
 
-    it('puts a first-time user in the institution bdren.ai names, as an active member', async () => {
+    it('creates a first-time user without a tenant, then places them as an active member', async () => {
       bdrenProvisioner.tenantForNewMember.mockResolvedValue('dhaka-university');
+      bdrenProvisioner.adoptNewMember.mockImplementation(async (userId, tenantId) => ({
+        _id: userId,
+        tenantId,
+        membershipStatus: 'active',
+      }));
 
       const { user } = await validate(tokenset);
 
       expect(bdrenProvisioner.tenantForNewMember).toHaveBeenCalledWith({
         issuer: 'https://fake-issuer.com',
         subject: tokenset.claims().sub,
+        idToken: tokenset.id_token,
       });
-      expect(createUser).toHaveBeenCalledWith(
-        expect.objectContaining({ tenantId: 'dhaka-university', membershipStatus: 'suspended' }),
-        expect.anything(),
-        true,
-        true,
-      );
-      expect(activateProvisionedMember).toHaveBeenCalledWith({
-        userId: 'newUserId',
-        tenantId: 'dhaka-university',
-      });
+      expect(createUser.mock.calls[0][0]).not.toHaveProperty('tenantId');
+      expect(createUser.mock.calls[0][0]).not.toHaveProperty('membershipStatus');
+      expect(bdrenProvisioner.adoptNewMember).toHaveBeenCalledWith('newUserId', 'dhaka-university');
       expect(user.tenantId).toBe('dhaka-university');
       expect(user.membershipStatus).toBe('active');
+    });
+
+    it('logs in tenantless, with no suspended member, when placement fails', async () => {
+      bdrenProvisioner.tenantForNewMember.mockResolvedValue('dhaka-university');
+      bdrenProvisioner.adoptNewMember.mockResolvedValue(null);
+
+      const { user } = await validate(tokenset);
+
+      expect(user).toBeTruthy();
+      expect(user.tenantId).toBeUndefined();
+      expect(createUser.mock.calls[0][0]).not.toHaveProperty('membershipStatus');
+      expect(activateProvisionedMember).not.toHaveBeenCalled();
+    });
+
+    it('lets login through when placing the user throws', async () => {
+      bdrenProvisioner.tenantForNewMember.mockResolvedValue('dhaka-university');
+      bdrenProvisioner.adoptNewMember.mockRejectedValue(new Error('Seat limit reached'));
+
+      const { user } = await validate(tokenset);
+
+      expect(user).toBeTruthy();
+      expect(user.tenantId).toBeUndefined();
     });
 
     it('leaves a first-time user without a tenant when bdren.ai names none', async () => {
@@ -2631,6 +2654,9 @@ describe('setupOpenId', () => {
 
       expect(bdrenProvisioner.tenantForNewMember).not.toHaveBeenCalled();
       expect(bdrenProvisioner.reviewExistingMember).toHaveBeenCalledTimes(1);
+      expect(bdrenProvisioner.reviewExistingMember).toHaveBeenCalledWith(expect.anything(), {
+        idToken: tokenset.id_token,
+      });
       expect(user.tenantId).toBeUndefined();
       expect(activateProvisionedMember).not.toHaveBeenCalled();
     });

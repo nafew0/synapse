@@ -36,12 +36,16 @@ const payloadSchema = z.object({
   etag: z.string(),
 });
 
+/** Who to ask about. `idToken` is the raw token of a login just completed; bdren.ai may use it to learn a person it has not seen sign in. Never logged. */
+export interface AllowanceIdentity {
+  issuer: string;
+  subject: string;
+  idToken?: string;
+}
+
 export interface AllowanceClient {
   /** Asks bdren.ai what one person may use. Never throws: a failure is a result. */
-  fetchAllowance: (
-    identity: { issuer: string; subject: string },
-    etag?: string,
-  ) => Promise<AllowanceFetch>;
+  fetchAllowance: (identity: AllowanceIdentity, etag?: string) => Promise<AllowanceFetch>;
 }
 
 type FetchFn = (input: string, init: RequestInit) => Promise<Response>;
@@ -52,7 +56,7 @@ export function createAllowanceClient(
   fetchFn: FetchFn = fetch,
 ): AllowanceClient {
   async function fetchAllowance(
-    identity: { issuer: string; subject: string },
+    identity: AllowanceIdentity,
     etag?: string,
   ): Promise<AllowanceFetch> {
     const headers: Record<string, string> = {
@@ -68,7 +72,11 @@ export function createAllowanceClient(
         headers,
         redirect: 'error',
         signal: AbortSignal.timeout(config.timeoutMs),
-        body: JSON.stringify({ issuer: identity.issuer, zitadel_subject: identity.subject }),
+        body: JSON.stringify({
+          issuer: identity.issuer,
+          zitadel_subject: identity.subject,
+          ...(identity.idToken ? { id_token: identity.idToken } : null),
+        }),
       });
       if (response.status === 304) {
         return { status: 'not_modified' };

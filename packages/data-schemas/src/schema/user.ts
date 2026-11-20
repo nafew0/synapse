@@ -181,6 +181,9 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       enum: ['institution', 'standalone'],
       index: true,
     },
+    bdrenNotedOrganizationId: {
+      type: String,
+    },
     membershipStatus: {
       type: String,
       enum: Object.values(InstitutionMembershipStatuses),

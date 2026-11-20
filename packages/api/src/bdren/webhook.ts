@@ -37,11 +37,21 @@ export interface WebhookDeps {
   /** The Synapse user behind a bdren.ai identity, for the upgrade carry-over. */
   findSubject: (issuer: string, subject: string) => Promise<AllowanceSubject | null>;
   /** Creates the institution of an organization Synapse does not know yet; without it unknown organizations are ignored. */
-  ensureInstitution?: (org: OrganizationRef) => Promise<string>;
+  ensureInstitution?: (org: OrganizationRef) => Promise<string | null>;
   now?: () => Date;
 }
 
-const PROVISIONING_EVENT = /^subscription\.|^membership\.coverage_changed$/;
+/** Events that mean an organization is live; teardown (expired, cancelled, downgraded, suspended) never creates one. */
+const LIVE_SUBSCRIPTION_EVENT = /^subscription\.(activated|renewed|upgraded|limits_changed)$/;
+const COVERAGE_EVENT = 'membership.coverage_changed';
+
+/** A membership change names a person; the same event type without one is an organization status change. */
+function shouldProvision(event: { type: string; user?: unknown }): boolean {
+  return (
+    LIVE_SUBSCRIPTION_EVENT.test(event.type) ||
+    (event.type === COVERAGE_EVENT && event.user != null)
+  );
+}
 
 const DUPLICATE_KEY = 11000;
 
@@ -97,7 +107,7 @@ export function createWebhookHandler({
       const known = await tenantOfOrganization(org.id);
       const tenantId =
         known ??
-        (ensureInstitution && PROVISIONING_EVENT.test(event.type)
+        (ensureInstitution && shouldProvision(event)
           ? await ensureInstitution({ id: org.id, slug: org.slug, name: org.name ?? org.slug })
           : null);
       await invalidateOrganization(org.id, tenantId, at);

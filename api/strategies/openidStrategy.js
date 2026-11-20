@@ -59,10 +59,25 @@ async function bdrenTenantForNewUser(identity) {
   }
 }
 
-/** Records, without waiting, an existing user covered by an institution other than their own. */
-function reviewBdrenCoverage(user) {
+/** The user placed in the institution, or `null` when that failed (they then keep no tenant). */
+async function adoptBdrenMember(userId, tenantId) {
   try {
-    void require('~/server/services/bdrenAllowance').bdrenProvisioner.reviewExistingMember(user);
+    return await require('~/server/services/bdrenAllowance').bdrenProvisioner.adoptNewMember(
+      userId,
+      tenantId,
+    );
+  } catch (error) {
+    logger.error('[openidStrategy] placing the new user in their institution failed', error);
+    return null;
+  }
+}
+
+/** Records, without waiting, an existing user covered by an institution other than their own. */
+function reviewBdrenCoverage(user, idToken) {
+  try {
+    void require('~/server/services/bdrenAllowance').bdrenProvisioner.reviewExistingMember(user, {
+      idToken,
+    });
   } catch (error) {
     logger.error('[openidStrategy] bdren.ai coverage review failed', error);
   }
@@ -723,9 +738,13 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
 
   const isNewUser = !user;
   if (!user) {
-    const tenantId =
-      userinfo.tenantId ||
-      (await bdrenTenantForNewUser({ issuer: openidIssuer, subject: userinfo.sub }));
+    const bdrenTenantId = userinfo.tenantId
+      ? null
+      : await bdrenTenantForNewUser({
+          issuer: openidIssuer,
+          subject: userinfo.sub,
+          idToken: tokenset.id_token,
+        });
     user = {
       provider: 'openid',
       openidId: userinfo.sub,
@@ -735,9 +754,9 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
       name: fullName,
       idOnTheSource: userinfo.oid,
       openidIssuer,
-      ...(tenantId
+      ...(userinfo.tenantId
         ? {
-            tenantId,
+            tenantId: userinfo.tenantId,
             membershipStatus: InstitutionMembershipStatuses.SUSPENDED,
           }
         : null),
@@ -750,6 +769,8 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
         userId: user._id.toString(),
         tenantId: user.tenantId,
       });
+    } else if (bdrenTenantId) {
+      user = (await adoptBdrenMember(user._id.toString(), bdrenTenantId)) ?? user;
     }
   } else {
     user.provider = 'openid';
@@ -884,7 +905,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
 
   user = await updateUser(user._id, user);
   if (!isNewUser) {
-    reviewBdrenCoverage(user);
+    reviewBdrenCoverage(user, tokenset.id_token);
   }
   if (user?.tenantId && user.membershipStatus !== InstitutionMembershipStatuses.ACTIVE) {
     user = await activateProvisionedMember({
