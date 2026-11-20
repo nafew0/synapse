@@ -113,18 +113,20 @@ interface DayGroup {
  */
 export async function buildDay(day: string, issuer: string): Promise<MemberReport[]> {
   const groups = await runAsSystem(() =>
-    mongoose.models.UsageDaily.aggregate<DayGroup>([
-      { $match: { day, billable: true, user: { $exists: true, $ne: null } } },
-      {
-        $group: {
-          _id: { user: '$user', taskType: { $ifNull: ['$taskType', 'other'] } },
-          costUsd: { $sum: '$costUsd' },
-          requests: { $sum: '$requests' },
-          pages: { $sum: '$pages' },
+    mongoose.models.UsageDaily.aggregate<DayGroup>(
+      [
+        { $match: { day, billable: true, user: { $exists: true, $ne: null } } },
+        {
+          $group: {
+            _id: { user: '$user', taskType: { $ifNull: ['$taskType', 'other'] } },
+            costUsd: { $sum: '$costUsd' },
+            requests: { $sum: '$requests' },
+            pages: { $sum: '$pages' },
+          },
         },
-      },
-      { $sort: { '_id.user': 1, '_id.taskType': 1 } },
-    ]),
+      ],
+      { allowDiskUse: true },
+    ),
   );
   const linked = await linkedUsers([...new Set(groups.map((g) => g._id.user))], issuer);
   const members = new Map<string, MemberReport>();
@@ -133,18 +135,34 @@ export async function buildDay(day: string, issuer: string): Promise<MemberRepor
     if (!who) {
       continue;
     }
-    const report = members.get(String(group._id.user)) ?? {
+    /** Two Synapse users with one bdren.ai identity, and task names that sanitise alike, are one entry. */
+    const report = members.get(who.subject) ?? {
       issuer: who.issuer,
       zitadel_subject: who.subject,
       tasks: [],
     };
-    report.tasks!.push({
-      task_type: taskName(group._id.taskType),
-      credits: Math.round(group.costUsd * CREDITS_PER_USD),
-      requests: group.requests,
-      pages: group.pages,
-    });
-    members.set(String(group._id.user), report);
+    const name = taskName(group._id.taskType);
+    const task = report.tasks!.find((t) => t.task_type === name);
+    const credits = group.costUsd * CREDITS_PER_USD;
+    if (task) {
+      task.credits += credits;
+      task.requests += group.requests;
+      task.pages += group.pages;
+    } else {
+      report.tasks!.push({
+        task_type: name,
+        credits,
+        requests: group.requests,
+        pages: group.pages,
+      });
+    }
+    members.set(who.subject, report);
+  }
+  for (const report of members.values()) {
+    for (const task of report.tasks!) {
+      task.credits = Math.round(task.credits);
+    }
+    report.tasks!.sort((x, y) => x.task_type.localeCompare(y.task_type));
   }
   return [...members.values()];
 }
@@ -179,7 +197,10 @@ export async function* windowReports(
   let after: Types.ObjectId | undefined;
   for (;;) {
     const entries = await runAsSystem(() =>
-      mongoose.models.BdrenAllowance.find(after ? { _id: { $gt: after } } : {})
+      mongoose.models.BdrenAllowance.find({
+        invalidatedAt: null,
+        ...(after ? { _id: { $gt: after } } : {}),
+      })
         .sort({ _id: 1 })
         .limit(CHUNK)
         .select('userId tenantId issuer subject allowance')
@@ -198,6 +219,7 @@ export async function* windowReports(
     }
     const buckets = await runAsSystem(() =>
       mongoose.models.UsageBucket.find({
+        tenantId: { $in: [...new Set(planned.map((p) => p.entry.tenantId))] },
         scopeType: 'member_credits',
         scopeKey: { $in: [...new Set(planned.map((p) => String(p.entry.userId)))] },
         periodStart: {
@@ -271,6 +293,7 @@ export async function postReport(
   { config, fetchFn = fetch, sleep = wait }: Deps,
   day: string,
   members: MemberReport[],
+  asOf: Date = new Date(),
 ): Promise<PostSummary> {
   let reason = 'unreachable';
   for (let attempt = 0; attempt < ATTEMPTS; attempt++) {
@@ -283,7 +306,7 @@ export async function postReport(
         headers: { 'Content-Type': 'application/json', 'X-Product-Api-Key': config.productKey },
         redirect: 'error',
         signal: AbortSignal.timeout(POST_TIMEOUT_MS),
-        body: JSON.stringify({ day, members }),
+        body: JSON.stringify({ day, members, as_of: asOf.toISOString() }),
       });
       if (response.ok) {
         const body = (await response.json()) as {
@@ -402,17 +425,40 @@ export async function runUsageExport(deps: Deps & { now?: Date }): Promise<Expor
   const first = [resume < yesterday ? resume : yesterday, floor].sort().pop()!;
   const run: ExportRun = { days: [], windows: 0 };
   try {
+    const rejected: string[] = [];
     for (const day of daysBetween(first, today)) {
-      run.days.push(await exportDay(deps, day));
-      if (day < today) {
-        await UsageJob.updateOne({ name: JOB_NAME }, { $set: { lastDay: day } });
+      try {
+        run.days.push(await exportDay(deps, day));
+      } catch (error) {
+        if (!(error instanceof ExportRejected)) {
+          throw error;
+        }
+        /** bdren.ai refuses this day's data: log it, move on, and leave the day for the backfill script. */
+        rejected.push(error.message);
+        logger.error(`[bdren] ${error.message}; skipped, resend with the backfill script`);
       }
+      if (day < today) {
+        await UsageJob.updateOne(
+          { name: JOB_NAME, lastDay: { $not: { $gte: day } } },
+          { $set: { lastDay: day } },
+        );
+      }
+      await UsageJob.updateOne(
+        { name: JOB_NAME },
+        { $set: { lockedUntil: new Date(Date.now() + LEASE_MS) } },
+      );
     }
     run.windows = await exportWindows(deps, now);
     await UsageJob.updateOne(
       { name: JOB_NAME },
-      { $set: { lastRunAt: now }, $unset: { lastError: 1, lockedUntil: 1 } },
+      {
+        $set: { lastRunAt: now, ...(rejected.length ? { lastError: rejected.join('; ') } : {}) },
+        $unset: { ...(rejected.length ? {} : { lastError: 1 }), lockedUntil: 1 },
+      },
     );
+    if (rejected.length) {
+      run.failed = rejected.join('; ');
+    }
   } catch (error) {
     run.failed = (error as Error).message;
     logger.error(`[bdren] usage export stopped: ${run.failed}`);

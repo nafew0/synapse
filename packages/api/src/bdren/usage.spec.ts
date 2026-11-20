@@ -167,6 +167,24 @@ describe('buildDay', () => {
   });
 });
 
+describe('buildDay merging', () => {
+  it('merges task names that sanitise alike and users sharing one bdren.ai identity', async () => {
+    const twin = new mongoose.Types.ObjectId();
+    await mongoose.models.User.collection.insertOne({
+      _id: twin,
+      openidId: linkedSubject,
+      openidIssuer: ISSUER,
+    });
+    await seed('2026-11-13', linked, { taskType: 'Chat', costUsd: 0.001, requests: 2 });
+    await seed('2026-11-13', linked, { taskType: 'chat', costUsd: 0.002, requests: 1 });
+    await seed('2026-11-13', twin, { taskType: 'chat', costUsd: 0.004, requests: 5 });
+    const members = await buildDay('2026-11-13', ISSUER);
+    expect(members).toHaveLength(1);
+    expect(members[0].tasks).toEqual([{ task_type: 'chat', credits: 7000, requests: 8, pages: 0 }]);
+    await mongoose.models.User.deleteOne({ _id: twin });
+  });
+});
+
 describe('postReport', () => {
   it('sends the product key and retries a 503 and a timeout, then succeeds', async () => {
     const bdren = fakeBdren();
@@ -267,6 +285,27 @@ describe('runUsageExport', () => {
     expect(bdren.rows).toHaveLength(4);
   });
 
+  it('skips a day bdren.ai refuses, still sends the others and the window reports, and keeps the error', async () => {
+    const bdren = fakeBdren();
+    await seed('2026-11-12', linked, { taskType: 'chat', costUsd: 0.005 });
+    await seed('2026-11-13', linked, { taskType: 'chat', costUsd: 0.001 });
+    await seed('2026-11-14', linked, { taskType: 'chat', costUsd: 0.002 });
+    await mongoose.models.UsageJob.create({ name: 'bdren-usage-export', lastDay: '2026-11-11' });
+    const refusing = async (url: string, init: RequestInit): Promise<Response> =>
+      JSON.parse(init.body as string).day === '2026-11-12'
+        ? new Response('{}', { status: 400 })
+        : bdren.fetchFn(url, init);
+    const run = await runUsageExport({ config, fetchFn: refusing, sleep: noSleep, now: NOW });
+    expect(run.failed).toContain('2026-11-12');
+    expect(run.days.map((d) => d.day)).toEqual(['2026-11-13', '2026-11-14']);
+    const job = await mongoose.models.UsageJob.findOne({ name: 'bdren-usage-export' }).lean<{
+      lastDay: string;
+      lastError: string;
+    }>();
+    expect(job?.lastDay).toBe('2026-11-13');
+    expect(job?.lastError).toContain('2026-11-12');
+  });
+
   it('skips while another server holds the lease', async () => {
     const bdren = fakeBdren();
     await mongoose.models.UsageJob.create({
@@ -330,6 +369,16 @@ describe('window usage', () => {
         ],
       },
     ]);
+  });
+
+  it('does not report an invalidated entry, whose windows may be old', async () => {
+    await cache(linked, linkedSubject);
+    await mongoose.models.BdrenAllowance.updateOne({ userId: linked }, { invalidatedAt: NOW });
+    const reported: MemberReport[] = [];
+    for await (const batch of windowReports(config, NOW)) {
+      reported.push(...batch);
+    }
+    expect(reported).toEqual([]);
   });
 
   it('skips an ended window and an entry of another issuer', async () => {
