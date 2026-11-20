@@ -19,6 +19,7 @@ import type { Response } from 'express';
 import type { SyncDeps, SyncResult } from './sync';
 import type { ServerRequest } from '~/types/http';
 import { buildAuditContext } from '~/admin/context';
+import { UNLISTED_OK } from './models';
 import { runPriceSync } from './sync';
 import { costEffect } from './costs';
 
@@ -167,7 +168,9 @@ export function createPriceHandlers(deps: PriceHandlerDeps): PriceHandlers {
       doc.lastChangedAt != null &&
       doc.version > 1 &&
       now.getTime() - doc.lastChangedAt.getTime() <= changedDays * DAY_MS;
-    const status: ListStatus = doc.status === 'ok' && changedRecently ? 'changed' : doc.status;
+    const pricedElsewhere = !effective && UNLISTED_OK[doc.modelId] != null;
+    const base: ModelPriceStatus = pricedElsewhere ? 'ok' : doc.status;
+    const status: ListStatus = base === 'ok' && changedRecently ? 'changed' : base;
     return {
       modelId: doc.modelId,
       name: doc.name ?? doc.modelId,
