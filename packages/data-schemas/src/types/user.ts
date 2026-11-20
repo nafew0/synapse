@@ -67,6 +67,7 @@ export interface IUser extends Document {
   updatedAt?: Date;
   /** Field for external source identification (for consistency with TPrincipal schema) */
   idOnTheSource?: string;
+  movingUntil?: Date | null;
   tenantId?: string;
   /** Explicit SaaS account scope; legacy records derive this from tenantId. */
   accountScope?: 'institution' | 'standalone';

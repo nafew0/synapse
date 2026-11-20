@@ -89,6 +89,8 @@ export interface ISkill {
    * cheap as the catalog grows.
    */
   alwaysApply: boolean;
+  /** The person who owned this before they left the institution and it stayed. */
+  transferredFrom?: Types.ObjectId | null;
   tenantId?: string;
   createdAt?: Date;
   updatedAt?: Date;
@@ -126,6 +128,10 @@ export interface ISkillFile {
   category: 'script' | 'reference' | 'asset' | 'other';
   isExecutable: boolean;
   author: Types.ObjectId;
+  /** The person who owned this before they left the institution and it stayed. */
+  transferredFrom?: Types.ObjectId | null;
+  storageTenantId?: string | null;
+  storageUserId?: string | null;
   tenantId?: string;
   /** Lazily cached text content (≤ 512 KB). Populated on first read; cleared on re-upload. */
   content?: string;

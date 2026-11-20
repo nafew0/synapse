@@ -189,6 +189,9 @@ export interface StrategyFunctions {
       storageRegion?: string | null;
       user?: string;
       tenantId?: string | null;
+      /** Set by a member move: the tenant and user in the stored object's key. */
+      storageTenantId?: string | null;
+      storageUserId?: string | null;
     },
   ) => Promise<void>;
 }

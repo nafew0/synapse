@@ -147,7 +147,7 @@ beforeEach(async () => {
     recordAuditEntry: createMethods(mongoose).recordAuditEntry,
     onCreated,
     place,
-    move,
+    mover,
   });
 });
 
@@ -185,7 +185,7 @@ async function reserveSeat(tenantId: string): Promise<boolean> {
   );
   return taken != null;
 }
-const move = createMemberMover({
+const mover = createMemberMover({
   reserveSeat,
   releaseSeat: async (tenantId) => {
     await Institution().updateOne({ tenantId }, { $inc: { 'stats.activeMembers': -1 } });
@@ -468,7 +468,7 @@ describe('first login of a new member', () => {
       place: async () => {
         throw new Error('Seat limit reached');
       },
-      move,
+      mover,
     });
 
     expect(await failing.adoptNewMember(String(user._id), 'dhaka-university')).toEqual({

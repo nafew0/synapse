@@ -214,6 +214,12 @@ const skillSchema: Schema<ISkillDocument> = new Schema(
       default: false,
       index: true,
     },
+    /** Set when a member left the institution and this item stayed: the person who owned it. */
+    transferredFrom: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      default: undefined,
+    },
     tenantId: {
       type: String,
       index: true,

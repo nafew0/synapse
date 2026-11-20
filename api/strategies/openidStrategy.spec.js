@@ -2728,6 +2728,31 @@ describe('setupOpenId', () => {
       expect(activateProvisionedMember).not.toHaveBeenCalled();
     });
 
+    it('goes on in the current scope when the review runs past the login wait', async () => {
+      const existing = {
+        _id: 'slowMove',
+        provider: 'openid',
+        email: tokenset.claims().email,
+        openidId: tokenset.claims().sub,
+        username: 'slow',
+        role: 'USER',
+      };
+      findUser.mockResolvedValue(existing);
+      process.env.BDREN_LOGIN_MOVE_WAIT_MS = '20';
+      bdrenProvisioner.reviewExistingMember.mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve({ tenantId: 'late' }), 500)),
+      );
+
+      try {
+        const started = Date.now();
+        const { user } = await validate(tokenset);
+        expect(Date.now() - started).toBeLessThan(450);
+        expect(user.tenantId).toBeUndefined();
+      } finally {
+        delete process.env.BDREN_LOGIN_MOVE_WAIT_MS;
+      }
+    });
+
     it('carries on with the moved user when the review moved them, before the session starts', async () => {
       const existing = {
         _id: 'joiningIndividual',

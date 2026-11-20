@@ -158,6 +158,12 @@ const agentSchema: Schema<IAgent> = new Schema<IAgent>(
       enum: ['user', 'agent'],
       default: undefined,
     },
+    /** Set when a member left the institution and this item stayed: the person who owned it. */
+    transferredFrom: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      default: undefined,
+    },
     tenantId: {
       type: String,
       index: true,

@@ -2049,16 +2049,52 @@ async function suspendInstitutionMember({ tenantId, userId, actor, context }) {
   return result;
 }
 
+/**
+ * In an institution linked to bdren.ai, membership follows coverage and the person keeps their
+ * account and data: removal is a leave (they become an individual; what they shared stays, owned by
+ * the institution). Unlinked institutions keep the old behaviour and delete the account.
+ */
+async function leaveLinkedInstitution(tenantId, userId) {
+  const user = await models.User.findOne({ _id: userId, tenantId }).lean().exec();
+  if (!user) {
+    throw new HttpError(404, 'Member not found');
+  }
+  if (isPlatformRole(user.role)) {
+    throw new HttpError(403, 'Platform admins cannot be removed from tenant flows');
+  }
+  const { bdrenMover } = require('~/server/services/bdrenAllowance');
+  const outcome = await bdrenMover.move({
+    userId: String(userId),
+    from: tenantId,
+    to: null,
+    reason: 'member_removed',
+  });
+  if (outcome.status !== 'moved') {
+    throw new HttpError(
+      409,
+      `Member could not be removed now (${outcome.reason ?? outcome.status})`,
+    );
+  }
+  return { ...user, membershipStatus: InstitutionMembershipStatuses.REMOVED };
+}
+
 async function removeInstitutionMember({ tenantId, userId, actor, context }) {
   const actorId = actor?.id ?? actor?._id;
-  const result = await removeMemberWithoutTransaction(tenantId, userId, actorId);
-  await syncTenantMemberSafely({ tenantId, userId, previous: result });
+  const institution = await getInstitutionOrThrow(tenantId);
+  const linked = typeof institution.bdrenOrganizationId === 'string';
+  const result = linked
+    ? await leaveLinkedInstitution(tenantId, userId)
+    : await removeMemberWithoutTransaction(tenantId, userId, actorId);
+  if (!linked) {
+    await syncTenantMemberSafely({ tenantId, userId, previous: result });
+  }
 
   await recordMemberAudit({
     tenantId,
     action: 'member.removed',
     actor: actorFromUser(actor),
     target: { type: 'user', id: userId, name: result.email },
+    metadata: { accountKept: linked },
     context,
   });
 

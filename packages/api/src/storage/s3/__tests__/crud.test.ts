@@ -982,6 +982,24 @@ describe('S3 CRUD', () => {
       expect(s3Mock.commandCalls(DeleteObjectCommand)).toHaveLength(2);
     });
 
+    it('deletes a file handed to an heir by the user its key was stored under', async () => {
+      const handedOver = {
+        filepath: 'https://bucket.s3.amazonaws.com/t/tenantA/images/leaver/file.jpg',
+        file_id: 'file125',
+        user: 'heir',
+        tenantId: 'tenantA',
+        storageUserId: 'leaver',
+      } as TFile;
+      s3Mock.on(HeadObjectCommand).resolves({});
+      s3Mock.on(DeleteObjectCommand).resolves({});
+
+      const { deleteFileFromS3 } = await import('../crud');
+      await expect(deleteFileFromS3(mockReq, handedOver)).resolves.toBeUndefined();
+      await expect(
+        deleteFileFromS3(mockReq, { ...handedOver, storageUserId: undefined }),
+      ).rejects.toThrow('File owner mismatch');
+    });
+
     it('handles NoSuchKey error and cleans up RAG', async () => {
       const mockFile = {
         filepath: 'https://bucket.s3.amazonaws.com/images/user123/file.jpg',

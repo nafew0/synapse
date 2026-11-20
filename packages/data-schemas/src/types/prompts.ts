@@ -7,6 +7,8 @@ export interface IPrompt extends Document {
   type: 'text' | 'chat';
   createdAt?: Date;
   updatedAt?: Date;
+  /** The person who owned this before they left the institution and it stayed. */
+  transferredFrom?: Types.ObjectId | null;
   tenantId?: string;
 }
 
@@ -22,6 +24,8 @@ export interface IPromptGroup {
   createdAt?: Date;
   updatedAt?: Date;
   isPublic?: boolean;
+  /** The person who owned this before they left the institution and it stayed. */
+  transferredFrom?: Types.ObjectId | null;
   tenantId?: string;
 }
 

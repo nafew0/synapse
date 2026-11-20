@@ -38,7 +38,7 @@ export interface ProvisionDeps {
   /** Moves a tenantless user into a tenant (see `createMemberPlacer`). */
   place: MemberPlacer;
   /** Moves an existing person, with their data, between tenants (see `createMemberMover`). */
-  move: MemberMover;
+  mover: MemberMover;
 }
 
 /** An existing user as the review needs them. */
@@ -161,7 +161,7 @@ function moveReason(from: string | null, to: string | null): string {
 }
 
 export function createProvisioner(deps: ProvisionDeps): Provisioner {
-  const { config, client, service, recordAuditEntry, onCreated, place, move } = deps;
+  const { config, client, service, recordAuditEntry, onCreated, place, mover } = deps;
 
   async function audit(input: RecordAuditEntryInput): Promise<void> {
     try {
@@ -395,11 +395,27 @@ export function createProvisioner(deps: ProvisionDeps): Provisioner {
     to: string | null,
     reason: string,
   ): Promise<MoveOutcome> {
-    const outcome = await move({ userId, from, to, reason });
+    const outcome = await mover.move({ userId, from, to, reason });
     if (outcome.status === 'refused' || outcome.status === 'busy') {
       logger.warn(`[bdren] moving user ${userId} to ${to ?? 'no institution'}: ${outcome.status}`);
     }
     return outcome;
+  }
+
+  /**
+   * A move of this person left unfinished (a crash, a failure) is finished first, so the review
+   * decides from where they really are: a further move then redirects them if coverage changed
+   * since. Resolves to the user when a move was finished, `busy` while another trigger runs it.
+   */
+  async function finishUnfinishedMove(userId: string): Promise<MemberRecord | 'busy' | null> {
+    const outcome = await mover.resume(userId);
+    if (!outcome) {
+      return null;
+    }
+    if (outcome.status === 'busy') {
+      return 'busy';
+    }
+    return runAsSystem(() => users().findById(userId).lean<MemberRecord>().exec());
   }
 
   async function reviewExistingMember(
@@ -415,16 +431,35 @@ export function createProvisioner(deps: ProvisionDeps): Provisioner {
       if (!who || (await isPlatformStaff(who.userId, user.role, user.email))) {
         return null;
       }
-      const current = user.tenantId || null;
+      const settled = await finishUnfinishedMove(who.userId);
+      if (settled === 'busy') {
+        return null;
+      }
+      const current = settled ? settled.tenantId || null : user.tenantId || null;
+      const changed =
+        settled && (settled.tenantId || null) !== (user.tenantId || null) ? settled : null;
+      const subject = settled
+        ? allowanceSubjectFor(
+            {
+              ...user,
+              tenantId: current ?? undefined,
+              accountScope: current ? 'institution' : 'standalone',
+            },
+            config,
+          )
+        : who;
+      if (!subject) {
+        return changed;
+      }
       const currentInstitution = current ? await linkedInstitutionOf(current) : null;
       const allowance = options.fresh
-        ? await service.refresh(who)
-        : await service.getAllowance({ ...who, idToken: options.idToken });
+        ? await service.refresh(subject)
+        : await service.getAllowance({ ...subject, idToken: options.idToken });
       const organizationId =
         allowance.planSource === 'institution' ? allowance.institutionId : null;
       const target = organizationId ? await findByOrganization(organizationId) : null;
       if (target && target.tenantId === current) {
-        return null;
+        return changed;
       }
       const noted = user.bdrenNotedOrganizationId;
       const mismatch = (reason: string, org: string, institutionTenantId: string | null) =>
@@ -438,7 +473,7 @@ export function createProvisioner(deps: ProvisionDeps): Provisioner {
         if (organizationId) {
           await mismatch('legacy_tenant', organizationId, target?.tenantId ?? null);
         }
-        return null;
+        return changed;
       }
       if (!TRUSTED_ORIGINS.has(allowance.origin)) {
         if (currentInstitution) {
@@ -448,7 +483,7 @@ export function createProvisioner(deps: ProvisionDeps): Provisioner {
             currentInstitution.tenantId,
           );
         }
-        return null;
+        return changed;
       }
       const refusal = organizationId ? joinRefusal(target) : null;
       if (organizationId && refusal) {
@@ -456,7 +491,7 @@ export function createProvisioner(deps: ProvisionDeps): Provisioner {
       }
       const to = organizationId && !refusal && target ? target.tenantId : null;
       if (to === current) {
-        return null;
+        return changed;
       }
       let outcome = await runMove(who.userId, current, to, moveReason(current, to));
       if (outcome.status === 'refused' && to && organizationId) {
@@ -465,7 +500,10 @@ export function createProvisioner(deps: ProvisionDeps): Provisioner {
           outcome = await runMove(who.userId, current, null, 'coverage_left');
         }
       }
-      return outcome.status === 'moved' ? outcome.user : null;
+      if (outcome.status === 'moved') {
+        return outcome.user;
+      }
+      return changed;
     } catch (error) {
       logger.error('[bdren] membership review failed', error);
       return null;

@@ -739,7 +739,9 @@ export async function deleteFileFromS3(req: ServerRequest, file: TFile): Promise
     throw new Error(message);
   }
 
-  if (!parsedKey || parsedKey.userId !== ownerId) {
+  /** A record handed to someone else when its owner left keeps the key it was stored under. */
+  const keyUserId = file.storageUserId ?? ownerId;
+  if (!parsedKey || parsedKey.userId !== keyUserId) {
     const message = `[deleteFileFromS3] File owner mismatch: ${ownerId} vs ${key}`;
     logger.error(message);
     throw new Error(message);

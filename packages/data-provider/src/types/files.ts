@@ -176,6 +176,8 @@ export type TFile = {
   storageKey?: string;
   /** Set by a member move: the tenant the stored object's key was written under (`null`: none). */
   storageTenantId?: string | null;
+  /** Set by a member move: the user in the stored object's key, when the record changed owner. */
+  storageUserId?: string | null;
   conversationId?: string;
   message?: string;
   file_id: string;

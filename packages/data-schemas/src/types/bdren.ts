@@ -80,7 +80,15 @@ export interface IBdrenUploadTicket {
   createdAt?: Date;
 }
 
-export type MemberMoveStatus = 'running' | 'done' | 'refused';
+export type MemberMoveStatus = 'running' | 'done' | 'refused' | 'redirected';
+
+/** A moving item renamed because its name is taken in the target tenant. */
+export interface MemberMoveRename {
+  model: 'MCPServer' | 'Skill';
+  id: string;
+  from: string;
+  to: string;
+}
 
 /**
  * What a move decided before touching anything, so a resumed move applies the same split. On a
@@ -93,12 +101,20 @@ export interface MemberMovePlan {
   keptPromptGroups: string[];
   keptMcpServers: string[];
   keptSkills: string[];
-  /** `file_id`s a kept agent uses. */
+  /** The person's `file_id`s an agent staying in the institution uses (any author). */
   keptFiles: string[];
   /** The `id` of every agent that moves, so its actions move with it. */
   movedAgentIds: string[];
   /** The `_id` of every skill that moves, so its files move with it. */
   movedSkills: string[];
+  /**
+   * Who owns what stays in the institution once the person has left: an active institution
+   * admin, or (none) the institution's own id, which is nobody's account. `null` on a join.
+   */
+  heir?: string | null;
+  /** Whether `heir` is a user, who then also gets the person's grants on what stays. */
+  heirIsUser?: boolean;
+  renames?: MemberMoveRename[];
 }
 
 /**
@@ -124,6 +140,11 @@ export interface IMemberMove {
   userSwitched?: boolean;
   wasActive?: boolean;
   refusal?: string | null;
+  /** Grants on moved items to principals outside the target tenant, dropped: `type:id:principalType:principalId`. */
+  droppedGrants?: string[];
+  /** When the second sweep for writes that were in flight during the move is due, and when it ran. */
+  lateSweepAt?: Date | null;
+  lateSweptAt?: Date | null;
   finishedAt?: Date | null;
   createdAt?: Date;
   updatedAt?: Date;

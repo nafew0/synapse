@@ -55,6 +55,9 @@ export interface IMongoFile extends Omit<Document, 'model'> {
   storageRegion?: string;
   /** Set by a member move: the tenant the stored object's key was written under (`null`: none). */
   storageTenantId?: string | null;
+  /** Set by a member move: the user in the stored object's key, when the record changed owner. */
+  storageUserId?: string | null;
+  transferredFrom?: Types.ObjectId | null;
   object: 'file';
   embedded?: boolean;
   type: string;

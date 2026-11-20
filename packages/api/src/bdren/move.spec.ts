@@ -7,7 +7,6 @@ import { createModels, createMethods, tenantStorage } from '@librechat/data-sche
 import type { IAuditLog, IMemberMove, BdrenAllowancePayload } from '@librechat/data-schemas';
 import type { AddressInfo } from 'net';
 import type { BdrenConfig } from './types';
-import type { MemberMover } from './move';
 import { createAllowanceService } from './allowance';
 import { createAllowanceClient } from './client';
 import { createWebhookHandler } from './webhook';
@@ -101,7 +100,8 @@ const ownerOf = (name: string, field: string, user: Types.ObjectId) =>
 let mongo: MongoMemoryServer;
 let bdren: Awaited<ReturnType<typeof startBdren>>;
 let config: BdrenConfig;
-let move: MemberMover;
+let mover: ReturnType<typeof createMemberMover>;
+const move = (request: Parameters<typeof mover.move>[0]) => mover.move(request);
 let provisioner: ReturnType<typeof createProvisioner>;
 
 async function reserveSeat(tenantId: string): Promise<boolean> {
@@ -121,7 +121,8 @@ async function reserveSeat(tenantId: string): Promise<boolean> {
 }
 
 function build(): void {
-  move = createMemberMover({
+  mover = createMemberMover({
+    schedule: () => undefined,
     reserveSeat,
     releaseSeat: async (tenantId) => {
       await M('Institution').updateOne({ tenantId }, { $inc: { 'stats.activeMembers': -1 } });
@@ -136,7 +137,7 @@ function build(): void {
     service: createAllowanceService({ config, client }),
     recordAuditEntry: createMethods(mongoose).recordAuditEntry,
     place: createMemberPlacer({ activate: async () => ({}) }),
-    move,
+    mover,
   });
 }
 
@@ -231,6 +232,7 @@ async function seedPrivate(user: Types.ObjectId, tenantId: string | null) {
       author: user,
       provider: 'openai',
       model: 'gpt',
+      avatar: { filepath: `${tenantId ? `t/${tenantId}/` : ''}avatars/${uid}/a.png`, source: 's3' },
       ...at,
     }),
     raw('AclEntry').insertOne({
@@ -361,6 +363,10 @@ describe('an individual whom bdren.ai now covers joins the institution with thei
     expect(Object.values(await countOwned(user._id, null)).every((n) => n === 0)).toBe(true);
     const file = await raw('File').findOne({ user: user._id });
     expect(file).toMatchObject({ tenantId: 'x-uni', storageTenantId: null });
+    expect((await raw('Agent').findOne({ author: user._id }))?.avatar).toMatchObject({
+      source: 's3',
+      storageTenantId: null,
+    });
     expect(await raw('AclEntry').countDocuments({ tenantId: 'x-uni' })).toBe(1);
     expect(await seats('x-uni')).toBe(1);
 
@@ -573,7 +579,7 @@ describe('crash safety and locking', () => {
     await expect(move(request)).rejects.toThrow('connection lost mid-move');
     const halfway = await M('MemberMove').findOne({ userId: user._id }).lean<IMemberMove>();
     expect(halfway).toMatchObject({ status: 'running', seatReserved: true });
-    expect(halfway?.completed).toEqual(['conversations']);
+    expect(halfway?.completed).toEqual(['renames', 'conversations']);
     expect((await raw('User').findOne({ _id: user._id }))?.tenantId).toBeUndefined();
 
     const outcome = await move(request);
@@ -605,15 +611,35 @@ describe('crash safety and locking', () => {
     expect(await countOwned(user._id, 'x-uni')).toMatchObject({ Message: 2 });
   });
 
-  it('leaves a clashing record in place and counts it, moving the rest', async () => {
+  it('renames a server or skill whose name is taken in the target, so everything moves', async () => {
     await linkInstitution(ORG_X);
     const user = await makeUser();
     const colleague = new Types.ObjectId();
+    const skillId = new Types.ObjectId();
     await raw('MCPServer').insertMany([
       { serverName: 'github', author: colleague, config: {}, tenantId: 'x-uni' },
       { serverName: 'github', author: user._id, config: {} },
       { serverName: 'notion', author: user._id, config: {} },
     ]);
+    await raw('Skill').insertMany([
+      { name: 'summarise', author: user._id, tenantId: 'x-uni', transferredFrom: null },
+      { _id: skillId, name: 'summarise', author: user._id },
+    ]);
+    await raw('SkillFile').insertOne({
+      skillId,
+      relativePath: 'run.py',
+      author: user._id,
+      filepath: `uploads/${user._id}/run.py`,
+    });
+    await raw('Agent').insertOne({
+      id: 'agent_uses_github',
+      name: 'Uses github',
+      author: user._id,
+      provider: 'openai',
+      model: 'gpt',
+      mcpServerNames: ['github'],
+      tools: ['search_issues_mcp_github', 'web_search'],
+    });
 
     const outcome = await move({
       userId: String(user._id),
@@ -622,12 +648,430 @@ describe('crash safety and locking', () => {
       reason: 'clash',
     });
 
-    expect(outcome).toMatchObject({
-      status: 'moved',
-      moved: expect.objectContaining({ mcpServers: 1 }),
-      conflicts: expect.objectContaining({ mcpServers: 1 }),
+    expect(outcome).toMatchObject({ status: 'moved', conflicts: {} });
+    expect(
+      await raw('MCPServer')
+        .find({ author: user._id, tenantId: 'x-uni' })
+        .map((server) => server.serverName)
+        .toArray(),
+    ).toEqual(expect.arrayContaining(['github-moved', 'notion']));
+    expect(await raw('Agent').findOne({ id: 'agent_uses_github' })).toMatchObject({
+      tenantId: 'x-uni',
+      mcpServerNames: ['github-moved'],
+      tools: ['search_issues_mcp_github-moved', 'web_search'],
     });
-    expect(await raw('MCPServer').countDocuments({ author: user._id, tenantId: 'x-uni' })).toBe(1);
+    expect(await raw('Skill').findOne({ _id: skillId })).toMatchObject({
+      name: 'summarise-moved',
+      tenantId: 'x-uni',
+    });
+    expect(await raw('SkillFile').findOne({ skillId })).toMatchObject({
+      tenantId: 'x-uni',
+      storageTenantId: null,
+    });
+    const [entry] = await audits('member.moved');
+    expect(entry.metadata?.renamed).toBe(
+      'MCPServer:github->github-moved,Skill:summarise->summarise-moved',
+    );
+  });
+
+  it('moves skill files only with a skill that moved', async () => {
+    await linkInstitution(ORG_X, { stats: { activeMembers: 1 } });
+    const user = await makeUser({ tenantId: 'x-uni', accountScope: 'institution' });
+    const shared = new Types.ObjectId();
+    await raw('Skill').insertOne({
+      _id: shared,
+      name: 'shared',
+      author: user._id,
+      tenantId: 'x-uni',
+    });
+    await raw('SkillFile').insertOne({
+      skillId: shared,
+      relativePath: 'a',
+      author: user._id,
+      tenantId: 'x-uni',
+    });
+    await raw('AclEntry').insertOne({
+      principalType: 'group',
+      principalId: new Types.ObjectId(),
+      resourceType: 'skill',
+      resourceId: shared,
+      permBits: 1,
+      tenantId: 'x-uni',
+    });
+
+    await move({ userId: String(user._id), from: 'x-uni', to: null, reason: 'leave' });
+
+    expect(await raw('SkillFile').findOne({ skillId: shared })).toMatchObject({
+      tenantId: 'x-uni',
+    });
+  });
+});
+
+describe('what stays in the institution on a leave', () => {
+  async function leaver(extra: Partial<TestUser> = {}) {
+    await linkInstitution(ORG_X, { stats: { activeMembers: 2 } });
+    return makeUser({
+      tenantId: 'x-uni',
+      accountScope: 'institution',
+      membershipStatus: 'active',
+      ...extra,
+    });
+  }
+
+  it("keeps the person's files that a colleague's agent uses", async () => {
+    const user = await leaver();
+    await seedPrivate(user._id, 'x-uni');
+    await raw('File').insertOne({
+      user: user._id,
+      file_id: 'f-used-by-colleague',
+      filename: 'c.txt',
+      filepath: `t/x-uni/uploads/${user._id}/c.txt`,
+      tenantId: 'x-uni',
+    });
+    await raw('Agent').insertOne({
+      id: 'agent_colleague',
+      author: new Types.ObjectId(),
+      tool_resources: { execute_code: { file_ids: ['f-used-by-colleague'] } },
+      tenantId: 'x-uni',
+    });
+
+    await move({ userId: String(user._id), from: 'x-uni', to: null, reason: 'leave' });
+
+    expect(await raw('File').findOne({ file_id: 'f-used-by-colleague' })).toMatchObject({
+      tenantId: 'x-uni',
+      transferredFrom: user._id,
+      storageUserId: String(user._id),
+    });
+    expect(
+      (await raw('File').findOne({ file_id: `f-private-${user._id}` }))?.tenantId,
+    ).toBeUndefined();
+  });
+
+  it('hands what stays to an institution admin, who inherits the grants; the person keeps none', async () => {
+    const admin = await makeUser({
+      tenantId: 'x-uni',
+      accountScope: 'institution',
+      role: 'INSTITUTION_ADMIN',
+      membershipStatus: 'active',
+    });
+    const user = await leaver();
+    const sharedAgent = await seedShared(user._id, 'x-uni');
+    await raw('Prompt').insertOne({
+      groupId: new Types.ObjectId(),
+      author: user._id,
+      prompt: 'in a colleague group',
+      tenantId: 'x-uni',
+    });
+
+    await move({ userId: String(user._id), from: 'x-uni', to: null, reason: 'leave' });
+
+    expect(await raw('Agent').findOne({ _id: sharedAgent })).toMatchObject({
+      author: admin._id,
+      transferredFrom: user._id,
+      tenantId: 'x-uni',
+    });
+    expect(await raw('File').findOne({ file_id: `f-shared-${user._id}` })).toMatchObject({
+      user: admin._id,
+      storageUserId: String(user._id),
+    });
+    expect(await raw('Prompt').findOne({ prompt: 'in a colleague group' })).toMatchObject({
+      author: admin._id,
+    });
+    /** Owner-keyed lookups the person can run as an individual (no tenant filter) find nothing kept. */
+    for (const [name, field] of OWNED) {
+      expect(
+        await raw(name).countDocuments({
+          [field]: ownerOf(name, field, user._id),
+          tenantId: 'x-uni',
+        }),
+      ).toBe(0);
+    }
+    expect(await raw('AclEntry').countDocuments({ principalId: user._id })).toBe(0);
+    expect(
+      await raw('AclEntry').findOne({ principalId: admin._id, resourceId: sharedAgent }),
+    ).toMatchObject({ permBits: 15, tenantId: 'x-uni' });
+    expect(
+      await raw('AclEntry').countDocuments({ resourceId: sharedAgent, principalType: 'group' }),
+    ).toBe(1);
+    const [entry] = await audits('member.moved');
+    expect(entry.metadata).toMatchObject({ heir: String(admin._id), heirIsUser: true });
+  });
+
+  it('hands what stays to the institution itself when it has no admin', async () => {
+    const user = await leaver();
+    const sharedAgent = await seedShared(user._id, 'x-uni');
+    const institution = await raw('Institution').findOne({ tenantId: 'x-uni' });
+
+    await move({ userId: String(user._id), from: 'x-uni', to: null, reason: 'leave' });
+
+    expect(await raw('Agent').findOne({ _id: sharedAgent })).toMatchObject({
+      author: institution?._id,
+      transferredFrom: user._id,
+    });
+  });
+
+  it('removes per-user settings in the old institution and clears both override caches', async () => {
+    const cleared: Array<string | undefined> = [];
+    mover = createMemberMover({
+      schedule: () => undefined,
+      reserveSeat,
+      releaseSeat: async () => undefined,
+      syncMember: async () => undefined,
+      clearOverrides: async (tenantId) => cleared.push(tenantId),
+      recordAuditEntry: (input, options) =>
+        createMethods(mongoose).recordAuditEntry(input, options),
+    });
+    const user = await leaver();
+    await raw('Config').insertOne({
+      principalType: 'user',
+      principalId: String(user._id),
+      principalModel: 'User',
+      priority: 30,
+      overrides: { interface: { agents: false } },
+      tenantId: 'x-uni',
+    });
+
+    await move({ userId: String(user._id), from: 'x-uni', to: null, reason: 'leave' });
+
+    expect(await raw('Config').countDocuments({ principalId: String(user._id) })).toBe(0);
+    expect(cleared).toEqual(['x-uni', undefined]);
+  });
+});
+
+describe('grants on what a joining individual brings', () => {
+  it('drops grants to principals outside the institution and keeps public ones', async () => {
+    await linkInstitution(ORG_X);
+    const user = await makeUser();
+    const other = await makeUser();
+    const { agentId } = await seedPrivate(user._id, null);
+    await raw('AclEntry').insertMany([
+      {
+        principalType: 'user',
+        principalId: other._id,
+        resourceType: 'agent',
+        resourceId: agentId,
+        permBits: 1,
+      },
+      {
+        principalType: 'role',
+        principalId: 'USER',
+        resourceType: 'agent',
+        resourceId: agentId,
+        permBits: 1,
+      },
+      { principalType: 'public', resourceType: 'agent', resourceId: agentId, permBits: 1 },
+    ]);
+
+    await move({ userId: String(user._id), from: null, to: 'x-uni', reason: 'join' });
+
+    const left = await raw('AclEntry').find({ resourceId: agentId }).toArray();
+    expect(left.map((entry) => entry.principalType).sort()).toEqual(['public', 'user']);
+    expect(left.every((entry) => entry.tenantId === 'x-uni')).toBe(true);
+    const [entry] = await audits('member.moved');
+    expect(entry.metadata?.droppedGrantCount).toBe(2);
+    expect(String(entry.metadata?.droppedGrants)).toContain(`user:${String(other._id)}`);
+  });
+});
+
+describe('unfinished moves', () => {
+  it('finishes a stranded move on the next review, then redirects it when coverage changed', async () => {
+    await linkInstitution(ORG_X);
+    const user = await makeUser();
+    await seedPrivate(user._id, null);
+    jest.spyOn(raw('Message'), 'updateMany').mockRejectedValueOnce(new Error('crash'));
+    await expect(
+      move({ userId: String(user._id), from: null, to: 'x-uni', reason: 'join' }),
+    ).rejects.toThrow('crash');
+    bdren.answers.set(user.openidId, answer(user.openidId, null, 'personal'));
+
+    const reviewed = await provisioner.reviewExistingMember(user);
+
+    expect(reviewed?.tenantId).toBeUndefined();
+    expect(await countOwned(user._id, null)).toMatchObject({ Conversation: 1, Message: 2 });
+    expect(await seats('x-uni')).toBe(0);
+    expect(await M('MemberMove').countDocuments({ status: 'running' })).toBe(0);
+    expect((await audits('member.moved')).map((entry) => entry.metadata?.to)).toEqual([
+      'x-uni',
+      null,
+    ]);
+  });
+
+  it('is finished by the recovery timer once its lease has run out', async () => {
+    await linkInstitution(ORG_X);
+    const user = await makeUser();
+    await seedPrivate(user._id, null);
+    jest.spyOn(raw('Message'), 'updateMany').mockRejectedValueOnce(new Error('crash'));
+    await expect(
+      move({ userId: String(user._id), from: null, to: 'x-uni', reason: 'join' }),
+    ).rejects.toThrow('crash');
+
+    expect(await mover.resumeStranded()).toMatchObject({ resumed: 1 });
+    expect((await raw('User').findOne({ _id: user._id }))?.tenantId).toBe('x-uni');
+  });
+
+  it('follows the person when someone else places them mid-move, giving the seat back', async () => {
+    await linkInstitution(ORG_X);
+    await raw('Institution').insertOne({ tenantId: 'z-uni', slug: 'z-uni', name: 'Z' });
+    const user = await makeUser();
+    await seedPrivate(user._id, null);
+    const sessions = raw('Session');
+    const original = sessions.updateMany.bind(sessions);
+    jest.spyOn(sessions, 'updateMany').mockImplementationOnce(async (...args) => {
+      await raw('User').updateOne({ _id: user._id }, { $set: { tenantId: 'z-uni' } });
+      return original(...args);
+    });
+
+    const outcome = await move({
+      userId: String(user._id),
+      from: null,
+      to: 'x-uni',
+      reason: 'join',
+    });
+
+    expect(outcome).toEqual({ status: 'redirected', to: 'z-uni' });
+    expect(await countOwned(user._id, 'z-uni')).toMatchObject({
+      Conversation: 1,
+      Message: 2,
+      Agent: 1,
+    });
+    expect(await countOwned(user._id, 'x-uni')).toMatchObject({ Conversation: 0, Message: 0 });
+    expect(await seats('x-uni')).toBe(0);
+    expect((await raw('User').findOne({ _id: user._id }))?.movingUntil).toBeUndefined();
+  });
+
+  it('gives back the seat it took when it is refused after taking it', async () => {
+    await linkInstitution(ORG_X);
+    const user = await makeUser();
+    mover = createMemberMover({
+      schedule: () => undefined,
+      reserveSeat: async (tenantId) => {
+        await raw('User').deleteOne({ _id: user._id });
+        return reserveSeat(tenantId);
+      },
+      releaseSeat: async (tenantId) => {
+        await M('Institution').updateOne({ tenantId }, { $inc: { 'stats.activeMembers': -1 } });
+      },
+      syncMember: async () => undefined,
+      recordAuditEntry: (input, options) =>
+        createMethods(mongoose).recordAuditEntry(input, options),
+    });
+
+    expect(
+      await move({ userId: String(user._id), from: null, to: 'x-uni', reason: 'join' }),
+    ).toEqual({
+      status: 'refused',
+      reason: 'not_found',
+    });
+    expect(await seats('x-uni')).toBe(0);
+  });
+
+  it('records a seat as given back only once that worked, and retries it', async () => {
+    await linkInstitution(ORG_X, { stats: { activeMembers: 1 } });
+    const user = await makeUser({
+      tenantId: 'x-uni',
+      accountScope: 'institution',
+      membershipStatus: 'active',
+    });
+    let failures = 1;
+    mover = createMemberMover({
+      schedule: () => undefined,
+      reserveSeat,
+      releaseSeat: async (tenantId) => {
+        if (failures-- > 0) {
+          throw new Error('seat counter unavailable');
+        }
+        await M('Institution').updateOne({ tenantId }, { $inc: { 'stats.activeMembers': -1 } });
+      },
+      syncMember: async () => undefined,
+      recordAuditEntry: (input, options) =>
+        createMethods(mongoose).recordAuditEntry(input, options),
+    });
+    const request = { userId: String(user._id), from: 'x-uni', to: null, reason: 'leave' };
+
+    await expect(move(request)).rejects.toThrow('seat counter unavailable');
+    expect(await M('MemberMove').findOne({ userId: user._id }).lean()).toMatchObject({
+      status: 'running',
+      userSwitched: true,
+      seatReleased: false,
+    });
+    expect(await mover.resume(String(user._id))).toMatchObject({ status: 'moved' });
+    expect(await seats('x-uni')).toBe(0);
+  });
+});
+
+describe('requests still running when the move happened', () => {
+  it('fences the account while it moves and lifts the fence after', async () => {
+    await linkInstitution(ORG_X);
+    const user = await makeUser();
+    await seedPrivate(user._id, null);
+    let fenced: Date | undefined;
+    const messages = raw('Message');
+    const original = messages.updateMany.bind(messages);
+    jest.spyOn(messages, 'updateMany').mockImplementationOnce(async (...args) => {
+      fenced = (await raw('User').findOne({ _id: user._id }))?.movingUntil;
+      return original(...args);
+    });
+
+    await move({ userId: String(user._id), from: null, to: 'x-uni', reason: 'join' });
+
+    expect(fenced?.getTime()).toBeGreaterThan(Date.now());
+    expect((await raw('User').findOne({ _id: user._id }))?.movingUntil).toBeUndefined();
+  });
+
+  it('merges late writes into the moved conversation instead of duplicating it', async () => {
+    mover = createMemberMover({
+      schedule: () => undefined,
+      lateSweepMs: 0,
+      reserveSeat,
+      releaseSeat: async () => undefined,
+      syncMember: async () => undefined,
+      recordAuditEntry: (input, options) =>
+        createMethods(mongoose).recordAuditEntry(input, options),
+    });
+    await linkInstitution(ORG_X);
+    const user = await makeUser();
+    await seedPrivate(user._id, null);
+    const uid = String(user._id);
+    await move({ userId: uid, from: null, to: 'x-uni', reason: 'join' });
+    const later = new Date(Date.now() + 1_000);
+    await raw('Conversation').insertOne({
+      conversationId: `c-${uid}`,
+      user: uid,
+      title: 'Renamed late',
+      updatedAt: later,
+    });
+    await raw('Message').insertMany([
+      {
+        messageId: `m2-${uid}`,
+        conversationId: `c-${uid}`,
+        user: uid,
+        text: 'final answer',
+        updatedAt: later,
+      },
+      {
+        messageId: `m3-${uid}`,
+        conversationId: `c-${uid}`,
+        user: uid,
+        text: 'late reply',
+        updatedAt: later,
+      },
+    ]);
+    const record = await M('MemberMove')
+      .findOne({ userId: user._id })
+      .lean<{ _id: Types.ObjectId }>();
+
+    expect(await mover.sweepLate(String(record?._id))).toBe(true);
+    expect(await mover.sweepLate(String(record?._id))).toBe(false);
+
+    expect(await raw('Conversation').find({ user: uid }).toArray()).toEqual([
+      expect.objectContaining({ title: 'Renamed late', tenantId: 'x-uni' }),
+    ]);
+    const texts = await raw('Message')
+      .find({ user: uid })
+      .sort({ messageId: 1 })
+      .map((message) => `${message.tenantId}:${message.text}`)
+      .toArray();
+    expect(texts).toEqual(['x-uni:hi', 'x-uni:final answer', 'x-uni:late reply']);
   });
 });
 
@@ -755,24 +1199,50 @@ describe('with transactions (replica set)', () => {
     expect(await countOwned(user._id, 'x-uni')).toMatchObject({ Conversation: 1, Message: 2 });
   });
 
-  it('falls back to the step-by-step move when the transaction hits a clash', async () => {
+  it('falls back to the step-by-step move, merging, when the transaction hits a clash', async () => {
     await linkInstitution(ORG_X);
     const user = await makeUser();
     await seedPrivate(user._id, null);
-    await raw('MCPServer').insertMany([
-      { serverName: 'github', author: new Types.ObjectId(), config: {}, tenantId: 'x-uni' },
-      { serverName: 'github', author: user._id, config: {} },
-    ]);
+    await raw('Conversation').insertOne({
+      conversationId: `c-${user._id}`,
+      user: String(user._id),
+      title: 'Older copy',
+      tenantId: 'x-uni',
+      updatedAt: new Date(0),
+    });
 
     const outcome = await move({ userId: String(user._id), from: null, to: 'x-uni', reason: 'tx' });
 
-    expect(outcome).toMatchObject({
-      status: 'moved',
-      conflicts: expect.objectContaining({ mcpServers: 1 }),
-    });
+    expect(outcome).toMatchObject({ status: 'moved', conflicts: {} });
     expect(await M('MemberMove').findOne({ userId: user._id }).lean()).toMatchObject({
       mode: 'sequential',
     });
-    expect(await countOwned(user._id, 'x-uni')).toMatchObject({ Conversation: 1, Message: 2 });
+    expect(
+      await raw('Conversation')
+        .find({ user: String(user._id) })
+        .toArray(),
+    ).toEqual([expect.objectContaining({ title: 'Mine', tenantId: 'x-uni' })]);
+  });
+
+  it('skips the transaction for a heavy move', async () => {
+    mover = createMemberMover({
+      schedule: () => undefined,
+      transactionDocLimit: 1,
+      reserveSeat,
+      releaseSeat: async () => undefined,
+      syncMember: async () => undefined,
+      recordAuditEntry: (input, options) =>
+        createMethods(mongoose).recordAuditEntry(input, options),
+    });
+    await linkInstitution(ORG_X);
+    const user = await makeUser();
+    await seedPrivate(user._id, null);
+
+    await move({ userId: String(user._id), from: null, to: 'x-uni', reason: 'heavy' });
+
+    expect(await M('MemberMove').findOne({ userId: user._id }).lean()).toMatchObject({
+      status: 'done',
+      mode: 'sequential',
+    });
   });
 });

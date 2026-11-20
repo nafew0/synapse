@@ -1618,6 +1618,10 @@ const uploadAgentAvatarHandler = async (req, res) => {
           filepath: _avatar.filepath,
           user: req.user.id,
           tenantId: req.user.tenantId,
+          /** Set when the agent moved with its author: the tenant the old avatar was stored under. */
+          ...(_avatar.storageTenantId !== undefined && {
+            storageTenantId: _avatar.storageTenantId,
+          }),
         });
         await db.deleteFileByFilter({ user: req.user.id, filepath: _avatar.filepath });
       } catch (error) {

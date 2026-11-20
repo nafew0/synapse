@@ -94,19 +94,41 @@ async function adoptBdrenMember(userId, tenantId) {
 const findAccountAcrossTenants = (openidId, openidIssuer) =>
   runAsSystem(() => findUser({ openidId, openidIssuer }));
 
+const DEFAULT_LOGIN_MOVE_WAIT_MS = 4000;
+
+/** How long a login waits for a coverage review (and any move it starts) before going on. */
+function loginMoveWaitMs() {
+  const value = Number(process.env.BDREN_LOGIN_MOVE_WAIT_MS);
+  return Number.isFinite(value) && value >= 0 ? value : DEFAULT_LOGIN_MOVE_WAIT_MS;
+}
+
 /**
  * Brings an existing user's institution in line with bdren.ai before the session starts, so the
- * login carries on with their new scope. Resolves to the moved user, or `null`. Never throws.
+ * login usually carries on with their new scope. The wait is bounded: past it the login goes on in
+ * the current scope while the move finishes in the background (it is resumable, and requests are
+ * asked to retry until it is done). Resolves to the moved user, or `null`. Never throws.
  */
 async function reviewBdrenCoverage(user, idToken) {
+  let timer;
   try {
-    return await require('~/server/services/bdrenAllowance').bdrenProvisioner.reviewExistingMember(
-      user,
-      { idToken },
-    );
+    const review = require('~/server/services/bdrenAllowance')
+      .bdrenProvisioner.reviewExistingMember(user, { idToken })
+      .catch((error) => {
+        logger.error('[openidStrategy] bdren.ai coverage review failed', error);
+        return null;
+      });
+    const timeout = new Promise((resolve) => {
+      timer = setTimeout(() => {
+        logger.warn('[openidStrategy] bdren.ai coverage review still running; login goes on');
+        resolve(null);
+      }, loginMoveWaitMs());
+    });
+    return await Promise.race([review, timeout]);
   } catch (error) {
     logger.error('[openidStrategy] bdren.ai coverage review failed', error);
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

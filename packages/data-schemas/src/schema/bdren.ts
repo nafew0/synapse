@@ -50,7 +50,7 @@ export const memberMoveSchema: Schema<IMemberMove> = new Schema<IMemberMove>(
     from: { type: String, default: null },
     to: { type: String, default: null },
     reason: { type: String, required: true },
-    status: { type: String, enum: ['running', 'done', 'refused'], required: true },
+    status: { type: String, enum: ['running', 'done', 'refused', 'redirected'], required: true },
     mode: { type: String, enum: ['transaction', 'sequential'], default: null },
     leaseId: { type: String, default: null },
     leaseUntil: { type: Date, default: null },
@@ -63,6 +63,9 @@ export const memberMoveSchema: Schema<IMemberMove> = new Schema<IMemberMove>(
     userSwitched: { type: Boolean, default: false },
     wasActive: { type: Boolean, default: false },
     refusal: { type: String, default: null },
+    droppedGrants: { type: [String], default: [] },
+    lateSweepAt: { type: Date, default: null },
+    lateSweptAt: { type: Date, default: null },
     finishedAt: { type: Date, default: null },
   },
   { timestamps: true, minimize: false },
@@ -73,3 +76,5 @@ memberMoveSchema.index(
   { unique: true, partialFilterExpression: { status: 'running' }, name: 'one_running_move' },
 );
 memberMoveSchema.index({ userId: 1, createdAt: -1 });
+memberMoveSchema.index({ status: 1, leaseUntil: 1 });
+memberMoveSchema.index({ lateSweepAt: 1, lateSweptAt: 1 });

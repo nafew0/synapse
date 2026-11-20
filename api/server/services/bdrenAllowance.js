@@ -29,7 +29,7 @@ const members = () => require('~/server/services/institutionMembers');
 const recordAuditEntry = (input, options) => require('~/models').recordAuditEntry(input, options);
 
 /** Moves an existing person, with their data, between institutions; seats and audiences through the member services. */
-const move = createMemberMover({
+const mover = createMemberMover({
   reserveSeat: async (tenantId) => {
     try {
       await members().reserveActiveSeat(tenantId);
@@ -41,10 +41,37 @@ const move = createMemberMover({
       throw error;
     }
   },
-  releaseSeat: (tenantId) => members().releaseActiveSeat(tenantId),
+  /** A counter already at zero has nothing to give back; anything else is retried with the move. */
+  releaseSeat: async (tenantId) => {
+    try {
+      await members().releaseActiveSeat(tenantId);
+    } catch (error) {
+      if (!String(error?.message).startsWith('Unable to release an active seat')) {
+        throw error;
+      }
+    }
+  },
   syncMember: (args) => require('~/server/services/tenantAgentAccess').syncTenantMemberSafely(args),
+  clearOverrides: (tenantId) =>
+    require('~/server/services/Config/app').clearOverrideCache(tenantId),
   recordAuditEntry,
 });
+
+const STRANDED_MOVE_INTERVAL_MS = 5 * 60_000;
+
+/** Finishes moves left unfinished by a crash, and runs due late sweeps, every few minutes. */
+function startMoveRecovery() {
+  if (!config.enabled) {
+    return;
+  }
+  const timer = setInterval(() => {
+    mover
+      .resumeStranded()
+      .catch((error) => logger.error('[bdren] resuming unfinished member moves failed', error));
+  }, STRANDED_MOVE_INTERVAL_MS);
+  timer.unref?.();
+}
+startMoveRecovery();
 
 /** Resolved on use: `tenancy` sits on routes' require chains that stub parts of data-schemas. */
 const provisioner = createProvisioner({
@@ -53,7 +80,7 @@ const provisioner = createProvisioner({
   service,
   recordAuditEntry,
   place,
-  move,
+  mover,
   onCreated: (tenantId) =>
     require('~/server/services/tenancy').ensureInstitutionAdminRole(tenantId),
 });
@@ -155,5 +182,6 @@ module.exports = {
   getRequestAllowance,
   webhookHandler,
   bdrenProvisioner: provisioner,
+  bdrenMover: mover,
   quotaAccountFor,
 };
