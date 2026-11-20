@@ -160,7 +160,10 @@ const DEFAULT_MAX_ATTEMPTS = 5;
 const DEFAULT_MAX_AGE_MS = 24 * 3_600_000;
 const HEARTBEAT_EVERY = 100;
 const SERVICE_ACTOR = { type: 'service', name: 'bdren.ai' } as const;
-const PLATFORM_ROLES = new Set<string>([SystemRoles.ADMIN, 'PLATFORM_SUPERADMIN']);
+export const PLATFORM_ROLES: ReadonlySet<string> = new Set<string>([
+  SystemRoles.ADMIN,
+  'PLATFORM_SUPERADMIN',
+]);
 /** Every resource kind the ACL can share, with the field naming its owner. */
 const SHAREABLE: ReadonlyArray<readonly [string, string]> = [
   ['Agent', 'author'],

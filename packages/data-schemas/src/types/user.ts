@@ -74,6 +74,10 @@ export interface IUser extends Document {
   membershipStatus?: InstitutionMembershipStatus;
   /** The bdren.ai organization a coverage mismatch was last recorded for, so a login does not record it again. */
   bdrenNotedOrganizationId?: string;
+  /** When this account was moved from a local password to the bdren.ai SSO identity. */
+  ssoMigratedAt?: Date;
+  /** The institution a migrated account keeps until bdren.ai covers it there. */
+  bdrenHoldTenantId?: string;
   usagePackage?: MemberUsagePackage | null;
   suspendedAt?: Date | null;
   suspendedBy?: string | Types.ObjectId | null;

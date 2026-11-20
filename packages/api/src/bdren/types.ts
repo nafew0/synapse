@@ -19,6 +19,8 @@ export interface BdrenConfig {
   ttlMs: number;
   /** How long the last answer is kept when bdren.ai cannot be reached. */
   maxStaleMs: number;
+  /** How long a member migrated to SSO keeps their institution while bdren.ai does not cover them. */
+  migrationHoldMs: number;
   upgradeUrl: string;
   /** The Free allowance used when bdren.ai cannot say, in credits (1 credit = $0.000001). */
   fallback: { monthly: number; weekly: number };

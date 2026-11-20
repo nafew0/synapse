@@ -189,6 +189,17 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
     bdrenNotedOrganizationId: {
       type: String,
     },
+    /** When this account was moved from a local password to the bdren.ai SSO identity. */
+    ssoMigratedAt: {
+      type: Date,
+    },
+    /**
+     * Set by the SSO migration: the institution this account keeps until bdren.ai covers it there, so a
+     * "not covered" answer does not move a migrated member out. Cleared once bdren.ai covers them.
+     */
+    bdrenHoldTenantId: {
+      type: String,
+    },
     membershipStatus: {
       type: String,
       enum: Object.values(InstitutionMembershipStatuses),
