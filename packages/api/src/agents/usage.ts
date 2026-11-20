@@ -24,6 +24,7 @@ import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { EndpointTokenConfig } from '~/types/tokens';
 import {
   prepareStructuredTokenSpend,
+  applyProviderCost,
   bulkWriteTransactions,
   prepareTokenSpend,
 } from './transactions';
@@ -709,6 +710,7 @@ export async function recordCollectedUsage(
                 },
                 pricing,
               );
+        applyProviderCost(entries, usage.provider_cost_usd);
         docs.push(...entries);
         continue;
       }

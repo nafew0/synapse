@@ -16,6 +16,14 @@
  *    the last-defined key wins.
  */
 
+import {
+  ratesFor,
+  findPrice,
+  highestRate,
+  flagUnpriced,
+  isPriceTableLoaded,
+} from '~/pricing/table';
+
 export interface TxDeps {
   /** From @librechat/api — matches a model name to a canonical key. */
   matchModelName: (model: string, endpoint?: string) => string | undefined;
@@ -548,6 +556,31 @@ export function createTxMethods(
   const { matchModelName, findMatchingPattern } = txDeps;
 
   /**
+   * Synced or manual price for the model (the first source), as per-1M rates for this prompt size.
+   * `undefined` when the model has none, so the built-in tables below still answer.
+   */
+  function pricedRates(model: string | undefined, inputTokenCount?: number | null) {
+    const entry = findPrice(model);
+    return entry ? ratesFor(entry.price, inputTokenCount) : undefined;
+  }
+
+  /** A model that reached the built-in tables, not the price table, is flagged once the table is in use. */
+  function noteTableFallback(model: string | undefined): void {
+    if (model && isPriceTableLoaded()) {
+      flagUnpriced(model, 'fallback');
+    }
+  }
+
+  /**
+   * Rate for a model no source prices: the dearest price known, never a guess from its family,
+   * and the model is flagged for the superadmins. With no table loaded it stays `defaultRate`.
+   */
+  function unknownRate(model: string | undefined, tokenType: 'prompt' | 'completion'): number {
+    flagUnpriced(model, 'unknown');
+    return Math.max(defaultRate, highestRate(tokenType));
+  }
+
+  /**
    * Retrieves the key associated with a given model name.
    */
   function getValueKey(model: string, endpoint?: string): string | undefined {
@@ -621,7 +654,7 @@ export function createTxMethods(
       return 1;
     }
     const premiumRate = getPremiumRate(valueKey, tokenType, inputTokenCount);
-    const baseRate = tokenValues[valueKey]?.[tokenType];
+    const baseRate = tokenValues[valueKey]?.[tokenType as 'prompt' | 'completion'];
     return premiumRate != null && baseRate ? premiumRate / baseRate : 1;
   }
 
@@ -658,12 +691,20 @@ export function createTxMethods(
     inputTokenCount?: number;
     endpointTokenConfig?: Record<string, Record<string, number>>;
   }): number {
+    if (model && tokenType) {
+      const priced = pricedRates(model, inputTokenCount);
+      if (priced) {
+        return priced[tokenType];
+      }
+    }
+
     if (endpointTokenConfig && model) {
       const modelConfig = endpointTokenConfig[model];
       /** A partial override only prices the models it lists; others fall
        *  through to the standard tables so billing matches the advertised
        *  token config instead of charging defaultRate */
       if (modelConfig) {
+        noteTableFallback(model);
         const configured = modelConfig[tokenType as string] ?? defaultRate;
         return configured * getTierScale(model, endpoint, tokenType, inputTokenCount);
       }
@@ -672,9 +713,15 @@ export function createTxMethods(
     if (valueKey && tokenType) {
       const premiumRate = getPremiumRate(valueKey, tokenType, inputTokenCount);
       if (premiumRate != null) {
+        noteTableFallback(model);
         return premiumRate;
       }
-      return tokenValues[valueKey]?.[tokenType] ?? defaultRate;
+      const tableRate = tokenValues[valueKey]?.[tokenType];
+      if (tableRate == null) {
+        return unknownRate(model, tokenType);
+      }
+      noteTableFallback(model);
+      return tableRate;
     }
 
     if (!tokenType || !model) {
@@ -683,15 +730,21 @@ export function createTxMethods(
 
     valueKey = getValueKey(model, endpoint);
     if (!valueKey) {
-      return defaultRate;
+      return unknownRate(model, tokenType);
     }
 
     const premiumRate = getPremiumRate(valueKey, tokenType, inputTokenCount);
     if (premiumRate != null) {
+      noteTableFallback(model);
       return premiumRate;
     }
 
-    return tokenValues[valueKey]?.[tokenType] ?? defaultRate;
+    const tableRate = tokenValues[valueKey]?.[tokenType];
+    if (tableRate == null) {
+      return unknownRate(model, tokenType);
+    }
+    noteTableFallback(model);
+    return tableRate;
   }
 
   /**
@@ -732,6 +785,13 @@ export function createTxMethods(
     endpointTokenConfig?: Record<string, Record<string, number>>;
     inputTokenCount?: number | null;
   }): number | null {
+    if (model && cacheType) {
+      const priced = pricedRates(model, inputTokenCount);
+      if (priced) {
+        return (cacheType === 'read' ? priced.cacheRead : priced.cacheWrite) ?? null;
+      }
+    }
+
     if (endpointTokenConfig && model) {
       const modelConfig = endpointTokenConfig[model];
       /** Models absent from a partial override fall through to standard

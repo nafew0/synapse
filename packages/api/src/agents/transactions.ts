@@ -68,6 +68,30 @@ export interface PreparedEntry {
   balance?: Partial<TCustomConfig['balance']> | null;
 }
 
+/**
+ * Pins one call's rows to the USD the provider reported for it. The rows' credits are scaled so they
+ * add up to that exact amount, each row keeps its share as `costUsd`, and the balance charge follows.
+ * The price table only estimates; this is the figure OpenRouter billed. Ignored when it is absent,
+ * not positive, or the rows carry no credits to scale.
+ */
+export function applyProviderCost(entries: PreparedEntry[], providerCostUsd?: number): void {
+  if (providerCostUsd == null || !Number.isFinite(providerCostUsd) || providerCostUsd <= 0) {
+    return;
+  }
+  const estimated = entries.reduce((sum, entry) => sum + Math.abs(entry.tokenValue), 0);
+  if (estimated <= 0) {
+    return;
+  }
+  const factor = (providerCostUsd * 1e6) / estimated;
+  for (const entry of entries) {
+    const scaled = Math.round(entry.tokenValue * factor);
+    entry.tokenValue = scaled;
+    entry.doc.tokenValue = scaled;
+    entry.doc.costUsd = Math.abs(scaled) / 1e6;
+    entry.doc.costSource = 'provider';
+  }
+}
+
 export interface TokenUsage {
   promptTokens?: number;
   completionTokens?: number;

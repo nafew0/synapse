@@ -133,6 +133,9 @@ export const AUDIT_ACTIONS = [
   'platform.provider_spend_entered',
   'platform.usage_package_assigned',
   'platform.usage_package_revoked',
+  'platform.model_prices_synced',
+  'platform.model_price_override_set',
+  'platform.model_price_override_cleared',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -182,6 +185,9 @@ export const AUDIT_ACTION_CATEGORY: Record<AuditAction, AuditCategory> = {
   'platform.provider_spend_entered': 'platform',
   'platform.usage_package_assigned': 'platform',
   'platform.usage_package_revoked': 'platform',
+  'platform.model_prices_synced': 'platform',
+  'platform.model_price_override_set': 'platform',
+  'platform.model_price_override_cleared': 'platform',
 };
 
 /** Result of the audited operation. Kept first-class instead of being encoded

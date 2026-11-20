@@ -69,7 +69,7 @@ const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const createSpaFallback = require('./utils/fallback');
 const { getAppConfig } = require('./services/Config');
-const { startUsageJobs } = require('@librechat/api');
+const { startUsageJobs, startPriceSync } = require('@librechat/api');
 const { assertEnforcementTopology, reconcileQuotaState } = require('./services/usageQuota');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
@@ -158,6 +158,7 @@ const startServer = async () => {
   startAlertScheduler();
   startProviderSync();
   startUsageJobs();
+  startPriceSync({ getConfig: () => getAppConfig({ baseOnly: true }) });
   indexSync().catch((err) => {
     logger.error('[indexSync] Background sync failed:', err);
   });
@@ -357,6 +358,7 @@ const startServer = async () => {
   app.use('/api/platform/usage-packages', routes.platformUsagePackages);
   app.use('/api/platform/alerts', routes.platformAlerts);
   app.use('/api/platform/costs', routes.platformCosts);
+  app.use('/api/platform/model-prices', routes.platformPrices);
   app.use('/api/platform', routes.platformUsageAssignments);
   app.use('/api/platform/agents/catalog', routes.platformAgentsCatalog);
   app.use('/api/actions', routes.actions);

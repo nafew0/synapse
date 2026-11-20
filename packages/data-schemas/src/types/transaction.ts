@@ -25,4 +25,7 @@ export interface TransactionData {
   messageId?: string;
   inputTokenCount?: number;
   rateDetail?: Record<string, number>;
+  /** USD the provider reported for the call; see `costSource`. */
+  costUsd?: number;
+  costSource?: 'provider';
 }

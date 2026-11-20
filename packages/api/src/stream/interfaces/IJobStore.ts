@@ -529,6 +529,8 @@ export interface UsageMetadata {
   agentId?: string;
   /** Authoritative display cost attached by the host before durable child persistence. */
   cost?: number;
+  /** USD the provider says this call cost (OpenRouter `usage.cost`), when the runtime passes it through. */
+  provider_cost_usd?: number;
   /**
    * OpenAI-style cache token details.
    * Present for OpenAI models (GPT-4, o1, etc.)
