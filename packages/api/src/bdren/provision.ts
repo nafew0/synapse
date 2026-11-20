@@ -3,7 +3,6 @@ import { logger, runAsSystem, InstitutionStatuses } from '@librechat/data-schema
 import type {
   IUser,
   IInstitution,
-  IAuditLog,
   RecordAuditEntryInput,
   RecordAuditEntryOptions,
 } from '@librechat/data-schemas';
