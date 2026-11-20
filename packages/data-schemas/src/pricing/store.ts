@@ -113,9 +113,8 @@ export function createPriceStore(models: PriceStoreModels): PriceStore {
       return { created: false, changed: false };
     }
 
-    const version = (existing?.version ?? 0) + 1;
     const manualLive = existing != null && activeOverride(existing, at) != null;
-    await ModelPrice.updateOne(
+    const bumped = await ModelPrice.findOneAndUpdate(
       { modelId: listed.modelId },
       {
         $set: {
@@ -127,12 +126,13 @@ export function createPriceStore(models: PriceStoreModels): PriceStore {
           usedFor,
           fetchedAt: at,
           lastChangedAt: at,
-          version,
         },
+        $inc: { version: 1 },
         $setOnInsert: { override: null },
       },
-      { upsert: true },
-    );
+      { upsert: true, new: true },
+    ).lean<IModelPrice>();
+    const version = bumped?.version ?? 1;
     const versionDoc = await recordVersion(
       { modelId: listed.modelId, version },
       {
@@ -218,7 +218,6 @@ export function createPriceStore(models: PriceStoreModels): PriceStore {
   ): Promise<IModelPrice> {
     const existing = await ModelPrice.findOne({ modelId }).lean<IModelPrice>();
     const previous = existing ? effectivePrice(existing, at)?.price : undefined;
-    const version = (existing?.version ?? 0) + 1;
     const updated = await ModelPrice.findOneAndUpdate(
       { modelId },
       {
@@ -231,12 +230,13 @@ export function createPriceStore(models: PriceStoreModels): PriceStore {
             until: input.until ?? null,
           },
           lastChangedAt: at,
-          version,
         },
+        $inc: { version: 1 },
         $setOnInsert: { kind: 'chat', aliases: [], status: 'ok', usedFor: [] },
       },
       { upsert: true, new: true },
     ).lean<IModelPrice>();
+    const version = updated?.version ?? 1;
     await recordVersion(
       { modelId, version },
       {
@@ -261,13 +261,15 @@ export function createPriceStore(models: PriceStoreModels): PriceStore {
     if (!existing?.override) {
       return existing;
     }
-    const version = existing.version + 1;
     const restored = existing.price;
     const updated = await ModelPrice.findOneAndUpdate(
       { modelId },
-      { $set: { override: null, lastChangedAt: at, version } },
+      restored
+        ? { $set: { override: null, lastChangedAt: at }, $inc: { version: 1 } }
+        : { $set: { override: null } },
       { new: true },
     ).lean<IModelPrice>();
+    const version = updated?.version ?? existing.version;
     if (restored) {
       await recordVersion(
         { modelId, version },

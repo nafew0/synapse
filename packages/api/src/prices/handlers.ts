@@ -202,7 +202,7 @@ export function createPriceHandlers(deps: PriceHandlerDeps): PriceHandlers {
       const wantedStatus = typeof req.query?.status === 'string' ? req.query.status : undefined;
       const wantedUse = typeof req.query?.use === 'string' ? req.query.use : undefined;
       const docs = await ModelPrice.find({
-        $or: [{ usedFor: { $ne: [] } }, { unpricedHits: { $gt: 0 } }],
+        $or: [{ usedFor: { $ne: [] } }, { unpricedHits: { $gt: 0 } }, { override: { $ne: null } }],
       }).lean<IModelPrice[]>();
       const rows = docs
         .map((doc) => present(doc, changedDays, now))
@@ -390,17 +390,17 @@ export function createPriceHandlers(deps: PriceHandlerDeps): PriceHandlers {
     try {
       const actor = actorOf(req);
       const store = deps.store();
-      const doc = await store.setOverride(modelId, {
-        price: price as PriceBlock,
-        reason,
-        until,
-        actor: actor.id ?? actor.name,
-      });
       await audit(req, 'platform.model_price_override_set', modelId, {
         reason,
         prompt: price.prompt,
         completion: price.completion,
         until: until?.toISOString() ?? null,
+      });
+      const doc = await store.setOverride(modelId, {
+        price: price as PriceBlock,
+        reason,
+        until,
+        actor: actor.id ?? actor.name,
       });
       await store.refreshTable();
       res.json({ model: present(doc, DEFAULT_CHANGED_DAYS, new Date()) });
@@ -423,11 +423,11 @@ export function createPriceHandlers(deps: PriceHandlerDeps): PriceHandlers {
         res.status(404).json({ error: 'No manual override on this model' });
         return;
       }
-      const doc = await store.clearOverride(modelId, actor.id ?? actor.name);
       await audit(req, 'platform.model_price_override_cleared', modelId, {
         previousPrompt: before.override.price.prompt,
         previousCompletion: before.override.price.completion,
       });
+      const doc = await store.clearOverride(modelId, actor.id ?? actor.name);
       await store.refreshTable();
       res.json({ model: doc ? present(doc, DEFAULT_CHANGED_DAYS, new Date()) : null });
     } catch (error) {

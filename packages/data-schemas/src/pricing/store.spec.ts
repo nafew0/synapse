@@ -238,3 +238,29 @@ describe('sync runs', () => {
     expect(doc?.finishedAt).toBeInstanceOf(Date);
   });
 });
+
+describe('review regressions', () => {
+  const block = (prompt: number): PriceBlock => ({ prompt, completion: prompt * 2, tiers: [] });
+
+  it('concurrent overrides and a sync get distinct versions and all keep history', async () => {
+    await store.applyListed(
+      { modelId: 'a/b', kind: 'chat', price: block(1) },
+      { ...sync, usedFor: ['spec'] },
+    );
+    await Promise.all([
+      store.setOverride('a/b', { price: block(2), reason: 'one' }),
+      store.setOverride('a/b', { price: block(3), reason: 'two' }),
+      store.applyListed({ modelId: 'a/b', kind: 'chat', price: block(4) }, sync),
+    ]);
+    const versions = await ModelPriceVersion.find({ modelId: 'a/b' }).lean();
+    expect(versions.map((v) => v.version).sort()).toEqual([1, 2, 3, 4]);
+  });
+
+  it('a :free variant stays its own price and never replaces the paid model', async () => {
+    await store.applyListed({ modelId: 'x/y', kind: 'chat', price: block(5) }, sync);
+    await store.applyListed({ modelId: 'x/y:free', kind: 'chat', price: block(0) }, sync);
+    await store.refreshTable();
+    expect(findPrice('x/y')?.price.prompt).toBe(5);
+    expect(findPrice('x/y:free')?.price.prompt).toBe(0);
+  });
+});

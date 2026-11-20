@@ -22,6 +22,17 @@ let table = new Map<string, PriceEntry>();
 let loadedAt: Date | null = null;
 let sink: UnpricedSink | null = null;
 const flagged = new Map<string, UnpricedReason>();
+let quiet = 0;
+
+/** Runs a read-only lookup (price display, estimates) without raising unpriced flags. */
+export function withoutUnpricedFlags<T>(fn: () => T): T {
+  quiet += 1;
+  try {
+    return fn();
+  } finally {
+    quiet -= 1;
+  }
+}
 let exempt = new Set<string>();
 
 /** Models priced outside the table on purpose; billing them from the built-in tables raises no flag. */
@@ -29,8 +40,15 @@ export const setPriceExemptions = (models: Iterable<string>): void => {
   exempt = new Set([...models].map(normalizeModelId));
 };
 
-/** Lowercases and drops an OpenRouter routing suffix (`:nitro`, `:thinking`); nothing else is guessed. */
-export const normalizeModelId = (model: string): string => model.trim().toLowerCase().split(':')[0];
+/**
+ * Lowercases and drops a pure routing suffix (`:nitro`, `:floor`, `:online`), which prices like the base
+ * model. Variants OpenRouter lists as their own model (`:free`, `:thinking`) keep their id; nothing else is guessed.
+ */
+export const normalizeModelId = (model: string): string =>
+  model
+    .trim()
+    .toLowerCase()
+    .replace(/:(nitro|floor|online)$/, '');
 
 /** Replaces the in-memory table the billing functions read. `aliases` map extra ids to the same price. */
 export function loadPriceTable(
@@ -101,10 +119,13 @@ export function ratesFor(price: PriceBlock, inputTokenCount?: number | null): Ra
   };
 }
 
-/** Dearest price anywhere in the table, tiers included, for a token type; 0 when nothing is loaded. */
+/** Dearest synced price in the table, tiers included, for a token type; manual overrides never raise it. 0 when nothing is loaded. */
 export function highestRate(tokenType: 'prompt' | 'completion'): number {
   let highest = 0;
-  for (const { price } of table.values()) {
+  for (const { price, source } of table.values()) {
+    if (source !== 'openrouter') {
+      continue;
+    }
     highest = Math.max(highest, price[tokenType], ...price.tiers.map((tier) => tier[tokenType]));
   }
   return highest;
@@ -116,7 +137,7 @@ export const setUnpricedSink = (next: UnpricedSink | null): void => {
 
 /** Logs once per process and per model and hands the model to the sink, so superadmins hear about it. */
 export function flagUnpriced(model: string | undefined, reason: UnpricedReason): void {
-  if (!model || typeof model !== 'string') {
+  if (quiet > 0 || !model || typeof model !== 'string') {
     return;
   }
   const key = normalizeModelId(model);

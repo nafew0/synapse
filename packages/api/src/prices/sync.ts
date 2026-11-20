@@ -17,7 +17,7 @@ import { acquireLock } from './lock';
 export const SYNC_INTERVAL_MS: number = 6 * 60 * 60 * 1000;
 export const FAILURE_NOTICE_MS: number = 24 * 60 * 60 * 1000;
 const LOCK_KEY = 'model-price-sync';
-const LOCK_TTL_SECONDS = 120;
+const LOCK_TTL_SECONDS = 900;
 
 export interface SyncDeps {
   models: PriceStoreModels;
@@ -54,7 +54,10 @@ async function noteFailure(deps: SyncDeps, message: string, at: Date): Promise<v
   const lastGood = await ModelPriceSync.findOne({ ok: true })
     .sort({ startedAt: -1 })
     .lean<IModelPriceSync>();
-  const since = lastGood?.startedAt?.getTime() ?? 0;
+  const oldest = lastGood
+    ? null
+    : await ModelPriceSync.findOne({}).sort({ startedAt: 1 }).lean<IModelPriceSync>();
+  const since = (lastGood?.startedAt ?? oldest?.startedAt ?? at).getTime();
   if (at.getTime() - since < FAILURE_NOTICE_MS) {
     return;
   }

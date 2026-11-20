@@ -225,9 +225,11 @@ describe('runPriceSync', () => {
       expect(closed[0].seenBy).toBe('system');
     });
 
-    it('opens a notice at once when no sync ever succeeded', async () => {
+    it('opens no notice on a first failure, and one once 24 hours passed with no success', async () => {
       server.mode = 'error';
       await runPriceSync(deps());
+      expect(await notices('sync_failing')).toHaveLength(0);
+      await runPriceSync({ ...deps(), now: () => new Date(Date.now() + 25 * 60 * 60 * 1000) });
       expect(await notices('sync_failing')).toHaveLength(1);
       expect(await models.ModelPrice.countDocuments({})).toBe(0);
     });

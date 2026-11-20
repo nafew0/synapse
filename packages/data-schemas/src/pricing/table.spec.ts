@@ -36,7 +36,9 @@ afterEach(() => {
 describe('normalizeModelId', () => {
   it('lowercases, trims and drops the routing suffix', () => {
     expect(normalizeModelId('  Anthropic/Claude-X:Nitro ')).toBe('anthropic/claude-x');
-    expect(normalizeModelId('a/b:thinking')).toBe('a/b');
+    expect(normalizeModelId('a/b:floor')).toBe('a/b');
+    expect(normalizeModelId('a/b:free')).toBe('a/b:free');
+    expect(normalizeModelId('a/b:thinking')).toBe('a/b:thinking');
   });
 });
 
