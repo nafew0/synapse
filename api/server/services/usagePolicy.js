@@ -11,7 +11,6 @@ const {
   getQuotaHealth,
   quotaOwnerModel,
   ensureUsageAccount,
-  getShadowReadiness,
 } = require('./usageQuota');
 const { getQuotaModelSources } = require('./usageLabels');
 
@@ -35,11 +34,17 @@ function normalizeNullableLimit(value, label) {
   return parsed;
 }
 
+/** Whether a policy sets any limit. Limits are always enforced, so they need transactions. */
+function setsAnyLimit(policy) {
+  const { modelTokens, ...scalar } = policy.limits;
+  return (
+    Object.values(scalar).some((value) => value != null) ||
+    modelTokens.some((entry) => entry.maxTokens != null)
+  );
+}
+
+/** Builds a policy from admin input. A `mode` sent by an older console is ignored. */
 function normalizePolicyInput(input, fallback) {
-  const mode = input.mode ?? fallback.mode;
-  if (!['shadow', 'enforce'].includes(mode)) {
-    throw new PolicyError(400, 'INVALID_POLICY', 'mode must be shadow or enforce');
-  }
   const timezone = String(input.timezone ?? fallback.timezone ?? 'Asia/Dhaka').trim();
   try {
     getCalendarMonthRange(timezone);
@@ -80,7 +85,6 @@ function normalizePolicyInput(input, fallback) {
     );
   }
   return {
-    mode,
     timezone,
     period: ['calendar_month', 'calendar_week'],
     limits: {
@@ -184,23 +188,12 @@ async function createUsagePolicy({
   }
 
   const transactionCapable = await getTransactionSupport(mongoose);
-  if (preview.proposedPolicy.mode === 'enforce' && !transactionCapable) {
+  if (setsAnyLimit(preview.proposedPolicy) && !transactionCapable) {
     throw new PolicyError(
       409,
       'QUOTA_ENFORCEMENT_REQUIRES_TRANSACTIONS',
-      'Enforce mode requires MongoDB replica-set or mongos transaction support',
+      'Usage limits require MongoDB replica-set or mongos transaction support',
     );
-  }
-  if (preview.proposedPolicy.mode === 'enforce' && preview.currentVersion >= 1) {
-    const readiness = await getShadowReadiness({ tenantId });
-    if (!readiness.ready) {
-      throw new PolicyError(
-        409,
-        'QUOTA_SHADOW_GATE_NOT_MET',
-        'The 7-day/1,000-call shadow acceptance gate has not passed',
-        { readiness },
-      );
-    }
   }
 
   if (isUsageAccount(tenantId)) {
@@ -281,6 +274,7 @@ async function listUsagePolicies({ tenantId, limit = 50, offset = 0 }) {
   const [policies, total] = await runAsSystem(() =>
     Promise.all([
       models.UsagePolicy.find({ tenantId })
+        .select('-mode')
         .sort({ version: -1 })
         .skip(safeOffset)
         .limit(safeLimit)

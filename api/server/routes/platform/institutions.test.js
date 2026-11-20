@@ -90,10 +90,6 @@ jest.mock('~/server/services/institutionUsage', () => ({
   listUsageByModel: jest.fn(),
 }));
 
-jest.mock('~/server/services/usageQuota', () => ({
-  getShadowReadiness: jest.fn(),
-}));
-
 jest.mock('~/models', () => ({
   findUser: (...args) => mockFindUser(...args),
   getInstitutionByTenantId: (...args) => mockGetInstitution(...args),
@@ -187,6 +183,13 @@ describe('platform institutions route', () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.body.error).toMatch(/initial institution admin/i);
+  });
+
+  it('no longer serves the shadow readiness report', () => {
+    const router = require('./institutions');
+    const paths = router.stack.flatMap((layer) => (layer.route ? [layer.route.path] : []));
+    expect(paths).toContain('/:tenantId/quota');
+    expect(paths).not.toContain('/:tenantId/quota/readiness');
   });
 
   it('refuses a tenantId reserved for quota accounts', async () => {

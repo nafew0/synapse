@@ -18,7 +18,7 @@ async function main() {
   );
 
   console.log(`Institutions: ${institutions.length}`);
-  console.log(`Institutions requiring a version-1 shadow policy: ${candidates.length}`);
+  console.log(`Institutions requiring a version-1 policy (no limits): ${candidates.length}`);
   console.log(`Duplicate keyed ledger groups: ${duplicates.length}`);
   if (duplicates.length > 0) {
     console.log('Stop: reconcile duplicate usage keys before building the ledger indexes.');
@@ -39,7 +39,6 @@ async function main() {
           $setOnInsert: {
             tenantId: institution.tenantId,
             version: 1,
-            mode: 'shadow',
             timezone,
             period: 'calendar_month',
             limits: {
@@ -51,7 +50,7 @@ async function main() {
             inputSafetyFactor: 1.15,
             inputSafetyTokens: 256,
             effectiveAt: new Date(),
-            reason: 'Phase 6 shadow-mode migration',
+            reason: 'Initial usage policy, no limits',
           },
         },
         { upsert: true },

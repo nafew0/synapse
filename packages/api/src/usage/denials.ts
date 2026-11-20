@@ -11,8 +11,8 @@ interface QuotaErrorLike {
 
 /**
  * Codes that must reach the caller as a refusal. Everything else raised by the
- * quota engine is an availability problem: chat must keep working, because a
- * shadow-mode institution has not opted into having requests blocked at all.
+ * quota engine is an availability problem: chat must keep working rather than
+ * be blocked by a fault in the quota engine itself.
  */
 export const FAIL_CLOSED_QUOTA_CODES: ReadonlySet<string> = new Set([
   'TOKEN_QUOTA_EXCEEDED',

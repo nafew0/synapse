@@ -97,7 +97,6 @@ describe('usageQuota credit metering (replica set)', () => {
     await models.UsagePolicy.create({
       tenantId,
       version: 1,
-      mode: 'enforce',
       timezone: 'Asia/Dhaka',
       limits: {},
       inputSafetyFactor: 1,
@@ -256,14 +255,18 @@ describe('usageQuota credit metering (replica set)', () => {
       });
     });
 
-    it('records usage but never refuses or trims in shadow mode', async () => {
-      /** `mode` is immutable on the schema, so the test writes the collection directly. */
+    it("enforces a policy stored before shadow mode was removed with mode 'shadow'", async () => {
+      /** The schema no longer has `mode`, so the old field is written to the collection directly. */
       await models.UsagePolicy.collection.updateOne({ tenantId }, { $set: { mode: 'shadow' } });
       await createPackage('pool', 10_000_000);
       await createPackage('member', 10);
-      const result = await reserve();
-      expect(result.outputTokenCap).toBeNull();
-      expect(result.reservation.metadata.shadowWouldDeny).toBe(true);
+      await expect(reserve()).rejects.toMatchObject({
+        statusCode: 429,
+        details: expect.objectContaining({ code: 'TOKEN_QUOTA_EXCEEDED', meter: 'credits' }),
+      });
+      const view = await quota.getMemberQuota({ tenantId, userId });
+      expect(view).not.toHaveProperty('enforced');
+      expect(view).not.toHaveProperty('mode');
     });
   });
 
@@ -372,17 +375,6 @@ describe('usageQuota credit metering (replica set)', () => {
       );
       expect(week.usedTokens).toBe(56);
     });
-
-    /** Nothing is reserved for a title, so counting it would read as a 100% underestimate. */
-    it('stays out of the shadow gate estimate and coverage figures', async () => {
-      await charge(56);
-      const { metrics } = await quota.getShadowReadiness({ tenantId });
-      expect(metrics).toMatchObject({
-        attributableCalls: 0,
-        underestimatedCalls: 0,
-        estimationOverageRate: 0,
-      });
-    });
   });
 
   describe('getCreditConsole', () => {
@@ -413,11 +405,11 @@ describe('usageQuota credit metering (replica set)', () => {
 
       const console = await quota.getCreditConsole({ tenantId });
       expect(console).toMatchObject({
-        enforced: true,
         institutionPackage: 'Pool',
         defaultMemberPackage: 'Standard',
         institution: { month: { used: 150_000, limit: 10_000_000 }, week: { used: 150_000 } },
       });
+      expect(console).not.toHaveProperty('enforced');
       expect(console.members.map((member) => member.userId)).toEqual([
         String(userId),
         String(otherUserId),
@@ -456,7 +448,6 @@ describe('usageQuota credit metering (replica set)', () => {
       const result = await quota.getMemberQuota({ tenantId, userId });
       expect(result).toMatchObject({
         unit: 'credits',
-        enforced: true,
         package: { key: 'member', name: 'Standard', unlimited: false },
       });
       const month = result.meters.find((m) => m.meter === 'credits' && m.window === 'month');

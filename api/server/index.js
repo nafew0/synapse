@@ -74,7 +74,7 @@ const configureSocialLogins = require('./socialLogins');
 const createSpaFallback = require('./utils/fallback');
 const { getAppConfig } = require('./services/Config');
 const { startUsageJobs, startPriceSync } = require('@librechat/api');
-const { assertEnforcementTopology, reconcileQuotaState } = require('./services/usageQuota');
+const { checkQuotaTopology, reconcileQuotaState } = require('./services/usageQuota');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
@@ -146,10 +146,12 @@ const startServer = async () => {
   await connectDb();
 
   logger.info('Connected to MongoDB');
-  const quotaTopology = await assertEnforcementTopology();
-  logger.info(
-    `[usageQuota] mode=${quotaTopology.enforcing ? 'enforce' : 'shadow'} transactionCapable=${quotaTopology.transactionCapable}`,
-  );
+  const quotaTopology = await checkQuotaTopology();
+  if (!quotaTopology.transactionCapable) {
+    logger.warn(
+      '[usageQuota] MongoDB has no transaction support (needs a replica set or mongos): every request with a usage limit will be refused',
+    );
+  }
   const quotaReconcilerInterval = setInterval(
     () => {
       reconcileQuotaState().catch((err) => {

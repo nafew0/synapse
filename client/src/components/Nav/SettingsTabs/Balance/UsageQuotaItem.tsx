@@ -157,11 +157,6 @@ function CreditQuota({ quota }: { quota: TQuotaResponse }) {
       {institution.map((state) => (
         <InstitutionRow key={`institution:${state.window}`} state={state} />
       ))}
-      {quota.enforced === false && (
-        <p className="text-xs font-light text-text-secondary">
-          {localize('com_ui_usage_not_enforced')}
-        </p>
-      )}
     </div>
   );
 }
@@ -258,11 +253,6 @@ const TokenQuota: React.FC<UsageQuotaItemProps> = ({ quota }) => {
       {meters.map((state) => (
         <MeterRow key={`${state.meter}:${state.window}`} state={state} />
       ))}
-      {quota?.enforced === false && (
-        <p className="text-xs font-light text-text-secondary">
-          {localize('com_ui_usage_not_enforced')}
-        </p>
-      )}
     </div>
   );
 };
