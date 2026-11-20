@@ -118,6 +118,7 @@ export function resolveAllowance(
     packageVersion: payload.package?.version ?? null,
     institutionId: payload.institution?.id ?? null,
     institutionName: payload.institution?.name ?? null,
+    institutionSlug: payload.institution?.slug ?? null,
     upgradeUrl: payload.upgrade_url || config.upgradeUrl,
     renews: payload.renews ?? null,
     subscriptionEndsAt: payload.subscription?.expires_at

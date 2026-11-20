@@ -71,6 +71,8 @@ export interface IUser extends Document {
   /** Explicit SaaS account scope; legacy records derive this from tenantId. */
   accountScope?: 'institution' | 'standalone';
   membershipStatus?: InstitutionMembershipStatus;
+  /** The bdren.ai organization a coverage mismatch was last recorded for, so a login does not record it again. */
+  bdrenNotedOrganizationId?: string;
   usagePackage?: MemberUsagePackage | null;
   suspendedAt?: Date | null;
   suspendedBy?: string | Types.ObjectId | null;

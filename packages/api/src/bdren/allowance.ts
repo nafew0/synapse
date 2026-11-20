@@ -54,7 +54,7 @@ export function createAllowanceService({
     const entry = await usableEntry(who);
     const fresh =
       !!entry && !entry.invalidatedAt && at.getTime() - entry.verifiedAt.getTime() < config.ttlMs;
-    if (entry && fresh && !force) {
+    if (entry && fresh && !force && !who.idToken) {
       const resolved = resolveAllowance(entry.allowance, config, at);
       if (resolved) {
         return stamp(resolved, 'cache');
@@ -62,8 +62,8 @@ export function createAllowanceService({
     }
 
     const result = await client.fetchAllowance(
-      { issuer: who.issuer, subject: who.subject },
-      force ? undefined : entry?.etag,
+      { issuer: who.issuer, subject: who.subject, idToken: who.idToken },
+      force || who.idToken ? undefined : entry?.etag,
     );
     if (result.status === 'ok') {
       const moved =

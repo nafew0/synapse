@@ -5,6 +5,7 @@ import type { IBdrenEvent, IInstitution } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { Model } from 'mongoose';
 import type { AllowanceSubject, BdrenConfig } from './types';
+import type { OrganizationRef } from './provision';
 import type { AllowanceService } from './allowance';
 import {
   readEntry,
@@ -19,8 +20,16 @@ import { carryOverUsage } from './carryover';
 const eventSchema = z.object({
   id: z.string().min(1).max(200),
   type: z.string().min(1).max(100),
+  reason: z.string().nullish(),
   user: z.object({ issuer: z.string(), subject: z.string() }).nullish(),
-  organization: z.object({ id: z.string() }).passthrough().nullish(),
+  organization: z
+    .object({
+      id: z.string(),
+      slug: z.string().nullish(),
+      name: z.string().nullish(),
+    })
+    .passthrough()
+    .nullish(),
 });
 
 export interface WebhookDeps {
@@ -28,7 +37,26 @@ export interface WebhookDeps {
   service: AllowanceService;
   /** The Synapse user behind a bdren.ai identity, for the upgrade carry-over. */
   findSubject: (issuer: string, subject: string) => Promise<AllowanceSubject | null>;
+  /** Creates the institution of an organization Synapse does not know yet; without it unknown organizations are ignored. */
+  ensureInstitution?: (org: OrganizationRef) => Promise<string | null>;
   now?: () => Date;
+}
+
+/** Events that mean an organization is live; teardown (expired, cancelled, downgraded, suspended) never creates one. */
+const LIVE_SUBSCRIPTION_EVENT = /^subscription\.(activated|renewed|upgraded|limits_changed)$/;
+/** `limits_changed` follows every change and names the original event in `reason`; a teardown must not create anything. */
+const TEARDOWN_REASON = /(^|\.)(expired|cancel+ed|downgraded)$/;
+const COVERAGE_EVENT = 'membership.coverage_changed';
+
+/** A membership change names a person; the same event type without one is an organization status change. */
+function shouldProvision(event: { type: string; reason?: string | null; user?: unknown }): boolean {
+  if (TEARDOWN_REASON.test(event.reason ?? '')) {
+    return false;
+  }
+  return (
+    LIVE_SUBSCRIPTION_EVENT.test(event.type) ||
+    (event.type === COVERAGE_EVENT && event.user != null)
+  );
 }
 
 const DUPLICATE_KEY = 11000;
@@ -56,6 +84,7 @@ export function createWebhookHandler({
   config,
   service,
   findSubject,
+  ensureInstitution,
   now = () => new Date(),
 }: WebhookDeps) {
   async function process(event: z.infer<typeof eventSchema>, at: Date): Promise<void> {
@@ -80,8 +109,14 @@ export function createWebhookHandler({
       }
     }
     if (event.organization) {
-      const tenantId = await tenantOfOrganization(event.organization.id);
-      await invalidateOrganization(event.organization.id, tenantId, at);
+      const org = event.organization;
+      const known = await tenantOfOrganization(org.id);
+      const tenantId =
+        known ??
+        (ensureInstitution && shouldProvision(event)
+          ? await ensureInstitution({ id: org.id, slug: org.slug, name: org.name ?? org.slug })
+          : null);
+      await invalidateOrganization(org.id, tenantId, at);
     }
   }
 

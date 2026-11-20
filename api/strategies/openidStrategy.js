@@ -6,6 +6,7 @@ const jwtDecode = require('jsonwebtoken/decode');
 const {
   hashToken,
   logger,
+  runAsSystem,
   tenantStorage,
   INSTITUTION_ADMIN_ROLE,
 } = require('@librechat/data-schemas');
@@ -43,6 +44,66 @@ const { InstitutionMembershipStatuses } = require('@librechat/data-schemas');
  * required. */
 const activateProvisionedMember = (...args) =>
   require('~/server/services/institutionMembers').activateProvisionedMember(...args);
+
+/**
+ * The login scope. With the bdren.ai link on it also asks ZITADEL for the user's organization, so
+ * the ID token carries the claim bdren.ai routes institution members by.
+ */
+function loginScope() {
+  try {
+    const { readBdrenConfig, withOrganizationScope } = require('@librechat/api');
+    return withOrganizationScope(process.env.OPENID_SCOPE, readBdrenConfig());
+  } catch {
+    return process.env.OPENID_SCOPE;
+  }
+}
+
+/**
+ * The institution bdren.ai says a first-time user belongs to (created in Synapse on first sight),
+ * or `null`. Required on use like the member service, and never allowed to fail a login.
+ */
+async function bdrenTenantForNewUser(identity) {
+  try {
+    return await require('~/server/services/bdrenAllowance').bdrenProvisioner.tenantForNewMember(
+      identity,
+    );
+  } catch (error) {
+    logger.error('[openidStrategy] bdren.ai institution lookup failed', error);
+    return null;
+  }
+}
+
+/**
+ * Places the account this login just created in its institution. The answer is `placed` (with the
+ * active member), `duplicate` (a concurrent login already made the account; `existing` is it) or
+ * `refused` (the user keeps no tenant). Never throws.
+ */
+async function adoptBdrenMember(userId, tenantId) {
+  try {
+    return await require('~/server/services/bdrenAllowance').bdrenProvisioner.adoptNewMember(
+      userId,
+      tenantId,
+    );
+  } catch (error) {
+    logger.error('[openidStrategy] placing the new user in their institution failed', error);
+    return { status: 'refused' };
+  }
+}
+
+/** An account for this identity in any tenant, which a concurrent first login may have just placed. */
+const findAccountAcrossTenants = (openidId, openidIssuer) =>
+  runAsSystem(() => findUser({ openidId, openidIssuer }));
+
+/** Records, without waiting, an existing user covered by an institution other than their own. */
+function reviewBdrenCoverage(user, idToken) {
+  try {
+    void require('~/server/services/bdrenAllowance').bdrenProvisioner.reviewExistingMember(user, {
+      idToken,
+    });
+  } catch (error) {
+    logger.error('[openidStrategy] bdren.ai coverage review failed', error);
+  }
+}
 
 /**
  * @typedef {import('openid-client').ClientMetadata} ClientMetadata
@@ -697,7 +758,20 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     throw new Error('User does not exist');
   }
 
-  if (!user) {
+  let isNewUser = !user;
+  const bdrenTenantId =
+    isNewUser && !userinfo.tenantId
+      ? await bdrenTenantForNewUser({
+          issuer: openidIssuer,
+          subject: userinfo.sub,
+          idToken: tokenset.id_token,
+        })
+      : null;
+  if (isNewUser) {
+    user = await findAccountAcrossTenants(userinfo.sub, openidIssuer);
+    isNewUser = !user;
+  }
+  if (isNewUser) {
     user = {
       provider: 'openid',
       openidId: userinfo.sub,
@@ -722,6 +796,14 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
         userId: user._id.toString(),
         tenantId: user.tenantId,
       });
+    } else if (bdrenTenantId) {
+      const placement = await adoptBdrenMember(user._id.toString(), bdrenTenantId);
+      if (placement.status === 'placed') {
+        user = placement.user;
+      } else if (placement.status === 'duplicate') {
+        user = placement.existing;
+        isNewUser = false;
+      }
     }
   } else {
     user.provider = 'openid';
@@ -854,7 +936,12 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     }
   }
 
-  user = await updateUser(user._id, user);
+  /** Tenant and status are not this login's to write: a placement may have changed them since `user` was read. */
+  const { tenantId: _tenantId, membershipStatus: _membershipStatus, ...profile } = user;
+  user = await updateUser(user._id, profile);
+  if (!isNewUser) {
+    reviewBdrenCoverage(user, tokenset.id_token);
+  }
   if (user?.tenantId && user.membershipStatus !== InstitutionMembershipStatuses.ACTIVE) {
     user = await activateProvisionedMember({
       userId: user._id.toString(),
@@ -991,7 +1078,7 @@ async function setupOpenId() {
     const openidLogin = new CustomOpenIDStrategy(
       {
         config: openidConfig,
-        scope: process.env.OPENID_SCOPE,
+        scope: loginScope(),
         callbackURL: process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL,
         clockTolerance: process.env.OPENID_CLOCK_TOLERANCE || 300,
         usePKCE,

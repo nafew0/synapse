@@ -7,13 +7,33 @@ const {
   fallbackAllowance,
   createAllowanceClient,
   createAllowanceService,
+  createProvisioner,
+  createMemberPlacer,
   createWebhookHandler,
   normalizeOpenIdIssuer,
   quotaAccountFor,
 } = require('@librechat/api');
 
 const config = readBdrenConfig();
-const service = createAllowanceService({ config, client: createAllowanceClient(config) });
+const client = createAllowanceClient(config);
+const service = createAllowanceService({ config, client });
+
+/** Resolved on use: the member service builds the whole model registry at import time. */
+const place = createMemberPlacer({
+  activate: (args) =>
+    require('~/server/services/institutionMembers').activateProvisionedMember(args),
+});
+
+/** Resolved on use: `tenancy` sits on routes' require chains that stub parts of data-schemas. */
+const provisioner = createProvisioner({
+  config,
+  client,
+  service,
+  recordAuditEntry: (input, options) => require('~/models').recordAuditEntry(input, options),
+  place,
+  onCreated: (tenantId) =>
+    require('~/server/services/tenancy').ensureInstitutionAdminRole(tenantId),
+});
 
 /** The Synapse user behind a bdren.ai identity, as the meter knows them. */
 async function findSubject(issuer, subject) {
@@ -85,12 +105,18 @@ async function getRequestAllowance(user, memberPackage = user?.usagePackage) {
   }
 }
 
-const webhookHandler = createWebhookHandler({ config, service, findSubject });
+const webhookHandler = createWebhookHandler({
+  config,
+  service,
+  findSubject,
+  ensureInstitution: provisioner.ensureInstitutionForOrganization,
+});
 
 module.exports = {
   bdrenConfig: config,
   bdrenAllowance: service,
   getRequestAllowance,
   webhookHandler,
+  bdrenProvisioner: provisioner,
   quotaAccountFor,
 };

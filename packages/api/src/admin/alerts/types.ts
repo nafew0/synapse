@@ -6,7 +6,8 @@ export type AlertKind =
   | 'openrouter_balance'
   | 'firecrawl_key'
   | 'firecrawl_credits'
-  | 'spend_spike';
+  | 'spend_spike'
+  | 'institution_link';
 
 export interface AlertFinding {
   /** Stable identity of the condition, so a repeat check updates one alert instead of adding another. */

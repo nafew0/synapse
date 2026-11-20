@@ -44,6 +44,7 @@ export interface ResolvedAllowance {
   packageVersion: number | null;
   institutionId: string | null;
   institutionName: string | null;
+  institutionSlug?: string | null;
   upgradeUrl: string;
   renews: string | null;
   subscriptionEndsAt: Date | null;
@@ -60,6 +61,8 @@ export interface AllowanceSubject {
   account: string;
   issuer: string;
   subject: string;
+  /** The raw ID token of the login in progress, passed on to bdren.ai when it does not know the person. */
+  idToken?: string;
 }
 
 export type AllowanceFetch =
