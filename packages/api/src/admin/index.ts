@@ -20,3 +20,4 @@ export type { AdminUsersDeps } from './users';
 export type { AdminAuditLogDeps } from './auditLog';
 export type { AdminMembersDeps, ExportableMember } from './members';
 export type { GlobalConfigDeps } from './global/config';
+export * from './reconcile';

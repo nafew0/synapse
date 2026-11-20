@@ -61,6 +61,8 @@ export interface FirecrawlCredits {
   remaining: number;
   /** Credits in the plan; null when the account endpoint does not say. */
   plan: number | null;
+  /** Start of the billing period the counters belong to; null when not reported. */
+  periodStart?: string | null;
 }
 
 export interface SpendRow {

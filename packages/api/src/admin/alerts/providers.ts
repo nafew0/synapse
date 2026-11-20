@@ -28,6 +28,8 @@ interface FirecrawlBody {
     remainingCredits?: number;
     plan_credits?: number;
     planCredits?: number;
+    billingPeriodStart?: string;
+    billingPeriodEnd?: string;
   };
 }
 
@@ -47,7 +49,7 @@ async function errorMessage(response: Response): Promise<string> {
 }
 
 /** A free read of a provider's account endpoint. 401 and 402 mean the key is refused; other failures say nothing about it. */
-async function readEndpoint<T>(
+export async function readEndpoint<T>(
   config: ProviderConfig,
   path: string,
   parse: (body: unknown) => T | null,
@@ -102,5 +104,9 @@ export const readFirecrawlCredits = (config: ProviderConfig) =>
     const remaining = data?.remainingCredits ?? data?.remaining_credits;
     if (!isNumber(remaining)) return null;
     const plan = data?.planCredits ?? data?.plan_credits;
-    return { remaining, plan: isNumber(plan) ? plan : null };
+    return {
+      remaining,
+      plan: isNumber(plan) ? plan : null,
+      periodStart: typeof data?.billingPeriodStart === 'string' ? data.billingPeriodStart : null,
+    };
   });
