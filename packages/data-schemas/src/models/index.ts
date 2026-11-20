@@ -3,9 +3,13 @@ import {
   createUsagePackageModel,
   createUsagePricingModel,
 } from './usagePackage';
+import {
+  createBdrenAllowanceModel,
+  createBdrenEventModel,
+  createBdrenUploadTicketModel,
+} from './bdren';
 import { createKbDocumentModel, createKbDocumentVersionModel, createKbIngestJobModel } from './kb';
 import { createAgentTriggerLaneSequenceModel } from './triggerLaneSequence';
-import { createBdrenAllowanceModel, createBdrenEventModel } from './bdren';
 import { createInstitutionImportJobModel } from './institutionImportJob';
 import { createAdminScopeAssignmentModel } from './adminScopeAssignment';
 import { createSkillSyncCredentialModel } from './skillSyncCredential';
@@ -121,6 +125,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
   UsageDaily: ReturnType<typeof createUsageDailyModel>;
   BdrenAllowance: ReturnType<typeof createBdrenAllowanceModel>;
   BdrenEvent: ReturnType<typeof createBdrenEventModel>;
+  BdrenUploadTicket: ReturnType<typeof createBdrenUploadTicketModel>;
   UsageReservation: ReturnType<typeof createUsageReservationModel>;
   UsageWarning: ReturnType<typeof createUsageWarningModel>;
   AdminScopeAssignment: ReturnType<typeof createAdminScopeAssignmentModel>;
@@ -185,6 +190,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
     UsageDaily: createUsageDailyModel(mongoose),
     BdrenAllowance: createBdrenAllowanceModel(mongoose),
     BdrenEvent: createBdrenEventModel(mongoose),
+    BdrenUploadTicket: createBdrenUploadTicketModel(mongoose),
     UsageReservation: createUsageReservationModel(mongoose),
     UsageWarning: createUsageWarningModel(mongoose),
     AdminScopeAssignment: createAdminScopeAssignmentModel(mongoose),
