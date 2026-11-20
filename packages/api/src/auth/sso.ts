@@ -1,4 +1,4 @@
-import type { NextFunction, Request, Response } from 'express';
+import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import type { TStartupConfig } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import { normalizeOpenIdIssuer } from './openid';
@@ -122,9 +122,14 @@ export function sendSsoRefusal(res: Response, refusal: SsoRefusal): Response {
 export function refuseWhenSsoOnly(
   refusal: SsoRefusal,
   read: () => SsoOnlySettings = readSsoOnly,
-): (req: Request, res: Response, next: NextFunction) => Response | void {
-  return (_req: Request, res: Response, next: NextFunction): Response | void =>
-    read().enabled ? sendSsoRefusal(res, refusal) : next();
+): RequestHandler {
+  return (_req: Request, res: Response, next: NextFunction): void => {
+    if (read().enabled) {
+      sendSsoRefusal(res, refusal);
+      return;
+    }
+    next();
+  };
 }
 
 /** OAuth router paths that stay open while SSO-only is on: the OpenID login and its error page. */
@@ -133,12 +138,13 @@ const OPENID_OAUTH_PATHS = new Set(['/openid', '/openid/callback', '/error']);
 /** Mounted on the `/oauth` router: every provider but OpenID is refused while SSO-only is on. */
 export function refuseOtherProvidersWhenSsoOnly(
   read: () => SsoOnlySettings = readSsoOnly,
-): (req: Request, res: Response, next: NextFunction) => Response | void {
-  return (req: Request, res: Response, next: NextFunction): Response | void => {
+): RequestHandler {
+  return (req: Request, res: Response, next: NextFunction): void => {
     if (!read().enabled || OPENID_OAUTH_PATHS.has(req.path.replace(/\/+$/, ''))) {
-      return next();
+      next();
+      return;
     }
-    return sendSsoRefusal(res, SsoRefusals.provider);
+    sendSsoRefusal(res, SsoRefusals.provider);
   };
 }
 

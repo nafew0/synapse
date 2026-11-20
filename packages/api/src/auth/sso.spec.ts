@@ -83,13 +83,17 @@ describe('route guards', () => {
   function app(enabled: boolean) {
     const read = () => (enabled ? on : off);
     const server = express();
-    server.post('/login', refuseWhenSsoOnly(SsoRefusals.login, read), (_req, res) =>
-      res.sendStatus(200),
-    );
+    server.post('/login', refuseWhenSsoOnly(SsoRefusals.login, read), (_req, res) => {
+      res.sendStatus(200);
+    });
     const oauth = express.Router();
     oauth.use(refuseOtherProvidersWhenSsoOnly(read));
-    oauth.get('/:provider', (_req, res) => res.sendStatus(200));
-    oauth.get('/:provider/callback', (_req, res) => res.sendStatus(200));
+    oauth.get('/:provider', (_req, res) => {
+      res.sendStatus(200);
+    });
+    oauth.get('/:provider/callback', (_req, res) => {
+      res.sendStatus(200);
+    });
     server.use('/oauth', oauth);
     return server;
   }
