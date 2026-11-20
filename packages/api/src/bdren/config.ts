@@ -25,8 +25,10 @@ export function readBdrenConfig(env: NodeJS.ProcessEnv = process.env): BdrenConf
   const baseUrl = (env.BDREN_API_URL ?? '').trim().replace(/\/+$/, '');
   const productKey = (env.BDREN_PRODUCT_KEY ?? '').trim();
   const issuer = (env.BDREN_ISSUER ?? '').trim().replace(/\/+$/, '');
+  const linked = !!baseUrl && !!productKey && !!issuer;
   return {
-    enabled: env.BDREN_ALLOWANCE_ENABLED === 'true' && !!baseUrl && !!productKey && !!issuer,
+    enabled: env.BDREN_ALLOWANCE_ENABLED === 'true' && linked,
+    usageExport: env.BDREN_USAGE_EXPORT_ENABLED === 'true' && linked,
     baseUrl,
     productKey,
     issuer,

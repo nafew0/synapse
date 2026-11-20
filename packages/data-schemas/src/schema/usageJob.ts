@@ -11,6 +11,8 @@ const usageJobSchema: Schema<IUsageJob> = new Schema(
     lastRunAt: { type: Date },
     /** Asia/Dhaka day of the last nightly profile. */
     lastDay: { type: String },
+    /** Why the last run stopped early, cleared by the next clean run. */
+    lastError: { type: String },
   },
   { timestamps: true },
 );
