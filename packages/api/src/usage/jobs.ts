@@ -2,8 +2,12 @@ import mongoose from 'mongoose';
 import { logger } from '@librechat/data-schemas';
 import { runUsageRollup, dhakaDay } from './rollup';
 import { computeTaskCostProfile } from './costs';
+import { readBdrenConfig } from '~/bdren/config';
+import { runUsageExport } from '~/bdren/usage';
 
 export const ROLLUP_INTERVAL_MS: number = 15 * 60 * 1000;
+/** Today's usage goes back to bdren.ai this often; finished days are sent once and only re-sent after a failure. */
+export const EXPORT_INTERVAL_MS: number = 60 * 60 * 1000;
 /** Local hour (Asia/Dhaka) from which the nightly profile may run. */
 const PROFILE_HOUR = 2;
 const PROFILE_JOB = 'task-profile';
@@ -67,10 +71,39 @@ async function tick(): Promise<void> {
   }
 }
 
-/** Starts the usage jobs: once now, then every 15 minutes. Returns a function that stops them. */
-export function startUsageJobs(intervalMs: number = ROLLUP_INTERVAL_MS): () => void {
+async function exportTick(): Promise<void> {
+  try {
+    const run = await runUsageExport({ config: readBdrenConfig() });
+    if (run.skipped === 'disabled') {
+      return;
+    }
+    logger.info(
+      `[bdren] Usage export ${run.skipped ?? `sent ${run.days.length} day(s), ${run.windows} window report(s)${run.failed ? `, stopped: ${run.failed}` : ''}`}`,
+    );
+  } catch (error) {
+    logger.error('[bdren] Usage export failed', error);
+  }
+}
+
+/**
+ * Starts the usage jobs: the rollup once now and every 15 minutes, and, when `BDREN_USAGE_EXPORT_ENABLED`
+ * is on, the export to bdren.ai hourly (the first run waits a few minutes so the rollup finishes first).
+ * Returns a function that stops them.
+ */
+export function startUsageJobs(
+  intervalMs: number = ROLLUP_INTERVAL_MS,
+  exportIntervalMs: number = EXPORT_INTERVAL_MS,
+): () => void {
   void tick();
   const timer = setInterval(() => void tick(), intervalMs);
   timer.unref();
-  return () => clearInterval(timer);
+  const first = setTimeout(() => void exportTick(), 3 * 60 * 1000);
+  first.unref();
+  const exporter = setInterval(() => void exportTick(), exportIntervalMs);
+  exporter.unref();
+  return () => {
+    clearInterval(timer);
+    clearTimeout(first);
+    clearInterval(exporter);
+  };
 }

@@ -7,6 +7,8 @@ export type AllowanceOrigin = 'fresh' | 'cache' | 'stale' | 'fallback';
 
 export interface BdrenConfig {
   enabled: boolean;
+  /** Whether per-member usage is sent to bdren.ai (`BDREN_USAGE_EXPORT_ENABLED`); needs the address, key and issuer. */
+  usageExport: boolean;
   baseUrl: string;
   productKey: string;
   /** The OpenID issuer bdren.ai knows its users by; only users signed in through it are linked. */

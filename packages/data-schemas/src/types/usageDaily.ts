@@ -45,6 +45,7 @@ export interface IUsageJob {
   lockedUntil?: Date;
   lastRunAt?: Date;
   lastDay?: string;
+  lastError?: string;
 }
 
 export interface FixedCost {
