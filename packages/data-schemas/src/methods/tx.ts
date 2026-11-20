@@ -150,6 +150,7 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
     'gpt-5.6': { prompt: 5, completion: 30 },
     'gpt-5.6-terra': { prompt: 2, completion: 12 },
     'gpt-5.6-luna': { prompt: 0.2, completion: 1.2 },
+    'gpt-6-luna': { prompt: 0.1, completion: 0.5 },
     'chat-latest': { prompt: 5, completion: 30 },
     'gpt-5-chat-latest': { prompt: 1.25, completion: 10 },
     'gpt-5.1-chat-latest': { prompt: 1.25, completion: 10 },
@@ -178,6 +179,8 @@ export const tokenValues: Record<string, { prompt: number; completion: number }>
     'claude-3-7-sonnet': { prompt: 3, completion: 15 },
     'claude-3.7-sonnet': { prompt: 3, completion: 15 },
     'claude-haiku-4-5': { prompt: 1, completion: 5 },
+    'claude-haiku-5.5': { prompt: 0.1, completion: 0.5 },
+    'claude-haiku-5-5': { prompt: 0.1, completion: 0.5 },
     'claude-opus-4': { prompt: 15, completion: 75 },
     'claude-opus-4-5': { prompt: 5, completion: 25 },
     'claude-opus-4-6': { prompt: 5, completion: 25 },
@@ -354,6 +357,8 @@ export const cacheTokenValues: Record<string, { write: number; read: number }> =
   'claude-3-5-haiku': { write: 1, read: 0.08 },
   'claude-3-haiku': { write: 0.3, read: 0.03 },
   'claude-haiku-4-5': { write: 1.25, read: 0.1 },
+  'claude-haiku-5.5': { write: 0.125, read: 0.01 },
+  'claude-haiku-5-5': { write: 0.125, read: 0.01 },
   'claude-sonnet-4': { write: 3.75, read: 0.3 },
   'claude-sonnet-4-5': { write: 3.75, read: 0.3 },
   'claude-sonnet-4-6': { write: 3.75, read: 0.3 },
@@ -383,6 +388,7 @@ export const cacheTokenValues: Record<string, { write: number; read: number }> =
   'gpt-5.6': { write: 6.25, read: 0.5 },
   'gpt-5.6-terra': { write: 2.5, read: 0.2 },
   'gpt-5.6-luna': { write: 0.25, read: 0.02 },
+  'gpt-6-luna': { write: 0.125, read: 0.01 },
   'chat-latest': { write: 5, read: 0.5 },
   'gpt-5-chat-latest': { write: 1.25, read: 0.125 },
   'gpt-5.1-chat-latest': { write: 1.25, read: 0.125 },
@@ -430,6 +436,8 @@ export const premiumTokenValues: Record<
   string,
   { threshold: number; prompt: number; completion: number }
 > = {
+  'claude-haiku-5.5': { threshold: 100000, prompt: 0.5, completion: 2.5 },
+  'claude-haiku-5-5': { threshold: 100000, prompt: 0.5, completion: 2.5 },
   'gemini-3.1': { threshold: 200000, prompt: 4, completion: 18 },
   'gpt-5.4': { threshold: 272000, prompt: 5, completion: 22.5 },
   'gpt-5.4-pro': { threshold: 272000, prompt: 60, completion: 270 },
@@ -438,6 +446,7 @@ export const premiumTokenValues: Record<
   'gpt-5.6': { threshold: 272000, prompt: 10, completion: 45 },
   'gpt-5.6-terra': { threshold: 272000, prompt: 4, completion: 18 },
   'gpt-5.6-luna': { threshold: 272000, prompt: 0.4, completion: 1.8 },
+  'gpt-6-luna': { threshold: 272000, prompt: 0.2, completion: 0.75 },
   'grok-4.5': { threshold: 200000, prompt: 4, completion: 12 },
   'grok-4-5': { threshold: 200000, prompt: 4, completion: 12 },
   'grok-4.6': { threshold: 200000, prompt: 4, completion: 12 },
@@ -454,11 +463,14 @@ export const premiumCacheTokenValues: Record<
   string,
   { threshold: number; write: number; read: number }
 > = {
+  'claude-haiku-5.5': { threshold: 100000, write: 0.625, read: 0.05 },
+  'claude-haiku-5-5': { threshold: 100000, write: 0.625, read: 0.05 },
   'gpt-5.4': { threshold: 272000, write: 5, read: 0.5 },
   'gpt-5.5': { threshold: 272000, write: 10, read: 1 },
   'gpt-5.6': { threshold: 272000, write: 12.5, read: 1 },
   'gpt-5.6-terra': { threshold: 272000, write: 5, read: 0.4 },
   'gpt-5.6-luna': { threshold: 272000, write: 0.5, read: 0.04 },
+  'gpt-6-luna': { threshold: 272000, write: 0.25, read: 0.02 },
 };
 
 export function createTxMethods(
@@ -478,6 +490,14 @@ export function createTxMethods(
       threshold: number;
       prompt: number;
       completion: number;
+    }
+  >;
+  premiumCacheTokenValues: Record<
+    string,
+    {
+      threshold: number;
+      write: number;
+      read: number;
     }
   >;
   getValueKey: (model: string, endpoint?: string) => string | undefined;
@@ -585,6 +605,42 @@ export function createTxMethods(
   }
 
   /**
+   * Ratio of a model's long-prompt rate to its standard rate once the prompt
+   * crosses the tier threshold, 1 otherwise. Endpoint `tokenConfig` rates carry
+   * the configured base price, so the tier scales them instead of bypassing
+   * the premium tables.
+   */
+  function getTierScale(
+    model: string,
+    endpoint: string | undefined,
+    tokenType: string | undefined,
+    inputTokenCount?: number | null,
+  ): number {
+    const valueKey = getValueKey(model, endpoint);
+    if (!valueKey || !tokenType) {
+      return 1;
+    }
+    const premiumRate = getPremiumRate(valueKey, tokenType, inputTokenCount);
+    const baseRate = tokenValues[valueKey]?.[tokenType];
+    return premiumRate != null && baseRate ? premiumRate / baseRate : 1;
+  }
+
+  function getCacheTierScale(
+    model: string,
+    endpoint: string | undefined,
+    cacheType: 'write' | 'read' | undefined,
+    inputTokenCount?: number | null,
+  ): number {
+    const valueKey = getValueKey(model, endpoint);
+    if (!valueKey || !cacheType) {
+      return 1;
+    }
+    const premiumRate = getPremiumCacheRate(valueKey, cacheType, inputTokenCount);
+    const baseRate = cacheTokenValues[valueKey]?.[cacheType];
+    return premiumRate != null && baseRate ? premiumRate / baseRate : 1;
+  }
+
+  /**
    * Retrieves the multiplier for a given value key and token type.
    */
   function getMultiplier({
@@ -608,7 +664,8 @@ export function createTxMethods(
        *  through to the standard tables so billing matches the advertised
        *  token config instead of charging defaultRate */
       if (modelConfig) {
-        return modelConfig[tokenType as string] ?? defaultRate;
+        const configured = modelConfig[tokenType as string] ?? defaultRate;
+        return configured * getTierScale(model, endpoint, tokenType, inputTokenCount);
       }
     }
 
@@ -680,7 +737,11 @@ export function createTxMethods(
       /** Models absent from a partial override fall through to standard
        *  cache rates rather than reporting no cache pricing */
       if (modelConfig) {
-        return modelConfig[cacheType as string] ?? null;
+        const configured = modelConfig[cacheType as string];
+        if (configured == null) {
+          return null;
+        }
+        return configured * getCacheTierScale(model, endpoint, cacheType, inputTokenCount);
       }
     }
 
@@ -711,6 +772,7 @@ export function createTxMethods(
   return {
     tokenValues,
     premiumTokenValues,
+    premiumCacheTokenValues,
     getValueKey,
     getMultiplier,
     getPremiumRate,

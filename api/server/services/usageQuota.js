@@ -739,11 +739,14 @@ async function reserveCredits({
 
   const scopes = buildCreditScopes({ tenantId, userId, limits, ranges });
   /** Credits per token at the request's own model, priced by the client with the billing table. */
-  const rates = pricingContext?.rates ?? { input: 0, output: 0 };
   const inputTokens = conservativeInputTokens(
     policy,
     (estimatedInputTokens ?? 0) + Math.max(pricingContext?.overheadTokens ?? 0, 0),
   );
+  /** The model's long-prompt tier applies to the whole prompt of the call, so the rate is chosen
+   *  by the reserved input size, the same rule `computeUsageCostUSD` bills with. */
+  const rates = pricingContext?.ratesFor?.(inputTokens) ??
+    pricingContext?.rates ?? { input: 0, output: 0 };
   const requestedOutput = Math.max(
     Number.isFinite(requestedOutputTokens) ? requestedOutputTokens : DEFAULT_MAX_OUTPUT_TOKENS,
     0,

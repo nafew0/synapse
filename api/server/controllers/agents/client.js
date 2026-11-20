@@ -2625,18 +2625,23 @@ class AgentClient extends BaseClient {
     const instructions = [agent?.instructions, agent?.additional_instructions, toolDefinitions]
       .filter((value) => typeof value === 'string' && value.length > 0)
       .join('\n');
+    /** Rates depend on the call's prompt size (long-prompt tiers), known only to the reservation. */
+    const ratesFor = (inputTokenCount) =>
+      creditRates({
+        model,
+        endpoint,
+        endpointTokenConfig: this.options.endpointTokenConfig,
+        inputTokenCount,
+        pricing: { getMultiplier: db.getMultiplier },
+      });
     return {
       model,
       endpoint,
       overheadTokens: instructions
         ? countFormattedMessageTokens({ role: 'system', content: instructions }, this.getEncoding())
         : 0,
-      rates: creditRates({
-        model,
-        endpoint,
-        endpointTokenConfig: this.options.endpointTokenConfig,
-        pricing: { getMultiplier: db.getMultiplier },
-      }),
+      rates: ratesFor(),
+      ratesFor,
     };
   }
 

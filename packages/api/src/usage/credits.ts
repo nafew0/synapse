@@ -5,10 +5,10 @@ import type {
   InstitutionUsagePackage,
 } from '@librechat/data-schemas';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
-import type { PricingFns } from '~/agents/transactions';
 import type { EndpointTokenConfig } from '~/types/tokens';
-import { computeUsageCostUSD } from '~/agents/usage';
+import type { PricingFns } from '~/agents/transactions';
 import { CREDITS_PER_USD, priceUsagePackage } from './packages';
+import { computeUsageCostUSD } from '~/agents/usage';
 import { isImageModel, unitFor } from './weights';
 
 /** Credit scopes. Kept apart from the token scopes so a tenant's token buckets never mix with credits. */
@@ -53,14 +53,17 @@ export function creditRates({
   model,
   endpoint,
   endpointTokenConfig,
+  inputTokenCount,
   pricing,
 }: {
   model?: string;
   endpoint?: string;
   endpointTokenConfig?: EndpointTokenConfig;
+  /** Whole prompt of the call; crossing a model's long-prompt threshold selects its tier rates. */
+  inputTokenCount?: number;
   pricing: Pick<PricingFns, 'getMultiplier'>;
 }): CreditRates {
-  const params = { model, endpoint, endpointTokenConfig };
+  const params = { model, endpoint, endpointTokenConfig, inputTokenCount };
   return {
     input: Math.max(pricing.getMultiplier({ ...params, tokenType: 'prompt' }), 0),
     output: Math.max(pricing.getMultiplier({ ...params, tokenType: 'completion' }), 0),
