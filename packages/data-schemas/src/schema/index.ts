@@ -46,5 +46,6 @@ export { default as triggerDeliverySchema } from './triggerDelivery';
 export { default as triggerLaneSequenceSchema } from './triggerLaneSequence';
 export { default as triggerUserPurgeSchema } from './triggerUserPurge';
 export { default as usageDailySchema } from './usageDaily';
+export * from './modelPrice';
 export { default as taskCostProfileSchema } from './taskCostProfile';
 export { default as usageJobSchema } from './usageJob';

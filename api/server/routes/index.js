@@ -18,6 +18,7 @@ const platformUsers = require('./platform/users');
 const platformUsagePackages = require('./platform/usagePackages');
 const platformAlerts = require('./platform/alerts');
 const platformCosts = require('./platform/costs');
+const platformPrices = require('./platform/prices');
 const bdren = require('./bdren');
 const platformUsageAssignments = require('./platform/usageAssignments');
 const platformAgentsCatalog = require('./platform/agentsCatalog');
@@ -75,6 +76,7 @@ module.exports = {
   platformUsagePackages,
   platformAlerts,
   platformCosts,
+  platformPrices,
   bdren,
   platformUsageAssignments,
   platformAgentsCatalog,

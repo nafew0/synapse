@@ -1,4 +1,10 @@
 import {
+  createModelPriceModel,
+  createModelPriceVersionModel,
+  createModelPriceChangeModel,
+  createModelPriceSyncModel,
+} from './modelPrice';
+import {
   createUsageAccountModel,
   createUsagePackageModel,
   createUsagePricingModel,
@@ -113,6 +119,10 @@ export function createModels(mongoose: typeof import('mongoose')): {
   UsageBucket: ReturnType<typeof createUsageBucketModel>;
   UsageJob: ReturnType<typeof createUsageJobModel>;
   TaskCostProfile: ReturnType<typeof createTaskCostProfileModel>;
+  ModelPrice: ReturnType<typeof createModelPriceModel>;
+  ModelPriceVersion: ReturnType<typeof createModelPriceVersionModel>;
+  ModelPriceChange: ReturnType<typeof createModelPriceChangeModel>;
+  ModelPriceSync: ReturnType<typeof createModelPriceSyncModel>;
   CostSettings: ReturnType<typeof createCostSettingsModel>;
   UsageDaily: ReturnType<typeof createUsageDailyModel>;
   BdrenAllowance: ReturnType<typeof createBdrenAllowanceModel>;
@@ -174,6 +184,10 @@ export function createModels(mongoose: typeof import('mongoose')): {
     UsageBucket: createUsageBucketModel(mongoose),
     UsageJob: createUsageJobModel(mongoose),
     TaskCostProfile: createTaskCostProfileModel(mongoose),
+    ModelPrice: createModelPriceModel(mongoose),
+    ModelPriceVersion: createModelPriceVersionModel(mongoose),
+    ModelPriceChange: createModelPriceChangeModel(mongoose),
+    ModelPriceSync: createModelPriceSyncModel(mongoose),
     CostSettings: createCostSettingsModel(mongoose),
     UsageDaily: createUsageDailyModel(mongoose),
     BdrenAllowance: createBdrenAllowanceModel(mongoose),

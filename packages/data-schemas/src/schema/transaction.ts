@@ -61,6 +61,8 @@ export interface ITransaction extends Document {
   updatedAt?: Date;
   pages?: number;
   costUsd?: number;
+  /** `provider` when `costUsd` is the amount the provider reported for the call, not a price-table figure. */
+  costSource?: 'provider';
   fileId?: string;
   tenantId?: string;
   /** Set once a cost-correction script has repriced this row; holds the values it replaced. */
@@ -144,6 +146,7 @@ const transactionSchema: Schema<ITransaction> = new Schema(
     tokenValue: Number,
     pages: { type: Number },
     costUsd: { type: Number },
+    costSource: { type: String, enum: ['provider'] },
     fileId: { type: String },
     inputTokens: { type: Number },
     writeTokens: { type: Number },
