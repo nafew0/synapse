@@ -172,6 +172,11 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       type: String,
       sparse: true,
     },
+    /** While set and in the future, a member move is re-scoping this account; requests are asked to retry. */
+    movingUntil: {
+      type: Date,
+      default: undefined,
+    },
     tenantId: {
       type: String,
       index: true,

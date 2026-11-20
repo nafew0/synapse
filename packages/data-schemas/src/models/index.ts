@@ -13,6 +13,7 @@ import {
   createBdrenAllowanceModel,
   createBdrenEventModel,
   createBdrenUploadTicketModel,
+  createMemberMoveModel,
 } from './bdren';
 import { createKbDocumentModel, createKbDocumentVersionModel, createKbIngestJobModel } from './kb';
 import { createAgentTriggerLaneSequenceModel } from './triggerLaneSequence';
@@ -136,6 +137,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
   BdrenAllowance: ReturnType<typeof createBdrenAllowanceModel>;
   BdrenEvent: ReturnType<typeof createBdrenEventModel>;
   BdrenUploadTicket: ReturnType<typeof createBdrenUploadTicketModel>;
+  MemberMove: ReturnType<typeof createMemberMoveModel>;
   UsageReservation: ReturnType<typeof createUsageReservationModel>;
   UsageWarning: ReturnType<typeof createUsageWarningModel>;
   AdminScopeAssignment: ReturnType<typeof createAdminScopeAssignmentModel>;
@@ -205,6 +207,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
     BdrenAllowance: createBdrenAllowanceModel(mongoose),
     BdrenEvent: createBdrenEventModel(mongoose),
     BdrenUploadTicket: createBdrenUploadTicketModel(mongoose),
+    MemberMove: createMemberMoveModel(mongoose),
     UsageReservation: createUsageReservationModel(mongoose),
     UsageWarning: createUsageWarningModel(mongoose),
     AdminScopeAssignment: createAdminScopeAssignmentModel(mongoose),

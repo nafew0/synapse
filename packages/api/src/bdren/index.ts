@@ -11,6 +11,8 @@ export * from './carryover';
 export * from './webhook';
 export * from './provision';
 export * from './place';
+export * from './move';
+export * from './seats';
 export * from './ownership';
 export * from './meter';
 export * from './managed';

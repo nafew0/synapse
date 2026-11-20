@@ -39,6 +39,11 @@ export interface WebhookDeps {
   findSubject: (issuer: string, subject: string) => Promise<AllowanceSubject | null>;
   /** Creates the institution of an organization Synapse does not know yet; without it unknown organizations are ignored. */
   ensureInstitution?: (org: OrganizationRef) => Promise<string | null>;
+  /**
+   * Re-checks one person's coverage with a fresh answer and moves them between institutions when
+   * it changed. Called for `membership.coverage_changed`, after any new institution exists.
+   */
+  reviewMember?: (issuer: string, subject: string) => Promise<void>;
   now?: () => Date;
 }
 
@@ -78,13 +83,15 @@ async function tenantOfOrganization(organizationId: string): Promise<string | nu
  * `POST /api/bdren/webhook`. The route must hand it the raw body (`express.raw`), because the
  * signature covers the bytes as sent. Every event means "refresh": the cached answer of the named
  * person, or of every member of the named institution, is marked stale, and an upgrade also
- * carries the old windows' usage into the new ones. Idempotent by event id; answers 204.
+ * carries the old windows' usage into the new ones. A coverage change for a person also moves
+ * them between institutions (`reviewMember`). Idempotent by event id; answers 204.
  */
 export function createWebhookHandler({
   config,
   service,
   findSubject,
   ensureInstitution,
+  reviewMember,
   now = () => new Date(),
 }: WebhookDeps) {
   async function process(event: z.infer<typeof eventSchema>, at: Date): Promise<void> {
@@ -117,6 +124,12 @@ export function createWebhookHandler({
           ? await ensureInstitution({ id: org.id, slug: org.slug, name: org.name ?? org.slug })
           : null);
       await invalidateOrganization(org.id, tenantId, at);
+    }
+    if (event.type === COVERAGE_EVENT && event.user && reviewMember) {
+      await reviewMember(
+        normalizeOpenIdIssuer(event.user.issuer) ?? event.user.issuer,
+        event.user.subject,
+      );
     }
   }
 

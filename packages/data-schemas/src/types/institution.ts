@@ -20,6 +20,8 @@ export interface IInstitution extends Document {
   stats?: {
     activeMembers?: number;
   };
+  /** Seat changes member moves already applied; see the schema. */
+  seatOps?: string[];
   createdBy?: Types.ObjectId | string;
   /** Set by a platform superadmin to stop new chats, e.g. when a free trial is over. */
   chatAccess?: {

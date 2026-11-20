@@ -8,6 +8,9 @@ const {
   createAllowanceClient,
   createAllowanceService,
   createProvisioner,
+  reserveMoveSeat,
+  releaseMoveSeat,
+  createMemberMover,
   createMemberPlacer,
   createWebhookHandler,
   normalizeOpenIdIssuer,
@@ -24,13 +27,42 @@ const place = createMemberPlacer({
     require('~/server/services/institutionMembers').activateProvisionedMember(args),
 });
 
+const recordAuditEntry = (input, options) => require('~/models').recordAuditEntry(input, options);
+
+/** Moves an existing person, with their data, between institutions; each seat change is applied once per move. */
+const mover = createMemberMover({
+  reserveSeat: reserveMoveSeat,
+  releaseSeat: releaseMoveSeat,
+  syncMember: (args) => require('~/server/services/tenantAgentAccess').syncTenantMemberSafely(args),
+  clearOverrides: (tenantId) =>
+    require('~/server/services/Config/app').clearOverrideCache(tenantId),
+  recordAuditEntry,
+});
+
+const STRANDED_MOVE_INTERVAL_MS = 5 * 60_000;
+
+/** Finishes moves left unfinished by a crash, and runs due late sweeps, every few minutes. */
+function startMoveRecovery() {
+  if (!config.enabled) {
+    return;
+  }
+  const timer = setInterval(() => {
+    mover
+      .resumeStranded()
+      .catch((error) => logger.error('[bdren] resuming unfinished member moves failed', error));
+  }, STRANDED_MOVE_INTERVAL_MS);
+  timer.unref?.();
+}
+startMoveRecovery();
+
 /** Resolved on use: `tenancy` sits on routes' require chains that stub parts of data-schemas. */
 const provisioner = createProvisioner({
   config,
   client,
   service,
-  recordAuditEntry: (input, options) => require('~/models').recordAuditEntry(input, options),
+  recordAuditEntry,
   place,
+  mover,
   onCreated: (tenantId) =>
     require('~/server/services/tenancy').ensureInstitutionAdminRole(tenantId),
 });
@@ -105,11 +137,25 @@ async function getRequestAllowance(user, memberPackage = user?.usagePackage) {
   }
 }
 
+/** A `membership.coverage_changed` for a person: ask bdren.ai afresh and move them if it changed. */
+async function reviewMember(issuer, subject) {
+  const user = await runAsSystem(() =>
+    mongoose.models.User.findOne({ openidId: subject, openidIssuer: issuer })
+      .select('tenantId accountScope openidId openidIssuer email role bdrenNotedOrganizationId')
+      .lean()
+      .exec(),
+  );
+  if (user) {
+    await provisioner.reviewExistingMember(user, { fresh: true });
+  }
+}
+
 const webhookHandler = createWebhookHandler({
   config,
   service,
   findSubject,
   ensureInstitution: provisioner.ensureInstitutionForOrganization,
+  reviewMember,
 });
 
 module.exports = {
@@ -118,5 +164,6 @@ module.exports = {
   getRequestAllowance,
   webhookHandler,
   bdrenProvisioner: provisioner,
+  bdrenMover: mover,
   quotaAccountFor,
 };

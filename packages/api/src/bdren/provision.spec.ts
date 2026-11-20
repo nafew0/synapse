@@ -9,6 +9,7 @@ import type { AddressInfo } from 'net';
 import type { BdrenConfig } from './types';
 import { getAlertModel, resolveAlert } from '~/admin/alerts/store';
 import { createMemberPlacer } from './place';
+import { createMemberMover } from './move';
 import { createProvisioner, tenantIdFromSlug } from './provision';
 import { withOrganizationScope } from './config';
 import { createAllowanceService } from './allowance';
@@ -100,8 +101,8 @@ beforeAll(async () => {
   createModels(mongoose);
   getAlertModel();
   await Promise.all(
-    ['BdrenAllowance', 'BdrenEvent', 'Institution', 'User', 'PlatformAlert'].map((name) =>
-      mongoose.models[name]?.init(),
+    ['BdrenAllowance', 'BdrenEvent', 'Institution', 'User', 'PlatformAlert', 'MemberMove'].map(
+      (name) => mongoose.models[name]?.init(),
     ),
   );
   bdren = await startBdren();
@@ -134,6 +135,7 @@ beforeEach(async () => {
       'User',
       'Conversation',
       'PlatformAlert',
+      'MemberMove',
     ].map((name) => mongoose.models[name].collection.deleteMany({})),
   );
   const client = createAllowanceClient(config);
@@ -145,6 +147,7 @@ beforeEach(async () => {
     recordAuditEntry: createMethods(mongoose).recordAuditEntry,
     onCreated,
     place,
+    mover,
   });
 });
 
@@ -165,6 +168,31 @@ async function activate({ userId, tenantId }: { userId: string; tenantId: string
   return user as Record<string, unknown>;
 }
 const place = createMemberPlacer({ activate });
+
+/** The member service's seat counter, as `reserveActiveSeat` / `releaseActiveSeat` keep it. */
+async function reserveSeat(tenantId: string): Promise<boolean> {
+  const taken = await Institution().findOneAndUpdate(
+    {
+      tenantId,
+      $or: [
+        { 'limits.maxActiveMembers': null },
+        {
+          $expr: { $lt: [{ $ifNull: ['$stats.activeMembers', 0] }, '$limits.maxActiveMembers'] },
+        },
+      ],
+    },
+    { $inc: { 'stats.activeMembers': 1 } },
+  );
+  return taken != null;
+}
+const mover = createMemberMover({
+  reserveSeat,
+  releaseSeat: async (tenantId) => {
+    await Institution().updateOne({ tenantId }, { $inc: { 'stats.activeMembers': -1 } });
+  },
+  syncMember: async () => undefined,
+  recordAuditEntry: (input, options) => createMethods(mongoose).recordAuditEntry(input, options),
+});
 
 const User = () => mongoose.models.User;
 let seq = 0;
@@ -362,19 +390,22 @@ describe('reviewExistingMember', () => {
     expect(await audits('member.coverage_mismatch')).toHaveLength(0);
   });
 
-  it('does not move a tenantless user who already has chats', async () => {
+  it('moves a tenantless user who already has chats, with the chats', async () => {
     await linked();
-    const user = await makeUser();
+    const user = await makeUser({ accountScope: 'standalone' });
     await mongoose.models.Conversation.collection.insertOne({
       conversationId: 'c1',
       user: String(user._id),
     });
     bdren.answers.set(user.openidId as string, institutionAnswer(user.openidId as string));
 
-    await provisioner.reviewExistingMember(user);
+    const moved = await provisioner.reviewExistingMember(user);
 
-    expect((await User().findById(user._id).lean<typeof user>())?.tenantId).toBeUndefined();
-    expect(await audits('member.coverage_mismatch')).toHaveLength(1);
+    expect(moved).toMatchObject({ tenantId: 'dhaka-university', membershipStatus: 'active' });
+    const convo = await mongoose.models.Conversation.collection.findOne({ conversationId: 'c1' });
+    expect(convo?.tenantId).toBe('dhaka-university');
+    expect(await audits('member.coverage_mismatch')).toHaveLength(0);
+    expect(await audits('member.moved')).toHaveLength(1);
   });
 
   it('does not place into a full institution, and never throws when bdren.ai is down', async () => {
@@ -383,9 +414,11 @@ describe('reviewExistingMember', () => {
     bdren.answers.set(user.openidId as string, institutionAnswer(user.openidId as string));
     await provisioner.reviewExistingMember(user);
     expect((await User().findById(user._id).lean<typeof user>())?.tenantId).toBeUndefined();
+    const refused = await audits('member.coverage_mismatch');
+    expect(refused.map((entry) => entry.metadata?.reason)).toEqual(['institution_full']);
 
     bdren.state.down = true;
-    await expect(provisioner.reviewExistingMember(await makeUser())).resolves.toBeUndefined();
+    await expect(provisioner.reviewExistingMember(await makeUser())).resolves.toBeNull();
   });
 });
 
@@ -435,6 +468,7 @@ describe('first login of a new member', () => {
       place: async () => {
         throw new Error('Seat limit reached');
       },
+      mover,
     });
 
     expect(await failing.adoptNewMember(String(user._id), 'dhaka-university')).toEqual({

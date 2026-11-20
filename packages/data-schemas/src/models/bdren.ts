@@ -1,6 +1,11 @@
 import type { Model } from 'mongoose';
-import type { IBdrenAllowance, IBdrenEvent, IBdrenUploadTicket } from '~/types';
-import { bdrenAllowanceSchema, bdrenEventSchema, bdrenUploadTicketSchema } from '~/schema/bdren';
+import type { IBdrenAllowance, IBdrenEvent, IMemberMove, IBdrenUploadTicket } from '~/types';
+import {
+  memberMoveSchema,
+  bdrenEventSchema,
+  bdrenAllowanceSchema,
+  bdrenUploadTicketSchema,
+} from '~/schema/bdren';
 
 export function createBdrenAllowanceModel(
   mongoose: typeof import('mongoose'),
@@ -22,4 +27,8 @@ export function createBdrenUploadTicketModel(
     mongoose.models.BdrenUploadTicket ||
     mongoose.model<IBdrenUploadTicket>('BdrenUploadTicket', bdrenUploadTicketSchema)
   );
+}
+
+export function createMemberMoveModel(mongoose: typeof import('mongoose')): Model<IMemberMove> {
+  return mongoose.models.MemberMove || mongoose.model<IMemberMove>('MemberMove', memberMoveSchema);
 }

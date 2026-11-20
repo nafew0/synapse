@@ -7,7 +7,8 @@ export type AlertKind =
   | 'firecrawl_key'
   | 'firecrawl_credits'
   | 'spend_spike'
-  | 'institution_link';
+  | 'institution_link'
+  | 'member_move';
 
 export interface AlertFinding {
   /** Stable identity of the condition, so a repeat check updates one alert instead of adding another. */

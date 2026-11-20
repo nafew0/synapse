@@ -2704,7 +2704,7 @@ describe('setupOpenId', () => {
       expect(createUser.mock.calls[0][0]).not.toHaveProperty('tenantId');
     });
 
-    it('does not move an existing user; it only asks for the coverage to be reviewed', async () => {
+    it('leaves an existing user to the coverage review, which moves nobody here', async () => {
       const existing = {
         _id: 'existingIndividual',
         provider: 'openid',
@@ -2725,6 +2725,54 @@ describe('setupOpenId', () => {
         idToken: tokenset.id_token,
       });
       expect(user.tenantId).toBeUndefined();
+      expect(activateProvisionedMember).not.toHaveBeenCalled();
+    });
+
+    it('goes on in the current scope when the review runs past the login wait', async () => {
+      const existing = {
+        _id: 'slowMove',
+        provider: 'openid',
+        email: tokenset.claims().email,
+        openidId: tokenset.claims().sub,
+        username: 'slow',
+        role: 'USER',
+      };
+      findUser.mockResolvedValue(existing);
+      process.env.BDREN_LOGIN_MOVE_WAIT_MS = '20';
+      bdrenProvisioner.reviewExistingMember.mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve({ tenantId: 'late' }), 500)),
+      );
+
+      try {
+        const started = Date.now();
+        const { user } = await validate(tokenset);
+        expect(Date.now() - started).toBeLessThan(450);
+        expect(user.tenantId).toBeUndefined();
+      } finally {
+        delete process.env.BDREN_LOGIN_MOVE_WAIT_MS;
+      }
+    });
+
+    it('carries on with the moved user when the review moved them, before the session starts', async () => {
+      const existing = {
+        _id: 'joiningIndividual',
+        provider: 'openid',
+        email: tokenset.claims().email,
+        openidId: tokenset.claims().sub,
+        username: 'joiner',
+        role: 'USER',
+      };
+      findUser.mockResolvedValue(existing);
+      bdrenProvisioner.reviewExistingMember.mockResolvedValue({
+        ...existing,
+        tenantId: 'dhaka-university',
+        accountScope: 'institution',
+        membershipStatus: 'active',
+      });
+
+      const { user } = await validate(tokenset);
+
+      expect(user).toMatchObject({ tenantId: 'dhaka-university', membershipStatus: 'active' });
       expect(activateProvisionedMember).not.toHaveBeenCalled();
     });
   });
