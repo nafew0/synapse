@@ -90,6 +90,16 @@ describe('applyListed', () => {
     expect(await ModelPriceChange.countDocuments()).toBe(0);
   });
 
+  it('words the notice with the model name and a rounded percentage', async () => {
+    await store.applyListed({ ...listed('a/m', price(3, 2)), name: 'Model M' }, sync);
+    await store.applyListed(
+      { ...listed('a/m', price(3.333333333, 2)), name: 'Model M' },
+      { ...sync, at: t1 },
+    );
+    const [change] = await ModelPriceChange.find({}).lean();
+    expect(change.summary).toBe('Model M: input $3 → $3.33333 per 1M (+11.1%)');
+  });
+
   it('a changed price creates version 2 and one notice, leaving other models alone', async () => {
     await store.applyListed(listed('a/m', price(1, 2)), sync);
     await store.applyListed(listed('b/n', price(5, 6)), sync);

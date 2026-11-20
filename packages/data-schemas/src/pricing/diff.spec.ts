@@ -1,5 +1,5 @@
 import type { PriceBlock } from '~/types/modelPrice';
-import { diffPrices, changedLines, samePrice, summarizeDiff } from './diff';
+import { diffPrices, changedLines, samePrice, summarizeDiff, formatPercent } from './diff';
 
 const base: PriceBlock = {
   prompt: 3,
@@ -89,5 +89,21 @@ describe('summarizeDiff', () => {
   it('says no change, and describes added/removed', () => {
     expect(summarizeDiff('m/x', diffPrices(base, base))).toBe('m/x: no change');
     expect(summarizeDiff('m/x', diffPrices(null, base))).toBe('m/x: input added and 4 more');
+  });
+
+  it('rounds the percentage to one decimal and names the model', () => {
+    const lines = diffPrices(base, { ...base, prompt: 3.333333333 });
+    expect(summarizeDiff('m/x', lines, 'Model X')).toBe(
+      'Model X: input $3 → $3.33333 per 1M (+11.1%)',
+    );
+  });
+});
+
+describe('formatPercent', () => {
+  it('keeps one decimal, drops a trailing .0 and signs positives', () => {
+    expect(formatPercent(11.11111111)).toBe('+11.1%');
+    expect(formatPercent(100)).toBe('+100%');
+    expect(formatPercent(-33.333333)).toBe('-33.3%');
+    expect(formatPercent(10.04)).toBe('+10%');
   });
 });

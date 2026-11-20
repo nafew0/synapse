@@ -150,7 +150,7 @@ export function createPriceStore(models: PriceStoreModels): PriceStore {
         modelId: listed.modelId,
         kind: 'price_changed',
         version,
-        summary: summarizeDiff(listed.modelId, versionDoc.diff),
+        summary: summarizeDiff(listed.modelId, versionDoc.diff, listed.name ?? existing?.name),
         diff: versionDoc.diff,
       });
     }
