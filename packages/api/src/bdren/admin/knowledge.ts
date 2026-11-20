@@ -9,9 +9,9 @@ import type { KbIndexClient } from '~/kb/rag';
 import type { KbFileStore } from '~/kb/store';
 import type { AdminRequest } from './types';
 import type { Auditor } from './audit';
+import { findActorInTenant, findInstitutionByOrganization } from './guard';
 import { createAdminKbHandlers, KB_UPLOAD_EXTENSIONS } from '~/admin/kb';
 import { normalizeOpenIdIssuer } from '~/auth/openid';
-import { findActorInTenant } from './guard';
 import { withAudit } from './audit';
 
 export interface KnowledgeDeps {
@@ -187,6 +187,15 @@ export function createKnowledgeHandlers(deps: KnowledgeDeps): KnowledgeHandlers 
         fail(res, 403, 'The acting user is no longer a member of this institution');
         return;
       }
+      const institution = await findInstitutionByOrganization(ticket.organizationId);
+      if (
+        !institution ||
+        institution.tenantId !== ticket.tenantId ||
+        institution.status !== 'active'
+      ) {
+        fail(res, 403, 'The institution no longer accepts uploads');
+        return;
+      }
       const asAdmin = req as AdminRequest;
       asAdmin.bdren = {
         tenantId: ticket.tenantId,
@@ -205,6 +214,9 @@ export function createKnowledgeHandlers(deps: KnowledgeDeps): KnowledgeHandlers 
       if (req.file && req.file.size > ticket.sizeBytes) {
         fail(res, 413, 'The file is larger than the upload link allows');
         return;
+      }
+      if (req.file) {
+        req.file.originalname = Buffer.from(ticket.filename, 'utf8').toString('latin1');
       }
       req.body = { title: ticket.title, docType: ticket.docType };
       req.params = { ...req.params, documentId: ticket.documentId ?? '' };

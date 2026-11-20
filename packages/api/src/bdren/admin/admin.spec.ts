@@ -236,6 +236,30 @@ beforeEach(async () => {
   });
   ids.agentA = await agent({ id: 'agent_a', name: 'Agent A', tenantId: 'tenant-a' });
   ids.agentB = await agent({ id: 'agent_b', name: 'Agent B', tenantId: 'tenant-b' });
+  /** The superadmin enabled the platform agent (and its specialist) for tenant A only. */
+  const audience = await runAsSystem(() =>
+    mongoose.models.Group.create({
+      name: 'All A',
+      source: 'local',
+      tenantId: 'tenant-a',
+      managedKind: 'tenant_all_active_members',
+      memberIds: [],
+    }),
+  );
+  await runAsSystem(() =>
+    mongoose.models.AclEntry.create(
+      [ids.globalAgent, ids.specialist].map((resourceId) => ({
+        principalType: 'group',
+        principalModel: 'Group',
+        principalId: audience._id,
+        tenantId: 'tenant-a',
+        resourceType: ResourceType.AGENT,
+        resourceId,
+        permBits: 1,
+        roleId: AGENT_VIEWER_ROLE,
+      })),
+    ),
+  );
 });
 
 const READ_ROUTES: [string, string][] = [
@@ -519,10 +543,21 @@ describe('access groups and agents', () => {
       'agent_global',
     ]);
     const b = await call('GET', '/agents', { org: 'org-b', sub: 'sub-admin-b' });
-    expect(b.body.agents.map((x: { id: string }) => x.id).sort()).toEqual([
-      'agent_b',
-      'agent_global',
-    ]);
+    expect(b.body.agents.map((x: { id: string }) => x.id)).toEqual(['agent_b']);
+  });
+
+  it('does not let an admin hand out a platform agent the superadmin has not enabled for the tenant', async () => {
+    const res = await call('POST', '/groups', {
+      org: 'org-b',
+      sub: 'sub-admin-b',
+      body: { name: 'x', agents: ['agent_global'] },
+    });
+    expect(res.status).toBe(400);
+    expect(
+      await runAsSystem(() => mongoose.models.AclEntry.countDocuments({ tenantId: 'tenant-b' })),
+    ).toBe(0);
+    const failed = (await auditEntries('tenant-b')).filter((e) => e.outcome === 'failure');
+    expect(failed.map((e) => e.action)).toContain('institution.access_group_created');
   });
 
   it('creates, updates and deletes a group with members and agents, and audits it', async () => {
@@ -602,19 +637,26 @@ describe('access groups and agents', () => {
     expect((await call('GET', '/groups/not-an-id')).status).toBe(404);
     expect((await call('POST', '/groups', { body: { name: '' } })).status).toBe(400);
     expect((await call('GET', '/groups')).body.groups).toEqual([]);
-    expect(await runAsSystem(() => mongoose.models.AclEntry.countDocuments({}))).toBe(0);
+    expect(
+      await runAsSystem(() =>
+        mongoose.models.AclEntry.countDocuments({
+          resourceType: ResourceType.AGENT,
+          tenantId: 'tenant-a',
+          principalId: { $ne: undefined },
+          roleId: AGENT_VIEWER_ROLE,
+        }),
+      ),
+    ).toBe(2);
   });
 
   it('never exposes or edits system-managed groups', async () => {
     const managed = await runAsSystem(() =>
-      mongoose.models.Group.create({
-        name: 'All',
-        source: 'local',
+      mongoose.models.Group.findOne({
         tenantId: 'tenant-a',
         managedKind: 'tenant_all_active_members',
-        memberIds: [],
-      }),
+      }).lean(),
     );
+    if (!managed) throw new Error('audience missing');
     expect((await call('GET', '/groups')).body.groups).toEqual([]);
     expect((await call('PATCH', `/groups/${managed._id}`, { body: { name: 'x' } })).status).toBe(
       404,

@@ -11,6 +11,7 @@ import type { Response } from 'express';
 import type { Model } from 'mongoose';
 import type { AdminRequest } from './types';
 import type { Auditor } from './audit';
+import { normalizeOpenIdIssuer } from '~/auth/openid';
 
 const MAX_NAME = 200;
 const MAX_DESCRIPTION = 1000;
@@ -76,11 +77,45 @@ const activeFilter = (tenantId: string) => ({
   ],
 });
 
-/** Agents an institution can hand out: its own, and the platform's; never delegated specialists. */
-const grantableAgents = (tenantId: string) => ({
-  orchestrationOnly: { $ne: true },
-  $or: [{ tenantId }, { tenantId: { $exists: false } }, { tenantId: null }],
-});
+const AUDIENCE_KIND = 'tenant_all_active_members';
+
+/**
+ * Agents an institution may hand to its groups: its own, and the platform agents the superadmin has
+ * enabled for it (those on the tenant-wide audience). Never delegated specialists as a choice.
+ */
+async function grantableAgents(tenantId: string) {
+  const { Group, AclEntry } = models();
+  const audience = await runAsSystem(() =>
+    Group.findOne({ tenantId, managedKind: AUDIENCE_KIND })
+      .select('_id')
+      .lean<{ _id: Types.ObjectId }>()
+      .exec(),
+  );
+  const entries = audience
+    ? await runAsSystem(() =>
+        AclEntry.find({
+          principalType: PrincipalType.GROUP,
+          principalId: audience._id,
+          resourceType: ResourceType.AGENT,
+          tenantId,
+        })
+          .select('resourceId permBits')
+          .lean()
+          .exec(),
+      )
+    : [];
+  const enabled = entries
+    .filter((e) => (e.permBits & PermissionBits.VIEW) !== 0)
+    .map((e) => e.resourceId);
+  return {
+    enabled,
+    filter: {
+      orchestrationOnly: { $ne: true },
+      $or: [{ tenantId }, { _id: { $in: enabled } }],
+    },
+    specialistFilter: { $or: [{ tenantId }, { _id: { $in: enabled } }] },
+  };
+}
 
 const memberKey = (user: UserLean): string => user.idOnTheSource || user._id.toString();
 
@@ -142,7 +177,10 @@ export function createGroupHandlers(deps: GroupDeps): GroupHandlers {
     if (subjects.length === 0) {
       return [];
     }
-    const issuer = deps.issuer();
+    const issuer = normalizeOpenIdIssuer(deps.issuer());
+    if (!issuer) {
+      throw new HttpFailure(503, 'bdren.ai issuer is not configured');
+    }
     const users = await runAsSystem(() =>
       models()
         .User.find({ ...activeFilter(tenantId), openidId: { $in: subjects }, openidIssuer: issuer })
@@ -162,9 +200,10 @@ export function createGroupHandlers(deps: GroupDeps): GroupHandlers {
     if (agentIds.length === 0) {
       return { masters: [] as AgentLean[], specialists: [] as AgentLean[] };
     }
+    const scope = await grantableAgents(tenantId);
     const masters = await runAsSystem(() =>
       models()
-        .Agent.find({ id: { $in: agentIds }, ...grantableAgents(tenantId) })
+        .Agent.find({ id: { $in: agentIds }, ...scope.filter })
         .select('_id id name description edges tenantId')
         .lean<AgentLean[]>()
         .exec(),
@@ -178,10 +217,7 @@ export function createGroupHandlers(deps: GroupDeps): GroupHandlers {
     const specialists = specialistIds.length
       ? await runAsSystem(() =>
           models()
-            .Agent.find({
-              id: { $in: specialistIds },
-              $or: [{ tenantId }, { tenantId: { $exists: false } }, { tenantId: null }],
-            })
+            .Agent.find({ id: { $in: specialistIds }, ...scope.specialistFilter })
             .select('_id id')
             .lean<AgentLean[]>()
             .exec(),
@@ -207,11 +243,12 @@ export function createGroupHandlers(deps: GroupDeps): GroupHandlers {
         .exec(),
     );
     const visible = entries.filter((e) => (e.permBits & PermissionBits.VIEW) !== 0);
+    const scope = await grantableAgents(tenantId);
     const agents = await runAsSystem(() =>
       models()
         .Agent.find({
           _id: { $in: visible.map((e) => e.resourceId) },
-          ...grantableAgents(tenantId),
+          ...scope.filter,
         })
         .select('_id id name')
         .lean<AgentLean[]>()
@@ -308,14 +345,6 @@ export function createGroupHandlers(deps: GroupDeps): GroupHandlers {
         ? wantedSpecialists.has(id)
         : wantedMasters.has(id) || wantedSpecialists.has(id);
     };
-    const stale = existing.filter((e) => !keep(e)).map((e) => e._id);
-    if (stale.length) {
-      await runAsSystem(() =>
-        models()
-          .AclEntry.deleteMany({ _id: { $in: stale }, tenantId })
-          .exec(),
-      );
-    }
     const grant = (resourceType: string, resourceId: Id, accessRoleId: string) =>
       deps.grantPermission({
         ...principal,
@@ -331,6 +360,14 @@ export function createGroupHandlers(deps: GroupDeps): GroupHandlers {
         grant(ResourceType.REMOTE_AGENT, a._id, AccessRoleIds.REMOTE_AGENT_VIEWER),
       ]),
     ]);
+    const stale = existing.filter((e) => !keep(e)).map((e) => e._id);
+    if (stale.length) {
+      await runAsSystem(() =>
+        models()
+          .AclEntry.deleteMany({ _id: { $in: stale }, tenantId })
+          .exec(),
+      );
+    }
   }
 
   async function findGroup(tenantId: string, id: string) {
@@ -349,11 +386,23 @@ export function createGroupHandlers(deps: GroupDeps): GroupHandlers {
   }
 
   const handle =
-    (run: (req: AdminRequest, res: Response, tenantId: string) => Promise<unknown>) =>
+    (
+      run: (req: AdminRequest, res: Response, tenantId: string) => Promise<unknown>,
+      failedAction?: string,
+    ) =>
     async (req: AdminRequest, res: Response): Promise<void> => {
       try {
         await run(req, res, req.bdren!.tenantId);
       } catch (error) {
+        if (failedAction) {
+          await audit(
+            req,
+            failedAction,
+            { type: 'group', id: req.params.groupId },
+            { reason: error instanceof HttpFailure ? error.message.slice(0, 200) : 'error' },
+            'failure',
+          );
+        }
         if (error instanceof HttpFailure) {
           res.status(error.status).json({ error: error.message });
           return;
@@ -412,7 +461,7 @@ export function createGroupHandlers(deps: GroupDeps): GroupHandlers {
         agents: agentIds.length,
       },
     );
-  });
+  }, 'institution.access_group_created');
 
   const update = handle(async (req, res, tenantId) => {
     const group = await findGroup(tenantId, String(req.params.groupId));
@@ -452,7 +501,7 @@ export function createGroupHandlers(deps: GroupDeps): GroupHandlers {
         agents: agentIds?.length ?? null,
       },
     );
-  });
+  }, 'institution.access_group_updated');
 
   const remove = handle(async (req, res, tenantId) => {
     const group = await findGroup(tenantId, String(req.params.groupId));
@@ -477,12 +526,13 @@ export function createGroupHandlers(deps: GroupDeps): GroupHandlers {
       id: String(group._id),
       name: group.name,
     });
-  });
+  }, 'institution.access_group_deleted');
 
   const agents = handle(async (_req, res, tenantId) => {
+    const scope = await grantableAgents(tenantId);
     const found = await runAsSystem(() =>
       models()
-        .Agent.find(grantableAgents(tenantId))
+        .Agent.find(scope.filter)
         .select('id name description')
         .sort({ name: 1 })
         .lean<AgentLean[]>()
