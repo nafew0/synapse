@@ -415,6 +415,7 @@ const executeResponse = async (envelope, { req, res }) => {
       getUserKeyValues: db.getUserKeyValues,
       getUserCodeFiles: db.getUserCodeFiles,
       getToolFilesByIds: db.getToolFilesByIds,
+      getInstitutionKbCatalog: db.listReadyKbCatalog,
       getCodeGeneratedFiles: db.getCodeGeneratedFiles,
       listSkillsByAccess: skillDbMethods.listSkillsByAccess,
       listAlwaysApplySkills: skillDbMethods.listAlwaysApplySkills,

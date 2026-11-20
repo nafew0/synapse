@@ -3,6 +3,7 @@ import {
   createUsagePackageModel,
   createUsagePricingModel,
 } from './usagePackage';
+import { createKbDocumentModel, createKbDocumentVersionModel, createKbIngestJobModel } from './kb';
 import { createAgentTriggerLaneSequenceModel } from './triggerLaneSequence';
 import { createBdrenAllowanceModel, createBdrenEventModel } from './bdren';
 import { createInstitutionImportJobModel } from './institutionImportJob';
@@ -70,6 +71,9 @@ export function createModels(mongoose: typeof import('mongoose')): {
   Balance: ReturnType<typeof createBalanceModel>;
   Conversation: ReturnType<typeof createConversationModel>;
   ChatProject: ReturnType<typeof createChatProjectModel>;
+  KbDocument: ReturnType<typeof createKbDocumentModel>;
+  KbDocumentVersion: ReturnType<typeof createKbDocumentVersionModel>;
+  KbIngestJob: ReturnType<typeof createKbIngestJobModel>;
   Message: ReturnType<typeof createMessageModel>;
   Agent: ReturnType<typeof createAgentModel>;
   AgentApiKey: ReturnType<typeof createAgentApiKeyModel>;
@@ -131,6 +135,9 @@ export function createModels(mongoose: typeof import('mongoose')): {
     Balance: createBalanceModel(mongoose),
     Conversation: createConversationModel(mongoose),
     ChatProject: createChatProjectModel(mongoose),
+    KbDocument: createKbDocumentModel(mongoose),
+    KbDocumentVersion: createKbDocumentVersionModel(mongoose),
+    KbIngestJob: createKbIngestJobModel(mongoose),
     Message: createMessageModel(mongoose),
     Agent: createAgentModel(mongoose),
     AgentApiKey: createAgentApiKeyModel(mongoose),

@@ -13,6 +13,7 @@ const adminUsage = require('./admin/usage');
 const adminUsers = require('./admin/users');
 const adminAuditLog = require('./admin/audit');
 const adminBanner = require('./admin/banner');
+const adminKb = require('./admin/kb');
 const platformInstitutions = require('./platform/institutions');
 const platformUsers = require('./platform/users');
 const platformUsagePackages = require('./platform/usagePackages');
@@ -70,6 +71,7 @@ module.exports = {
   adminUsers,
   adminAuditLog,
   adminBanner,
+  adminKb,
   platformInstitutions,
   platformUsers,
   platformUsagePackages,

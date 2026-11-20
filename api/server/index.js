@@ -55,7 +55,11 @@ const {
   seedDatabase,
 } = require('~/models');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
-const { syncAllTenantInterfacePermissions } = require('./services/tenancy');
+const {
+  syncAllTenantInterfacePermissions,
+  syncAllInstitutionAdminCapabilities,
+} = require('./services/tenancy');
+const { startKnowledgeBaseWorker } = require('./services/kb');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
@@ -218,7 +222,9 @@ const startServer = async () => {
     await performStartupChecks(appConfig);
     await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });
     await syncAllTenantInterfacePermissions();
+    await syncAllInstitutionAdminCapabilities();
   });
+  startKnowledgeBaseWorker(appConfig);
 
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
   let indexHTML = fs.readFileSync(indexPath, 'utf8');
@@ -350,6 +356,7 @@ const startServer = async () => {
   app.use('/api/admin/audit-log', routes.adminAuditLog);
   app.use('/api/admin/banner', routes.adminBanner);
   app.use('/api/bdren', routes.bdren);
+  app.use('/api/admin/kb', routes.adminKb);
   app.use('/api/platform/institutions', routes.platformInstitutions);
   app.use('/api/platform/users', routes.platformUsers);
   app.use('/api/platform/usage-packages', routes.platformUsagePackages);
