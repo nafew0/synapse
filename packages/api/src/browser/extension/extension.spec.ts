@@ -180,7 +180,9 @@ describe('sign-in', () => {
   it("names the token's own account, so a page can tell whose browser it is", async () => {
     const server = app(noFetch);
     const theirs = await signIn(server, 'other');
-    const settings = await request(server).get('/settings').set('Authorization', `Bearer ${theirs}`);
+    const settings = await request(server)
+      .get('/settings')
+      .set('Authorization', `Bearer ${theirs}`);
     expect(settings.body.account).toEqual({
       id: String(otherUser._id),
       name: 'b@other.test',

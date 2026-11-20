@@ -63,7 +63,11 @@ const realPost = window.postMessage.bind(window);
 beforeAll(() => {
   window.postMessage = ((message: unknown) =>
     window.dispatchEvent(
-      new MessageEvent('message', { data: message, origin: window.location.origin, source: window }),
+      new MessageEvent('message', {
+        data: message,
+        origin: window.location.origin,
+        source: window,
+      }),
     )) as typeof window.postMessage;
 });
 afterAll(() => {
@@ -109,7 +113,9 @@ describe('the offer to connect Synapse Browser', () => {
   });
 
   it('says nothing when the extension already acts as this user', async () => {
-    bridge = fakeBridge({ ping: ping({ connected: true, account: { id: 'u-b', name: 'Bushra' } }) });
+    bridge = fakeBridge({
+      ping: ping({ connected: true, account: { id: 'u-b', name: 'Bushra' } }),
+    });
     render(<Offer />);
     await waitFor(() => expect(bridge?.asked.some((m) => m.type === 'ping')).toBe(true));
     expect(screen.queryByRole('heading')).toBeNull();
