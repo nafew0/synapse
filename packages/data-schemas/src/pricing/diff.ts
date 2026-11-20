@@ -94,18 +94,25 @@ export const samePrice = (a: PriceBlock, b: PriceBlock): boolean =>
 
 const money = (value: number): string => `$${Number(value.toPrecision(6))}`;
 
-/** One sentence for a notice: "output $3.75 → $4.125 per 1M (+10%)". */
-export function summarizeDiff(modelId: string, lines: PriceDiffLine[]): string {
+/** One decimal, trailing ".0" dropped, explicit sign: 11.11111 → "+11.1%", -50 → "-50%". */
+export function formatPercent(value: number): string {
+  const rounded = Number(value.toFixed(1));
+  return `${rounded > 0 ? '+' : ''}${rounded}%`;
+}
+
+/** One sentence for a notice: "Claude Haiku: output $3.75 → $4.125 per 1M (+10%)"; `name` falls back to the id. */
+export function summarizeDiff(modelId: string, lines: PriceDiffLine[], name?: string): string {
+  const title = name || modelId;
   const changed = changedLines(lines);
   if (changed.length === 0) {
-    return `${modelId}: no change`;
+    return `${title}: no change`;
   }
   const first = changed[0];
   const label = first.field.replace('completion', 'output').replace('prompt', 'input');
   const detail =
     first.kind === 'changed'
-      ? `${label} ${money(first.previous as number)} → ${money(first.current as number)} per 1M${first.changePct != null ? ` (${first.changePct > 0 ? '+' : ''}${first.changePct}%)` : ''}`
+      ? `${label} ${money(first.previous as number)} → ${money(first.current as number)} per 1M${first.changePct != null ? ` (${formatPercent(first.changePct)})` : ''}`
       : `${label} ${first.kind}`;
   const more = changed.length > 1 ? ` and ${changed.length - 1} more` : '';
-  return `${modelId}: ${detail}${more}`;
+  return `${title}: ${detail}${more}`;
 }

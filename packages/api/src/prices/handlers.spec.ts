@@ -30,6 +30,7 @@ describe('price handlers', () => {
   let app: Express;
   let inUse: ModelUses;
   let lockClient: RedisLockClient | null;
+  let actingId = 'root-1';
   const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
 
   const syncDeps = () => ({
@@ -56,7 +57,7 @@ describe('price handlers', () => {
     instance.use(express.json());
     instance.use((req: Request, _res: Response, next: NextFunction) => {
       (req as Request & { user: { id: string; name: string } }).user = {
-        id: 'root-1',
+        id: actingId,
         name: 'Root Admin',
       };
       next();
@@ -98,6 +99,7 @@ describe('price handlers', () => {
     clearPriceTable();
     recordAuditEntry.mockClear();
     lockClient = null;
+    actingId = 'root-1';
     server.mode = 'ok';
     server.chat = fixtureChat();
     server.embeddings = fixtureEmbeddings();
@@ -408,7 +410,87 @@ describe('price handlers', () => {
       expect(res.status).toBe(502);
       expect(res.body.result).toMatchObject({ ok: false });
       expect(res.body.result.error).toMatch(/500/);
+      expect(res.body.error).toMatch(/OpenRouter.*500/);
       expect((await models.ModelPrice.findOne({ modelId: HAIKU }).lean())?.price?.prompt).toBe(0.1);
+    });
+
+    it('keeps URLs, long tokens and stack traces out of the 502 error string', async () => {
+      const res = await request(app)
+        .post('/sync')
+        .send()
+        .then(async () => {
+          const failing = createPriceHandlers({
+            models: () => models,
+            store: () => store,
+            syncDeps: () => ({
+              collectModels: async () => {
+                throw new Error(
+                  `fetch https://openrouter.ai/api/v1/models?key=sk-or-v1-${'a'.repeat(40)} failed\n    at run (file.js:1:1)`,
+                );
+              },
+              lockClient: null,
+            }),
+            recordAuditEntry,
+          });
+          const failApp = express();
+          failApp.post('/sync', failing.sync as unknown as RequestHandler);
+          return request(failApp).post('/sync');
+        });
+      expect(res.status).toBe(502);
+      expect(res.body.error).toBe('fetch [url] failed at run (file.js:1:1)');
+      expect(res.body.error).not.toMatch(/sk-or|https?:/);
+    });
+  });
+
+  describe('actor names', () => {
+    const body = { price: { prompt: 9, completion: 18 }, reason: 'contract rate' };
+
+    it('resolves override and version actors to a name in one user query', async () => {
+      const User = mongoose.models.User;
+      const admin = await User.create({
+        name: 'Ada Admin',
+        email: 'ada@example.com',
+        username: 'ada',
+        provider: 'local',
+      });
+      await sync();
+      actingId = String(admin._id);
+      await request(app).put(`/${ENC_HAIKU}/override`).send(body);
+      const findSpy = jest.spyOn(User, 'find');
+
+      const detail = await request(app).get(`/${ENC_HAIKU}`);
+      expect(detail.body.model.override).toMatchObject({
+        setBy: String(admin._id),
+        setByName: 'Ada Admin',
+      });
+      const manual = detail.body.versions.find(
+        (v: { source: string }) => v.source === 'override_set',
+      );
+      expect(manual).toMatchObject({ actor: String(admin._id), actorName: 'Ada Admin' });
+      const automatic = detail.body.versions.find((v: { source: string }) => v.source === 'sync');
+      expect(automatic.actorName).toBeNull();
+      expect(findSpy).toHaveBeenCalledTimes(1);
+
+      const list = await request(app).get('/');
+      const row = list.body.models.find((m: { modelId: string }) => m.modelId === HAIKU);
+      expect(row.override).toMatchObject({ setBy: String(admin._id), setByName: 'Ada Admin' });
+      findSpy.mockRestore();
+      await User.deleteMany({});
+    });
+
+    it('gives null for a deleted user and passes a plain-name actor through', async () => {
+      await sync();
+      actingId = String(new mongoose.Types.ObjectId());
+      await request(app).put(`/${ENC_HAIKU}/override`).send(body);
+      const gone = await request(app).get(`/${ENC_HAIKU}`);
+      expect(gone.body.model.override.setByName).toBeNull();
+
+      await models.ModelPrice.updateOne(
+        { modelId: HAIKU },
+        { 'override.setBy': 'platform-superadmin' },
+      );
+      const named = await request(app).get(`/${ENC_HAIKU}`);
+      expect(named.body.model.override.setByName).toBe('platform-superadmin');
     });
   });
 

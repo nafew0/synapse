@@ -86,6 +86,56 @@ const overrideBody = z.object({
   until: z.coerce.date().nullable().optional(),
 });
 
+type NameOf = (id?: string | null) => string | null;
+
+const MAX_REASON_LENGTH = 200;
+
+/** Short, secret-free reason for a failed sync: URLs and long tokens removed, length capped. */
+export function failureReason(message?: string): string {
+  const cleaned = (message ?? '')
+    .replace(/https?:\/\/\S+/gi, '[url]')
+    .replace(/\b[A-Za-z0-9_-]{32,}\b/g, '[redacted]')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const reason =
+    cleaned.length > MAX_REASON_LENGTH ? `${cleaned.slice(0, MAX_REASON_LENGTH)}…` : cleaned;
+  return reason || 'Price sync failed';
+}
+
+interface NamedUser {
+  _id: mongoose.Types.ObjectId;
+  name?: string;
+  username?: string;
+  email?: string;
+}
+
+/**
+ * One user query for every id in a response. An id that is not a user id is already a name (the
+ * actor falls back to one), so it is returned as is; a user that no longer exists gives null.
+ */
+async function resolveNames(ids: Array<string | null | undefined>): Promise<NameOf> {
+  const unique = [
+    ...new Set(ids.filter((id): id is string => typeof id === 'string' && id !== '')),
+  ];
+  const userIds = unique.filter((id) => mongoose.isValidObjectId(id));
+  const users =
+    userIds.length > 0
+      ? await mongoose
+          .model('User')
+          .find({ _id: { $in: userIds } }, 'name username email')
+          .lean<NamedUser[]>()
+      : [];
+  const names = new Map(
+    users.map((user) => [String(user._id), user.name || user.username || user.email || null]),
+  );
+  return (id) => {
+    if (!id) {
+      return null;
+    }
+    return mongoose.isValidObjectId(id) ? (names.get(id) ?? null) : id;
+  };
+}
+
 const actorOf = (req: ServerRequest): { id?: string; name: string } => ({
   id: req.user?.id,
   name: req.user?.name || req.user?.email || 'platform-superadmin',
@@ -162,7 +212,7 @@ export function createPriceHandlers(deps: PriceHandlerDeps): PriceHandlers {
     return latest?.diff ?? [];
   }
 
-  function present(doc: IModelPrice, changedDays: number, now: Date) {
+  function present(doc: IModelPrice, changedDays: number, now: Date, nameOf: NameOf) {
     const effective = effectivePrice(doc, now);
     const changedRecently =
       doc.lastChangedAt != null &&
@@ -184,6 +234,7 @@ export function createPriceHandlers(deps: PriceHandlerDeps): PriceHandlers {
         ? {
             reason: doc.override.reason,
             setBy: doc.override.setBy ?? null,
+            setByName: nameOf(doc.override.setBy),
             setAt: doc.override.setAt,
             until: doc.override.until ?? null,
           }
@@ -207,8 +258,18 @@ export function createPriceHandlers(deps: PriceHandlerDeps): PriceHandlers {
       const docs = await ModelPrice.find({
         $or: [{ usedFor: { $ne: [] } }, { unpricedHits: { $gt: 0 } }, { override: { $ne: null } }],
       }).lean<IModelPrice[]>();
+      const [lastSync, lastGood, unseen] = await Promise.all([
+        ModelPriceSync.findOne({}).sort({ startedAt: -1 }).lean<IModelPriceSync>(),
+        ModelPriceSync.findOne({ ok: true }).sort({ startedAt: -1 }).lean<IModelPriceSync>(),
+        ModelPriceChange.countDocuments({ seenAt: null }),
+      ]);
+      const nameOf = await resolveNames([
+        ...docs.map((doc) => doc.override?.setBy),
+        lastSync?.actor,
+        lastGood?.actor,
+      ]);
       const rows = docs
-        .map((doc) => present(doc, changedDays, now))
+        .map((doc) => present(doc, changedDays, now, nameOf))
         .filter((row) => !wantedStatus || row.status === wantedStatus)
         .filter((row) => !wantedUse || row.usedFor.some((use) => use.startsWith(wantedUse)))
         .sort((a, b) => {
@@ -216,11 +277,6 @@ export function createPriceHandlers(deps: PriceHandlerDeps): PriceHandlers {
             STATUS_RANK[a.status] - STATUS_RANK[b.status] || a.modelId.localeCompare(b.modelId)
           );
         });
-      const [lastSync, lastGood, unseen] = await Promise.all([
-        ModelPriceSync.findOne({}).sort({ startedAt: -1 }).lean<IModelPriceSync>(),
-        ModelPriceSync.findOne({ ok: true }).sort({ startedAt: -1 }).lean<IModelPriceSync>(),
-        ModelPriceChange.countDocuments({ seenAt: null }),
-      ]);
       const failingSince = lastSync && !lastSync.ok ? (lastGood?.startedAt ?? null) : null;
       const failingHours = failingSince
         ? (now.getTime() - failingSince.getTime()) / 3_600_000
@@ -228,8 +284,8 @@ export function createPriceHandlers(deps: PriceHandlerDeps): PriceHandlers {
       const count = (status: ListStatus): number =>
         rows.filter((row) => row.status === status).length;
       res.json({
-        lastSync: lastSync ?? null,
-        lastSuccessfulSync: lastGood ?? null,
+        lastSync: lastSync ? { ...lastSync, actorName: nameOf(lastSync.actor) } : null,
+        lastSuccessfulSync: lastGood ? { ...lastGood, actorName: nameOf(lastGood.actor) } : null,
         warnings: {
           noPrice: count('no_price'),
           notListed: count('not_listed'),
@@ -261,7 +317,8 @@ export function createPriceHandlers(deps: PriceHandlerDeps): PriceHandlers {
         .sort({ createdAt: -1 })
         .limit(limitOf(req.query?.limit, 50))
         .lean<IModelPriceChange[]>();
-      res.json({ changes: items });
+      const nameOf = await resolveNames(items.map((item) => item.seenBy));
+      res.json({ changes: items.map((item) => ({ ...item, seenByName: nameOf(item.seenBy) })) });
     } catch (error) {
       fail(res, error, 'list price changes');
     }
@@ -290,11 +347,15 @@ export function createPriceHandlers(deps: PriceHandlerDeps): PriceHandlers {
       const effect = effective
         ? await costEffect(modelId, effective.price, latest?.previous ?? null, now)
         : null;
+      const nameOf = await resolveNames([
+        doc.override?.setBy,
+        ...versions.map((version) => version.actor),
+      ]);
       res.json({
-        model: present(doc, DEFAULT_CHANGED_DAYS, now),
+        model: present(doc, DEFAULT_CHANGED_DAYS, now, nameOf),
         lastChange: await lastChangeOf(modelId),
         biggestChangePct: biggestChange(versions.find((v) => v.previous)?.diff),
-        versions,
+        versions: versions.map((version) => ({ ...version, actorName: nameOf(version.actor) })),
         costEffect: effect,
       });
     } catch (error) {
@@ -369,7 +430,11 @@ export function createPriceHandlers(deps: PriceHandlerDeps): PriceHandlers {
         res.status(409).json({ error: 'A sync is already running on another server', result });
         return;
       }
-      res.status(result.ok ? 200 : 502).json({ result });
+      if (!result.ok) {
+        res.status(502).json({ error: failureReason(result.error), result });
+        return;
+      }
+      res.json({ result });
     } catch (error) {
       fail(res, error, 'sync model prices');
     }
@@ -406,7 +471,14 @@ export function createPriceHandlers(deps: PriceHandlerDeps): PriceHandlers {
         actor: actor.id ?? actor.name,
       });
       await store.refreshTable();
-      res.json({ model: present(doc, DEFAULT_CHANGED_DAYS, new Date()) });
+      res.json({
+        model: present(
+          doc,
+          DEFAULT_CHANGED_DAYS,
+          new Date(),
+          await resolveNames([doc.override?.setBy]),
+        ),
+      });
     } catch (error) {
       fail(res, error, 'set model price override');
     }
@@ -432,7 +504,16 @@ export function createPriceHandlers(deps: PriceHandlerDeps): PriceHandlers {
       });
       const doc = await store.clearOverride(modelId, actor.id ?? actor.name);
       await store.refreshTable();
-      res.json({ model: doc ? present(doc, DEFAULT_CHANGED_DAYS, new Date()) : null });
+      res.json({
+        model: doc
+          ? present(
+              doc,
+              DEFAULT_CHANGED_DAYS,
+              new Date(),
+              await resolveNames([doc.override?.setBy]),
+            )
+          : null,
+      });
     } catch (error) {
       fail(res, error, 'clear model price override');
     }
