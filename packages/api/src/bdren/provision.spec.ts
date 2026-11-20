@@ -512,8 +512,10 @@ describe('placement safety', () => {
 
     const result = await place(String(second._id), 'dhaka-university', { replaceDuplicate: true });
 
-    expect(result.status).toBe('duplicate');
-    expect(String((result as { existing: { _id: unknown } }).existing._id)).toBe(String(first._id));
+    if (result.status !== 'duplicate') {
+      throw new Error(`expected a duplicate placement, got ${result.status}`);
+    }
+    expect(String(result.existing._id)).toBe(String(first._id));
     expect(await User().countDocuments({ openidId: 'sub-race' })).toBe(1);
   });
 
