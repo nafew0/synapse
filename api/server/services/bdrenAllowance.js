@@ -141,7 +141,9 @@ async function getRequestAllowance(user, memberPackage = user?.usagePackage) {
 async function reviewMember(issuer, subject) {
   const user = await runAsSystem(() =>
     mongoose.models.User.findOne({ openidId: subject, openidIssuer: issuer })
-      .select('tenantId accountScope openidId openidIssuer email role bdrenNotedOrganizationId')
+      .select(
+        'tenantId accountScope openidId openidIssuer email role bdrenNotedOrganizationId bdrenHoldTenantId',
+      )
       .lean()
       .exec(),
   );

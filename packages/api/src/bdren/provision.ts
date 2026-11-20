@@ -46,6 +46,8 @@ export type ReviewedUser = IdentityUser & {
   email?: string;
   role?: string;
   bdrenNotedOrganizationId?: string;
+  /** Set by the SSO migration: the institution kept until bdren.ai covers the person there. */
+  bdrenHoldTenantId?: string;
 };
 
 export interface ReviewOptions {
@@ -370,6 +372,18 @@ export function createProvisioner(deps: ProvisionDeps): Provisioner {
     return { status: 'refused' };
   }
 
+  /** Ends a migrated member's hold on `tenantId` once bdren.ai covers them there. */
+  async function releaseHold(userId: string, tenantId: string): Promise<void> {
+    await runAsSystem(() =>
+      users()
+        .updateOne(
+          { _id: userId, bdrenHoldTenantId: tenantId },
+          { $unset: { bdrenHoldTenantId: 1 } },
+        )
+        .exec(),
+    );
+  }
+
   /** The user's institution when it is linked to a bdren.ai organization; `undefined` for an unlinked (legacy) one. */
   async function linkedInstitutionOf(tenantId: string): Promise<LinkedInstitution | undefined> {
     const institution = await runAsSystem(() =>
@@ -458,7 +472,12 @@ export function createProvisioner(deps: ProvisionDeps): Provisioner {
       const organizationId =
         allowance.planSource === 'institution' ? allowance.institutionId : null;
       const target = organizationId ? await findByOrganization(organizationId) : null;
+      /** A member migrated to SSO stays in their institution until bdren.ai says otherwise. */
+      const held = current != null && user.bdrenHoldTenantId === current;
       if (target && target.tenantId === current) {
+        if (held) {
+          await releaseHold(who.userId, current);
+        }
         return changed;
       }
       const noted = user.bdrenNotedOrganizationId;
@@ -490,13 +509,21 @@ export function createProvisioner(deps: ProvisionDeps): Provisioner {
         await mismatch(refusal, organizationId, target?.tenantId ?? null);
       }
       const to = organizationId && !refusal && target ? target.tenantId : null;
+      if (held && to === null && currentInstitution) {
+        await mismatch(
+          'migrated_not_covered',
+          currentInstitution.bdrenOrganizationId,
+          currentInstitution.tenantId,
+        );
+        return changed;
+      }
       if (to === current) {
         return changed;
       }
       let outcome = await runMove(who.userId, current, to, moveReason(current, to));
       if (outcome.status === 'refused' && to && organizationId) {
         await mismatch(`move_${outcome.reason}`, organizationId, to);
-        if (current) {
+        if (current && !held) {
           outcome = await runMove(who.userId, current, null, 'coverage_left');
         }
       }

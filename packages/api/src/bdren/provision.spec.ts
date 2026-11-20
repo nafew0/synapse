@@ -422,6 +422,74 @@ describe('reviewExistingMember', () => {
   });
 });
 
+function freeAnswer(subject: string): BdrenAllowancePayload {
+  const start = '2026-11-15T04:00:00Z';
+  const end = '2026-12-15T04:00:00Z';
+  return {
+    ...institutionAnswer(subject),
+    plan_source: 'free',
+    package: { slug: 'free', name: 'Free', version: 1 },
+    institution: null,
+    subscription: null,
+    limits: { ai_credits: { monthly: 10, weekly: 5 } },
+    windows: { month: { start, end }, week: { start, end } },
+  };
+}
+
+describe('a member migrated to SSO', () => {
+  const hold = (over: Record<string, unknown> = {}) =>
+    makeUser({
+      tenantId: 'dhaka-university',
+      accountScope: 'institution',
+      bdrenHoldTenantId: 'dhaka-university',
+      ...over,
+    });
+
+  it('keeps their institution while bdren.ai does not cover them yet, and records it once', async () => {
+    await linked({ stats: { activeMembers: 1 } });
+    const user = await hold();
+    bdren.answers.set(user.openidId as string, freeAnswer(user.openidId as string));
+
+    await provisioner.reviewExistingMember(user);
+    const again = await User().findById(user._id).lean<typeof user>();
+    await provisioner.reviewExistingMember(again as typeof user);
+
+    const saved = await User().findById(user._id).lean<typeof user>();
+    expect(saved).toMatchObject({
+      tenantId: 'dhaka-university',
+      bdrenHoldTenantId: 'dhaka-university',
+    });
+    expect(await mongoose.models.MemberMove.countDocuments()).toBe(0);
+    const entries = await audits('member.coverage_mismatch');
+    expect(entries.map((entry) => entry.metadata?.reason)).toEqual(['migrated_not_covered']);
+  });
+
+  it('ends the hold once bdren.ai covers them there, after which normal rules apply', async () => {
+    await linked({ stats: { activeMembers: 1 } });
+    const user = await hold();
+    bdren.answers.set(user.openidId as string, institutionAnswer(user.openidId as string));
+
+    await provisioner.reviewExistingMember(user);
+    const covered = await User().findById(user._id).lean<typeof user>();
+    expect(covered?.bdrenHoldTenantId).toBeUndefined();
+    expect(covered?.tenantId).toBe('dhaka-university');
+
+    bdren.answers.set(user.openidId as string, freeAnswer(user.openidId as string));
+    await provisioner.reviewExistingMember(covered as typeof user, { fresh: true });
+    expect((await User().findById(user._id).lean<typeof user>())?.tenantId).toBeUndefined();
+  });
+
+  it('does not hold someone whose hold names another institution', async () => {
+    await linked({ stats: { activeMembers: 1 } });
+    const user = await hold({ bdrenHoldTenantId: 'elsewhere' });
+    bdren.answers.set(user.openidId as string, freeAnswer(user.openidId as string));
+
+    await provisioner.reviewExistingMember(user);
+
+    expect((await User().findById(user._id).lean<typeof user>())?.tenantId).toBeUndefined();
+  });
+});
+
 describe('first login of a new member', () => {
   it('sends the id token to bdren.ai, and never logs it', async () => {
     const { logger } = jest.requireActual('@librechat/data-schemas');
