@@ -33,7 +33,7 @@ const entryBody = z.object({
 });
 
 const refreshBody = z.object({
-  days: z.number().int().min(1).max(31).optional(),
+  days: z.number().int().min(1).max(30).optional(),
   firecrawlAsOfDay: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -69,7 +69,27 @@ export function createReconcileHandlers(deps: ReconcileDeps): ReconcileHandlers 
         .json({ error: 'Invalid request', issues: parsed.error.flatten().fieldErrors });
       return;
     }
-    res.json({ results: await syncProviders(parsed.data) });
+    const yesterday = dhakaDay(new Date(Date.now() - 86_400_000));
+    if (parsed.data.firecrawlAsOfDay && parsed.data.firecrawlAsOfDay !== yesterday) {
+      res.status(400).json({ error: 'firecrawlAsOfDay must be yesterday (Asia/Dhaka)' });
+      return;
+    }
+    const actorId = req.user?.id ?? req.user?._id?.toString() ?? null;
+    const results = await syncProviders(parsed.data);
+    await deps.recordAuditEntry({
+      action: 'platform.provider_spend_entered',
+      severity: 'info',
+      actor: {
+        type: 'user',
+        id: actorId ?? undefined,
+        name: req.user?.name || req.user?.email || 'platform-superadmin',
+      },
+      target: { type: 'provider_spend', id: 'refresh', name: 'Provider figures refresh' },
+      metadata: { trigger: 'manual_refresh', days: parsed.data.days ?? 'default' },
+      context: buildAuditContext(req),
+      tenantId: undefined,
+    });
+    res.json({ results });
   });
 
   const enterUnstructured = guard('save the Unstructured figure', async (req, res) => {
@@ -89,17 +109,6 @@ export function createReconcileHandlers(deps: ReconcileDeps): ReconcileHandlers 
     const previous = await getProviderSpendModel()
       .findOne({ service: 'unstructured', period: month })
       .lean<{ amount: number | null }>();
-    await saveSpend({
-      service: 'unstructured',
-      period: month,
-      kind: 'month',
-      amount: amountUsd,
-      source: 'manual',
-      pages,
-      note,
-      enteredBy: actorId,
-      fetchedAt: new Date(),
-    });
     await deps.recordAuditEntry(
       {
         action: 'platform.provider_spend_entered',
@@ -126,6 +135,17 @@ export function createReconcileHandlers(deps: ReconcileDeps): ReconcileHandlers 
       },
       { failClosed: true },
     );
+    await saveSpend({
+      service: 'unstructured',
+      period: month,
+      kind: 'month',
+      amount: amountUsd,
+      source: 'manual',
+      pages,
+      note,
+      enteredBy: actorId,
+      fetchedAt: new Date(),
+    });
     res.json({ month, amountUsd, pages: pages ?? null, note: note ?? null });
   });
 

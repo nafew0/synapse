@@ -158,7 +158,7 @@ describe('syncProviders', () => {
     expect(requested.filter((line) => line.includes('/or/'))).toEqual([]);
   });
 
-  it('turns two Firecrawl readings into a day of credits', async () => {
+  it('turns two Firecrawl readings into a day of credits, and keeps the first reading of a day', async () => {
     const reading = (remaining: number) => ({
       status: 200,
       body: {
@@ -171,19 +171,24 @@ describe('syncProviders', () => {
         },
       },
     });
+    const noOpenRouter = env({ OPENROUTER_MANAGEMENT_KEY: '' });
     routes['/fc/v2/team/credit-usage'] = reading(900);
     await syncProviders(
       { firecrawlAsOfDay: '2026-11-18' },
-      env({ OPENROUTER_MANAGEMENT_KEY: '' }),
-      NOW,
+      noOpenRouter,
+      new Date('2026-11-18T19:00:00Z'),
     );
     routes['/fc/v2/team/credit-usage'] = reading(870);
-    const results = await syncProviders({ firecrawlAsOfDay: '2026-11-19' }, env(), NOW);
-
+    const results = await syncProviders({}, noOpenRouter, new Date('2026-11-19T18:05:00Z'));
     expect(results.find((item) => item.service === 'firecrawl')).toMatchObject({
       status: 'ok',
       stored: 1,
     });
+
+    routes['/fc/v2/team/credit-usage'] = reading(800);
+    const again = await syncProviders({}, noOpenRouter, new Date('2026-11-19T19:30:00Z'));
+    expect(again.find((item) => item.service === 'firecrawl')).toMatchObject({ status: 'skipped' });
+
     const days = await getProviderSpendModel()
       .find({ service: 'firecrawl' })
       .sort({ period: 1 })
@@ -192,6 +197,27 @@ describe('syncProviders', () => {
       ['2026-11-18', 100, null],
       ['2026-11-19', 130, 30],
     ]);
+  });
+
+  it('refuses a Firecrawl reading for any day but yesterday', async () => {
+    routes['/fc/v2/team/credit-usage'] = {
+      status: 200,
+      body: { data: { remainingCredits: 5, planCredits: 10 } },
+    };
+    const result = await syncProviders({ firecrawlAsOfDay: '2026-11-01' }, env(), NOW);
+    expect(result.find((item) => item.service === 'firecrawl')?.status).toBe('skipped');
+    expect(await getProviderSpendModel().countDocuments({ service: 'firecrawl' })).toBe(0);
+  });
+
+  it('keeps going past a failed OpenRouter day but stops on a refused key', async () => {
+    routes['/or/activity?date=2026-11-19'] = { status: 500, body: {} };
+    routes['/or/activity?date=2026-11-18'] = activity([{ model: 'm', usage: 2 }]);
+    const [partial] = await syncProviders({ days: 2 }, env(), NOW);
+    expect(partial.stored).toBe(1);
+
+    routes['/or/activity?date=2026-11-19'] = { status: 401, body: { error: 'bad' } };
+    const [refused] = await syncProviders({ days: 2 }, env(), NOW);
+    expect(refused).toMatchObject({ status: 'rejected', stored: 0 });
   });
 
   it('only takes the Firecrawl reading in the first hours after midnight', async () => {
@@ -434,9 +460,12 @@ describe('handlers', () => {
 
   it('refreshes provider figures on request and reports each provider', async () => {
     const result = await call(handlers.refresh, { body: { days: 99 } });
+    const stale = await call(handlers.refresh, { body: { firecrawlAsOfDay: '2026-01-01' } });
+    expect(stale.status).toBe(400);
     expect(result.status).toBe(400);
     const ok = await call(handlers.refresh, { body: {} });
     expect(ok.status).toBe(200);
     expect(ok.body.results.map((item: any) => item.service)).toEqual(['openrouter', 'firecrawl']);
+    expect(audits.at(-1)).toMatchObject({ metadata: { trigger: 'manual_refresh' } });
   });
 });

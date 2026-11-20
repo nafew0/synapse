@@ -14,7 +14,7 @@ import { firecrawlDayCredits } from './maths';
 
 const DAY_MS = 86_400_000;
 const DEFAULT_DAYS = 3;
-const MAX_DAYS = 31;
+const MAX_DAYS = 30;
 const REFRESH_INTERVAL_MS = 60 * 60_000;
 const FIRST_RUN_DELAY_MS = 60_000;
 /** Firecrawl is read in the first hours after midnight (Asia/Dhaka), so the reading is the end of the day before. */
@@ -93,7 +93,8 @@ async function syncOpenRouter(
     const reading = await readOpenRouterActivity(config, day);
     if (reading.status !== 'ok') {
       last = { service: 'openrouter', lastRunAt: now, ...describe(reading) };
-      break;
+      if (reading.status === 'rejected') break;
+      continue;
     }
     await saveSpend({
       service: 'openrouter',
@@ -131,7 +132,24 @@ async function syncFirecrawl(
       message: 'read in the first hours after midnight',
     };
   }
-  const day = asOfDay ?? previousDay(dhakaDay(now));
+  const day = previousDay(dhakaDay(now));
+  if (asOfDay && asOfDay !== day) {
+    return {
+      service: 'firecrawl',
+      status: 'skipped',
+      stored: 0,
+      message: 'only yesterday can be read',
+    };
+  }
+  const [existing] = await loadSpend('firecrawl', day, day);
+  if (existing?.cumulative !== undefined) {
+    return {
+      service: 'firecrawl',
+      status: 'skipped',
+      stored: 0,
+      message: 'already read for that day',
+    };
+  }
   const reading = await readFirecrawlCredits({
     apiKey,
     baseUrl: configured(env.FIRECRAWL_API_URL) ?? FIRECRAWL_BASE_URL,
