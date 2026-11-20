@@ -10,7 +10,7 @@ import type { ExtensionRequest } from './auth';
  * replaced by its length, and how it ended. Never what the page showed: the extension leaves results out, and this
  * schema has no place for them.
  */
-export const ReportSchema = z.object({
+const ReportSchema = z.object({
   extensionVersion: z.string().min(1).max(40),
   build: z.string().max(40).optional(),
   llmModel: z.string().max(200).optional(),
@@ -33,8 +33,6 @@ export const ReportSchema = z.object({
     )
     .max(500),
 });
-
-export type ReportBody = z.infer<typeof ReportSchema>;
 
 export function createReportHandler(deps: {
   store: Pick<BrowserExtensionMethods, 'recordBrowserExtensionReport'>;
