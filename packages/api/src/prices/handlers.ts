@@ -34,7 +34,7 @@ export interface PriceHandlerDeps {
   models: () => PriceStoreModels;
   store: () => PriceStore;
   /** Model ids in use, as the sync reads them. */
-  syncDeps: () => Pick<SyncDeps, 'collectModels'>;
+  syncDeps: () => Pick<SyncDeps, 'collectModels' | 'catalog' | 'lockClient' | 'now'>;
   recordAuditEntry: (
     input: RecordAuditEntryInput,
     options?: RecordAuditEntryOptions,
