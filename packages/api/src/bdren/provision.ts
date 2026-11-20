@@ -85,7 +85,6 @@ const conversations = (): Model<{ user: string }> =>
 const messages = (): Model<{ user: string }> => mongoose.models.Message as Model<{ user: string }>;
 const users = (): Model<IUser> => mongoose.models.User as Model<IUser>;
 const institutions = (): Model<IInstitution> => mongoose.models.Institution as Model<IInstitution>;
-const auditLog = (): Model<IAuditLog> => mongoose.models.AuditLog as Model<IAuditLog>;
 
 /** Lowercase letters, digits and single hyphens; never starts with the reserved `__`. */
 export function tenantIdFromSlug(slug: string | null | undefined): string {
