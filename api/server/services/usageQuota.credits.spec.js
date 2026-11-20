@@ -134,6 +134,18 @@ describe('usageQuota credit metering (replica set)', () => {
       }
     });
 
+    it('reserves at the long-prompt tier rate once the reserved input crosses the threshold', async () => {
+      const ratesFor = jest.fn((inputTokens) =>
+        inputTokens > 100000 ? { input: 0.5, output: 2.5 } : { input: 0.1, output: 0.5 },
+      );
+      const pricingContext = { ...LUNA, rates: { input: 0.1, output: 0.5 }, ratesFor };
+      const small = await reserve({ pricingContext, estimatedInputTokens: 1000 });
+      expect(small.reservation.metadata.rates).toEqual({ input: 0.1, output: 0.5 });
+      const large = await reserve({ pricingContext, estimatedInputTokens: 150000 });
+      expect(large.reservation.metadata.rates).toEqual({ input: 0.5, output: 2.5 });
+      expect(ratesFor.mock.calls.at(-1)[0]).toBeGreaterThanOrEqual(150000);
+    });
+
     it('settles at the actual credits the client priced, releasing the estimate', async () => {
       const { reservation } = await reserve();
       await quota.settleUsage({

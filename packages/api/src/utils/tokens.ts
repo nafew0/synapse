@@ -64,6 +64,7 @@ const openAIModels = {
   'gpt-5.6': 1050000,
   'gpt-5.6-terra': 1050000,
   'gpt-5.6-luna': 1050000,
+  'gpt-6-luna': 1050000,
   'chat-latest': 400000,
   'gpt-5-mini': 400000,
   'gpt-5-nano': 400000,
