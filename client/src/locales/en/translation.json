@@ -2401,7 +2401,6 @@
   "com_ui_usage_unlimited": "Unlimited",
   "com_ui_usage_resets": "Resets {{0}}",
   "com_ui_usage_weighted_note": "Claude used directly counts double toward your allowance.",
-  "com_ui_usage_not_enforced": "Usage is being recorded but no limit is applied yet.",
   "com_ui_cap_reached_weekly": "Weekly limit reached. Your allowance resets {{0}}.",
   "com_ui_cap_reached_monthly": "Monthly limit reached. Your allowance resets {{0}}.",
   "com_ui_cap_reached_images_weekly": "Weekly image limit reached. Image generation resumes {{0}}.",

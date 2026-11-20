@@ -104,7 +104,6 @@ describe('usageQuota with a bdren.ai allowance (replica set)', () => {
     await models.UsagePolicy.create({
       tenantId,
       version: 1,
-      mode: 'enforce',
       timezone: 'Asia/Dhaka',
       limits: {},
       inputSafetyFactor: 1,
@@ -297,18 +296,64 @@ describe('usageQuota with a bdren.ai allowance (replica set)', () => {
       expect(await afford(50, plan)).toBe(true);
     });
 
-    it('does not refuse while the policy only observes', async () => {
+    it("refuses under a policy stored with the old mode 'shadow'", async () => {
+      /** The schema no longer has `mode`, so the old field is written to the collection directly. */
+      await models.UsagePolicy.collection.updateOne({ tenantId }, { $set: { mode: 'shadow' } });
+      expect(await afford(10_000)).toBe(false);
+    });
+  });
+
+  describe('a tenant with no Synapse policy', () => {
+    beforeEach(async () => {
       await models.UsagePolicy.deleteMany({ tenantId });
-      await models.UsagePolicy.create({
-        tenantId,
-        version: 1,
-        mode: 'shadow',
-        timezone: 'Asia/Dhaka',
-        limits: {},
-        effectiveAt: new Date(),
-        reason: 'shadow',
+      await models.Institution.updateOne({ tenantId }, { $set: { usagePolicyVersion: 0 } });
+    });
+
+    /** No policy means the default safety margin: 100 estimated input tokens reserve 371 credits. */
+    it('refuses a request once the bdren.ai allowance is used up', async () => {
+      const plan = allowance({ month: 10_000, week: 1000 });
+      const first = await reserve({
+        allowance: plan,
+        estimatedInputTokens: 100,
+        requestedOutputTokens: 40,
       });
-      expect(await afford(10_000)).toBe(true);
+      await quota.settleUsage({
+        tenantId,
+        reservationKey: first.reservation.reservationKey,
+        credits: 1000,
+      });
+
+      await expect(reserve({ allowance: plan })).rejects.toMatchObject({
+        statusCode: 429,
+        details: expect.objectContaining({
+          code: 'TOKEN_QUOTA_EXCEEDED',
+          limitCode: 'WEEKLY_CAP',
+          upgradeUrl: UPGRADE_URL,
+        }),
+      });
+    });
+
+    it('trims the output to what the allowance has left', async () => {
+      const result = await reserve({
+        allowance: allowance({ month: 10_000, week: 1000 }),
+        estimatedInputTokens: 100,
+        requestedOutputTokens: 2000,
+      });
+      expect(result.outputCapped).toBe(true);
+      expect(result.outputTokenCap).toBe(629);
+    });
+
+    it('refuses a service the allowance cannot cover', async () => {
+      const afford = (credits) =>
+        quota.canAffordCredits({ tenantId, userId, allowance: allowance(), credits });
+      expect(await afford(400)).toBe(true);
+      expect(await afford(401)).toBe(false);
+    });
+
+    it('reports the meters without an enforced flag', async () => {
+      const view = await quota.getMemberQuota({ tenantId, userId, allowance: allowance() });
+      expect(view).toMatchObject({ unit: 'credits', package: { name: 'Pro' } });
+      expect(view).not.toHaveProperty('enforced');
     });
   });
 });

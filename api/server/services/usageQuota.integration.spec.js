@@ -48,7 +48,6 @@ describe('usageQuota reservations (replica set)', () => {
     await models.UsagePolicy.create({
       tenantId,
       version: 1,
-      mode: 'enforce',
       timezone: 'Asia/Dhaka',
       limits: {
         institutionTokens: 700,
@@ -135,7 +134,6 @@ describe('usageQuota reservations (replica set)', () => {
       reservedTokens: 0,
     });
     const input = {
-      mode: 'shadow',
       timezone: 'Asia/Dhaka',
       limits: {
         institutionTokens: 500,
@@ -179,7 +177,6 @@ describe('usageQuota reservations (replica set)', () => {
       await models.UsagePolicy.create({
         tenantId,
         version: 2,
-        mode: 'enforce',
         timezone: 'Asia/Dhaka',
         period: ['calendar_month', 'calendar_week'],
         limits: {
@@ -402,7 +399,7 @@ describe('usageQuota reservations (replica set)', () => {
       expect(monthly).toBeDefined();
     });
 
-    /** `null` is how an unlimited override and shadow mode both stay observable:
+    /** `null` is how an unlimited override and an unconfigured limit stay observable:
      *  usage is still recorded, it simply never denies. */
     it('records usage but never denies when the limit is null', async () => {
       await models.UsagePolicy.updateOne(
@@ -434,7 +431,6 @@ describe('usageQuota reservations (replica set)', () => {
       await models.UsagePolicy.create({
         tenantId,
         version: 5,
-        mode: 'enforce',
         timezone: 'Asia/Dhaka',
         period: ['calendar_month', 'calendar_week'],
         limits: {
@@ -462,7 +458,7 @@ describe('usageQuota reservations (replica set)', () => {
       expect(meterFor(summary, 'tokens', 'week').limit).toBe(3_000_000);
       expect(meterFor(summary, 'images', 'month').limit).toBe(30);
       expect(meterFor(summary, 'images', 'week').limit).toBe(10);
-      expect(summary.enforced).toBe(true);
+      expect(summary).not.toHaveProperty('enforced');
       expect(summary.unit).toBe('billing_tokens');
     });
 
@@ -542,7 +538,6 @@ describe('usageQuota reservations (replica set)', () => {
       await models.UsagePolicy.create({
         tenantId,
         version: 4,
-        mode: 'enforce',
         timezone: 'Asia/Dhaka',
         period: ['calendar_month', 'calendar_week'],
         limits: {
@@ -688,7 +683,6 @@ describe('usageQuota reservations (replica set)', () => {
       await models.UsagePolicy.create({
         tenantId,
         version: 3,
-        mode: 'enforce',
         timezone: 'Asia/Dhaka',
         period: ['calendar_month', 'calendar_week'],
         limits: {
@@ -905,70 +899,70 @@ describe('usageQuota reservations (replica set)', () => {
     });
   });
 
-  describe('shadow mode', () => {
+  describe.each(['shadow', 'enforce'])("a policy stored with the old mode '%s'", (mode) => {
     beforeEach(async () => {
       await models.UsagePolicy.deleteMany({ tenantId });
-      await models.UsagePolicy.create({
+      /** The schema no longer has `mode`, so the old document is written to the collection directly. */
+      await models.UsagePolicy.collection.insertOne({
         tenantId,
         version: 1,
-        mode: 'shadow',
+        mode,
         timezone: 'Asia/Dhaka',
+        period: ['calendar_month'],
         limits: {
           institutionTokens: 700,
           memberTokens: null,
           modelTokens: [{ modelKey: 'gpt-4o', maxTokens: 700 }],
         },
+        warningThresholds: [0.8, 0.9],
         inputSafetyFactor: 1,
         inputSafetyTokens: 0,
         effectiveAt: new Date(),
-        reason: 'shadow integration test',
+        reason: 'legacy mode test',
       });
     });
 
-    it('never caps output, even when the request exceeds every limit', async () => {
-      const result = await quota.reserveUsage({
-        tenantId,
-        userId,
-        provider: 'openai',
-        model: 'gpt-4o',
-        reservationKey: 'shadow-uncapped',
-        estimatedInputTokens: 5000,
-        requestedOutputTokens: 100000,
+    it('refuses a request over the limit', async () => {
+      await expect(
+        quota.reserveUsage({
+          tenantId,
+          userId,
+          provider: 'openai',
+          model: 'gpt-4o',
+          reservationKey: `legacy-over-${mode}`,
+          estimatedInputTokens: 5000,
+          requestedOutputTokens: 100000,
+        }),
+      ).rejects.toMatchObject({
+        statusCode: 429,
+        details: expect.objectContaining({ code: 'TOKEN_QUOTA_EXCEEDED' }),
       });
-
-      expect(result.outputTokenCap).toBeNull();
-      expect(result.outputCapped).toBe(false);
     });
 
-    it('records observed usage without capping when no output limit was requested', async () => {
-      const result = await quota.reserveUsage({
-        tenantId,
-        userId,
-        provider: 'openai',
-        model: 'gpt-4o',
-        reservationKey: 'shadow-default',
-        estimatedInputTokens: 10,
-      });
-
-      expect(result.outputTokenCap).toBeNull();
-      expect(result.reservation.reservedTokens).toBeGreaterThan(0);
-    });
-
-    it('keeps the cap absent on an idempotent replay', async () => {
+    it('caps the output to what is left, also on an idempotent replay', async () => {
       const input = {
         tenantId,
         userId,
         provider: 'openai',
         model: 'gpt-4o',
-        reservationKey: 'shadow-replay',
+        reservationKey: `legacy-cap-${mode}`,
         estimatedInputTokens: 10,
         requestedOutputTokens: 100000,
       };
-      await quota.reserveUsage(input);
-      const replay = await quota.reserveUsage(input);
+      const first = await quota.reserveUsage(input);
+      expect(first.outputTokenCap).toBe(690);
+      expect(first.outputCapped).toBe(true);
+      expect(first.reservation.metadata).not.toHaveProperty('shadowWouldDeny');
 
+      const replay = await quota.reserveUsage(input);
       expect(replay.idempotentReplay).toBe(true);
-      expect(replay.outputTokenCap).toBeNull();
+      expect(replay.outputTokenCap).toBe(690);
+    });
+
+    it('does not report the old mode back', async () => {
+      const policy = await quota.getActivePolicy(tenantId);
+      expect(policy.limits.institutionTokens).toBe(700);
+      expect(policy).not.toHaveProperty('mode');
     });
   });
 });

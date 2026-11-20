@@ -68,8 +68,7 @@ usageReservationSchema.index({ tenantId: 1, periodStart: 1, modelKey: 1 });
  * Aging them out is safe: the ledger — not this collection — is the record of
  * usage, and bucket reconciliation derives the periods it repairs *from* these
  * rows, so a period with no surviving reservations is simply never revisited
- * rather than recomputed to zero. The readiness report only looks back seven
- * days, well inside the default.
+ * rather than recomputed to zero.
  *
  * Set `USAGE_RESERVATION_RETENTION_DAYS=0` to retain indefinitely.
  */

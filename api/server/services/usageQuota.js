@@ -354,7 +354,6 @@ async function loadQuotaContext(tenantId) {
     const policy = {
       tenantId,
       version: 0,
-      mode: 'shadow',
       timezone: institution.timezone || DEFAULT_TIMEZONE,
       period: ['calendar_month'],
       limits: {
@@ -373,10 +372,10 @@ async function loadQuotaContext(tenantId) {
     return { institution, policy };
   }
 
-  const policy = await runAsSystem(() =>
+  const stored = await runAsSystem(() =>
     models.UsagePolicy.findOne({ tenantId, version }).lean().exec(),
   );
-  if (!policy) {
+  if (!stored) {
     throw new QuotaError({
       code: 'USAGE_POLICY_NOT_FOUND',
       scope: 'institution',
@@ -384,7 +383,33 @@ async function loadQuotaContext(tenantId) {
       policyVersion: version,
     });
   }
-  return { institution, policy };
+  return { institution, policy: withoutLegacyMode(stored) };
+}
+
+/** Policies written before limits were always enforced carry a `mode`; it is ignored. */
+function withoutLegacyMode(policy) {
+  const { mode: _legacyMode, ...current } = policy;
+  return current;
+}
+
+/** Whether any scope carries a limit, so a reservation against it could be refused. */
+function hasLimitedScope(scopes) {
+  return scopes.some((scope) => scope.limit != null);
+}
+
+/**
+ * Limits are always enforced, and holding capacity in several buckets is only safe inside a
+ * transaction. A request with nothing to enforce is still served without one.
+ */
+function assertCanEnforce({ tenantId, scopes, transactionCapable }) {
+  if (transactionCapable || !hasLimitedScope(scopes)) {
+    return;
+  }
+  throw new QuotaError({
+    code: 'QUOTA_ENFORCEMENT_REQUIRES_TRANSACTIONS',
+    scope: 'institution',
+    tenantId,
+  });
 }
 
 async function getActivePolicy(tenantId) {
@@ -456,7 +481,7 @@ function getModelLimit(policy, modelKey) {
  * the same scope in the weekly and monthly window are distinct rows.
  *
  * A `null` limit records usage without ever denying — that is how an unlimited
- * override (superadmin) and shadow mode both stay fully observable.
+ * override (superadmin) and an account with no limits stay fully observable.
  */
 function buildScopes({ tenantId, userId, modelKey, policy, ranges, unit = 'tokens' }) {
   const memberKey = String(userId);
@@ -543,10 +568,10 @@ async function loadBucket({ tenantId, range, scope, policyVersion, session }) {
   return query;
 }
 
-async function reserveBucket({ tenantId, range, scope, policyVersion, tokens, enforce, session }) {
+async function reserveBucket({ tenantId, range, scope, policyVersion, tokens, session }) {
   const query = await loadBucket({ tenantId, range, scope, policyVersion, session });
   const capacityFilter =
-    enforce && scope.limit != null
+    scope.limit != null
       ? {
           $expr: {
             $lte: [
@@ -574,10 +599,7 @@ async function reserveBucket({ tenantId, range, scope, policyVersion, tokens, en
     .exec();
 
   if (bucket) {
-    return {
-      bucket,
-      wouldDeny: scope.limit != null && bucket.usedTokens + bucket.reservedTokens > scope.limit,
-    };
+    return bucket;
   }
 
   const current = await models.UsageBucket.findOne(query).session(session).lean().exec();
@@ -627,7 +649,6 @@ async function persistReservation({
         scope,
         policyVersion: Math.max(policy.version, 1),
         tokens,
-        enforce: policy.mode === 'enforce',
         session,
       });
     }
@@ -708,7 +729,6 @@ async function reserveCredits({
   requestedOutputTokens,
   metadata,
 }) {
-  const enforcing = policy.mode === 'enforce';
   const [view, existing] = await Promise.all([
     resolveCreditView({ institution, memberPackage, allowance }),
     runAsSystem(() => models.UsageReservation.findOne({ tenantId, reservationKey }).lean().exec()),
@@ -720,24 +740,16 @@ async function reserveCredits({
       policy,
       range: ranges.month,
       canonical,
-      outputTokenCap: enforcing ? existing.outputTokenCap : null,
+      outputTokenCap: existing.outputTokenCap,
       outputCapped:
-        enforcing &&
         existing.outputTokenCap < (existing.metadata?.requestedOutputTokens ?? Infinity),
       idempotentReplay: true,
     };
   }
 
-  const transactionCapable = await supportsTransactions();
-  if (enforcing && !transactionCapable) {
-    throw new QuotaError({
-      code: 'QUOTA_ENFORCEMENT_REQUIRES_TRANSACTIONS',
-      scope: 'institution',
-      tenantId,
-    });
-  }
-
   const scopes = buildCreditScopes({ tenantId, userId, limits, ranges });
+  const transactionCapable = await supportsTransactions();
+  assertCanEnforce({ tenantId, scopes, transactionCapable });
   /** Credits per token at the request's own model, priced by the client with the billing table. */
   const inputTokens = conservativeInputTokens(
     policy,
@@ -761,18 +773,17 @@ async function reserveCredits({
    *  and refused when the allowance cannot cover one, instead of having its output cut. */
   const isImage = unitFor(endpoint ?? provider) === 'images';
   const imageCredits = isImage ? imageCreditsEstimate(rates) : 0;
-  const proposedOutputCap = isImage
+  const outputTokenCap = isImage
     ? requestedOutput
     : Math.min(
         requestedOutput,
         outputTokensForCredits(smallestRemaining, inputCredits, rates.output),
       );
-  const outputTokenCap = enforcing ? proposedOutputCap : requestedOutput;
   const unaffordable = isImage
     ? smallestRemaining < imageCredits
     : smallestRemaining <= 0 || smallestRemaining < inputCredits || outputTokenCap < 1;
 
-  if (enforcing && unaffordable) {
+  if (unaffordable) {
     /** Ties resolve to the first scope, ordered institution before member and month before week. */
     const limitingScope = scopeRemaining.find(
       (entry) => entry.remaining === smallestRemaining,
@@ -799,7 +810,6 @@ async function reserveCredits({
   const reservedCredits = isImage
     ? imageCredits
     : estimateCredits({ inputTokens, outputTokens: outputTokenCap }, rates);
-  const fullCredits = estimateCredits({ inputTokens, outputTokens: requestedOutput }, rates);
   const { result, concurrentReplay } = await persistReservation({
     tenantId,
     reservationKey,
@@ -834,13 +844,10 @@ async function reserveCredits({
       metadata: {
         ...metadata,
         requestedOutputTokens: requestedOutput,
-        proposedOutputCap: Number.isFinite(proposedOutputCap) ? proposedOutputCap : requestedOutput,
         rates,
         quotaModel: pricingContext?.model ?? null,
         institutionPackageKey: limits.institutionPackageKey,
         memberPackageKey: limits.memberPackageKey,
-        shadowWouldDeny:
-          !enforcing && scopeRemaining.some((entry) => entry.remaining < fullCredits),
       },
     },
   });
@@ -851,22 +858,21 @@ async function reserveCredits({
     range: ranges.month,
     canonical,
     /** Images are never trimmed, so no cap is handed to the model. */
-    outputTokenCap: enforcing && !isImage ? result.outputTokenCap : null,
-    outputCapped: enforcing && !isImage && result.outputTokenCap < requestedOutput,
-    proposedOutputCap,
-    /** Left after this reservation, while enforcing; lets the client drop work it cannot afford. */
-    remainingCredits: enforcing ? smallestRemaining - reservedCredits : null,
+    outputTokenCap: isImage ? null : result.outputTokenCap,
+    outputCapped: !isImage && result.outputTokenCap < requestedOutput,
+    /** Left after this reservation; lets the client drop work it cannot afford. */
+    remainingCredits: smallestRemaining - reservedCredits,
     idempotentReplay: concurrentReplay,
   };
 }
 
 /**
  * Whether the allowance still covers `credits` more, for a paid service (Firecrawl, OCR) that must
- * be refused up front like an image. True when nothing is metered or the policy only observes.
+ * be refused up front like an image. True when nothing is metered.
  */
 async function canAffordCredits({ tenantId, userId, memberPackage, allowance, credits }) {
-  const { institution, policy } = await loadQuotaContext(tenantId);
-  if (policy.mode !== 'enforce' || !meteredInCredits(institution, memberPackage, allowance)) {
+  const { institution } = await loadQuotaContext(tenantId);
+  if (!meteredInCredits(institution, memberPackage, allowance)) {
     return true;
   }
   const { ranges, limits } = await resolveCreditView({ institution, memberPackage, allowance });
@@ -1029,27 +1035,16 @@ async function reserveTokens({
     models.UsageReservation.findOne({ tenantId, reservationKey }).lean().exec(),
   );
   if (existing) {
-    const enforcing = policy.mode === 'enforce';
     return {
       reservation: existing,
       policy,
       range,
       canonical,
-      outputTokenCap: enforcing ? existing.outputTokenCap : null,
+      outputTokenCap: existing.outputTokenCap,
       outputCapped:
-        enforcing &&
         existing.outputTokenCap < (existing.metadata?.requestedOutputTokens ?? Infinity),
       idempotentReplay: true,
     };
-  }
-
-  const transactionCapable = await supportsTransactions();
-  if (policy.mode === 'enforce' && !transactionCapable) {
-    throw new QuotaError({
-      code: 'QUOTA_ENFORCEMENT_REQUIRES_TRANSACTIONS',
-      scope: 'institution',
-      tenantId,
-    });
   }
 
   const inputReservation = conservativeInputTokens(policy, estimatedInputTokens);
@@ -1065,6 +1060,8 @@ async function reserveTokens({
     ranges,
     unit,
   });
+  const transactionCapable = await supportsTransactions();
+  assertCanEnforce({ tenantId, scopes, transactionCapable });
   /** Remaining is tracked PER SCOPE, not as a bare list: the scope that actually
    *  binds is the one with the least left, and the refusal has to name that
    *  window. Choosing by limit size instead reported the month — and its reset
@@ -1095,23 +1092,21 @@ async function reserveTokens({
   const finiteRemaining = scopeRemaining.map((entry) => entry.remaining);
   const smallestRemaining =
     finiteRemaining.length > 0 ? Math.min(...finiteRemaining) : Number.POSITIVE_INFINITY;
-  const enforcing = policy.mode === 'enforce';
   /** An image reservation holds exactly one unit, so the output-cap machinery —
    *  which trims a token budget to fit the remaining allowance — does not apply:
    *  an image is indivisible, and capping its "output tokens" would deny every
    *  request whose token estimate exceeds the image allowance. */
   const isImageUnit = unit === 'images';
-  const proposedOutputCap = isImageUnit
+  const outputTokenCap = isImageUnit
     ? requestedOutput
     : Math.max(Math.min(requestedOutput, smallestRemaining - inputReservation), 0);
-  const outputTokenCap = enforcing && !isImageUnit ? proposedOutputCap : requestedOutput;
   /** Token endpoints hold WEIGHTED tokens — the weight is a quota construct and
    *  never reaches `Transaction`, which stays raw provider cost. */
   const reservedTokens = isImageUnit
     ? 1
     : toBillingTokens(inputReservation + outputTokenCap, weight);
 
-  if (enforcing && (isImageUnit ? smallestRemaining < 1 : outputTokenCap < 1)) {
+  if (isImageUnit ? smallestRemaining < 1 : outputTokenCap < 1) {
     /** The binding scope is whichever has the least remaining — that is the value
      *  that drove `smallestRemaining` and therefore the denial. Ties resolve to
      *  the first, which `buildScopes` orders month-before-week. */
@@ -1167,10 +1162,6 @@ async function reserveTokens({
       metadata: {
         ...metadata,
         requestedOutputTokens: requestedOutput,
-        proposedOutputCap,
-        shadowWouldDeny:
-          policy.mode === 'shadow' &&
-          finiteRemaining.some((remaining) => remaining < inputReservation + requestedOutput),
       },
     },
   });
@@ -1180,9 +1171,8 @@ async function reserveTokens({
     policy,
     range,
     canonical,
-    outputTokenCap: enforcing ? result.outputTokenCap : null,
-    outputCapped: enforcing && result.outputTokenCap < requestedOutput,
-    proposedOutputCap,
+    outputTokenCap: result.outputTokenCap,
+    outputCapped: result.outputTokenCap < requestedOutput,
     idempotentReplay: concurrentReplay,
   };
 }
@@ -1228,7 +1218,7 @@ async function transitionReservation({ tenantId, reservationKey, actualTokens, s
      * transaction, any later bucket failure rolls the claim back with it. */
     /** Settlement also accepts an already-expired reservation: a generation that
      * outran the reservation TTL still consumed real tokens, and dropping them
-     * would understate usage and corrupt the shadow accuracy metrics. Its held
+     * would understate usage. Its held
      * capacity was already returned by the expiry pass, so only `usedTokens`
      * moves in that case. */
     const claimable = status === 'settled' ? ['reserved', 'expired'] : ['reserved'];
@@ -1741,7 +1731,7 @@ async function reconcileQuotaState({ limit = 100, now = new Date() } = {}) {
  * walked backwards into a usage-history API by a caller who only holds
  * quota-read permission.
  *
- * A `null` limit means unlimited (shadow mode, or a superadmin override): usage
+ * A `null` limit means unlimited (no limit configured, or a superadmin override): usage
  * is still reported, `remaining` is simply absent.
  */
 /** The package a member is shown: the bdren.ai plan, a Synapse package, or none. */
@@ -1760,7 +1750,6 @@ async function getMemberCreditQuota({
   tenantId,
   userId,
   institution,
-  policy,
   memberPackage,
   allowance,
   now,
@@ -1827,7 +1816,6 @@ async function getMemberCreditQuota({
   return {
     tenantId,
     unit: 'credits',
-    enforced: policy.mode === 'enforce',
     package: memberPackageView({ allowance, limits, pkg }),
     ...(allowance ? { plan: { ...allowanceNotice(allowance), source: allowance.origin } } : {}),
     meters,
@@ -1841,7 +1829,6 @@ async function getMemberQuota({ tenantId, userId, memberPackage, allowance, now 
       tenantId,
       userId,
       institution,
-      policy,
       memberPackage,
       allowance,
       now,
@@ -1904,7 +1891,6 @@ async function getMemberQuota({ tenantId, userId, memberPackage, allowance, now 
     tenantId,
     /** Weighted, not raw: this is the number the wall is enforced against. */
     unit: 'billing_tokens',
-    enforced: policy.mode === 'enforce',
     meters,
   };
 }
@@ -1929,7 +1915,7 @@ const CREDIT_CONSOLE_MEMBER_LIMIT = 100;
  * default). `null` for an institution still on the token policy.
  */
 async function getCreditConsole({ tenantId, now = new Date() }) {
-  const { institution, policy } = await loadQuotaContext(tenantId);
+  const { institution } = await loadQuotaContext(tenantId);
   if (!usesCredits(institution.usagePackage)) {
     return null;
   }
@@ -2039,7 +2025,6 @@ async function getCreditConsole({ tenantId, now = new Date() }) {
 
   const pkgOf = (key) => (key ? catalog.packages.get(key) : null);
   return {
-    enforced: policy.mode === 'enforce',
     pooled,
     memberTotal,
     institutionPackage: pkgOf(institution.usagePackage?.packageKey)?.name ?? null,
@@ -2287,279 +2272,11 @@ async function emitUsageWarnings(reservation) {
 }
 
 /**
- * Reports whether any institution is *currently* enforcing. Policies are
- * immutable and append-only, so a tenant that once enforced and has since
- * rolled back still owns an enforce-mode document; only the version each
- * institution actually points at counts.
+ * Limits are always enforced, which needs MongoDB transactions. Without them a request that has a
+ * limit to enforce is refused, so the server warns at startup instead of failing to start.
  */
-async function hasActiveEnforcingPolicy() {
-  return await runAsSystem(async () => {
-    const owners = await Promise.all(
-      [models.Institution, models.UsageAccount].map((model) =>
-        model
-          .find({ usagePolicyVersion: { $gte: 1 } })
-          .select('tenantId usagePolicyVersion')
-          .lean()
-          .exec(),
-      ),
-    );
-    const institutions = owners.flat();
-    const batchSize = 200;
-    for (let index = 0; index < institutions.length; index += batchSize) {
-      const batch = institutions.slice(index, index + batchSize);
-      const found = await models.UsagePolicy.exists({
-        mode: 'enforce',
-        $or: batch.map((institution) => ({
-          tenantId: institution.tenantId,
-          version: institution.usagePolicyVersion,
-        })),
-      });
-      if (found) {
-        return true;
-      }
-    }
-    return false;
-  });
-}
-
-async function assertEnforcementTopology() {
-  const enforcingPolicy = await hasActiveEnforcingPolicy();
-  if (!enforcingPolicy) {
-    return { enforcing: false, transactionCapable: await supportsTransactions() };
-  }
-  const transactionCapable = await supportsTransactions();
-  if (!transactionCapable) {
-    throw new Error(
-      'Quota enforce mode requires MongoDB replica-set or mongos transaction support',
-    );
-  }
-  return { enforcing: true, transactionCapable };
-}
-
-/**
- * The ledger rows that belong to a quota key. Institution rows carry the `tenantId`; an individual's
- * rows carry none, so they are told apart from platform staff by the user's account scope.
- */
-function ledgerScope(tenantId, match) {
-  if (!isUsageAccount(tenantId)) {
-    return [{ $match: { tenantId, ...match } }];
-  }
-  return [
-    { $match: { tenantId: null, ...match } },
-    {
-      $lookup: {
-        from: models.User.collection.name,
-        localField: 'user',
-        foreignField: '_id',
-        pipeline: [{ $match: { accountScope: 'standalone' } }, { $project: { _id: 1 } }],
-        as: 'individual',
-      },
-    },
-    { $match: { 'individual.0': { $exists: true } } },
-  ];
-}
-
-/** Titles and activity labels are written as settled reservations with nothing reserved up front:
- *  they say nothing about how well requests are estimated, so the shadow gate leaves them out. */
-const PRIMARY_RESERVATIONS = { 'metadata.auxiliary': { $ne: true } };
-
-/**
- * Measures whether an institution's shadow observation is trustworthy enough to
- * switch on enforcement.
- *
- * All reservation metrics are aggregated in MongoDB: a tenant that has reached
- * the call threshold has far too many reservations to pull into memory.
- *
- * `observedDays` measures the full span since the tenant's first reservation,
- * not the span inside the sampling window — the earliest reservation within a
- * 7-day window is by definition younger than 7 days, so a windowed measure
- * could never reach the threshold it is compared against.
- *
- * Coverage compares reservations against distinct primary inferences in the
- * ledger (`context: 'message'`, keyed by conversation and message). Auxiliary
- * spend — titles, vision tools, assistants runs — is reported separately as
- * `unreservedAuxiliaryCalls` because those paths are ledgered but not yet
- * reserved; they are informational, not part of the coverage ratio.
- */
-async function getShadowReadiness({ tenantId, minimumDays = 7, minimumCalls = 1000 }) {
-  const now = new Date();
-  const cutoff = new Date(now.getTime() - minimumDays * 24 * 60 * 60 * 1000);
-  /** This key's billed calls since the cutoff, followed by `stages`. */
-  const ledger = (stages) =>
-    mongoose.models.Transaction.aggregate([
-      ...ledgerScope(tenantId, {
-        createdAt: { $gte: cutoff },
-        tokenType: { $in: ['prompt', 'completion'] },
-      }),
-      ...stages,
-    ]);
-  const [
-    reservationSummary,
-    firstReservation,
-    unattributedEvents,
-    duplicateGroups,
-    primaryLedgerCalls,
-    auxiliaryLedgerCalls,
-  ] = await runAsSystem(() =>
-    Promise.all([
-      models.UsageReservation.aggregate([
-        { $match: { tenantId, createdAt: { $gte: cutoff }, ...PRIMARY_RESERVATIONS } },
-        {
-          $group: {
-            _id: null,
-            total: { $sum: 1 },
-            settled: { $sum: { $cond: [{ $eq: ['$status', 'settled'] }, 1, 0] } },
-            stale: {
-              $sum: {
-                $cond: [
-                  {
-                    $or: [
-                      { $eq: ['$status', 'expired'] },
-                      {
-                        $and: [{ $eq: ['$status', 'reserved'] }, { $lte: ['$expiresAt', now] }],
-                      },
-                    ],
-                  },
-                  1,
-                  0,
-                ],
-              },
-            },
-            underestimated: {
-              $sum: {
-                $cond: [
-                  {
-                    $and: [
-                      { $eq: ['$status', 'settled'] },
-                      { $gt: [{ $ifNull: ['$actualTokens', 0] }, '$reservedTokens'] },
-                    ],
-                  },
-                  1,
-                  0,
-                ],
-              },
-            },
-            totalActual: {
-              $sum: {
-                $cond: [{ $eq: ['$status', 'settled'] }, { $ifNull: ['$actualTokens', 0] }, 0],
-              },
-            },
-            totalUnderestimate: {
-              $sum: {
-                $cond: [
-                  { $eq: ['$status', 'settled'] },
-                  {
-                    $max: [
-                      { $subtract: [{ $ifNull: ['$actualTokens', 0] }, '$reservedTokens'] },
-                      0,
-                    ],
-                  },
-                  0,
-                ],
-              },
-            },
-          },
-        },
-      ]),
-      models.UsageReservation.find({ tenantId, ...PRIMARY_RESERVATIONS })
-        .sort({ createdAt: 1 })
-        .limit(1)
-        .select('createdAt')
-        .lean()
-        .exec(),
-      ledger([
-        {
-          $match: {
-            $or: [
-              { requestKey: { $exists: false } },
-              { providerKey: { $exists: false } },
-              { modelKey: { $exists: false } },
-              { user: { $exists: false } },
-            ],
-          },
-        },
-        { $count: 'events' },
-      ]).then((rows) => rows[0]?.events ?? 0),
-      ledger([
-        { $match: { requestKey: { $type: 'string' } } },
-        {
-          $group: {
-            _id: { requestKey: '$requestKey', tokenType: '$tokenType', valueKey: '$valueKey' },
-            count: { $sum: 1 },
-          },
-        },
-        { $match: { count: { $gt: 1 } } },
-        { $count: 'groups' },
-      ]),
-      ledger([
-        { $match: { context: 'message', messageId: { $type: 'string' } } },
-        { $group: { _id: { conversationId: '$conversationId', messageId: '$messageId' } } },
-        { $count: 'calls' },
-      ]),
-      ledger([
-        { $match: { context: { $ne: 'message' }, requestKey: { $type: 'string' } } },
-        { $group: { _id: '$requestKey' } },
-        { $count: 'calls' },
-      ]),
-    ]),
-  );
-
-  const summary = reservationSummary[0] ?? {
-    total: 0,
-    settled: 0,
-    stale: 0,
-    underestimated: 0,
-    totalActual: 0,
-    totalUnderestimate: 0,
-  };
-  const earliestCreatedAt = firstReservation[0]?.createdAt;
-  const observedDays = earliestCreatedAt
-    ? (now.getTime() - new Date(earliestCreatedAt).getTime()) / (24 * 60 * 60 * 1000)
-    : 0;
-  const staleRate = summary.total === 0 ? 0 : summary.stale / summary.total;
-  const underestimateRate = summary.settled === 0 ? 0 : summary.underestimated / summary.settled;
-  const estimationOverageRate =
-    summary.totalActual === 0 ? 0 : summary.totalUnderestimate / summary.totalActual;
-  const ledgerCalls = primaryLedgerCalls[0]?.calls ?? 0;
-  const reservationCoverageRate = ledgerCalls === 0 ? 0 : Math.min(summary.total / ledgerCalls, 1);
-  const metrics = {
-    observedDays,
-    attributableCalls: summary.total,
-    settledCalls: summary.settled,
-    unattributedEvents,
-    duplicateGroups: duplicateGroups[0]?.groups ?? 0,
-    staleReservations: summary.stale,
-    staleRate,
-    underestimatedCalls: summary.underestimated,
-    underestimateRate,
-    estimationOverageRate,
-    ledgerCalls,
-    uncoveredLedgerCalls: Math.max(ledgerCalls - summary.total, 0),
-    unreservedAuxiliaryCalls: auxiliaryLedgerCalls[0]?.calls ?? 0,
-    reservationCoverageRate,
-  };
-  return {
-    tenantId,
-    generatedAt: now,
-    requirements: {
-      minimumDays,
-      minimumCalls,
-      maximumStaleRate: 0.001,
-      maximumUnderestimateRate: 0.001,
-      maximumEstimationOverageRate: 0.005,
-      minimumReservationCoverageRate: 1,
-    },
-    metrics,
-    ready:
-      observedDays >= minimumDays &&
-      summary.total >= minimumCalls &&
-      unattributedEvents === 0 &&
-      (duplicateGroups[0]?.groups ?? 0) === 0 &&
-      staleRate < 0.001 &&
-      underestimateRate <= 0.001 &&
-      estimationOverageRate < 0.005 &&
-      reservationCoverageRate === 1,
-  };
+async function checkQuotaTopology() {
+  return { transactionCapable: await supportsTransactions() };
 }
 
 module.exports = {
@@ -2570,7 +2287,7 @@ module.exports = {
   DEFAULT_TIMEZONE,
   QUOTA_RESET_TIMEZONE,
   QuotaError,
-  assertEnforcementTopology,
+  checkQuotaTopology,
   canonicalizeModel,
   getActivePolicy,
   getCreditConsole,
@@ -2579,7 +2296,6 @@ module.exports = {
   getMemberQuota,
   getPolicyRanges,
   getQuotaHealth,
-  getShadowReadiness,
   isEnforcementDenial,
   reconcileExpiredReservations,
   reconcileQuotaState,

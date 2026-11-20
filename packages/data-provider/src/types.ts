@@ -876,7 +876,7 @@ export type TQuotaMeterState = {
   window: TQuotaWindow;
   /** Weighted tokens, images, or credits; `null` for the institution meter, whose size is not shown. */
   used: number | null;
-  /** `null` when the member has no ceiling (unlimited override or shadow mode). */
+  /** `null` when the member has no ceiling (unlimited, or a superadmin override). */
   limit: number | null;
   remaining: number | null;
   unlimited: boolean;
@@ -895,9 +895,6 @@ export type TQuotaResponse = {
   unit: 'billing_tokens' | 'credits';
   /** The member's package, when metered in credits. */
   package?: { key: string; name: string; unlimited: boolean } | null;
-  /** False while the institution is still in shadow mode: usage is recorded but
-   *  nothing is refused, so the UI must not present the meters as walls. */
-  enforced: boolean;
   meters: TQuotaMeterState[];
 };
 

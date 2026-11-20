@@ -1,7 +1,5 @@
 import type { Document, Types } from 'mongoose';
 
-export type UsagePolicyMode = 'shadow' | 'enforce';
-
 /** Windows a policy can enforce. Calendar (not rolling) so a hard wall has a
  *  definite reset instant to show the user. */
 export type UsagePolicyPeriod = 'calendar_month' | 'calendar_week';
@@ -15,7 +13,6 @@ export interface IUsagePolicy extends Document {
   _id: Types.ObjectId;
   tenantId: string;
   version: number;
-  mode: UsagePolicyMode;
   timezone: string;
   /** Windows enforced by this policy. Both are checked on every request. */
   period: UsagePolicyPeriod[];

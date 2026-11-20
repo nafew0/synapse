@@ -25,7 +25,7 @@ const meter = (
 });
 
 const quota = (...meters: ReturnType<typeof meter>[]) =>
-  ({ tenantId: 't', unit: 'billing_tokens', enforced: true, meters }) as TQuotaResponse;
+  ({ tenantId: 't', unit: 'billing_tokens', meters }) as TQuotaResponse;
 
 describe('UsageQuotaItem', () => {
   /** Two rows both labelled "Images" were indistinguishable in the panel. */
@@ -62,6 +62,7 @@ describe('UsageQuotaItem', () => {
   it('shows an unlimited meter without a remaining count', () => {
     render(<UsageQuotaItem quota={quota(meter('tokens', 'month', 999, null))} />);
     expect(screen.getByText('com_ui_usage_unlimited')).toBeInTheDocument();
+    expect(screen.queryByText(/no limit is applied/i)).toBeNull();
   });
 
   it('orders weekly before monthly, tokens before images', () => {
@@ -119,7 +120,7 @@ describe('UsageQuotaItem with a usage package', () => {
   const creditQuota = (
     meters: TQuotaResponse['meters'],
     pkg: TQuotaResponse['package'] = { key: 'standard', name: 'Standard', unlimited: false },
-  ) => ({ tenantId: 't', unit: 'credits', enforced: true, package: pkg, meters }) as TQuotaResponse;
+  ) => ({ tenantId: 't', unit: 'credits', package: pkg, meters }) as TQuotaResponse;
 
   it('shows the remaining allowance in taka, week first, under the package name', () => {
     render(
@@ -150,6 +151,21 @@ describe('UsageQuotaItem with a usage package', () => {
     );
     expect(screen.getByRole('note')).toHaveTextContent('com_ui_usage_remaining');
     expect(screen.getByRole('progressbar')).toBeInTheDocument();
+  });
+
+  it('shows a credit meter with no limit as Unlimited', () => {
+    const open = {
+      ...credit('month', 2_000_000, 0),
+      limit: null,
+      remaining: null,
+      limitBdt: null,
+      remainingBdt: null,
+      unlimited: true,
+    };
+    render(<UsageQuotaItem quota={creditQuota([open], null)} />);
+    expect(screen.getByRole('note')).toHaveTextContent('com_ui_usage_unlimited');
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    expect(screen.queryByText(/no limit is applied/i)).toBeNull();
   });
 
   it("mentions the institution's pool only when it is used up", () => {

@@ -56,7 +56,7 @@ export interface DocumentReadDeps {
   readBytes: (file: DocumentFile) => Promise<Buffer | null>;
   getCached: (key: string) => Promise<DocumentReading | undefined>;
   setCached: (key: string, reading: DocumentReading) => Promise<void>;
-  /** Whether the allowance covers this many pages. Absent means usage is recorded, not enforced. */
+  /** Whether the allowance covers this many pages. Absent means pages are not metered. */
   checkAllowance?: (pages: number) => Promise<boolean>;
   recordCharge: (charge: DocumentCharge) => Promise<void>;
   uploadToSandbox: (name: string, content: string) => Promise<SandboxFileRef>;

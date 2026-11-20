@@ -48,7 +48,7 @@ describe('usageQuota for users outside any institution (replica set)', () => {
       ...overrides,
     });
 
-  /** The individuals account with a trial package, enforced from its first policy. */
+  /** The individuals account with a trial package and its first policy. */
   const configureTrial = async (trialCredits = 1_000_000) => {
     await createPackage('trial', trialCredits);
     await models.UsageAccount.create({
@@ -60,7 +60,6 @@ describe('usageQuota for users outside any institution (replica set)', () => {
     await models.UsagePolicy.create({
       tenantId,
       version: 1,
-      mode: 'enforce',
       timezone: 'UTC',
       limits: {},
       inputSafetyFactor: 1,
@@ -197,49 +196,21 @@ describe('usageQuota for users outside any institution (replica set)', () => {
     expect(console.members[0]).toMatchObject({ week: { used: 400 }, month: { used: 400 } });
   });
 
-  it('creates the account with its first policy and counts it as enforcing', async () => {
+  it('creates the account with its first policy, ignoring a mode sent by an older console', async () => {
     const { policy } = await usagePolicy.createUsagePolicy({
       tenantId,
       expectedVersion: 0,
-      input: { mode: 'enforce' },
+      input: { mode: 'shadow' },
       actorId: new mongoose.Types.ObjectId(),
       reason: 'turn on individuals',
     });
-    expect(policy).toMatchObject({ tenantId, version: 1, mode: 'enforce' });
+    expect(policy).toMatchObject({ tenantId, version: 1 });
+    expect(policy).not.toHaveProperty('mode');
     expect(await models.UsageAccount.findOne({ tenantId }).lean()).toMatchObject({
       name: 'Individuals',
       usagePolicyVersion: 1,
     });
     expect(await models.Institution.countDocuments({})).toBe(0);
-    expect(await quota.assertEnforcementTopology()).toMatchObject({ enforcing: true });
-  });
-
-  it('counts only individuals’ billed calls in the shadow gate, not platform staff', async () => {
-    const individual = await models.User.create({
-      email: 'solo@example.test',
-      accountScope: 'standalone',
-    });
-    const staff = await models.User.create({ email: 'staff@example.test' });
-    const call = (user, messageId) => ({
-      user: user._id,
-      context: 'message',
-      conversationId: 'conv',
-      messageId,
-      requestKey: `conv:${messageId}`,
-      providerKey: 'openrouter',
-      modelKey: 'openai/gpt-5.6-luna',
-      tokenType: 'prompt',
-      rawAmount: -10,
-      tokenValue: -2,
-      createdAt: new Date(),
-    });
-    await models.Transaction.collection.insertMany([
-      call(individual, 'solo-1'),
-      call(individual, 'solo-2'),
-      call(staff, 'staff-1'),
-      { ...call(individual, 'uni-1'), tenantId: 'uni' },
-    ]);
-    const { metrics } = await quota.getShadowReadiness({ tenantId });
-    expect(metrics.ledgerCalls).toBe(2);
+    expect(await quota.checkQuotaTopology()).toEqual({ transactionCapable: true });
   });
 });

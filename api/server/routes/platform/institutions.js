@@ -33,7 +33,6 @@ const {
   listUsageByMember,
   listUsageByModel,
 } = require('~/server/services/institutionUsage');
-const { getShadowReadiness } = require('~/server/services/usageQuota');
 const {
   TenantAgentAccessError,
   getTenantAgentAccess,
@@ -614,15 +613,6 @@ router.get('/:tenantId/quota', async (req, res) => {
     }
     logger.error('[platform/institutions] quota read failed', error);
     return res.status(500).json({ error: 'Failed to load quota health' });
-  }
-});
-
-router.get('/:tenantId/quota/readiness', async (req, res) => {
-  try {
-    return res.status(200).json(await getShadowReadiness({ tenantId: req.params.tenantId }));
-  } catch (error) {
-    logger.error('[platform/institutions] quota readiness failed', error);
-    return res.status(500).json({ error: 'Failed to build quota readiness report' });
   }
 });
 

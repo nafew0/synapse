@@ -10,19 +10,18 @@ const {
 } = require('~/server/services/usageQuota');
 
 /**
- * Local harness for the usage quota: seed an enforcing policy with small limits,
- * read a member's remaining allowance, and clear buckets between runs.
+ * Local harness for the usage quota: seed a policy with small limits, read a
+ * member's remaining allowance, and clear buckets between runs.
  *
- * Enforce mode needs MongoDB transactions, i.e. a replica set or mongos. A
- * standalone mongod raises QUOTA_ENFORCEMENT_REQUIRES_TRANSACTIONS on the first
- * request instead of enforcing.
+ * Limits are always enforced, which needs MongoDB transactions, i.e. a replica
+ * set or mongos. A standalone mongod raises QUOTA_ENFORCEMENT_REQUIRES_TRANSACTIONS
+ * on the first limited request instead of enforcing.
  */
 const USAGE = `
 Usage: node config/usage-quota.js <command> [options]
 
   status  --tenant=<id> [--email=<user>]   Show the policy and a member's remaining allowance
-  seed    --tenant=<id> [limits]           Create the NEXT policy version in enforce mode
-  shadow  --tenant=<id>                    Create the next version back in shadow mode
+  seed    --tenant=<id> [limits]           Create the NEXT policy version with these limits
   reset   --tenant=<id> [--email=<user>]   Delete usage buckets so limits start fresh
 
 Limit options for 'seed' (omit for values small enough to trip in a few messages):
@@ -98,9 +97,8 @@ async function status(args) {
   const policy = await activePolicy(tenantId, institution);
   console.purple(`\nInstitution ${tenantId} — policy version ${institution.usagePolicyVersion}`);
   if (!policy) {
-    console.orange('  No policy document for that version; defaults apply (shadow, no limits).');
+    console.orange('  No policy document for that version; defaults apply (no limits).');
   } else {
-    console.log(`  mode      ${policy.mode}`);
     console.log(`  period    ${JSON.stringify(policy.period)}`);
     console.log(`  limits    ${JSON.stringify(policy.limits)}`);
   }
@@ -116,11 +114,11 @@ async function status(args) {
     fail(`No user "${args.email}" in tenant "${tenantId}".`);
   }
   const quota = await getMemberQuota({ tenantId, userId: user._id });
-  console.purple(`\nAllowance for ${args.email} (enforced: ${quota.enforced})`);
+  console.purple(`\nAllowance for ${args.email}`);
   quota.meters.forEach((meter) => console.log(describeMeter(meter)));
 }
 
-async function seed(args, mode) {
+async function seed(args) {
   const tenantId = args.tenant;
   const institution = await requireInstitution(tenantId);
   const current = institution.usagePolicyVersion ?? 0;
@@ -135,23 +133,20 @@ async function seed(args, mode) {
     modelTokens: [],
   };
 
-  /** `mode` is immutable on the schema, so switching between shadow and enforce
-   *  is always a NEW version rather than an update. */
   await models.UsagePolicy.create({
     tenantId,
     version,
-    mode,
     timezone: institution.timezone || 'Asia/Dhaka',
     period: ['calendar_month', 'calendar_week'],
     limits,
     inputSafetyFactor: 1,
     inputSafetyTokens: 0,
     effectiveAt: new Date(),
-    reason: `local quota harness (${mode})`,
+    reason: 'local quota harness',
   });
   await models.Institution.updateOne({ tenantId }, { $set: { usagePolicyVersion: version } });
 
-  console.green(`\nPolicy v${version} created for ${tenantId} in ${mode} mode.`);
+  console.green(`\nPolicy v${version} created for ${tenantId}.`);
   console.log(`  limits ${JSON.stringify(limits)}`);
   console.orange('\nRestart the backend so the new policy is picked up, then send a few messages.');
 }
@@ -195,7 +190,7 @@ async function reset(args) {
     .catch(() => false);
   if (!supported && (command === 'seed' || command === 'status')) {
     console.orange(
-      '\nWARNING: this MongoDB is standalone. Enforce mode needs transactions —\n' +
+      '\nWARNING: this MongoDB is standalone. Limits need transactions —\n' +
         'requests will fail with QUOTA_ENFORCEMENT_REQUIRES_TRANSACTIONS rather than\n' +
         'be refused by the quota. Run mongod with --replSet to test enforcement.',
     );
@@ -204,9 +199,7 @@ async function reset(args) {
   if (command === 'status') {
     await status(args);
   } else if (command === 'seed') {
-    await seed(args, 'enforce');
-  } else if (command === 'shadow') {
-    await seed(args, 'shadow');
+    await seed(args);
   } else if (command === 'reset') {
     await reset(args);
   } else {

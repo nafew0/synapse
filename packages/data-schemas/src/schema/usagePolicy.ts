@@ -5,7 +5,6 @@ const usagePolicySchema: Schema<IUsagePolicy> = new Schema<IUsagePolicy>(
   {
     tenantId: { type: String, required: true, trim: true, index: true, immutable: true },
     version: { type: Number, required: true, min: 1, immutable: true },
-    mode: { type: String, enum: ['shadow', 'enforce'], default: 'shadow', immutable: true },
     timezone: {
       type: String,
       required: true,

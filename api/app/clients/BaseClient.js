@@ -863,8 +863,7 @@ class BaseClient {
         /** An aborted generation still consumed whatever the provider produced
          * before the stop, so settle it when usage is known and release only
          * when nothing was billed. Leaving the reservation untouched would hold
-         * the tenant's capacity until the TTL expired and would count against
-         * the shadow stale-reservation rate. */
+         * the tenant's capacity until the TTL expired. */
         const abortedUsage =
           (error?.name === 'AbortError' || this.abortController?.signal?.aborted === true) &&
           this.getQuotaUsage != null
