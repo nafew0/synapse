@@ -9,6 +9,10 @@ const {
   createFirecrawlTool,
   resolveServicePricing,
   getEmbeddingBilling,
+  INSTITUTION_KB_TOOL_NAME,
+  createInstitutionKbTool,
+  getKbRagApiUrl,
+  getInstitutionKbCatalog,
   isFileAuthoringTool,
   READ_DOCUMENT_TOOL_NAME,
   resolveFirecrawlBudgetScope,
@@ -71,7 +75,13 @@ const { getUserPluginAuthValue } = require('~/server/services/PluginService');
 const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { getMCPServerTools, checkCapability } = require('~/server/services/Config');
 const { getMCPServersRegistry } = require('~/config');
-const { getRoleByName, setMemory, deleteMemory, getFormattedMemories } = require('~/models');
+const {
+  getRoleByName,
+  setMemory,
+  deleteMemory,
+  listReadyKbCatalog,
+  getFormattedMemories,
+} = require('~/models');
 
 /**
  * Validates the availability and authentication of tools for a user based on environment variables or user-specific plugin authentication values.
@@ -448,6 +458,18 @@ const loadTools = async ({
       continue;
     } else if (isFileAuthoringTool(tool)) {
       requestedTools[tool] = async () => createChatFileTool(tool, options.req);
+      continue;
+    } else if (tool === INSTITUTION_KB_TOOL_NAME) {
+      const tenantId = options.req?.user?.tenantId;
+      const ragApiUrl = getKbRagApiUrl();
+      if (tenantId && ragApiUrl) {
+        const knownDocumentIds = async () =>
+          new Set(
+            (await getInstitutionKbCatalog(tenantId, listReadyKbCatalog)).map(({ id }) => id),
+          );
+        requestedTools[tool] = async () =>
+          createInstitutionKbTool({ ragApiUrl, tenantId, knownDocumentIds });
+      }
       continue;
     } else if (isFirecrawlTool(tool)) {
       requestedTools[tool] = async () =>

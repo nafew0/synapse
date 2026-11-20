@@ -52,6 +52,16 @@ import { createConversationTagMethods, type ConversationTagMethods } from './con
 import { createMessageMethods, CLIENT_MESSAGE_SELECT, type MessageMethods } from './message';
 import { createConversationMethods, type ConversationMethods } from './conversation';
 import { createChatProjectMethods, type ChatProjectMethods } from './chatProject';
+import { createKbMethods, type KbMethods } from './kb';
+export type {
+  KbUsage,
+  KbCatalogEntry,
+  KbFileInput,
+  KbQueuedResult,
+  FailKbIngestInput,
+  CreateKbDocumentInput,
+  CompleteKbIngestInput,
+} from './kb';
 export type {
   AssignConversationToProjectResult,
   ChatProjectSortBy,
@@ -198,6 +208,7 @@ export type AllMethods = UserMethods &
   MessageMethods &
   ConversationMethods &
   ChatProjectMethods &
+  KbMethods &
   TxMethods &
   TransactionMethods &
   SpendTokensMethods &
@@ -341,6 +352,7 @@ export function createMethods(
     ...messageMethods,
     ...conversationMethods,
     ...createChatProjectMethods(mongoose),
+    ...createKbMethods(mongoose),
     /* Tier 3 */
     ...txMethods,
     ...transactionMethods,
@@ -393,6 +405,7 @@ export type {
   MessageMethods,
   ConversationMethods,
   ChatProjectMethods,
+  KbMethods,
   TxMethods,
   TransactionMethods,
   SpendTokensMethods,

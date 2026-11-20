@@ -76,6 +76,7 @@ export * from './plugins';
 export * from './endpoints';
 /* Files */
 export * from './files';
+export * from './kb';
 /* Storage */
 export * from './storage';
 /* Tools */

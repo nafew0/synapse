@@ -9,8 +9,13 @@ import {
   createUsagePackageModel,
   createUsagePricingModel,
 } from './usagePackage';
+import {
+  createBdrenAllowanceModel,
+  createBdrenEventModel,
+  createBdrenUploadTicketModel,
+} from './bdren';
+import { createKbDocumentModel, createKbDocumentVersionModel, createKbIngestJobModel } from './kb';
 import { createAgentTriggerLaneSequenceModel } from './triggerLaneSequence';
-import { createBdrenAllowanceModel, createBdrenEventModel } from './bdren';
 import { createInstitutionImportJobModel } from './institutionImportJob';
 import { createAdminScopeAssignmentModel } from './adminScopeAssignment';
 import { createSkillSyncCredentialModel } from './skillSyncCredential';
@@ -76,6 +81,9 @@ export function createModels(mongoose: typeof import('mongoose')): {
   Balance: ReturnType<typeof createBalanceModel>;
   Conversation: ReturnType<typeof createConversationModel>;
   ChatProject: ReturnType<typeof createChatProjectModel>;
+  KbDocument: ReturnType<typeof createKbDocumentModel>;
+  KbDocumentVersion: ReturnType<typeof createKbDocumentVersionModel>;
+  KbIngestJob: ReturnType<typeof createKbIngestJobModel>;
   Message: ReturnType<typeof createMessageModel>;
   Agent: ReturnType<typeof createAgentModel>;
   AgentApiKey: ReturnType<typeof createAgentApiKeyModel>;
@@ -127,6 +135,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
   UsageDaily: ReturnType<typeof createUsageDailyModel>;
   BdrenAllowance: ReturnType<typeof createBdrenAllowanceModel>;
   BdrenEvent: ReturnType<typeof createBdrenEventModel>;
+  BdrenUploadTicket: ReturnType<typeof createBdrenUploadTicketModel>;
   UsageReservation: ReturnType<typeof createUsageReservationModel>;
   UsageWarning: ReturnType<typeof createUsageWarningModel>;
   AdminScopeAssignment: ReturnType<typeof createAdminScopeAssignmentModel>;
@@ -141,6 +150,9 @@ export function createModels(mongoose: typeof import('mongoose')): {
     Balance: createBalanceModel(mongoose),
     Conversation: createConversationModel(mongoose),
     ChatProject: createChatProjectModel(mongoose),
+    KbDocument: createKbDocumentModel(mongoose),
+    KbDocumentVersion: createKbDocumentVersionModel(mongoose),
+    KbIngestJob: createKbIngestJobModel(mongoose),
     Message: createMessageModel(mongoose),
     Agent: createAgentModel(mongoose),
     AgentApiKey: createAgentApiKeyModel(mongoose),
@@ -192,6 +204,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
     UsageDaily: createUsageDailyModel(mongoose),
     BdrenAllowance: createBdrenAllowanceModel(mongoose),
     BdrenEvent: createBdrenEventModel(mongoose),
+    BdrenUploadTicket: createBdrenUploadTicketModel(mongoose),
     UsageReservation: createUsageReservationModel(mongoose),
     UsageWarning: createUsageWarningModel(mongoose),
     AdminScopeAssignment: createAdminScopeAssignmentModel(mongoose),

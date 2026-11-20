@@ -1,5 +1,5 @@
 import { Schema } from 'mongoose';
-import type { IBdrenAllowance, IBdrenEvent } from '~/types';
+import type { IBdrenAllowance, IBdrenEvent, IBdrenUploadTicket } from '~/types';
 
 export const bdrenAllowanceSchema: Schema<IBdrenAllowance> = new Schema<IBdrenAllowance>(
   {
@@ -23,3 +23,23 @@ export const bdrenEventSchema: Schema<IBdrenEvent> = new Schema<IBdrenEvent>({
   type: { type: String, required: true },
   receivedAt: { type: Date, required: true, expires: 60 * 60 * 24 * 7 },
 });
+
+export const bdrenUploadTicketSchema: Schema<IBdrenUploadTicket> = new Schema<IBdrenUploadTicket>(
+  {
+    ticketId: { type: String, required: true, unique: true },
+    tenantId: { type: String, required: true, immutable: true },
+    organizationId: { type: String, required: true },
+    actorUserId: { type: String, required: true },
+    actorSubject: { type: String, required: true },
+    filename: { type: String, required: true },
+    extension: { type: String, required: true },
+    sizeBytes: { type: Number, required: true },
+    title: { type: String },
+    docType: { type: String },
+    documentId: { type: String },
+    /** Kept for an hour past expiry so a late use is told "expired", then removed. */
+    expiresAt: { type: Date, required: true, expires: 60 * 60 },
+    usedAt: { type: Date, default: null },
+  },
+  { timestamps: { createdAt: true, updatedAt: false } },
+);

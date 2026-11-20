@@ -57,3 +57,25 @@ export interface IBdrenEvent {
   type: string;
   receivedAt: Date;
 }
+
+/**
+ * A one-file upload ticket for the institution knowledge base. The signed URL names the ticket;
+ * the ticket fixes the tenant, the acting admin, the file name and size, and is spent on first use.
+ */
+export interface IBdrenUploadTicket {
+  ticketId: string;
+  tenantId: string;
+  organizationId: string;
+  actorUserId: string;
+  actorSubject: string;
+  filename: string;
+  extension: string;
+  sizeBytes: number;
+  title?: string;
+  docType?: string;
+  /** Set when the upload adds a version to an existing document instead of creating one. */
+  documentId?: string;
+  expiresAt: Date;
+  usedAt?: Date | null;
+  createdAt?: Date;
+}

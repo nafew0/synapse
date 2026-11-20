@@ -12,3 +12,4 @@ export * from './webhook';
 export * from './meter';
 export * from './managed';
 export * from './usage';
+export * from './admin';
