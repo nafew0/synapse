@@ -1,3 +1,33 @@
+diff --git a/node_modules/@librechat/agents/dist/cjs/agents/AgentContext.cjs b/node_modules/@librechat/agents/dist/cjs/agents/AgentContext.cjs
+index ffd31a8..44b79f4 100644
+--- a/node_modules/@librechat/agents/dist/cjs/agents/AgentContext.cjs
++++ b/node_modules/@librechat/agents/dist/cjs/agents/AgentContext.cjs
+@@ -311,10 +311,13 @@ The following tools are available exclusively through the \`${programmaticTool.n
+ 		const tailIndex = this.getPromptCacheDynamicTailIndex(messages, promptCacheProvider);
+ 		const stablePrefix = messages.slice(0, tailIndex);
+ 		const trailingMessages = messages.slice(tailIndex);
++		const ttl = this.getPromptCacheTtl(promptCacheProvider);
++		const cacheablePrefix = this.addStablePromptCacheMarkers(stablePrefix, ttl);
++		const cacheableTrailingMessages = require_cache.addTailCacheControl(trailingMessages, ttl);
+ 		return [
+-			...this.addStablePromptCacheMarkers(stablePrefix, this.getPromptCacheTtl(promptCacheProvider)),
++			...cacheablePrefix,
+ 			...tail,
+-			...trailingMessages
++			...cacheableTrailingMessages
+ 		];
+ 	}
+ 	getPromptCacheDynamicTailIndex(messages, promptCacheProvider) {
+@@ -328,8 +331,7 @@ The following tools are available exclusively through the \`${programmaticTool.n
+ 		return messages.length;
+ 	}
+ 	addStablePromptCacheMarkers(messages, ttl) {
+-		if (messages.length <= 1) return messages;
+-		return [messages[0], ...require_cache.addCacheControlToStablePrefixMessages(messages.slice(1), 2, ttl)];
++		return [...require_cache.stripAnthropicCacheControl(messages.slice(0, 1)), ...require_cache.addCacheControlToStablePrefixMessages(messages.slice(1), 1, ttl)];
+ 	}
+ 	getPromptCacheProvider() {
+ 		if (this.provider === "anthropic") return this.clientOptions?.promptCache === true ? "anthropic" : void 0;
 diff --git a/node_modules/@librechat/agents/dist/cjs/llm/openai/index.cjs b/node_modules/@librechat/agents/dist/cjs/llm/openai/index.cjs
 index de7609a..eb22ff5 100644
 --- a/node_modules/@librechat/agents/dist/cjs/llm/openai/index.cjs
@@ -16,6 +46,45 @@ index de7609a..eb22ff5 100644
  		if (this.includeReasoningContent !== true && this.includeReasoningDetails !== true) {
  			yield* super._streamResponseChunks(messages, options, runManager);
  			return;
+diff --git a/node_modules/@librechat/agents/dist/esm/agents/AgentContext.mjs b/node_modules/@librechat/agents/dist/esm/agents/AgentContext.mjs
+index aa116d1..30d4099 100644
+--- a/node_modules/@librechat/agents/dist/esm/agents/AgentContext.mjs
++++ b/node_modules/@librechat/agents/dist/esm/agents/AgentContext.mjs
+@@ -2,7 +2,7 @@ import { ANTHROPIC_TOOL_TOKEN_MULTIPLIER, DEFAULT_TOOL_TOKEN_MULTIPLIER } from "
+ import "../common/enum.mjs";
+ import "../common/index.mjs";
+ import { apportionTokenCounts } from "../utils/tokens.mjs";
+-import { addCacheControlToStablePrefixMessages, addTailCacheControl, buildAnthropicCacheControl, buildBedrockCachePoint, cloneMessage, resolveBedrockPromptCacheTtl, resolvePromptCacheTtl } from "../messages/cache.mjs";
++import { addCacheControlToStablePrefixMessages, addTailCacheControl, buildAnthropicCacheControl, buildBedrockCachePoint, cloneMessage, resolveBedrockPromptCacheTtl, resolvePromptCacheTtl, stripAnthropicCacheControl } from "../messages/cache.mjs";
+ import { clampCalibrationRatio, createPruneMessages } from "../messages/prune.mjs";
+ import { syncBudgetDerivedFields } from "../messages/budget.mjs";
+ import "../messages/index.mjs";
+@@ -311,10 +311,13 @@ The following tools are available exclusively through the \`${programmaticTool.n
+ 		const tailIndex = this.getPromptCacheDynamicTailIndex(messages, promptCacheProvider);
+ 		const stablePrefix = messages.slice(0, tailIndex);
+ 		const trailingMessages = messages.slice(tailIndex);
++		const ttl = this.getPromptCacheTtl(promptCacheProvider);
++		const cacheablePrefix = this.addStablePromptCacheMarkers(stablePrefix, ttl);
++		const cacheableTrailingMessages = addTailCacheControl(trailingMessages, ttl);
+ 		return [
+-			...this.addStablePromptCacheMarkers(stablePrefix, this.getPromptCacheTtl(promptCacheProvider)),
++			...cacheablePrefix,
+ 			...tail,
+-			...trailingMessages
++			...cacheableTrailingMessages
+ 		];
+ 	}
+ 	getPromptCacheDynamicTailIndex(messages, promptCacheProvider) {
+@@ -328,8 +331,7 @@ The following tools are available exclusively through the \`${programmaticTool.n
+ 		return messages.length;
+ 	}
+ 	addStablePromptCacheMarkers(messages, ttl) {
+-		if (messages.length <= 1) return messages;
+-		return [messages[0], ...addCacheControlToStablePrefixMessages(messages.slice(1), 2, ttl)];
++		return [...stripAnthropicCacheControl(messages.slice(0, 1)), ...addCacheControlToStablePrefixMessages(messages.slice(1), 1, ttl)];
+ 	}
+ 	getPromptCacheProvider() {
+ 		if (this.provider === "anthropic") return this.clientOptions?.promptCache === true ? "anthropic" : void 0;
 diff --git a/node_modules/@librechat/agents/dist/esm/llm/openai/index.mjs b/node_modules/@librechat/agents/dist/esm/llm/openai/index.mjs
 index 4f7280e..11b14c8 100644
 --- a/node_modules/@librechat/agents/dist/esm/llm/openai/index.mjs
