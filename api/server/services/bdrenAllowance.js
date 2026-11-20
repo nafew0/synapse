@@ -8,6 +8,8 @@ const {
   createAllowanceClient,
   createAllowanceService,
   createProvisioner,
+  reserveMoveSeat,
+  releaseMoveSeat,
   createMemberMover,
   createMemberPlacer,
   createWebhookHandler,
@@ -25,32 +27,12 @@ const place = createMemberPlacer({
     require('~/server/services/institutionMembers').activateProvisionedMember(args),
 });
 
-const members = () => require('~/server/services/institutionMembers');
 const recordAuditEntry = (input, options) => require('~/models').recordAuditEntry(input, options);
 
-/** Moves an existing person, with their data, between institutions; seats and audiences through the member services. */
+/** Moves an existing person, with their data, between institutions; each seat change is applied once per move. */
 const mover = createMemberMover({
-  reserveSeat: async (tenantId) => {
-    try {
-      await members().reserveActiveSeat(tenantId);
-      return true;
-    } catch (error) {
-      if (error?.statusCode === 409) {
-        return false;
-      }
-      throw error;
-    }
-  },
-  /** A counter already at zero has nothing to give back; anything else is retried with the move. */
-  releaseSeat: async (tenantId) => {
-    try {
-      await members().releaseActiveSeat(tenantId);
-    } catch (error) {
-      if (!String(error?.message).startsWith('Unable to release an active seat')) {
-        throw error;
-      }
-    }
-  },
+  reserveSeat: reserveMoveSeat,
+  releaseSeat: releaseMoveSeat,
   syncMember: (args) => require('~/server/services/tenantAgentAccess').syncTenantMemberSafely(args),
   clearOverrides: (tenantId) =>
     require('~/server/services/Config/app').clearOverrideCache(tenantId),

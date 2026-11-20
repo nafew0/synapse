@@ -63,13 +63,13 @@ A refused join out of X still leaves X.
 | presets (`Preset`) | `user` | moved | moved | Merged on `presetId`. |
 | memoryentries (`MemoryEntry`) | `userId` | moved | moved | |
 | files (`File`) | `user` | moved | moved, except files any agent staying in X uses (any author); those go to the heir | `storageTenantId` / `storageUserId` record the stored object's key (see below). |
-| agents (`Agent`) | `author` | moved | private ones moved; shared ones stay, owned by the heir | Shared = any ACL entry in X for a principal other than the person. `avatar.storageTenantId` keeps the avatar key's tenant. |
+| agents (`Agent`) | `author` | moved | private ones moved; shared ones stay, owned by the heir | Shared = any ACL entry in X for a principal other than the person. `avatar.storageTenantId` keeps the avatar key's tenant. A moving agent loses the names (and tool keys and tool options) of MCP servers in the source tenant that do not move with it, since in the target the name would reach someone else's server; servers from `librechat.yaml` are kept. Audited as `removedServers`. |
 | actions (`Action`) | `user` | moved | moved with their agent (or with no agent) | Actions on a kept or a colleague's agent stay, owned by the heir. |
 | agentapikeys (`AgentApiKey`) | `userId` | moved | moved | |
 | assistants (`Assistant`) | `user` | moved | moved | |
 | promptgroups (`PromptGroup`) | `author` | moved | private moved; shared stay (heir) | |
 | prompts (`Prompt`) | `author` | moved | moved with their group | Prompts in a shared or a colleague's group stay, owned by the heir. |
-| mcpservers (`MCPServer`) | `author` | moved | private moved; shared stay (heir) | `serverName` is unique per tenant: a moving server whose name is taken is renamed `<name>-moved` (and the person's moving agents' `mcpServerNames` and tool keys follow). |
+| mcpservers (`MCPServer`) | `author` | moved | private moved; shared stay (heir) | `serverName` is unique per tenant: a moving server whose name is taken is renamed `<name>-moved`; the person's moving agents' `mcpServerNames`, tool keys and tool options, their stored credentials (`PluginAuth.pluginKey` `mcp_<name>`) and OAuth tokens (`Token.identifier` `mcp:<name>`, `:client`, `:refresh`) follow before they move. |
 | skills (`Skill`) | `author` | moved | private moved; shared stay (heir) | Unique per author and tenant: a taken name is renamed `<name>-moved`. |
 | skillfiles (`SkillFile`) | via `skillId` | only with a skill that moved | only with a skill that moved; a kept skill's files go to the heir | `storageTenantId` / `storageUserId` as for files. |
 | keys (`Key`) | `userId` | moved | moved | |
@@ -78,7 +78,7 @@ A refused join out of X still leaves X.
 | sessions (`Session`), tokens (`Token`) | `user` / `userId` | moved | moved | Keeps the person signed in. |
 | balances (`Balance`) | `user` | moved | moved | Current state, not history. |
 | aclentries (`AclEntry`) on moved resources | `resourceId` | moved | moved | The person's and public entries move. Grants to users or groups outside the target tenant, and to roles, are dropped and audited (`droppedGrants`). |
-| aclentries (`AclEntry`) of the person on what stays | `principalId` | none | copied to the heir (when a user), then deleted | |
+| aclentries (`AclEntry`) of the person on what stays | `principalId` | none | copied to the heir (when a user), then deleted | Only on what the person authored and shared; never on a colleague's prompt group they merely wrote in. |
 | aclentries (`AclEntry`) for the person in X | `principalId` | none | deleted | Their access to X's agents, prompts, etc. Never on anything of theirs left behind by a clash. |
 | groups (`Group`) in X | `memberIds` | none | person pulled | Tenant agent audience is also re-synced (`syncTenantMember`). |
 | configs (`Config`, principal `user`) in X | `principalId` | none | deleted | Per-user settings X's admins set; override caches of both tenants cleared. |
@@ -141,9 +141,19 @@ cached allowance is refetched because its quota account changed. Transactions ke
   (`plan`), so a resumed move applies the same split even after ACL entries have moved.
 - **Seat first**: a join reserves its seat before moving anything (`seatReserved`); a full
   institution refuses the move with nothing moved. Any later refusal gives the seat back.
-- **Fence**: `User.movingUntil` is set for the lease while the move runs; `requireJwtAuth` answers
+- **Fence**: `User.movingUntil` is set for the lease while the move runs and renewed with it (every
+  checkpoint, and every 100 records inside a long step); `requireJwtAuth` answers
   `503 ACCOUNT_MOVING` with `Retry-After: 5` until it is lifted, so no new request writes into the old
-  tenant.
+  tenant. Any failure lifts it at once. The client (`packages/data-provider/src/request.ts`) waits as
+  asked and retries (at most 6 times), shows `com_ui_account_moving` once per burst
+  (`AccountMovingNotice`), and never signs the person out for it (`AuthContext`).
+- **Failure limit**: each trigger's attempt is counted. After 5 attempts, or 24 hours, the move is
+  marked `failed`: the fence is lifted, a seat it took and never used is given back, a critical
+  platform alert (`member_move:<moveId>`) tells a superadmin what was done, and the audit records
+  it. A later review can start a fresh move.
+- **Admin changes wait**: suspending, reactivating or changing the role of a member who is moving
+  answers 409. The seat to give back is decided by the member's status read in the same write that
+  switches them, not by what it was when the move started.
 - **Transaction** when the deployment supports it (replica set) and the move is light (at most
   5,000 conversations, messages and files): every collection step and the user change commit
   together. A transaction running past 10 s, or failing (for example on a duplicate key), falls back
@@ -151,10 +161,20 @@ cached allowance is refetched because its quota account changed. Transactions ke
 - **Sequential**: each step is applied with one `updateMany` and checkpointed (`completed`,
   `moved.<step>`), guarded by the lease id. A retry skips completed steps; a step half-applied
   before a crash matches only what is left, because every filter includes the old tenant.
-- **User last**: the user change matches `{ _id, tenantId: from }` and must match one document. If
-  someone else placed the person elsewhere meanwhile, the move is stopped before `userSwitched` and
-  redirected: everything in the old tenant and everything already moved is planned afresh and moved
-  to where the person now is, the reserved seat is given back, and the record ends `redirected`.
+- **User last**: before the switch the move checks again that the target holds no other account of
+  the person's (also checked before the first step); one appearing mid-move refuses the move with
+  `duplicate_account` and brings the data back. The user change matches `{ _id, tenantId: from }`
+  and must match one document. If someone else placed the person elsewhere meanwhile, the move is
+  stopped before `userSwitched` and redirected: each source is planned afresh and moved to where the
+  person now is. Leave rules (kept items, heir, clean-up) apply only to `from`, and only when the
+  person was a member there; the move's own target was never theirs, so everything in it comes
+  back. The reserved seat is given back and the record ends `redirected`.
+- **Seats once per move**: a seat is taken and given back through `reserveMoveSeat` /
+  `releaseMoveSeat` (`packages/api/src/bdren/seats.ts`), which record `reserve:<moveId>` /
+  `release:<moveId>` on the institution (`seatOps`) in the same update as the counter, so a crash
+  between the counter change and the move's checkpoint cannot count a seat twice. A release that
+  finds the counter already at zero is logged as drift and audited (`seatDrift`), not taken as
+  success.
 - Then seat release (recorded only once it succeeded; a failure is retried with the move), audience
   sync, override-cache clearing, and a sweep of every step.
 - **Late sweep**: a request or stream that started under the old tenant can still write after the
@@ -164,9 +184,8 @@ cached allowance is refetched because its quota account changed. Transactions ke
   becoming a duplicate. It only runs while the person is still in the target.
 - A duplicate key the merge and renames do not cover leaves that record in place, counted in
   `conflicts` and the audit (`conflicts_<step>`); the person keeps their grants on it.
-- Known windows: a crash between taking a seat and recording it can leave the seat counter off by
-  one; a duplicate account created in the target after the pre-check makes the user change fail
-  until it is resolved by hand.
+- Known window: when a duplicate account appears after the leave-only steps ran, the data comes
+  back but items already handed to the heir stay with the heir.
 
 ## Audit
 

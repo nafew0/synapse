@@ -579,3 +579,40 @@ describe('AuthContextProvider — custom role detection and fetching', () => {
     jest.useRealTimers();
   });
 });
+
+describe('AuthContextProvider — account moving between institutions', () => {
+  const { useGetUserQuery } = jest.requireMock('~/data-provider') as {
+    useGetUserQuery: jest.Mock;
+  };
+
+  afterEach(() => {
+    useGetUserQuery.mockImplementation(() => ({ data: undefined, isError: false, error: null }));
+    mockNavigate.mockClear();
+  });
+
+  it('does not sign the person out while their account is moving', () => {
+    useGetUserQuery.mockImplementation(() => ({
+      data: undefined,
+      isError: true,
+      error: { message: 'moving', response: { status: 503, data: { code: 'ACCOUNT_MOVING' } } },
+    }));
+
+    renderProvider();
+
+    expect(mockNavigate).not.toHaveBeenCalledWith(expect.stringContaining('/login'), {
+      replace: true,
+    });
+  });
+
+  it('still signs out on any other user lookup failure', () => {
+    useGetUserQuery.mockImplementation(() => ({
+      data: undefined,
+      isError: true,
+      error: { message: 'gone', response: { status: 401 } },
+    }));
+
+    renderProvider();
+
+    expect(mockNavigate).toHaveBeenCalledWith(expect.stringContaining('/login'), { replace: true });
+  });
+});

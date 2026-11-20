@@ -80,7 +80,7 @@ export interface IBdrenUploadTicket {
   createdAt?: Date;
 }
 
-export type MemberMoveStatus = 'running' | 'done' | 'refused' | 'redirected';
+export type MemberMoveStatus = 'running' | 'done' | 'refused' | 'redirected' | 'failed';
 
 /** A moving item renamed because its name is taken in the target tenant. */
 export interface MemberMoveRename {
@@ -97,8 +97,10 @@ export interface MemberMoveRename {
 export interface MemberMovePlan {
   /** Agents (`_id`) shared in the institution: they stay, as do their files and actions. */
   keptAgents: string[];
-  /** Prompt groups (`_id`) that stay: shared ones, and colleagues' groups the person wrote prompts in. */
+  /** The person's own prompt groups (`_id`) that stay because they shared them. */
   keptPromptGroups: string[];
+  /** Colleagues' prompt groups the person wrote prompts in: those prompts stay (and go to the heir), the groups are not theirs. */
+  foreignPromptGroups?: string[];
   keptMcpServers: string[];
   keptSkills: string[];
   /** The person's `file_id`s an agent staying in the institution uses (any author). */
@@ -115,6 +117,11 @@ export interface MemberMovePlan {
   /** Whether `heir` is a user, who then also gets the person's grants on what stays. */
   heirIsUser?: boolean;
   renames?: MemberMoveRename[];
+  /**
+   * MCP servers moving agents name that do not move with them: in the target the name would
+   * reach someone else's server, so the name, its tool keys and tool options are removed.
+   */
+  strippedServers?: Array<{ agent: string; name: string }>;
 }
 
 /**
@@ -140,6 +147,10 @@ export interface IMemberMove {
   userSwitched?: boolean;
   wasActive?: boolean;
   refusal?: string | null;
+  /** How many times a trigger has driven this move; past the limit it is marked failed. */
+  attempts?: number;
+  /** A seat release found the counter already at zero: the counter had drifted. */
+  seatDrift?: boolean;
   /** Grants on moved items to principals outside the target tenant, dropped: `type:id:principalType:principalId`. */
   droppedGrants?: string[];
   /** When the second sweep for writes that were in flight during the move is due, and when it ran. */

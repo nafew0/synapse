@@ -79,6 +79,15 @@ const institutionSchema: Schema<IInstitution> = new Schema<IInstitution>(
       },
       default: {},
     },
+    /**
+     * Seat changes member moves already applied (`reserve:<moveId>`, `release:<moveId>`), so a
+     * retried move never counts a seat twice. Bounded to the most recent entries.
+     */
+    seatOps: {
+      type: [String],
+      default: undefined,
+      select: false,
+    },
     createdBy: {
       type: Schema.Types.ObjectId,
       ref: 'User',

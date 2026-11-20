@@ -741,3 +741,48 @@ describe('axios 401 interceptor — Authorization header guard', () => {
     expect(getCallsForUrl('/api/messages')).toHaveLength(1);
   });
 });
+
+describe('axios interceptor — account moving between institutions', () => {
+  const moving = (url: string, retryAfter = '0') => ({
+    response: {
+      status: 503,
+      data: { code: 'ACCOUNT_MOVING' },
+      headers: { 'retry-after': retryAfter },
+    },
+    config: { url, headers: {} },
+  });
+
+  it('waits as asked and retries, announcing it, without refreshing or signing out', async () => {
+    setTokenHeader('token');
+    const hrefWrites = setTrackedWindowLocation({ pathname: '/c/new', href: 'http://x/c/new' });
+    const announced = jest.fn();
+    window.addEventListener('accountMoving', announced);
+    mockAdapter
+      .mockRejectedValueOnce(moving('/api/user'))
+      .mockImplementationOnce((config: InternalAxiosRequestConfig) =>
+        createAdapterResponse(config, { ok: true }),
+      );
+
+    const result = await dataRequest.get('/api/user');
+
+    window.removeEventListener('accountMoving', announced);
+    expect(result).toEqual({ ok: true });
+    expect(announced).toHaveBeenCalledTimes(1);
+    expect(getCallsForUrl('/api/auth/refresh')).toHaveLength(0);
+    expect(hrefWrites).toEqual([]);
+  });
+
+  it('gives up after a bounded number of retries', async () => {
+    setTokenHeader('token');
+    /** Like axios, the error carries the very config that was sent, retry count included. */
+    mockAdapter.mockImplementation((config: InternalAxiosRequestConfig) =>
+      Promise.reject({ ...moving('/api/convos'), config }),
+    );
+
+    await expect(dataRequest.get('/api/convos')).rejects.toMatchObject({
+      response: { status: 503 },
+    });
+    expect(getCallsForUrl('/api/convos')).toHaveLength(7);
+    expect(getCallsForUrl('/api/auth/refresh')).toHaveLength(0);
+  });
+});

@@ -1,8 +1,13 @@
 const mongoose = require('mongoose');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
-const { removeInstitutionMember } = require('./institutionMembers');
-const { Institution, User, Conversation } = require('~/db/models');
+const {
+  setInstitutionRole,
+  removeInstitutionMember,
+  suspendInstitutionMember,
+  reactivateInstitutionMember,
+} = require('./institutionMembers');
+const { Institution, User, Conversation, MemberMove } = require('~/db/models');
 
 const actor = { id: new mongoose.Types.ObjectId().toString(), name: 'Admin' };
 
@@ -80,5 +85,33 @@ describe('removing a member', () => {
       0,
     );
     expect(await Conversation.collection.countDocuments({ user: userId })).toBe(0);
+  });
+
+  it('refuses suspension, reactivation and role changes while the member is moving', async () => {
+    const userId = await memberOf('moving-uni', { bdrenOrganizationId: 'org-moving' });
+    await User.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(userId) },
+      { $set: { movingUntil: new Date(Date.now() + 60_000) } },
+    );
+    const args = { tenantId: 'moving-uni', userId, actor };
+
+    await expect(suspendInstitutionMember(args)).rejects.toMatchObject({ statusCode: 409 });
+    await expect(reactivateInstitutionMember(args)).rejects.toMatchObject({ statusCode: 409 });
+    await expect(setInstitutionRole({ ...args, role: 'USER' })).rejects.toMatchObject({
+      statusCode: 409,
+    });
+
+    await User.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(userId) },
+      { $unset: { movingUntil: '' } },
+    );
+    await MemberMove.collection.insertOne({
+      userId: new mongoose.Types.ObjectId(userId),
+      status: 'running',
+      from: 'moving-uni',
+      to: null,
+      reason: 'test',
+    });
+    await expect(suspendInstitutionMember(args)).rejects.toMatchObject({ statusCode: 409 });
   });
 });

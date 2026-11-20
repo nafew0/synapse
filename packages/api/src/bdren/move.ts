@@ -18,6 +18,8 @@ import type {
 } from '@librechat/data-schemas';
 import type { ClientSession, Model, UpdateQuery, mongo } from 'mongoose';
 import type { MemberRecord } from './place';
+import type { SeatRelease } from './seats';
+import { syncAlerts } from '~/admin/alerts/store';
 
 type Filter = mongo.Filter<mongo.Document>;
 type Pipeline = mongo.Document[];
@@ -47,13 +49,18 @@ export type MoveOutcome =
   | { status: 'busy' }
   /** Someone else changed the person's tenant mid-move; their data followed them there instead. */
   | { status: 'redirected'; to: string | null }
+  /** It kept failing; a superadmin was alerted and the account is no longer fenced. */
+  | { status: 'failed' }
   | { status: 'refused'; reason: MoveRefusal };
 
 export interface MoverDeps {
-  /** Takes a seat in an institution; `false` when it is full. */
-  reserveSeat: (tenantId: string) => Promise<boolean>;
-  /** Gives a seat back. Throws when it could not, so the move retries it later. */
-  releaseSeat: (tenantId: string) => Promise<void>;
+  /** Takes a seat for this move (idempotent per `moveId`); `false` when the institution is full. */
+  reserveSeat: (tenantId: string, moveId: string) => Promise<boolean>;
+  /**
+   * Gives this move's seat back (idempotent per `moveId`). `drift` when the counter was already at
+   * zero. Throws when it could not, so the move retries it later.
+   */
+  releaseSeat: (tenantId: string, moveId: string) => Promise<SeatRelease | void>;
   /** Brings the tenant's agent audience in line with the member's current state. */
   syncMember: (args: { tenantId: string; userId: string }) => Promise<unknown>;
   /** Drops cached config overrides of a tenant (`undefined`: no tenant). */
@@ -75,6 +82,11 @@ export interface MoverDeps {
   now?: () => Date;
   /** Whether the deployment runs transactions; probed once from the connection by default. */
   transactions?: () => Promise<boolean>;
+  /** After this many attempts, or this age, a move that keeps failing is marked failed. */
+  maxAttempts?: number;
+  maxAgeMs?: number;
+  /** Tells a superadmin a move needs a person (the platform alerts). */
+  alert?: (finding: { key: string; title: string; detail: string }) => Promise<unknown>;
 }
 
 export interface MemberMover {
@@ -94,7 +106,11 @@ interface StepContext {
   to: string | null;
   plan: MemberMovePlan;
   memberKeys: string[];
+  /** Whether this source is an institution the person is leaving (kept items, heir, clean-up). */
+  leave: boolean;
   session?: ClientSession;
+  /** Keeps the lease (and the account fence) alive inside a long step. */
+  heartbeat?: () => Promise<void>;
 }
 
 type StepKind =
@@ -103,6 +119,7 @@ type StepKind =
   | 'agents'
   | 'skillFiles'
   | 'rename'
+  | 'strip'
   | 'dropForeign'
   | 'transfer'
   | 'inherit'
@@ -136,6 +153,9 @@ const DEFAULT_TRANSACTION_DOC_LIMIT = 5_000;
 const DEFAULT_TRANSACTION_TIMEOUT_MS = 10_000;
 const MAX_SKILL_NAME = 64;
 const MAX_DROPPED_LISTED = 200;
+const DEFAULT_MAX_ATTEMPTS = 5;
+const DEFAULT_MAX_AGE_MS = 24 * 3_600_000;
+const HEARTBEAT_EVERY = 100;
 const SERVICE_ACTOR = { type: 'service', name: 'bdren.ai' } as const;
 const PLATFORM_ROLES = new Set<string>([SystemRoles.ADMIN, 'PLATFORM_SUPERADMIN']);
 /** Every resource kind the ACL can share, with the field naming its owner. */
@@ -150,8 +170,13 @@ const SHAREABLE: ReadonlyArray<readonly [string, string]> = [
 const SCOPED_PRINCIPALS = ['user', 'group', 'role'];
 
 const toIds = (ids: string[]): Types.ObjectId[] => ids.map((id) => new Types.ObjectId(id));
+/** Only what the person authored and shared: never a colleague's group they merely wrote prompts in. */
 const keptResources = (plan: MemberMovePlan): Types.ObjectId[] =>
   toIds([...plan.keptAgents, ...plan.keptPromptGroups, ...plan.keptMcpServers, ...plan.keptSkills]);
+const promptGroupsThatStay = (plan: MemberMovePlan): Types.ObjectId[] =>
+  toIds([...plan.keptPromptGroups, ...(plan.foreignPromptGroups ?? [])]);
+const escapeRegex = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const mcpSuffix = (server: string) => `${Constants.mcp_delimiter}${server}`;
 
 /** Transfers what stays to the heir, remembering who owned it. */
 const transfer = (
@@ -176,6 +201,7 @@ const transfer = (
  */
 const STEPS: ReadonlyArray<Step> = [
   { name: 'renames', model: 'MCPServer', kind: 'rename' },
+  { name: 'strippedServers', model: 'Agent', kind: 'strip' },
   {
     name: 'conversations',
     model: 'Conversation',
@@ -223,7 +249,7 @@ const STEPS: ReadonlyArray<Step> = [
     name: 'prompts',
     model: 'Prompt',
     owner: 'author',
-    where: ({ plan }) => ({ groupId: { $nin: toIds(plan.keptPromptGroups) } }),
+    where: ({ plan }) => ({ groupId: { $nin: promptGroupsThatStay(plan) } }),
   },
   {
     name: 'mcpServers',
@@ -389,7 +415,23 @@ async function stepFilter(step: Step, ctx: StepContext): Promise<Filter> {
   return step.where ? { ...filter, ...(await step.where(ctx)) } : filter;
 }
 
-/** Applies the renames the plan made for names already taken in the target. */
+/** Rewrites a tool key ending in `_mcp_<from>`: to `_mcp_<to>`, or (no `to`) marks it for removal. */
+const toolKeyEndsWith = (input: string, server: string) => ({
+  $regexMatch: { input, regex: `${escapeRegex(mcpSuffix(server))}$` },
+});
+const swapSuffix = (input: string, from: string, to: string) => ({
+  $concat: [
+    { $substrCP: [input, 0, { $subtract: [{ $strLenCP: input }, mcpSuffix(from).length] }] },
+    mcpSuffix(to),
+  ],
+});
+
+/**
+ * Applies the renames the plan made for names already taken in the target. A renamed MCP server
+ * takes along everything of the person's keyed by its name: the moving agents' server names, tool
+ * keys and tool options, the stored credentials (`mcp_<name>`) and OAuth tokens (`mcp:<name>…`).
+ * It runs first, before those rows move.
+ */
 async function applyRenames(ctx: StepContext): Promise<StepResult> {
   let moved = 0;
   for (const rename of ctx.plan.renames ?? []) {
@@ -408,15 +450,13 @@ async function applyRenames(ctx: StepContext): Promise<StepResult> {
     moved += result.modifiedCount;
     if (isServer) {
       await renameServerInAgents(ctx, rename);
+      await renameServerCredentials(ctx, rename);
     }
   }
   return { moved, conflicts: 0 };
 }
 
-/** The person's moving agents name the server in `mcpServerNames` and in tool keys. */
 async function renameServerInAgents(ctx: StepContext, rename: MemberMoveRename): Promise<void> {
-  const oldSuffix = `${Constants.mcp_delimiter}${rename.from}`;
-  const newSuffix = `${Constants.mcp_delimiter}${rename.to}`;
   await model('Agent').collection.updateMany(
     {
       author: ctx.oid,
@@ -440,37 +480,28 @@ async function renameServerInAgents(ctx: StepContext, rename: MemberMoveRename):
               as: 'tool',
               in: {
                 $cond: [
-                  {
-                    $and: [
-                      { $gt: [{ $strLenCP: '$$tool' }, oldSuffix.length] },
-                      {
-                        $eq: [
-                          {
-                            $substrCP: [
-                              '$$tool',
-                              { $subtract: [{ $strLenCP: '$$tool' }, oldSuffix.length] },
-                              oldSuffix.length,
-                            ],
-                          },
-                          oldSuffix,
-                        ],
-                      },
-                    ],
-                  },
-                  {
-                    $concat: [
-                      {
-                        $substrCP: [
-                          '$$tool',
-                          0,
-                          { $subtract: [{ $strLenCP: '$$tool' }, oldSuffix.length] },
-                        ],
-                      },
-                      newSuffix,
-                    ],
-                  },
+                  toolKeyEndsWith('$$tool', rename.from),
+                  swapSuffix('$$tool', rename.from, rename.to),
                   '$$tool',
                 ],
+              },
+            },
+          },
+          tool_options: {
+            $arrayToObject: {
+              $map: {
+                input: { $objectToArray: { $ifNull: ['$tool_options', {}] } },
+                as: 'option',
+                in: {
+                  k: {
+                    $cond: [
+                      toolKeyEndsWith('$$option.k', rename.from),
+                      swapSuffix('$$option.k', rename.from, rename.to),
+                      '$$option.k',
+                    ],
+                  },
+                  v: '$$option.v',
+                },
               },
             },
           },
@@ -479,6 +510,82 @@ async function renameServerInAgents(ctx: StepContext, rename: MemberMoveRename):
     ],
     { session: ctx.session },
   );
+}
+
+async function renameServerCredentials(ctx: StepContext, rename: MemberMoveRename): Promise<void> {
+  const fromKey = `${Constants.mcp_prefix}${rename.from}`;
+  const toKey = `${Constants.mcp_prefix}${rename.to}`;
+  await model('PluginAuth').collection.updateMany(
+    {
+      userId: ownerValue('PluginAuth', 'userId', ctx),
+      tenantId: ctx.from,
+      pluginKey: fromKey,
+    },
+    { $set: { pluginKey: toKey } },
+    { session: ctx.session },
+  );
+  const fromId = `mcp:${rename.from}`;
+  await model('Token').collection.updateMany(
+    {
+      userId: ownerValue('Token', 'userId', ctx),
+      tenantId: ctx.from,
+      identifier: { $regex: `^${escapeRegex(fromId)}(:|$)` },
+    },
+    [
+      {
+        $set: {
+          identifier: {
+            $concat: [
+              `mcp:${rename.to}`,
+              { $substrCP: ['$identifier', fromId.length, { $strLenCP: '$identifier' }] },
+            ],
+          },
+        },
+      },
+    ],
+    { session: ctx.session },
+  );
+}
+
+/**
+ * Moving agents that name an MCP server staying behind would, in the target, reach whatever server
+ * has that name there. The name, its tool keys and its tool options are removed (and audited).
+ */
+async function stripServers(ctx: StepContext): Promise<StepResult> {
+  let moved = 0;
+  for (const { agent, name } of ctx.plan.strippedServers ?? []) {
+    const result = await model('Agent').collection.updateOne(
+      { _id: new Types.ObjectId(agent), tenantId: ctx.from, mcpServerNames: name },
+      [
+        {
+          $set: {
+            mcpServerNames: {
+              $filter: { input: '$mcpServerNames', as: 'n', cond: { $ne: ['$$n', name] } },
+            },
+            tools: {
+              $filter: {
+                input: { $ifNull: ['$tools', []] },
+                as: 'tool',
+                cond: { $not: [toolKeyEndsWith('$$tool', name)] },
+              },
+            },
+            tool_options: {
+              $arrayToObject: {
+                $filter: {
+                  input: { $objectToArray: { $ifNull: ['$tool_options', {}] } },
+                  as: 'option',
+                  cond: { $not: [toolKeyEndsWith('$$option.k', name)] },
+                },
+              },
+            },
+          },
+        },
+      ],
+      { session: ctx.session },
+    );
+    moved += result.modifiedCount;
+  }
+  return { moved, conflicts: 0 };
 }
 
 /**
@@ -594,6 +701,8 @@ async function runStep(step: Step, ctx: StepContext): Promise<StepResult> {
   switch (step.kind) {
     case 'rename':
       return applyRenames(ctx);
+    case 'strip':
+      return stripServers(ctx);
     case 'dropForeign':
       return dropForeignGrants(ctx);
     case 'inherit':
@@ -670,7 +779,10 @@ async function oneByOne(
   const docs = await collection.find(filter).toArray();
   let moved = 0;
   let conflicts = 0;
-  for (const doc of docs) {
+  for (const [index, doc] of docs.entries()) {
+    if (index > 0 && index % HEARTBEAT_EVERY === 0) {
+      await ctx.heartbeat?.();
+    }
     try {
       moved += (await collection.updateOne({ ...filter, _id: doc._id }, update)).modifiedCount;
     } catch (error) {
@@ -728,6 +840,14 @@ class SwitchMismatch extends Error {
   }
 }
 
+/** The target now holds another account of the person's; the move cannot finish there. */
+class DuplicateAccount extends Error {
+  constructor() {
+    super('the target tenant already holds another account of this person');
+    this.name = 'DuplicateAccount';
+  }
+}
+
 class TransactionTooSlow extends Error {
   constructor() {
     super('member move transaction ran past its time limit');
@@ -760,6 +880,7 @@ type ToolResources = Record<string, { file_ids?: string[] } | null | undefined>;
 type OwnedDoc = {
   _id: Types.ObjectId;
   id?: string;
+  mcpServerNames?: string[];
   name?: string;
   serverName?: string;
   tool_resources?: ToolResources;
@@ -870,28 +991,54 @@ async function renamesFor(
   return renames;
 }
 
+/** Names of MCP servers in a tenant, as stored and normalized. */
+async function serverNamesIn(tenantId: string | null): Promise<Set<string>> {
+  const servers = await model('MCPServer')
+    .find({ tenantId })
+    .select('serverName')
+    .lean<Array<{ serverName: string }>>()
+    .exec();
+  return new Set(servers.map((server) => server.serverName));
+}
+
+/** Server names moving agents use that belong to a server staying in the source tenant. */
+function strippedServersOf(
+  agents: OwnedDoc[],
+  staying: Set<string>,
+): Array<{ agent: string; name: string }> {
+  return agents.flatMap((agent) =>
+    (agent.mcpServerNames ?? [])
+      .filter((name) => staying.has(name))
+      .map((name) => ({ agent: String(agent._id), name })),
+  );
+}
+
 /**
- * Plans what stays behind and what is renamed. Only a leave keeps anything: what the person
- * shared there, and their files any staying agent uses; it is handed to the heir.
+ * Plans what stays behind and what is renamed or stripped. Only a leave (`leave`: the person was
+ * a member of `from`) keeps anything: what they shared there, and their files any staying agent
+ * uses; it is handed to the heir. Moving out of a tenant they never belonged to (a redirected join)
+ * takes everything.
  */
 async function makePlan(
   userId: string,
   from: string | null,
   to: string | null,
+  leave: boolean = from != null,
 ): Promise<MemberMovePlan> {
   const oid = new Types.ObjectId(userId);
   const own = (name: string, select: string) =>
     model(name).find({ author: oid, tenantId: from }).select(select).lean<OwnedDoc[]>().exec();
   return runAsSystem(async () => {
-    const [agents, groups, servers, skills] = await Promise.all([
-      own('Agent', '_id id tool_resources'),
+    const [agents, groups, servers, skills, serverNames] = await Promise.all([
+      own('Agent', '_id id tool_resources mcpServerNames'),
       own('PromptGroup', '_id'),
       own('MCPServer', '_id serverName'),
       own('Skill', '_id name'),
+      serverNamesIn(from),
     ]);
     let shared = new Set<string>();
     let foreignGroups: string[] = [];
-    if (from != null) {
+    if (leave) {
       const [sharedIds, foreign] = await Promise.all([
         model('AclEntry').distinct('resourceId', {
           tenantId: from,
@@ -910,8 +1057,10 @@ async function makePlan(
     const isShared = (doc: OwnedDoc) => shared.has(String(doc._id));
     const moving = (docs: OwnedDoc[]) => docs.filter((doc) => !isShared(doc));
     const movingAgents = moving(agents);
+    const movingServers = new Set(moving(servers).map((server) => server.serverName ?? ''));
+    const staying = new Set([...serverNames].filter((name) => !movingServers.has(name)));
     const [keptFiles, renames, heir] = await Promise.all([
-      from != null
+      leave && from != null
         ? filesUsedByStayingAgents(
             oid,
             from,
@@ -919,14 +1068,14 @@ async function makePlan(
           )
         : Promise.resolve([]),
       renamesFor(oid, to, moving(servers), moving(skills)),
-      from != null ? heirFor(oid, from) : Promise.resolve({ heir: null, heirIsUser: false }),
+      leave && from != null
+        ? heirFor(oid, from)
+        : Promise.resolve({ heir: null, heirIsUser: false }),
     ]);
     return {
       keptAgents: agents.filter(isShared).map((agent) => String(agent._id)),
-      keptPromptGroups: [
-        ...groups.filter(isShared).map((group) => String(group._id)),
-        ...foreignGroups,
-      ],
+      keptPromptGroups: groups.filter(isShared).map((group) => String(group._id)),
+      foreignPromptGroups: foreignGroups,
       keptMcpServers: servers.filter(isShared).map((server) => String(server._id)),
       keptSkills: skills.filter(isShared).map((skill) => String(skill._id)),
       keptFiles,
@@ -935,6 +1084,7 @@ async function makePlan(
       heir: heir.heir,
       heirIsUser: heir.heirIsUser,
       renames,
+      strippedServers: strippedServersOf(movingAgents, staying),
     };
   });
 }
@@ -967,7 +1117,18 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
   type Held = IMemberMove & { _id: Types.ObjectId };
   type Acquired = { status: 'acquired'; record: Held } | { status: 'done'; outcome: MoveOutcome };
 
-  async function hasDuplicateAccount(user: IUser, to: string | null): Promise<boolean> {
+  const maxAttempts = deps.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
+  const alert =
+    deps.alert ??
+    ((finding: { key: string; title: string; detail: string }) =>
+      syncAlerts([{ ...finding, kind: 'member_move', severity: 'critical' }], []));
+  const maxAgeMs = deps.maxAgeMs ?? DEFAULT_MAX_AGE_MS;
+
+  async function hasDuplicateAccount(
+    user: IUser,
+    to: string | null,
+    session?: ClientSession,
+  ): Promise<boolean> {
     const same: Filter[] = [];
     if (user.email) {
       same.push({ email: user.email });
@@ -980,24 +1141,12 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
     }
     const clash = await users().collection.findOne(
       { _id: { $ne: user._id }, tenantId: to, $or: same },
-      { projection: { _id: 1 } },
+      { projection: { _id: 1 }, session },
     );
     return clash != null;
   }
 
-  /** Updates the record only while this trigger still holds it, and extends the lease. */
-  async function checkpoint(record: Held, update: UpdateQuery<IMemberMove>): Promise<void> {
-    const result = await moves()
-      .updateOne(
-        { _id: record._id, leaseId: record.leaseId, status: 'running' },
-        { ...update, $set: { ...(update.$set ?? {}), leaseUntil: leaseUntil() } },
-      )
-      .exec();
-    if (result.matchedCount !== 1) {
-      throw new LeaseLost();
-    }
-  }
-
+  /** Requests are asked to retry until `until`; `null` lifts the fence. */
   const fence = (userId: Types.ObjectId | string, until: Date | null) =>
     users()
       .collection.updateOne(
@@ -1005,6 +1154,75 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
         until ? { $set: { movingUntil: until } } : { $unset: { movingUntil: '' } },
       )
       .then(() => undefined);
+
+  /** Updates the record only while this trigger still holds it, and extends lease and fence. */
+  async function checkpoint(record: Held, update: UpdateQuery<IMemberMove>): Promise<void> {
+    const until = leaseUntil();
+    const result = await moves()
+      .updateOne(
+        { _id: record._id, leaseId: record.leaseId, status: 'running' },
+        { ...update, $set: { ...(update.$set ?? {}), leaseUntil: until } },
+      )
+      .exec();
+    if (result.matchedCount !== 1) {
+      throw new LeaseLost();
+    }
+    await fence(record.userId, until);
+  }
+
+  const moveId = (record: Held) => String(record._id);
+
+  /** Gives back the seat this move took in its target, unless the person got there. */
+  async function returnSeat(record: Held): Promise<void> {
+    if (record.to && record.seatReserved && !record.userSwitched) {
+      await deps.releaseSeat(record.to, moveId(record));
+    }
+  }
+
+  /**
+   * A move that keeps failing (or is too old) stops: the fence is lifted, a seat it took and never
+   * used is given back, and a superadmin is told, with what the record shows was done.
+   */
+  async function fail(record: Held, cause: string): Promise<MoveOutcome> {
+    const failed = await moves()
+      .findOneAndUpdate(
+        { _id: record._id, status: 'running' },
+        { $set: { status: 'failed', refusal: cause, leaseId: null, leaseUntil: null } },
+        { new: true },
+      )
+      .lean<Held>()
+      .exec();
+    await fence(record.userId, null);
+    if (!failed) {
+      return { status: 'busy' };
+    }
+    try {
+      await returnSeat(failed);
+    } catch (error) {
+      logger.error(`[bdren] giving back the seat of failed move ${moveId(record)} failed`, error);
+    }
+    const detail = `Moving user ${String(record.userId)} from ${record.from ?? 'no institution'} to ${
+      record.to ?? 'no institution'
+    } stopped after ${failed.attempts ?? 0} attempts (${cause}). Steps done: ${
+      (failed.completed ?? []).join(', ') || 'none'
+    }; user switched: ${failed.userSwitched ? 'yes' : 'no'}. Finish or undo it by hand.`;
+    logger.error(`[bdren] ${detail}`);
+    try {
+      await alert({
+        key: `member_move:${moveId(record)}`,
+        title: 'A member move needs attention',
+        detail,
+      });
+    } catch (error) {
+      logger.error('[bdren] raising the member move alert failed', error);
+    }
+    await audit(record, failed, { failed: cause });
+    return { status: 'failed' };
+  }
+
+  const exhausted = (record: Held) =>
+    (record.attempts ?? 0) >= maxAttempts ||
+    now().getTime() - new Date(record.createdAt ?? now()).getTime() > maxAgeMs;
 
   async function claim(existing: Held): Promise<Acquired> {
     const leaseId = randomUUID();
@@ -1015,14 +1233,18 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
           status: 'running',
           $or: [{ leaseUntil: null }, { leaseUntil: { $lte: now() } }],
         },
-        { $set: { leaseId, leaseUntil: leaseUntil() } },
+        { $set: { leaseId, leaseUntil: leaseUntil() }, $inc: { attempts: 1 } },
         { new: true },
       )
       .lean<Held>()
       .exec();
-    return claimed
-      ? { status: 'acquired', record: claimed }
-      : { status: 'done', outcome: { status: 'busy' } };
+    if (!claimed) {
+      return { status: 'done', outcome: { status: 'busy' } };
+    }
+    if ((claimed.attempts ?? 0) > maxAttempts || exhausted({ ...claimed, attempts: 0 })) {
+      return { status: 'done', outcome: await fail(claimed, 'too_many_attempts') };
+    }
+    return { status: 'acquired', record: claimed };
   }
 
   const findRunning = (userId: string) =>
@@ -1063,6 +1285,7 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
         status: 'running',
         leaseId: randomUUID(),
         leaseUntil: leaseUntil(),
+        attempts: 1,
         wasActive: request.from != null && isActiveMember(user),
       });
       return { status: 'acquired', record: created.toObject() as Held };
@@ -1080,6 +1303,7 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
     plan: MemberMovePlan,
     from = record.from ?? null,
     to = record.to ?? null,
+    leave = from != null,
   ): StepContext {
     const userId = String(record.userId);
     return {
@@ -1088,16 +1312,29 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
       from,
       to,
       plan,
+      leave,
       memberKeys: [userId, ...(user.idOnTheSource ? [String(user.idOnTheSource)] : [])],
     };
   }
 
-  function stepsFor(from: string | null): ReadonlyArray<Step> {
-    return from == null ? STEPS.filter((step) => !step.leaveOnly) : STEPS;
+  function stepsFor(ctx: StepContext): ReadonlyArray<Step> {
+    return ctx.leave ? STEPS : STEPS.filter((step) => !step.leaveOnly);
   }
 
-  /** Changes the user's own tenant. Throws `SwitchMismatch` when they are no longer in `from`. */
-  async function switchUser(ctx: StepContext, user: IUser, session?: ClientSession) {
+  /**
+   * Changes the user's own tenant, and resolves to whether they were an active member just before
+   * (read in the same write, so a suspension racing the move cannot double-count a seat); `null`
+   * when they were already in the target. Throws `DuplicateAccount` when the target now holds
+   * another account of theirs, `SwitchMismatch` when they are no longer in `from`.
+   */
+  async function switchUser(
+    ctx: StepContext,
+    user: IUser,
+    session?: ClientSession,
+  ): Promise<boolean | null> {
+    if (await hasDuplicateAccount(user, ctx.to, session)) {
+      throw new DuplicateAccount();
+    }
     const reset = { suspendedAt: '', suspendedBy: '', removedAt: '', removedBy: '' };
     const role = user.role === INSTITUTION_ADMIN_ROLE ? SystemRoles.USER : user.role;
     const update: mongo.UpdateFilter<mongo.Document> = ctx.to
@@ -1114,13 +1351,13 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
           $set: { accountScope: 'standalone', ...(role ? { role } : null) },
           $unset: { ...reset, tenantId: '', membershipStatus: '', bdrenNotedOrganizationId: '' },
         };
-    const result = await users().collection.updateOne(
+    const previous = await users().collection.findOneAndUpdate(
       { _id: ctx.oid, tenantId: ctx.from },
       update,
-      { session },
+      { session, returnDocument: 'before', projection: { membershipStatus: 1 } },
     );
-    if (result.matchedCount === 1) {
-      return;
+    if (previous) {
+      return ctx.from != null && isActiveMember(previous as Pick<IUser, 'membershipStatus'>);
     }
     const current = await users().collection.findOne(
       { _id: ctx.oid },
@@ -1129,7 +1366,11 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
     if ((current?.tenantId || null) !== ctx.to) {
       throw new SwitchMismatch();
     }
+    return null;
   }
+
+  const switchedFields = (wasActive: boolean | null) =>
+    wasActive == null ? { userSwitched: true } : { userSwitched: true, wasActive };
 
   /** Conversations, messages and files to move: a cheap measure of how heavy the move is. */
   async function weight(ctx: StepContext): Promise<number> {
@@ -1156,11 +1397,12 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
     try {
       let moved: Record<string, number> = {};
       let dropped: string[] = [];
+      let wasActive: boolean | null = null;
       await session.withTransaction(async () => {
         moved = {};
         dropped = [];
         const scoped = { ...ctx, session };
-        for (const step of stepsFor(ctx.from)) {
+        for (const step of stepsFor(ctx)) {
           if (Date.now() > deadline) {
             throw new TransactionTooSlow();
           }
@@ -1168,15 +1410,15 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
           moved[step.name] = result.moved;
           dropped.push(...(result.dropped ?? []));
         }
-        await switchUser(scoped, user, session);
+        wasActive = await switchUser(scoped, user, session);
       });
       await checkpoint(record, {
         $set: {
           mode: 'transaction',
-          completed: stepsFor(ctx.from).map((step) => step.name),
+          completed: stepsFor(ctx).map((step) => step.name),
           moved,
           droppedGrants: dropped.slice(0, MAX_DROPPED_LISTED),
-          userSwitched: true,
+          ...switchedFields(wasActive),
         },
       });
     } finally {
@@ -1188,12 +1430,13 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
     if (record.mode !== 'sequential') {
       await checkpoint(record, { $set: { mode: 'sequential' } });
     }
+    const steady = { ...ctx, heartbeat: () => checkpoint(record, {}) };
     const done = new Set(record.completed ?? []);
-    for (const step of stepsFor(ctx.from)) {
+    for (const step of stepsFor(ctx)) {
       if (done.has(step.name)) {
         continue;
       }
-      const result = await runStep(step, ctx);
+      const result = await runStep(step, steady);
       await checkpoint(record, {
         $push: {
           completed: step.name,
@@ -1204,8 +1447,8 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
         $inc: { [`moved.${step.name}`]: result.moved },
       });
     }
-    await switchUser(ctx, user);
-    await checkpoint(record, { $set: { userSwitched: true } });
+    const wasActive = await switchUser(ctx, user);
+    await checkpoint(record, { $set: switchedFields(wasActive) });
   }
 
   /** Runs every step again; returns what moved and what still clashes. */
@@ -1213,7 +1456,7 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
     const moved: Record<string, number> = {};
     const conflicts: Record<string, number> = {};
     const dropped: string[] = [];
-    for (const step of stepsFor(ctx.from)) {
+    for (const step of stepsFor(ctx)) {
       const result = await runStep(step, ctx);
       if (result.moved > 0) {
         moved[`moved.${step.name}`] = result.moved;
@@ -1231,7 +1474,10 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
    * What still clashes now is the final count of records left behind.
    */
   async function sweep(record: Held, ctx: StepContext): Promise<void> {
-    const { moved, conflicts, dropped } = await sweepSteps(ctx);
+    const { moved, conflicts, dropped } = await sweepSteps({
+      ...ctx,
+      heartbeat: () => checkpoint(record, {}),
+    });
     await checkpoint(record, {
       $inc: moved,
       $set: { conflicts },
@@ -1245,8 +1491,10 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
     const userId = String(record.userId);
     if (record.from) {
       if (record.wasActive && !record.seatReleased) {
-        await deps.releaseSeat(record.from);
-        await checkpoint(record, { $set: { seatReleased: true } });
+        const released = await deps.releaseSeat(record.from, moveId(record));
+        await checkpoint(record, {
+          $set: { seatReleased: true, ...(released === 'drift' ? { seatDrift: true } : null) },
+        });
       }
       await deps.syncMember({ tenantId: record.from, userId });
       await clearOverrides(record.from);
@@ -1276,6 +1524,7 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
           from: record.from ?? null,
           to: record.to ?? null,
           reason: record.reason,
+          status: finished.status,
           mode: finished.mode ?? null,
           ...prefixed('moved_', finished.moved ?? {}),
           ...prefixed('conflicts_', finished.conflicts ?? {}),
@@ -1290,8 +1539,12 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
           renamed: (plan?.renames ?? [])
             .map((rename) => `${rename.model}:${rename.from}->${rename.to}`)
             .join(','),
+          removedServers: (plan?.strippedServers ?? [])
+            .map((stripped) => `${stripped.agent}:${stripped.name}`)
+            .join(','),
           droppedGrantCount: finished.droppedGrants?.length ?? 0,
           droppedGrants: (finished.droppedGrants ?? []).join(','),
+          seatDrift: finished.seatDrift ?? false,
           ...extra,
         },
         tenantId: undefined,
@@ -1325,7 +1578,7 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
     await fence(record.userId, null);
     await audit(record, finished);
     schedule(() => {
-      sweepLate(String(record._id)).catch((error) =>
+      sweepLate(moveId(record)).catch((error) =>
         logger.error('[bdren] late sweep after a member move failed', error),
       );
     }, lateSweepMs);
@@ -1343,13 +1596,6 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
       moved: finished.moved ?? {},
       conflicts: finished.conflicts ?? {},
     };
-  }
-
-  /** Gives back a seat this move took. */
-  async function returnSeat(record: Held): Promise<void> {
-    if (record.to && record.seatReserved) {
-      await deps.releaseSeat(record.to);
-    }
   }
 
   async function refuse(record: Held, reason: MoveRefusal): Promise<MoveOutcome> {
@@ -1373,23 +1619,28 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
   }
 
   /**
-   * Someone else placed the person in another tenant while the move ran. Everything already
-   * moved, and everything still in the old tenant, follows them there instead (planned afresh for
-   * each source), and the seat this move took is given back.
+   * The person's data goes back to wherever they are now: someone else placed them in another
+   * tenant mid-move (`redirected`), or the move had to be refused after it started (`refusal`).
+   * Each source is planned afresh. Only `from` is left with leave rules (kept items, heir,
+   * clean-up), and only when the person really was a member there; the move's own target was
+   * never theirs, so everything in it comes back. The seat the move took is given back.
    */
-  async function redirect(record: Held): Promise<MoveOutcome> {
+  async function redirect(record: Held, refusal?: MoveRefusal): Promise<MoveOutcome> {
     const user = await runAsSystem(() => users().findById(record.userId).lean<IUser>().exec());
     if (!user) {
       return refuse(record, 'not_found');
     }
     const target = user.tenantId || null;
-    const sources = [...new Set([record.from ?? null, record.to ?? null])].filter(
-      (source) => source !== target,
-    );
+    const from = record.from ?? null;
+    const to = record.to ?? null;
+    const sources: Array<{ source: string | null; leave: boolean }> = [
+      ...(from !== target ? [{ source: from, leave: from != null }] : []),
+      ...(to !== target && to !== from ? [{ source: to, leave: false }] : []),
+    ];
     const moved: Record<string, number> = {};
-    for (const source of sources) {
-      const plan = await makePlan(String(record.userId), source, target);
-      const ctx = contextFor(record, user, plan, source, target);
+    for (const { source, leave } of sources) {
+      const plan = await makePlan(String(record.userId), source, target, leave);
+      const ctx = contextFor(record, user, plan, source, target, leave);
       const result = await runAsSystem(() => sweepSteps(ctx));
       for (const [key, count] of Object.entries(result.moved)) {
         moved[key] = (moved[key] ?? 0) + count;
@@ -1401,7 +1652,8 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
         { _id: record._id, leaseId: record.leaseId, status: 'running' },
         {
           $set: {
-            status: 'redirected',
+            status: refusal ? 'refused' : 'redirected',
+            ...(refusal ? { refusal } : null),
             finishedAt: now(),
             leaseId: null,
             leaseUntil: null,
@@ -1418,9 +1670,11 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
       await audit(record, finished, { redirectedTo: target ?? '' });
     }
     logger.warn(
-      `[bdren] user ${String(record.userId)} was placed in ${target ?? 'no tenant'} during a move to ${record.to ?? 'no tenant'}; their data followed them`,
+      `[bdren] user ${String(record.userId)}'s move to ${to ?? 'no tenant'} ${
+        refusal ? `was refused (${refusal})` : `ended in ${target ?? 'no tenant'}`
+      }; their data is with them in ${target ?? 'no tenant'}`,
     );
-    return { status: 'redirected', to: target };
+    return refusal ? { status: 'refused', reason: refusal } : { status: 'redirected', to: target };
   }
 
   async function drive(held: Held): Promise<MoveOutcome> {
@@ -1433,7 +1687,7 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
       record = fresh;
     };
     if (record.to && !record.seatReserved) {
-      if (!(await deps.reserveSeat(record.to))) {
+      if (!(await deps.reserveSeat(record.to, moveId(record)))) {
         return refuse(record, 'full');
       }
       await checkpoint(record, { $set: { seatReserved: true } });
@@ -1458,6 +1712,12 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
       return redirect(record);
     }
     if (!switched) {
+      if (
+        !(record.completed ?? []).length &&
+        (await hasDuplicateAccount(user, record.to ?? null))
+      ) {
+        return refuse(record, 'duplicate_account');
+      }
       try {
         const useTransaction =
           record.mode !== 'sequential' &&
@@ -1467,7 +1727,11 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
           try {
             await runAsSystem(() => inTransaction(record, ctx, user));
           } catch (error) {
-            if (error instanceof LeaseLost || error instanceof SwitchMismatch) {
+            if (
+              error instanceof LeaseLost ||
+              error instanceof SwitchMismatch ||
+              error instanceof DuplicateAccount
+            ) {
               throw error;
             }
             logger.warn(
@@ -1484,6 +1748,10 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
         if (error instanceof SwitchMismatch) {
           await reload();
           return redirect(record);
+        }
+        if (error instanceof DuplicateAccount) {
+          await reload();
+          return redirect(record, 'duplicate_account');
         }
         throw error;
       }
@@ -1509,15 +1777,19 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
         )
         .exec()
         .catch(() => undefined);
+      await fence(record.userId, null).catch(() => undefined);
+      if (!(error instanceof LeaseLost) && exhausted(record)) {
+        await fail(record, error instanceof Error ? error.message : 'error').catch(() => undefined);
+      }
       throw error;
     }
   }
 
   /** The second sweep, once requests that were running under the old tenant have finished. */
-  async function sweepLate(moveId: string): Promise<boolean> {
+  async function sweepLate(id: string): Promise<boolean> {
     const record = await moves()
       .findOneAndUpdate(
-        { _id: moveId, status: 'done', lateSweptAt: null, lateSweepAt: { $lte: now() } },
+        { _id: id, status: 'done', lateSweptAt: null, lateSweepAt: { $lte: now() } },
         { $set: { lateSweptAt: now() } },
         { new: true },
       )

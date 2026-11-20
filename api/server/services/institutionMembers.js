@@ -1939,7 +1939,24 @@ async function getInstitutionMemberDetail({ tenantId, id, kind }) {
   return mapUserMember(user);
 }
 
+/**
+ * Membership changes wait while a member move re-scopes the person: the move reads their status
+ * when it switches them, and a change in between would count a seat twice or not at all.
+ */
+async function assertNotMoving(userId) {
+  const id = toObjectId(userId);
+  const [user, running] = await Promise.all([
+    runAsSystem(() => models.User.findById(id).select('movingUntil').lean().exec()),
+    runAsSystem(() => models.MemberMove.exists({ userId: id, status: 'running' }).exec()),
+  ]);
+  const fenced = user?.movingUntil != null && new Date(user.movingUntil) > new Date();
+  if (fenced || running) {
+    throw new HttpError(409, 'This member is being moved between institutions. Try again shortly.');
+  }
+}
+
 async function setInstitutionRole({ tenantId, userId, role, actor, context }) {
+  await assertNotMoving(userId);
   const nextRole = normalizeRole(role);
   if (!ALLOWED_MEMBER_ROLES.has(nextRole)) {
     throw new HttpError(400, 'Invalid institution role');
@@ -1969,6 +1986,7 @@ async function setInstitutionRole({ tenantId, userId, role, actor, context }) {
 }
 
 async function reactivateInstitutionMember({ tenantId, userId, actor, context }) {
+  await assertNotMoving(userId);
   const result = await withInstitutionUserTransaction(
     tenantId,
     userId,
@@ -2011,6 +2029,7 @@ async function reactivateInstitutionMember({ tenantId, userId, actor, context })
 }
 
 async function suspendInstitutionMember({ tenantId, userId, actor, context }) {
+  await assertNotMoving(userId);
   const actorId = actor?.id ?? actor?._id;
   const result = await withInstitutionUserTransaction(
     tenantId,
@@ -2725,8 +2744,6 @@ module.exports = {
   suspendStandaloneMember,
   reactivateStandaloneMember,
   activateProvisionedMember,
-  reserveActiveSeat,
-  releaseActiveSeat,
   InstitutionMembershipStatuses,
   INSTITUTION_ADMIN_ROLE,
   InstitutionInviteStatuses,

@@ -2,6 +2,12 @@
 import axios from 'axios';
 import type { AxiosRequestConfig } from 'axios';
 import type * as t from './types';
+import {
+  ACCOUNT_MOVING_EVENT,
+  isAccountMovingError,
+  accountMovingWaitMs,
+  ACCOUNT_MOVING_MAX_RETRIES,
+} from './moving';
 import { setTokenHeader } from './headers-helpers';
 import * as endpoints from './api-endpoints';
 
@@ -68,7 +74,10 @@ const AUTH_REDIRECT_STORAGE_KEY = 'librechat.auth.redirect.startedAt';
 const AUTH_REDIRECT_DEDUPE_MS = 15_000;
 const TOKEN_REFRESH_BUFFER_MS = 2 * 60 * 1000;
 
-type RetryableAxiosRequestConfig = AxiosRequestConfig & { _retry?: boolean };
+type RetryableAxiosRequestConfig = AxiosRequestConfig & {
+  _retry?: boolean;
+  _movingRetries?: number;
+};
 
 type AuthRecoveryState = {
   lastRedirectStartedAt: number;
@@ -360,6 +369,19 @@ if (typeof window !== 'undefined') {
       }
       if (!originalRequest) {
         return Promise.reject(error);
+      }
+
+      /** The account is moving between institutions: wait as asked and retry; never a sign-out. */
+      if (isAccountMovingError(error)) {
+        const attempts = originalRequest._movingRetries ?? 0;
+        if (attempts >= ACCOUNT_MOVING_MAX_RETRIES) {
+          return Promise.reject(error);
+        }
+        originalRequest._movingRetries = attempts + 1;
+        window.dispatchEvent(new CustomEvent(ACCOUNT_MOVING_EVENT));
+        const wait = accountMovingWaitMs(error.response.headers?.['retry-after']);
+        await new Promise((resolve) => setTimeout(resolve, wait));
+        return axios(originalRequest);
       }
 
       const isRefreshRequest = originalRequest.url?.includes('/api/auth/refresh') === true;

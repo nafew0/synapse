@@ -13,6 +13,7 @@ import { createWebhookHandler } from './webhook';
 import { createProvisioner } from './provision';
 import { createMemberPlacer } from './place';
 import { createMemberMover } from './move';
+import { reserveMoveSeat, releaseMoveSeat } from './seats';
 import { readBdrenConfig } from './config';
 import { getAlertModel } from '~/admin/alerts/store';
 
@@ -123,10 +124,8 @@ async function reserveSeat(tenantId: string): Promise<boolean> {
 function build(): void {
   mover = createMemberMover({
     schedule: () => undefined,
-    reserveSeat,
-    releaseSeat: async (tenantId) => {
-      await M('Institution').updateOne({ tenantId }, { $inc: { 'stats.activeMembers': -1 } });
-    },
+    reserveSeat: reserveMoveSeat,
+    releaseSeat: releaseMoveSeat,
     syncMember: async () => undefined,
     recordAuditEntry: (input, options) => createMethods(mongoose).recordAuditEntry(input, options),
   });
@@ -579,7 +578,7 @@ describe('crash safety and locking', () => {
     await expect(move(request)).rejects.toThrow('connection lost mid-move');
     const halfway = await M('MemberMove').findOne({ userId: user._id }).lean<IMemberMove>();
     expect(halfway).toMatchObject({ status: 'running', seatReserved: true });
-    expect(halfway?.completed).toEqual(['renames', 'conversations']);
+    expect(halfway?.completed).toEqual(['renames', 'strippedServers', 'conversations']);
     expect((await raw('User').findOne({ _id: user._id }))?.tenantId).toBeUndefined();
 
     const outcome = await move(request);
@@ -1072,6 +1071,277 @@ describe('requests still running when the move happened', () => {
       .map((message) => `${message.tenantId}:${message.text}`)
       .toArray();
     expect(texts).toEqual(['x-uni:hi', 'x-uni:final answer', 'x-uni:late reply']);
+  });
+});
+
+describe('second review fixes', () => {
+  const memberOfX = async (extra: Partial<TestUser> = {}) =>
+    makeUser({
+      tenantId: 'x-uni',
+      accountScope: 'institution',
+      membershipStatus: 'active',
+      ...extra,
+    });
+
+  it("never hands the heir the person's grants on a colleague's prompt group", async () => {
+    await linkInstitution(ORG_X, { stats: { activeMembers: 2 } });
+    const admin = await memberOfX({ role: 'INSTITUTION_ADMIN' });
+    const user = await memberOfX();
+    const colleagueGroup = new Types.ObjectId();
+    await raw('PromptGroup').insertOne({
+      _id: colleagueGroup,
+      name: 'Theirs',
+      author: new Types.ObjectId(),
+      tenantId: 'x-uni',
+    });
+    await raw('Prompt').insertOne({
+      groupId: colleagueGroup,
+      author: user._id,
+      prompt: 'mine',
+      tenantId: 'x-uni',
+    });
+    await raw('AclEntry').insertOne({
+      principalType: 'user',
+      principalId: user._id,
+      resourceType: 'promptGroup',
+      resourceId: colleagueGroup,
+      permBits: 3,
+      tenantId: 'x-uni',
+    });
+
+    await move({ userId: String(user._id), from: 'x-uni', to: null, reason: 'leave' });
+
+    expect(await raw('AclEntry').countDocuments({ resourceId: colleagueGroup })).toBe(0);
+    expect(await raw('Prompt').findOne({ prompt: 'mine' })).toMatchObject({
+      author: admin._id,
+      tenantId: 'x-uni',
+    });
+    const record = await M('MemberMove').findOne({ userId: user._id }).lean<IMemberMove>();
+    expect(record?.plan).toMatchObject({
+      keptPromptGroups: [],
+      foreignPromptGroups: [String(colleagueGroup)],
+    });
+  });
+
+  it('strips MCP servers that stay behind from moving agents, and keeps the moving and yaml ones', async () => {
+    await linkInstitution(ORG_X);
+    const user = await makeUser();
+    await raw('MCPServer').insertMany([
+      { serverName: 'other', author: new Types.ObjectId(), config: {} },
+      { serverName: 'mine', author: user._id, config: {} },
+    ]);
+    await raw('Agent').insertOne({
+      id: 'agent_mcp',
+      author: user._id,
+      mcpServerNames: ['other', 'mine', 'yamlsrv'],
+      tools: ['a_mcp_other', 'b_mcp_mine', 'c_mcp_yamlsrv', 'web_search'],
+      tool_options: { a_mcp_other: { defer: true }, b_mcp_mine: { defer: false } },
+    });
+
+    await move({ userId: String(user._id), from: null, to: 'x-uni', reason: 'join' });
+
+    expect(await raw('Agent').findOne({ id: 'agent_mcp' })).toMatchObject({
+      tenantId: 'x-uni',
+      mcpServerNames: ['mine', 'yamlsrv'],
+      tools: ['b_mcp_mine', 'c_mcp_yamlsrv', 'web_search'],
+      tool_options: { b_mcp_mine: { defer: false } },
+    });
+    const [entry] = await audits('member.moved');
+    expect(entry.metadata?.removedServers).toMatch(/:other$/);
+  });
+
+  it("carries a renamed server's credentials, tokens and tool options with it", async () => {
+    await linkInstitution(ORG_X);
+    const user = await makeUser();
+    const uid = String(user._id);
+    await raw('MCPServer').insertMany([
+      { serverName: 'github', author: new Types.ObjectId(), config: {}, tenantId: 'x-uni' },
+      { serverName: 'github', author: user._id, config: {} },
+    ]);
+    await raw('Agent').insertOne({
+      id: 'agent_gh',
+      author: user._id,
+      mcpServerNames: ['github'],
+      tools: ['issues_mcp_github'],
+      tool_options: { issues_mcp_github: { defer: true } },
+    });
+    await raw('PluginAuth').insertOne({
+      userId: uid,
+      pluginKey: 'mcp_github',
+      authField: 'TOKEN',
+      value: 'x',
+    });
+    await raw('Token').insertMany(
+      ['mcp:github', 'mcp:github:client', 'mcp:github:refresh', 'mcp:githubber'].map(
+        (identifier) => ({
+          userId: user._id,
+          type: 'mcp_oauth',
+          identifier,
+          token: 't',
+          expiresAt: new Date(Date.now() + 3_600_000),
+        }),
+      ),
+    );
+
+    await move({ userId: uid, from: null, to: 'x-uni', reason: 'join' });
+
+    expect(await raw('PluginAuth').findOne({ userId: uid })).toMatchObject({
+      pluginKey: 'mcp_github-moved',
+      tenantId: 'x-uni',
+    });
+    const identifiers = await raw('Token')
+      .find({ userId: user._id })
+      .map((token) => token.identifier)
+      .toArray();
+    expect(identifiers.sort()).toEqual([
+      'mcp:github-moved',
+      'mcp:github-moved:client',
+      'mcp:github-moved:refresh',
+      'mcp:githubber',
+    ]);
+    expect((await raw('Agent').findOne({ id: 'agent_gh' }))?.tool_options).toEqual({
+      'issues_mcp_github-moved': { defer: true },
+    });
+  });
+
+  it('gives up after repeated failures: fence lifted, seat back, superadmin alerted', async () => {
+    mover = createMemberMover({
+      schedule: () => undefined,
+      maxAttempts: 2,
+      reserveSeat: reserveMoveSeat,
+      releaseSeat: releaseMoveSeat,
+      syncMember: async () => undefined,
+      recordAuditEntry: (input, options) =>
+        createMethods(mongoose).recordAuditEntry(input, options),
+    });
+    await linkInstitution(ORG_X);
+    const user = await makeUser();
+    await seedPrivate(user._id, null);
+    jest.spyOn(raw('Message'), 'updateMany').mockRejectedValue(new Error('disk full'));
+    const request = { userId: String(user._id), from: null, to: 'x-uni', reason: 'join' };
+
+    await expect(move(request)).rejects.toThrow('disk full');
+    expect((await raw('User').findOne({ _id: user._id }))?.movingUntil).toBeUndefined();
+    await expect(move(request)).rejects.toThrow('disk full');
+
+    expect(await M('MemberMove').findOne({ userId: user._id }).lean()).toMatchObject({
+      status: 'failed',
+    });
+    expect((await raw('User').findOne({ _id: user._id }))?.movingUntil).toBeUndefined();
+    expect(await seats('x-uni')).toBe(0);
+    expect(await getAlertModel().findOne({ kind: 'member_move' }).lean()).toMatchObject({
+      status: 'open',
+      severity: 'critical',
+    });
+    jest.restoreAllMocks();
+    expect(await move(request)).toMatchObject({ status: 'moved' });
+  });
+
+  it('refuses cleanly when another account of theirs appears in the target mid-move', async () => {
+    await linkInstitution(ORG_X);
+    const user = await makeUser();
+    await seedPrivate(user._id, null);
+    const sessions = raw('Session');
+    const original = sessions.updateMany.bind(sessions);
+    jest.spyOn(sessions, 'updateMany').mockImplementationOnce(async (...args) => {
+      await raw('User').insertOne({ email: user.email, username: 'dup', tenantId: 'x-uni' });
+      return original(...args);
+    });
+
+    const outcome = await move({
+      userId: String(user._id),
+      from: null,
+      to: 'x-uni',
+      reason: 'join',
+    });
+
+    expect(outcome).toEqual({ status: 'refused', reason: 'duplicate_account' });
+    expect((await raw('User').findOne({ _id: user._id }))?.tenantId).toBeUndefined();
+    expect(await countOwned(user._id, null)).toMatchObject({
+      Conversation: 1,
+      Message: 2,
+      Agent: 1,
+    });
+    expect(await seats('x-uni')).toBe(0);
+  });
+
+  it('brings everything back from a half-finished join target, keeping nothing there', async () => {
+    await linkInstitution(ORG_X);
+    await raw('Institution').insertOne({ tenantId: 'z-uni', slug: 'z-uni', name: 'Z' });
+    await makeUser({ tenantId: 'x-uni', role: 'INSTITUTION_ADMIN', membershipStatus: 'active' });
+    const user = await makeUser();
+    const { agentId } = await seedPrivate(user._id, null);
+    await raw('AclEntry').insertOne({
+      principalType: 'public',
+      resourceType: 'agent',
+      resourceId: agentId,
+      permBits: 1,
+    });
+    const sessions = raw('Session');
+    const original = sessions.updateMany.bind(sessions);
+    jest.spyOn(sessions, 'updateMany').mockImplementationOnce(async (...args) => {
+      await raw('User').updateOne({ _id: user._id }, { $set: { tenantId: 'z-uni' } });
+      return original(...args);
+    });
+
+    expect(
+      await move({ userId: String(user._id), from: null, to: 'x-uni', reason: 'join' }),
+    ).toEqual({
+      status: 'redirected',
+      to: 'z-uni',
+    });
+    expect(await raw('Agent').findOne({ _id: agentId })).toMatchObject({
+      tenantId: 'z-uni',
+      author: user._id,
+    });
+    expect(await raw('AclEntry').countDocuments({ resourceId: agentId, tenantId: 'z-uni' })).toBe(
+      2,
+    );
+  });
+
+  it('releases a seat only if the member was active at the moment of the switch', async () => {
+    await linkInstitution(ORG_X, { stats: { activeMembers: 2 } });
+    const user = await memberOfX();
+    await seedPrivate(user._id, 'x-uni');
+    const sessions = raw('Session');
+    const original = sessions.updateMany.bind(sessions);
+    jest.spyOn(sessions, 'updateMany').mockImplementationOnce(async (...args) => {
+      await raw('User').updateOne({ _id: user._id }, { $set: { membershipStatus: 'suspended' } });
+      await raw('Institution').updateOne(
+        { tenantId: 'x-uni' },
+        { $inc: { 'stats.activeMembers': -1 } },
+      );
+      return original(...args);
+    });
+
+    await move({ userId: String(user._id), from: 'x-uni', to: null, reason: 'leave' });
+
+    expect(await seats('x-uni')).toBe(1);
+    expect(await M('MemberMove').findOne({ userId: user._id }).lean()).toMatchObject({
+      wasActive: false,
+    });
+  });
+
+  it('applies each seat change once per move and reports a counter at zero as drift', async () => {
+    await linkInstitution(ORG_X, { limits: { maxActiveMembers: 2 } });
+    expect(await reserveMoveSeat('x-uni', 'm1')).toBe(true);
+    expect(await reserveMoveSeat('x-uni', 'm1')).toBe(true);
+    expect(await seats('x-uni')).toBe(1);
+    expect(await releaseMoveSeat('x-uni', 'm1')).toBe('released');
+    expect(await releaseMoveSeat('x-uni', 'm1')).toBe('already');
+    expect(await seats('x-uni')).toBe(0);
+    expect(await releaseMoveSeat('x-uni', 'm2')).toBe('drift');
+    expect(await seats('x-uni')).toBe(0);
+  });
+
+  it('records seat drift on the move and in the audit', async () => {
+    await linkInstitution(ORG_X, { stats: { activeMembers: 0 } });
+    const user = await memberOfX();
+
+    await move({ userId: String(user._id), from: 'x-uni', to: null, reason: 'leave' });
+
+    const [entry] = await audits('member.moved');
+    expect(entry.metadata?.seatDrift).toBe(true);
   });
 });
 

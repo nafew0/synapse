@@ -15,6 +15,7 @@ import {
   SystemRoles,
   setTokenHeader,
   isSystemRoleName,
+  isAccountMovingError,
   buildLoginRedirectUrl,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
@@ -227,7 +228,8 @@ const AuthContextProvider = ({
     }
     if (userQuery.data) {
       setUser(userQuery.data);
-    } else if (userQuery.isError) {
+    } else if (userQuery.isError && !isAccountMovingError(userQuery.error)) {
+      /** A moving account is held back, not signed out: the query is retried once the move ends. */
       doSetError((userQuery.error as Error).message);
       navigate(buildLoginRedirectUrl(), { replace: true });
     }
