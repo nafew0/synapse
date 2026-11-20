@@ -53,6 +53,7 @@ export * from './memory';
 export * from './modelSpecs';
 /* Usage */
 export * from './usage';
+export * from './bdren';
 /* Agents */
 export * from './agents';
 /* Actions */

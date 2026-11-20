@@ -32,6 +32,7 @@ const memberAssignmentSchema = z
   .object({
     packageKey,
     expiresAt: z.coerce.date().nullable().default(null),
+    reason: z.string().trim().min(3).max(500).optional(),
   })
   .strict();
 
@@ -48,7 +49,14 @@ export interface UsageAssignmentDeps {
     input: RecordAuditEntryInput,
     options?: RecordAuditEntryOptions,
   ) => Promise<unknown>;
+  /**
+   * True while bdren.ai supplies the limits. A member package is then only a support override: it
+   * needs a reason and an end, and lasts at most 90 days.
+   */
+  limitsManagedElsewhere?: () => boolean;
 }
+
+const MAX_OVERRIDE_DAYS = 90;
 
 type TenantRequest = ServerRequest & { params: { tenantId?: string } };
 type UserRequest = ServerRequest & { params: { userId?: string } };
@@ -194,9 +202,24 @@ export function createUsageAssignmentHandlers(deps: UsageAssignmentDeps): UsageA
       return res.status(400).json({ error: 'Invalid request', issues: parsed.error.flatten() });
     }
     try {
-      const { packageKey: key, expiresAt } = parsed.data;
+      const { packageKey: key, expiresAt, reason } = parsed.data;
       if (expiresAt != null && expiresAt <= new Date()) {
         return res.status(400).json({ error: 'expiresAt must be in the future' });
+      }
+      const override = deps.limitsManagedElsewhere?.() === true;
+      if (override && (!reason || expiresAt == null)) {
+        return res
+          .status(400)
+          .json({ error: 'A support override needs a reason and an expiresAt' });
+      }
+      if (
+        override &&
+        expiresAt != null &&
+        expiresAt.getTime() > Date.now() + MAX_OVERRIDE_DAYS * 86_400_000
+      ) {
+        return res
+          .status(400)
+          .json({ error: `An override lasts at most ${MAX_OVERRIDE_DAYS} days` });
       }
       const [user] = await Promise.all([
         deps.getUserById(userId, 'name email tenantId usagePackage'),
@@ -210,6 +233,7 @@ export function createUsageAssignmentHandlers(deps: UsageAssignmentDeps): UsageA
         expiresAt,
         assignedAt: new Date(),
         assignedBy: actorOf(req).id,
+        ...(override ? { override: true, reason } : {}),
       };
       await deps.updateUser(userId, { usagePackage });
       await audit(
@@ -219,6 +243,7 @@ export function createUsageAssignmentHandlers(deps: UsageAssignmentDeps): UsageA
         {
           packageKey: key,
           expiresAt: expiresAt?.toISOString() ?? null,
+          ...(override ? { override: true, reason } : {}),
           previous_packageKey: user.usagePackage?.packageKey ?? null,
         },
         user.tenantId,

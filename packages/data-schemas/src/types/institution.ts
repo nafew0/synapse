@@ -7,6 +7,7 @@ export interface IInstitution extends Document {
   tenantId: string;
   name: string;
   slug?: string;
+  bdrenOrganizationId?: string;
   status: InstitutionStatus;
   authDomains?: string[];
   timezone?: string;

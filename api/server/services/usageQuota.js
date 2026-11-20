@@ -22,6 +22,8 @@ const {
   recordQuotaDenial,
   isEnforcementDenial,
   resolveCreditLimits,
+  allowanceCredits,
+  allowanceNotice,
   outputTokensForCredits,
   recordReservationExpiry,
 } = require('@librechat/api');
@@ -74,6 +76,16 @@ class QuotaError extends Error {
         window: resolved.window ?? null,
         meter: resolved.meter ?? null,
         resetAt: resolved.resetAt ?? null,
+        /** Present only for users whose limits come from bdren.ai: where to go next. */
+        ...(resolved.upgradeUrl
+          ? {
+              upgradeUrl: resolved.upgradeUrl,
+              packageName: resolved.packageName ?? null,
+              planSource: resolved.planSource ?? null,
+              institutionName: resolved.institutionName ?? null,
+              endsAt: resolved.endsAt ?? null,
+            }
+          : {}),
       }),
     );
     this.name = 'QuotaError';
@@ -388,6 +400,33 @@ function getCreditRanges(now = new Date()) {
 }
 
 /**
+ * Limits and windows of one request. A bdren.ai allowance, when the user has one, supplies both: its
+ * windows follow the subscription. Otherwise the member's and institution's Synapse packages apply
+ * on the calendar windows.
+ */
+async function resolveCreditView({ institution, memberPackage, allowance, now = new Date() }) {
+  if (allowance) {
+    return { ...allowanceCredits(allowance), catalog: await usageCatalog.load() };
+  }
+  const catalog = await usageCatalog.load();
+  return {
+    catalog,
+    ranges: getCreditRanges(now),
+    limits: resolveCreditLimits({
+      institutionPackage: institution.usagePackage,
+      memberPackage,
+      catalog,
+      now,
+    }),
+  };
+}
+
+/** Whether a request is metered in credits: a bdren.ai allowance, or a Synapse package. */
+function meteredInCredits(institution, memberPackage, allowance) {
+  return Boolean(allowance) || usesCredits(institution.usagePackage, memberPackage);
+}
+
+/**
  * The credit buckets a request draws from: the institution's and the member's, each per month and per
  * week. An account that is not an institution has no shared pool, so its users draw only on their own.
  */
@@ -661,17 +700,18 @@ async function reserveCredits({
   institution,
   policy,
   memberPackage,
+  allowance,
   pricingContext,
   estimatedInputTokens,
   requestedOutputTokens,
   metadata,
 }) {
-  const ranges = getCreditRanges();
   const enforcing = policy.mode === 'enforce';
-  const [catalog, existing] = await Promise.all([
-    usageCatalog.load(),
+  const [view, existing] = await Promise.all([
+    resolveCreditView({ institution, memberPackage, allowance }),
     runAsSystem(() => models.UsageReservation.findOne({ tenantId, reservationKey }).lean().exec()),
   ]);
+  const { ranges, limits } = view;
   if (existing) {
     return {
       reservation: existing,
@@ -695,11 +735,6 @@ async function reserveCredits({
     });
   }
 
-  const limits = resolveCreditLimits({
-    institutionPackage: institution.usagePackage,
-    memberPackage,
-    catalog,
-  });
   const scopes = buildCreditScopes({ tenantId, userId, limits, ranges });
   /** Credits per token at the request's own model, priced by the client with the billing table. */
   const rates = pricingContext?.rates ?? { input: 0, output: 0 };
@@ -752,6 +787,7 @@ async function reserveCredits({
       reserved: 0,
       remaining: smallestRemaining,
       resetAt: limitingScope.range.end.toISOString(),
+      ...(allowance ? allowanceNotice(allowance) : {}),
     });
   }
 
@@ -820,6 +856,21 @@ async function reserveCredits({
 }
 
 /**
+ * Whether the allowance still covers `credits` more, for a paid service (Firecrawl, OCR) that must
+ * be refused up front like an image. True when nothing is metered or the policy only observes.
+ */
+async function canAffordCredits({ tenantId, userId, memberPackage, allowance, credits }) {
+  const { institution, policy } = await loadQuotaContext(tenantId);
+  if (policy.mode !== 'enforce' || !meteredInCredits(institution, memberPackage, allowance)) {
+    return true;
+  }
+  const { ranges, limits } = await resolveCreditView({ institution, memberPackage, allowance });
+  const scopes = buildCreditScopes({ tenantId, userId, limits, ranges });
+  const remaining = await readScopeRemaining(tenantId, scopes);
+  return remaining.every((entry) => entry.remaining >= Math.max(credits, 1));
+}
+
+/**
  * Charges a model call that had no reservation of its own (a title, an activity label) to the
  * credit buckets. It already ran, so it is recorded as a settled reservation rather than checked
  * against the limit; the next request sees the smaller allowance. Idempotent on `reservationKey`.
@@ -829,6 +880,7 @@ async function recordAuxiliaryCredits({
   tenantId,
   userId,
   memberPackage,
+  allowance,
   reservationKey,
   credits,
   metadata,
@@ -838,15 +890,10 @@ async function recordAuxiliaryCredits({
     return null;
   }
   const { institution, policy } = await loadQuotaContext(tenantId);
-  if (!usesCredits(institution.usagePackage, memberPackage)) {
+  if (!meteredInCredits(institution, memberPackage, allowance)) {
     return null;
   }
-  const ranges = getCreditRanges();
-  const limits = resolveCreditLimits({
-    institutionPackage: institution.usagePackage,
-    memberPackage,
-    catalog: await usageCatalog.load(),
-  });
+  const { ranges, limits } = await resolveCreditView({ institution, memberPackage, allowance });
   const scopes = buildCreditScopes({ tenantId, userId, limits, ranges });
   const policyVersion = Math.max(policy.version, 1);
   const transactionCapable = await supportsTransactions();
@@ -932,7 +979,7 @@ async function recordAuxiliaryCredits({
  *   priced at (for an agent, its own model) and its credits per input and output token.
  */
 async function reserveUsage(params) {
-  const { tenantId, userId, reservationKey, provider, model, memberPackage } = params;
+  const { tenantId, userId, reservationKey, provider, model, memberPackage, allowance } = params;
   if (!tenantId || !userId || !reservationKey) {
     throw new QuotaError({
       code: 'INVALID_QUOTA_CONTEXT',
@@ -941,7 +988,7 @@ async function reserveUsage(params) {
   }
   const canonical = canonicalizeModel({ provider, model });
   const { institution, policy } = await loadQuotaContext(tenantId);
-  if (usesCredits(institution.usagePackage, memberPackage)) {
+  if (meteredInCredits(institution, memberPackage, allowance)) {
     return reserveCredits({ ...params, canonical, institution, policy });
   }
   /** Accounts that are not institutions are metered in credits only: with no package, nothing applies. */
@@ -1691,17 +1738,31 @@ async function reconcileQuotaState({ limit = 100, now = new Date() } = {}) {
  * A `null` limit means unlimited (shadow mode, or a superadmin override): usage
  * is still reported, `remaining` is simply absent.
  */
+/** The package a member is shown: the bdren.ai plan, a Synapse package, or none. */
+function memberPackageView({ allowance, limits, pkg }) {
+  if (allowance) {
+    return { key: limits.memberPackageKey, name: allowance.packageName, unlimited: false };
+  }
+  return pkg ? { key: pkg.key, name: pkg.name, unlimited: pkg.unlimited === true } : null;
+}
+
 /**
  * A credit member's allowance this week and month. The institution's pooled allowance is
  * reported only as blocked or not, with its reset: its size is the institution's, not the member's.
  */
-async function getMemberCreditQuota({ tenantId, userId, institution, policy, memberPackage, now }) {
-  const ranges = getCreditRanges(now);
-  const catalog = await usageCatalog.load();
-  const limits = resolveCreditLimits({
-    institutionPackage: institution.usagePackage,
+async function getMemberCreditQuota({
+  tenantId,
+  userId,
+  institution,
+  policy,
+  memberPackage,
+  allowance,
+  now,
+}) {
+  const { ranges, limits, catalog } = await resolveCreditView({
+    institution,
     memberPackage,
-    catalog,
+    allowance,
     now,
   });
   const scopes = buildCreditScopes({ tenantId, userId, limits, ranges });
@@ -1761,15 +1822,24 @@ async function getMemberCreditQuota({ tenantId, userId, institution, policy, mem
     tenantId,
     unit: 'credits',
     enforced: policy.mode === 'enforce',
-    package: pkg ? { key: pkg.key, name: pkg.name, unlimited: pkg.unlimited === true } : null,
+    package: memberPackageView({ allowance, limits, pkg }),
+    ...(allowance ? { plan: { ...allowanceNotice(allowance), source: allowance.origin } } : {}),
     meters,
   };
 }
 
-async function getMemberQuota({ tenantId, userId, memberPackage, now = new Date() }) {
+async function getMemberQuota({ tenantId, userId, memberPackage, allowance, now = new Date() }) {
   const { institution, policy } = await loadQuotaContext(tenantId);
-  if (usesCredits(institution.usagePackage, memberPackage)) {
-    return getMemberCreditQuota({ tenantId, userId, institution, policy, memberPackage, now });
+  if (meteredInCredits(institution, memberPackage, allowance)) {
+    return getMemberCreditQuota({
+      tenantId,
+      userId,
+      institution,
+      policy,
+      memberPackage,
+      allowance,
+      now,
+    });
   }
   if (isUsageAccount(tenantId)) {
     return null;
@@ -2508,6 +2578,7 @@ module.exports = {
   reconcileExpiredReservations,
   reconcileQuotaState,
   recordAuxiliaryCredits,
+  canAffordCredits,
   releaseUsage,
   reserveUsage,
   settleUsage,

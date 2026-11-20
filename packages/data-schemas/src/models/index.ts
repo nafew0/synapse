@@ -4,6 +4,7 @@ import {
   createUsagePricingModel,
 } from './usagePackage';
 import { createAgentTriggerLaneSequenceModel } from './triggerLaneSequence';
+import { createBdrenAllowanceModel, createBdrenEventModel } from './bdren';
 import { createInstitutionImportJobModel } from './institutionImportJob';
 import { createAdminScopeAssignmentModel } from './adminScopeAssignment';
 import { createSkillSyncCredentialModel } from './skillSyncCredential';
@@ -112,6 +113,8 @@ export function createModels(mongoose: typeof import('mongoose')): {
   UsageJob: ReturnType<typeof createUsageJobModel>;
   TaskCostProfile: ReturnType<typeof createTaskCostProfileModel>;
   UsageDaily: ReturnType<typeof createUsageDailyModel>;
+  BdrenAllowance: ReturnType<typeof createBdrenAllowanceModel>;
+  BdrenEvent: ReturnType<typeof createBdrenEventModel>;
   UsageReservation: ReturnType<typeof createUsageReservationModel>;
   UsageWarning: ReturnType<typeof createUsageWarningModel>;
   AdminScopeAssignment: ReturnType<typeof createAdminScopeAssignmentModel>;
@@ -170,6 +173,8 @@ export function createModels(mongoose: typeof import('mongoose')): {
     UsageJob: createUsageJobModel(mongoose),
     TaskCostProfile: createTaskCostProfileModel(mongoose),
     UsageDaily: createUsageDailyModel(mongoose),
+    BdrenAllowance: createBdrenAllowanceModel(mongoose),
+    BdrenEvent: createBdrenEventModel(mongoose),
     UsageReservation: createUsageReservationModel(mongoose),
     UsageWarning: createUsageWarningModel(mongoose),
     AdminScopeAssignment: createAdminScopeAssignmentModel(mongoose),

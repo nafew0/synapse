@@ -122,6 +122,10 @@ export interface OcrChargeInput {
   conversationId?: string;
 }
 
+/** The ledger key of an upload's OCR charge; the allowance meter charges under the same key. */
+export const ocrRequestKey = (user: string, fileId: string): string =>
+  `ocr-upload:${user}:${fileId}`;
+
 /** Records pages read by the recogniser at upload time, the same way `read_document` records them. */
 export function recordOcrCharge(input: OcrChargeInput): Promise<ServiceChargeResult> {
   return recordServiceCharge({
@@ -136,6 +140,6 @@ export function recordOcrCharge(input: OcrChargeInput): Promise<ServiceChargeRes
     pages: input.pages,
     modelKey: input.modelKey,
     conversationId: input.conversationId,
-    requestKey: `ocr-upload:${input.user}:${input.fileId}`,
+    requestKey: ocrRequestKey(input.user, input.fileId),
   });
 }

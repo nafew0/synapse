@@ -19,6 +19,11 @@ const institutionSchema: Schema<IInstitution> = new Schema<IInstitution>(
       type: String,
       trim: true,
     },
+    /** The bdren.ai organization this institution is. Members' seats and limits come from there. */
+    bdrenOrganizationId: {
+      type: String,
+      trim: true,
+    },
     status: {
       type: String,
       enum: Object.values(InstitutionStatuses),
@@ -103,6 +108,10 @@ const institutionSchema: Schema<IInstitution> = new Schema<IInstitution>(
 );
 
 institutionSchema.index({ tenantId: 1 }, { unique: true });
+institutionSchema.index(
+  { bdrenOrganizationId: 1 },
+  { unique: true, partialFilterExpression: { bdrenOrganizationId: { $type: 'string' } } },
+);
 institutionSchema.index({ slug: 1 }, { unique: true, sparse: true });
 
 export default institutionSchema;

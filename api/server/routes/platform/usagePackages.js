@@ -1,5 +1,6 @@
 const express = require('express');
-const { createUsagePackageHandlers } = require('@librechat/api');
+const { createUsagePackageHandlers, requirePackagesEditable } = require('@librechat/api');
+const { bdrenConfig } = require('~/server/services/bdrenAllowance');
 const { requireJwtAuth } = require('~/server/middleware');
 const requirePlatformSuperadmin = require('~/server/middleware/platformAdmin');
 const usageCatalog = require('~/server/services/usageCatalog');
@@ -17,7 +18,7 @@ const handlers = createUsagePackageHandlers({
 });
 
 const router = express.Router();
-router.use(requireJwtAuth, requirePlatformSuperadmin);
+router.use(requireJwtAuth, requirePlatformSuperadmin, requirePackagesEditable(bdrenConfig));
 
 router.get('/pricing', handlers.getPricing);
 router.put('/pricing', handlers.updatePricing);

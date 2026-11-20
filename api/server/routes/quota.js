@@ -2,6 +2,7 @@ const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const { getMemberQuota, resolveQuotaAccount } = require('~/server/services/usageQuota');
+const { getRequestAllowance } = require('~/server/services/bdrenAllowance');
 
 const router = express.Router();
 
@@ -22,6 +23,7 @@ router.get('/', requireJwtAuth, async (req, res) => {
       tenantId,
       userId: req.user.id,
       memberPackage: req.user.usagePackage,
+      allowance: await getRequestAllowance(req.user),
     });
     return quota ? res.status(200).json(quota) : res.sendStatus(204);
   } catch (error) {

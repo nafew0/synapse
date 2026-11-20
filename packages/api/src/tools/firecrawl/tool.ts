@@ -8,9 +8,16 @@ import type {
   FirecrawlCreditsReporter,
 } from './client';
 import type { FirecrawlBudgetScope, FirecrawlCall } from './budget';
+import type { ServiceMeter } from '~/bdren/meter';
+import {
+  recordServiceCharge,
+  firecrawlScrapeCredits,
+  firecrawlSearchCredits,
+} from '~/usage/charges';
 import { FIRECRAWL_SEARCH_TOOL_NAME, firecrawlToolkit, isFirecrawlTool } from './definitions';
 import { getFirecrawlConfig, scrapeFirecrawl, searchFirecrawl } from './client';
-import { recordServiceCharge } from '~/usage/charges';
+import { CREDITS_PER_USD } from '~/usage/packages';
+import { SERVICE_REFUSAL } from '~/bdren/meter';
 import { reserveFirecrawlCall } from './budget';
 
 interface ToolRunConfig {
@@ -25,6 +32,8 @@ export interface FirecrawlLedger {
   conversationId?: string;
   messageId?: string;
   pricePerCreditUsd: number;
+  /** The allowance meter: a call it cannot cover is refused, and each charged call draws from it. */
+  meter?: ServiceMeter | null;
 }
 
 export interface FirecrawlToolOptions {
@@ -45,6 +54,9 @@ function reporterFor(
   }
   const callId = toolCallId ?? randomUUID();
   return async (credits) => {
+    const requestKey = ['firecrawl', ledger.user, ledger.conversationId, ledger.messageId, callId]
+      .filter(Boolean)
+      .join(':');
     await recordServiceCharge({
       service: 'firecrawl',
       usageKind: call === 'search' ? 'web_search' : 'web_scrape',
@@ -55,11 +67,33 @@ function reporterFor(
       tenantId: ledger.tenantId,
       conversationId: ledger.conversationId,
       messageId: ledger.messageId,
-      requestKey: ['firecrawl', ledger.user, ledger.conversationId, ledger.messageId, callId]
-        .filter(Boolean)
-        .join(':'),
+      requestKey,
     });
+    await ledger.meter?.charge(
+      requestKey,
+      Math.round(credits * ledger.pricePerCreditUsd * CREDITS_PER_USD),
+      call === 'search' ? 'web_search' : 'web_scrape',
+    );
   };
+}
+
+/** The refusal a call gets when the allowance cannot cover its worst-case price, or `undefined`. */
+async function refusalFor(
+  ledger: FirecrawlLedger | undefined,
+  call: FirecrawlCall,
+  input: FirecrawlSearchInput | FirecrawlScrapeInput,
+): Promise<string | undefined> {
+  if (!ledger?.meter) {
+    return undefined;
+  }
+  const units =
+    call === 'search'
+      ? firecrawlSearchCredits((input as FirecrawlSearchInput).limit ?? 5)
+      : firecrawlScrapeCredits();
+  const affordable = await ledger.meter.canAfford(
+    Math.round(units * ledger.pricePerCreditUsd * CREDITS_PER_USD),
+  );
+  return affordable ? undefined : SERVICE_REFUSAL;
 }
 
 /** Creates the named Firecrawl tool; the API key, limits and budget come from the environment. */
@@ -72,8 +106,9 @@ export function createFirecrawlTool(
   }
   if (toolName === FIRECRAWL_SEARCH_TOOL_NAME) {
     return tool(
-      (input: FirecrawlSearchInput, runConfig?: ToolRunConfig) =>
+      async (input: FirecrawlSearchInput, runConfig?: ToolRunConfig) =>
         reserveFirecrawlCall(budgetScope, 'search', config) ??
+        (await refusalFor(ledger, 'search', input)) ??
         searchFirecrawl(
           config,
           input,
@@ -84,8 +119,9 @@ export function createFirecrawlTool(
     ) as DynamicStructuredTool;
   }
   return tool(
-    (input: FirecrawlScrapeInput, runConfig?: ToolRunConfig) =>
+    async (input: FirecrawlScrapeInput, runConfig?: ToolRunConfig) =>
       reserveFirecrawlCall(budgetScope, 'scrape', config) ??
+      (await refusalFor(ledger, 'scrape', input)) ??
       scrapeFirecrawl(
         config,
         input,

@@ -1,5 +1,6 @@
 const express = require('express');
-const { createUsageAssignmentHandlers } = require('@librechat/api');
+const { createUsageAssignmentHandlers, requirePackagesEditable } = require('@librechat/api');
+const { bdrenConfig } = require('~/server/services/bdrenAllowance');
 const { requireJwtAuth } = require('~/server/middleware');
 const requirePlatformSuperadmin = require('~/server/middleware/platformAdmin');
 const db = require('~/models');
@@ -11,13 +12,23 @@ const handlers = createUsageAssignmentHandlers({
   getUserById: db.getUserById,
   updateUser: db.updateUser,
   recordAuditEntry: db.recordAuditEntry,
+  limitsManagedElsewhere: () => bdrenConfig.enabled,
 });
 
 const router = express.Router();
 const guard = [requireJwtAuth, requirePlatformSuperadmin];
+const institutionGuard = [...guard, requirePackagesEditable(bdrenConfig)];
 
-router.put('/institutions/:tenantId/usage-package', guard, handlers.setInstitutionPackage);
-router.delete('/institutions/:tenantId/usage-package', guard, handlers.clearInstitutionPackage);
+router.put(
+  '/institutions/:tenantId/usage-package',
+  institutionGuard,
+  handlers.setInstitutionPackage,
+);
+router.delete(
+  '/institutions/:tenantId/usage-package',
+  institutionGuard,
+  handlers.clearInstitutionPackage,
+);
 router.put('/users/:userId/usage-package', guard, handlers.setMemberPackage);
 router.delete('/users/:userId/usage-package', guard, handlers.clearMemberPackage);
 

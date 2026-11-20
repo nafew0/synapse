@@ -457,6 +457,56 @@ router.patch('/:tenantId/ocr-access', async (req, res) => {
   }
 });
 
+/**
+ * Maps a Synapse institution to its bdren.ai organization (or clears the mapping with `null`).
+ * From then on a member's seat is read from bdren.ai. One organization maps to one institution.
+ */
+router.put('/:tenantId/bdren-organization', async (req, res) => {
+  const { tenantId } = req.params;
+  const { bdrenOrganizationId } = req.body ?? {};
+  const organizationId =
+    typeof bdrenOrganizationId === 'string' ? bdrenOrganizationId.trim() : null;
+  if (bdrenOrganizationId !== null && (!organizationId || organizationId.length > 100)) {
+    return res.status(400).json({ error: 'bdrenOrganizationId must be a string or null' });
+  }
+
+  try {
+    const update = organizationId
+      ? { $set: { bdrenOrganizationId: organizationId } }
+      : { $unset: { bdrenOrganizationId: 1 } };
+    const before = await runAsSystem(() =>
+      models.Institution.findOneAndUpdate({ tenantId: tenantId.trim() }, update, {
+        new: false,
+        projection: { bdrenOrganizationId: 1, name: 1 },
+      })
+        .lean()
+        .exec(),
+    );
+    if (!before) {
+      return res.status(404).json({ error: 'Institution not found' });
+    }
+    await recordPlatformAudit(req, {
+      action: 'institution.updated',
+      severity: 'warning',
+      target: { type: 'institution', id: tenantId, name: before.name },
+      metadata: {
+        operation: 'bdren_organization_mapped',
+        before: before.bdrenOrganizationId ?? null,
+        after: organizationId,
+      },
+    });
+    return res.status(200).json({ tenantId, bdrenOrganizationId: organizationId });
+  } catch (error) {
+    if (error?.code === 11000) {
+      return res
+        .status(409)
+        .json({ error: 'That bdren.ai organization is already mapped to another institution' });
+    }
+    logger.error('[platform/institutions] Failed to map the bdren.ai organization', error);
+    return res.status(500).json({ error: 'Failed to map the bdren.ai organization' });
+  }
+});
+
 function sendAgentAccessError(res, error, fallback) {
   if (error instanceof HttpError || error instanceof TenantAgentAccessError) {
     return res.status(error.statusCode).json({ error: error.message });

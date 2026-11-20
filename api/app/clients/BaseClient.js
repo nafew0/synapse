@@ -40,6 +40,7 @@ const {
   resolveQuotaAccount,
   isEnforcementDenial,
 } = require('~/server/services/usageQuota');
+const { getRequestAllowance } = require('~/server/services/bdrenAllowance');
 const { logViolation } = require('~/cache');
 const TextStream = require('./TextStream');
 const db = require('~/models');
@@ -816,6 +817,7 @@ class BaseClient {
           model: this.modelOptions?.model ?? this.model,
           /** Credit metering: the member's own package, and the model the request is priced at. */
           memberPackage: this.options.req?.user?.usagePackage,
+          allowance: await getRequestAllowance(this.options.req?.user),
           pricingContext: this.getQuotaPricingContext?.(),
           reservationKey: quotaReservationKey,
           estimatedInputTokens: promptTokens,

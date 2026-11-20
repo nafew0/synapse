@@ -143,6 +143,7 @@ const {
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
 const { recordAuxiliaryCredits, resolveQuotaAccount } = require('~/server/services/usageQuota');
+const { getRequestAllowance } = require('~/server/services/bdrenAllowance');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { resolveConfigServers, getAccessibleMcpServerNames } = require('~/server/services/MCP');
 const { getMCPServerTools } = require('~/server/services/Config');
@@ -2574,6 +2575,7 @@ class AgentClient extends BaseClient {
         tenantId,
         userId: this.user ?? req.user.id,
         memberPackage: req.user.usagePackage,
+        allowance: await getRequestAllowance(req.user),
         reservationKey: `${this.conversationId}:${runKey}:${context}:${this.auxiliaryChargeSeq}`,
         credits,
         metadata: { context, model: model ?? null },

@@ -63,6 +63,7 @@ const {
 } = require('~/server/services/MCP');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
+const { createServiceMeter } = require('~/server/services/serviceMeter');
 const { createChatFileTool } = require('~/server/services/Files/authoring');
 const { createDocumentReader } = require('~/server/services/Files/documents');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
@@ -464,6 +465,7 @@ const loadTools = async ({
             messageId: options.req?.body?.messageId,
             pricePerCreditUsd: resolveServicePricing(options.req?.config?.servicePricing).firecrawl
               .pricePerCreditUsd,
+            meter: await createServiceMeter(options.req?.user),
           },
         });
       continue;

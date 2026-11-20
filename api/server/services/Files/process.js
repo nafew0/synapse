@@ -30,6 +30,7 @@ const { logger, runAsSystem } = require('@librechat/data-schemas');
 
 /** Unstructured's per-page price, used when `documentOcr` is not configured for the recogniser. */
 const DEFAULT_OCR_PRICE_PER_PAGE_USD = 0.015;
+const { createServiceMeter } = require('~/server/services/serviceMeter');
 const {
   parseText,
   isTextType,
@@ -42,6 +43,7 @@ const {
   planPreparation,
   sanitizeFilename,
   recordOcrCharge,
+  ocrRequestKey,
   processAudioFile,
   sendUploadSuccess,
   getStorageSource,
@@ -805,6 +807,20 @@ const extractDocumentText = async ({
     return parsed ? { ...parsed, ocrApplied: false } : undefined;
   }
 
+  const pricePerPageUsd =
+    req.config?.documentOcr?.pricePerPageUsd ?? DEFAULT_OCR_PRICE_PER_PAGE_USD;
+  const meter =
+    ocrStrategy !== FileSources.document_parser ? await createServiceMeter(req.user) : null;
+  const estimatedCredits = Math.round(
+    Math.max(parsed?.pages ?? 1, 1) * pricePerPageUsd * 1_000_000,
+  );
+  if (meter && !(await meter.canAfford(estimatedCredits))) {
+    logger.warn(
+      `[processAgentFileUpload] OCR skipped for "${file.originalname}": allowance used up`,
+    );
+    return parsed ? { ...parsed, ocrApplied: false } : undefined;
+  }
+
   onRecognize?.();
   try {
     const { handleFileUpload } = getStrategyFunctions(ocrStrategy);
@@ -817,11 +833,15 @@ const extractDocumentText = async ({
           tenantId: req.user.tenantId,
           fileId,
           pages: recognized.pages ?? 0,
-          pricePerPageUsd:
-            req.config?.documentOcr?.pricePerPageUsd ?? DEFAULT_OCR_PRICE_PER_PAGE_USD,
+          pricePerPageUsd,
           modelKey: `upload/${ocrStrategy}`,
           conversationId: req.body?.conversationId,
         });
+        await meter?.charge(
+          ocrRequestKey(req.user.id, fileId),
+          Math.round((recognized.pages ?? 0) * pricePerPageUsd * 1_000_000),
+          'ocr',
+        );
       }
       return { ...recognized, ocrApplied: applied };
     }

@@ -194,6 +194,9 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
         assignedAt: { type: Date },
         assignedBy: { type: Schema.Types.ObjectId, ref: 'User' },
         expiresAt: { type: Date, default: null },
+        /** A support override: lifts the wall while it lasts. Set only with a reason and an end. */
+        override: { type: Boolean, default: false },
+        reason: { type: String, trim: true },
       },
       default: null,
     },

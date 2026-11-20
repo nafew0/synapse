@@ -62,6 +62,9 @@ export interface MemberUsagePackage {
   assignedAt?: Date;
   assignedBy?: Types.ObjectId | string;
   expiresAt?: Date | null;
+  /** Support override that wins over the bdren.ai allowance until `expiresAt`. */
+  override?: boolean;
+  reason?: string;
 }
 
 /** The quota account of users who belong to no institution. Not a valid institution `tenantId`. */

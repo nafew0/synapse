@@ -267,6 +267,12 @@ const startServer = async () => {
   app.use('/api/agents/chat', agentStartupIngressMiddleware);
   app.use(metricsMiddleware);
   app.use(noIndex);
+  /** bdren.ai's signed webhook needs the body exactly as sent, so it is read raw, before JSON parsing. */
+  app.post(
+    '/api/bdren/webhook',
+    express.raw({ type: () => true, limit: '256kb' }),
+    require('~/server/services/bdrenAllowance').webhookHandler,
+  );
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(handleJsonParseError);
