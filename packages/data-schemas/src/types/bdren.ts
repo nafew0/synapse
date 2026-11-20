@@ -82,6 +82,15 @@ export interface IBdrenUploadTicket {
 
 export type MemberMoveStatus = 'running' | 'done' | 'refused' | 'redirected' | 'failed';
 
+/** What stripping one MCP server name took from an agent, so a move that is undone can put it back. */
+export interface MemberMoveStripped {
+  agent: string;
+  name: string;
+  tools: string[];
+  /** The removed `tool_options` entries, as JSON (their values are free-form). */
+  toolOptionsJson: string;
+}
+
 /** A moving item renamed because its name is taken in the target tenant. */
 export interface MemberMoveRename {
   model: 'MCPServer' | 'Skill';
@@ -147,6 +156,8 @@ export interface IMemberMove {
   userSwitched?: boolean;
   wasActive?: boolean;
   refusal?: string | null;
+  /** What stripping took from agents, recorded as it happened (see `MemberMoveStripped`). */
+  strippedDetails?: MemberMoveStripped[];
   /** How many times a trigger has driven this move; past the limit it is marked failed. */
   attempts?: number;
   /** A seat release found the counter already at zero: the counter had drifted. */

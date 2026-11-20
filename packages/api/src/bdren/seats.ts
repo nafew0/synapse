@@ -6,13 +6,15 @@ import type { Model } from 'mongoose';
 /** What giving a move's seat back did: `drift` means the counter was already at zero. */
 export type SeatRelease = 'released' | 'already' | 'drift';
 
-/** Seat operations remembered per institution; older ones can no longer be retried anyway. */
-const SEAT_OPS_KEPT = 500;
-
 const institutions = (): Model<IInstitution> => mongoose.models.Institution as Model<IInstitution>;
 const users = (): Model<IUser> => mongoose.models.User as Model<IUser>;
 
-const remember = (op: string) => ({ $push: { seatOps: { $each: [op], $slice: -SEAT_OPS_KEPT } } });
+/**
+ * A seat operation is recorded on the institution in the same update as the counter change, so it
+ * is never applied twice. Entries are not capped (a cap could forget an operation a retry still
+ * needs); a move removes its own entries once it is over (`forgetMoveSeats`).
+ */
+const remember = (op: string) => ({ $push: { seatOps: op } });
 
 /** Fills a missing counter from the active members, as the member service does. */
 async function ensureCounter(tenantId: string): Promise<void> {
@@ -21,7 +23,11 @@ async function ensureCounter(tenantId: string): Promise<void> {
     .select('stats')
     .lean<IInstitution>()
     .exec();
-  if (!institution || typeof institution.stats?.activeMembers === 'number') {
+  if (!institution) {
+    /** Not "full": a missing institution is an error the move retries, and alerts on if it lasts. */
+    throw new Error(`institution ${tenantId} not found for a seat change`);
+  }
+  if (typeof institution.stats?.activeMembers === 'number') {
     return;
   }
   const active = await users()
@@ -96,4 +102,23 @@ export async function releaseMoveSeat(tenantId: string, moveId: string): Promise
     );
     return 'drift';
   });
+}
+
+/** Drops a finished move's seat operations from the institutions it touched. */
+export async function forgetMoveSeats(
+  tenantIds: Array<string | null | undefined>,
+  moveId: string,
+): Promise<void> {
+  const tenants = tenantIds.filter((tenantId): tenantId is string => !!tenantId);
+  if (tenants.length === 0) {
+    return;
+  }
+  await runAsSystem(() =>
+    institutions()
+      .updateMany(
+        { tenantId: { $in: tenants } },
+        { $pull: { seatOps: { $in: [`reserve:${moveId}`, `release:${moveId}`] } } },
+      )
+      .exec(),
+  );
 }

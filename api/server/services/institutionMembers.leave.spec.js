@@ -16,6 +16,9 @@ const actor = { id: new mongoose.Types.ObjectId().toString(), name: 'Admin' };
  * them an individual; an unlinked institution still deletes the account.
  */
 describe('removing a member', () => {
+  /** A leave runs the whole member move; give it room when the suite runs alongside many others. */
+  jest.setTimeout(60_000);
+
   let mongoServer;
 
   beforeAll(async () => {

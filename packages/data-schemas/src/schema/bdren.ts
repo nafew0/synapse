@@ -69,6 +69,7 @@ export const memberMoveSchema: Schema<IMemberMove> = new Schema<IMemberMove>(
     refusal: { type: String, default: null },
     droppedGrants: { type: [String], default: [] },
     attempts: { type: Number, default: 0 },
+    strippedDetails: { type: [Schema.Types.Mixed], default: [] },
     seatDrift: { type: Boolean, default: false },
     lateSweepAt: { type: Date, default: null },
     lateSweptAt: { type: Date, default: null },

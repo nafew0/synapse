@@ -5,6 +5,8 @@ export const ACCOUNT_MOVING_EVENT = 'accountMoving';
 /** How often one request is retried, and the longest single wait, while the account moves. */
 export const ACCOUNT_MOVING_MAX_RETRIES = 6;
 export const ACCOUNT_MOVING_MAX_WAIT_MS = 10_000;
+/** How long a request keeps being resent while the server says the account is moving. */
+export const ACCOUNT_MOVING_MAX_TOTAL_MS = 5 * 60_000;
 const DEFAULT_WAIT_MS = 5_000;
 
 interface MaybeMovingError {
@@ -24,4 +26,24 @@ export function accountMovingWaitMs(retryAfter: unknown): number {
     return DEFAULT_WAIT_MS;
   }
   return Math.min(seconds * 1000, ACCOUNT_MOVING_MAX_WAIT_MS);
+}
+
+/** Whether a response body (parsed or raw text) is the `ACCOUNT_MOVING` refusal. */
+export function isAccountMovingBody(body: unknown): boolean {
+  let data = body;
+  if (typeof body === 'string') {
+    try {
+      data = JSON.parse(body);
+    } catch {
+      return false;
+    }
+  }
+  return (data as { code?: unknown } | null)?.code === ACCOUNT_MOVING_CODE;
+}
+
+/** Tells the page (the notice, the user query) that a request is being held back. */
+export function announceAccountMoving(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(ACCOUNT_MOVING_EVENT));
+  }
 }

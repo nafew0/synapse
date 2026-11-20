@@ -13,12 +13,14 @@ import type {
   IMemberMove,
   MemberMovePlan,
   MemberMoveRename,
+  MemberMoveStripped,
   RecordAuditEntryInput,
   RecordAuditEntryOptions,
 } from '@librechat/data-schemas';
 import type { ClientSession, Model, UpdateQuery, mongo } from 'mongoose';
 import type { MemberRecord } from './place';
 import type { SeatRelease } from './seats';
+import { forgetMoveSeats } from './seats';
 import { syncAlerts } from '~/admin/alerts/store';
 
 type Filter = mongo.Filter<mongo.Document>;
@@ -144,6 +146,7 @@ interface StepResult {
   moved: number;
   conflicts: number;
   dropped?: string[];
+  stripped?: MemberMoveStripped[];
 }
 
 const DUPLICATE_KEY = 11000;
@@ -553,8 +556,9 @@ async function renameServerCredentials(ctx: StepContext, rename: MemberMoveRenam
  */
 async function stripServers(ctx: StepContext): Promise<StepResult> {
   let moved = 0;
+  const stripped: MemberMoveStripped[] = [];
   for (const { agent, name } of ctx.plan.strippedServers ?? []) {
-    const result = await model('Agent').collection.updateOne(
+    const before = await model('Agent').collection.findOneAndUpdate(
       { _id: new Types.ObjectId(agent), tenantId: ctx.from, mcpServerNames: name },
       [
         {
@@ -581,11 +585,59 @@ async function stripServers(ctx: StepContext): Promise<StepResult> {
           },
         },
       ],
-      { session: ctx.session },
+      {
+        session: ctx.session,
+        returnDocument: 'before',
+        projection: { tools: 1, tool_options: 1 },
+      },
     );
-    moved += result.modifiedCount;
+    if (!before) {
+      continue;
+    }
+    moved += 1;
+    const suffix = mcpSuffix(name);
+    const tools = ((before.tools as string[] | undefined) ?? []).filter((tool) =>
+      tool.endsWith(suffix),
+    );
+    const options = Object.fromEntries(
+      Object.entries((before.tool_options as mongo.Document | undefined) ?? {}).filter(([key]) =>
+        key.endsWith(suffix),
+      ),
+    );
+    stripped.push({ agent, name, tools, toolOptionsJson: JSON.stringify(options) });
   }
-  return { moved, conflicts: 0 };
+  return { moved, conflicts: 0, stripped };
+}
+
+/** Puts back what stripping took, when the move is undone and the agents return to the source. */
+async function restoreStripped(details: MemberMoveStripped[]): Promise<number> {
+  let restored = 0;
+  for (const detail of details) {
+    const options = Object.entries(
+      JSON.parse(detail.toolOptionsJson || '{}') as mongo.Document,
+    ).map(([k, v]) => ({ k, v }));
+    const result = await model('Agent').collection.updateOne(
+      { _id: new Types.ObjectId(detail.agent) },
+      [
+        {
+          $set: {
+            mcpServerNames: {
+              $setUnion: [{ $ifNull: ['$mcpServerNames', []] }, { $literal: [detail.name] }],
+            },
+            tools: { $setUnion: [{ $ifNull: ['$tools', []] }, { $literal: detail.tools }] },
+            tool_options: {
+              $mergeObjects: [
+                { $ifNull: ['$tool_options', {}] },
+                { $arrayToObject: { $literal: options } },
+              ],
+            },
+          },
+        },
+      ],
+    );
+    restored += result.modifiedCount;
+  }
+  return restored;
 }
 
 /**
@@ -952,6 +1004,8 @@ async function renamesFor(
   to: string | null,
   servers: OwnedDoc[],
   skills: OwnedDoc[],
+  /** Names of servers staying in the source: a rename must not take one, or strip and rename collide. */
+  reserved: Set<string> = new Set(),
 ): Promise<MemberMoveRename[]> {
   const renames: MemberMoveRename[] = [];
   if (servers.length > 0) {
@@ -968,7 +1022,7 @@ async function renamesFor(
       if (!taken.has(name) && !taken.has(normalizeServerName(name))) {
         continue;
       }
-      const renamed = freeName(name, taken);
+      const renamed = freeName(name, new Set([...taken, ...reserved]));
       taken.add(renamed);
       taken.add(normalizeServerName(renamed));
       renames.push({ model: 'MCPServer', id: String(server._id), from: name, to: renamed });
@@ -1067,7 +1121,7 @@ async function makePlan(
             movingAgents.map((agent) => agent._id),
           )
         : Promise.resolve([]),
-      renamesFor(oid, to, moving(servers), moving(skills)),
+      renamesFor(oid, to, moving(servers), moving(skills), staying),
       leave && from != null
         ? heirFor(oid, from)
         : Promise.resolve({ heir: null, heirIsUser: false }),
@@ -1171,6 +1225,42 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
   }
 
   const moveId = (record: Held) => String(record._id);
+  const heartbeatMs = Math.max(1_000, Math.min(Math.floor(leaseMs / 3), 60_000));
+
+  /** A move that is over no longer needs its seat operations remembered. */
+  const forgetSeats = (record: Held) =>
+    forgetMoveSeats([record.from, record.to], moveId(record)).catch((error) =>
+      logger.warn(`[bdren] forgetting the seat operations of move ${moveId(record)} failed`, error),
+    );
+
+  /** Renews lease and fence on a timer while one (possibly long) step runs. */
+  async function beating<T>(ctx: StepContext, task: () => Promise<T>): Promise<T> {
+    if (!ctx.heartbeat) {
+      return task();
+    }
+    const beat = ctx.heartbeat;
+    const timer = setInterval(() => {
+      beat().catch((error) => logger.warn('[bdren] member move heartbeat failed', error));
+    }, heartbeatMs);
+    timer.unref?.();
+    try {
+      return await task();
+    } finally {
+      clearInterval(timer);
+    }
+  }
+
+  /** Confirms this trigger still holds the move right before the user changes tenant. */
+  async function holdLease(record: Held, session?: ClientSession): Promise<void> {
+    const result = await moves().collection.updateOne(
+      { _id: record._id, leaseId: record.leaseId, status: 'running' },
+      { $set: { leaseUntil: leaseUntil() } },
+      { session },
+    );
+    if (result.matchedCount !== 1) {
+      throw new LeaseLost();
+    }
+  }
 
   /** Gives back the seat this move took in its target, unless the person got there. */
   async function returnSeat(record: Held): Promise<void> {
@@ -1186,16 +1276,16 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
   async function fail(record: Held, cause: string): Promise<MoveOutcome> {
     const failed = await moves()
       .findOneAndUpdate(
-        { _id: record._id, status: 'running' },
+        { _id: record._id, status: 'running', leaseId: record.leaseId },
         { $set: { status: 'failed', refusal: cause, leaseId: null, leaseUntil: null } },
         { new: true },
       )
       .lean<Held>()
       .exec();
-    await fence(record.userId, null);
     if (!failed) {
       return { status: 'busy' };
     }
+    await fence(record.userId, null);
     try {
       await returnSeat(failed);
     } catch (error) {
@@ -1217,6 +1307,7 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
       logger.error('[bdren] raising the member move alert failed', error);
     }
     await audit(record, failed, { failed: cause });
+    await forgetSeats(failed);
     return { status: 'failed' };
   }
 
@@ -1351,11 +1442,19 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
           $set: { accountScope: 'standalone', ...(role ? { role } : null) },
           $unset: { ...reset, tenantId: '', membershipStatus: '', bdrenNotedOrganizationId: '' },
         };
-    const previous = await users().collection.findOneAndUpdate(
-      { _id: ctx.oid, tenantId: ctx.from },
-      update,
-      { session, returnDocument: 'before', projection: { membershipStatus: 1 } },
-    );
+    let previous: mongo.WithId<mongo.Document> | null;
+    try {
+      previous = await users().collection.findOneAndUpdate(
+        { _id: ctx.oid, tenantId: ctx.from },
+        update,
+        { session, returnDocument: 'before', projection: { membershipStatus: 1 } },
+      );
+    } catch (error) {
+      if (isDuplicate(error)) {
+        throw new DuplicateAccount();
+      }
+      throw error;
+    }
     if (previous) {
       return ctx.from != null && isActiveMember(previous as Pick<IUser, 'membershipStatus'>);
     }
@@ -1398,9 +1497,11 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
       let moved: Record<string, number> = {};
       let dropped: string[] = [];
       let wasActive: boolean | null = null;
+      let stripped: MemberMoveStripped[] = [];
       await session.withTransaction(async () => {
         moved = {};
         dropped = [];
+        stripped = [];
         const scoped = { ...ctx, session };
         for (const step of stepsFor(ctx)) {
           if (Date.now() > deadline) {
@@ -1409,7 +1510,9 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
           const result = await runStep(step, scoped);
           moved[step.name] = result.moved;
           dropped.push(...(result.dropped ?? []));
+          stripped.push(...(result.stripped ?? []));
         }
+        await holdLease(record, session);
         wasActive = await switchUser(scoped, user, session);
       });
       await checkpoint(record, {
@@ -1418,6 +1521,7 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
           completed: stepsFor(ctx).map((step) => step.name),
           moved,
           droppedGrants: dropped.slice(0, MAX_DROPPED_LISTED),
+          strippedDetails: stripped,
           ...switchedFields(wasActive),
         },
       });
@@ -1436,17 +1540,19 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
       if (done.has(step.name)) {
         continue;
       }
-      const result = await runStep(step, steady);
+      const result = await beating(steady, () => runStep(step, steady));
       await checkpoint(record, {
         $push: {
           completed: step.name,
           ...(result.dropped?.length
             ? { droppedGrants: { $each: result.dropped, $slice: MAX_DROPPED_LISTED } }
             : null),
+          ...(result.stripped?.length ? { strippedDetails: { $each: result.stripped } } : null),
         },
         $inc: { [`moved.${step.name}`]: result.moved },
       });
     }
+    await holdLease(record);
     const wasActive = await switchUser(ctx, user);
     await checkpoint(record, { $set: switchedFields(wasActive) });
   }
@@ -1457,7 +1563,7 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
     const conflicts: Record<string, number> = {};
     const dropped: string[] = [];
     for (const step of stepsFor(ctx)) {
-      const result = await runStep(step, ctx);
+      const result = await beating(ctx, () => runStep(step, ctx));
       if (result.moved > 0) {
         moved[`moved.${step.name}`] = result.moved;
       }
@@ -1577,6 +1683,7 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
     }
     await fence(record.userId, null);
     await audit(record, finished);
+    await forgetSeats(finished);
     schedule(() => {
       sweepLate(moveId(record)).catch((error) =>
         logger.error('[bdren] late sweep after a member move failed', error),
@@ -1615,6 +1722,7 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
       )
       .exec();
     await fence(record.userId, null);
+    await forgetSeats(record);
     return { status: 'refused', reason };
   }
 
@@ -1640,11 +1748,19 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
     const moved: Record<string, number> = {};
     for (const { source, leave } of sources) {
       const plan = await makePlan(String(record.userId), source, target, leave);
-      const ctx = contextFor(record, user, plan, source, target, leave);
+      const ctx = {
+        ...contextFor(record, user, plan, source, target, leave),
+        heartbeat: () => checkpoint(record, {}),
+      };
       const result = await runAsSystem(() => sweepSteps(ctx));
       for (const [key, count] of Object.entries(result.moved)) {
         moved[key] = (moved[key] ?? 0) + count;
       }
+    }
+    if (target === from && record.strippedDetails?.length) {
+      moved['moved.restoredServers'] = await runAsSystem(() =>
+        restoreStripped(record.strippedDetails ?? []),
+      );
     }
     await returnSeat(record);
     const finished = await moves()
@@ -1668,6 +1784,7 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
     await fence(record.userId, null);
     if (finished) {
       await audit(record, finished, { redirectedTo: target ?? '' });
+      await forgetSeats(finished);
     }
     logger.warn(
       `[bdren] user ${String(record.userId)}'s move to ${to ?? 'no tenant'} ${
@@ -1770,18 +1887,42 @@ export function createMemberMover(deps: MoverDeps): MemberMover {
     try {
       return await drive(record);
     } catch (error) {
-      await moves()
-        .updateOne(
-          { _id: record._id, leaseId: record.leaseId, status: 'running' },
-          { $set: { leaseUntil: now() } },
-        )
-        .exec()
-        .catch(() => undefined);
-      await fence(record.userId, null).catch(() => undefined);
-      if (!(error instanceof LeaseLost) && exhausted(record)) {
-        await fail(record, error instanceof Error ? error.message : 'error').catch(() => undefined);
+      if (!(error instanceof LeaseLost)) {
+        await letGo(record, error).catch((cleanup) =>
+          logger.error(`[bdren] releasing member move ${moveId(record)} failed`, cleanup),
+        );
       }
       throw error;
+    }
+  }
+
+  /**
+   * After a failure this trigger gives the move up for the next one, but only while it still
+   * holds it (another trigger's move is never touched). The fence stays until it expires (at most
+   * one lease) once records have moved, so the person does not write into the old tenant while
+   * half-moved; with nothing moved yet it is lifted. A move out of attempts is marked failed.
+   */
+  async function letGo(record: Held, error: unknown): Promise<void> {
+    const released = await moves()
+      .findOneAndUpdate(
+        { _id: record._id, leaseId: record.leaseId, status: 'running' },
+        { $set: { leaseUntil: now() } },
+        { new: true },
+      )
+      .lean<Held>()
+      .exec();
+    if (!released) {
+      return;
+    }
+    if (exhausted(released)) {
+      await fail(released, error instanceof Error ? error.message : 'error');
+      return;
+    }
+    const halfMoved =
+      released.userSwitched === true ||
+      Object.values(released.moved ?? {}).some((count) => count > 0);
+    if (!halfMoved) {
+      await fence(record.userId, null);
     }
   }
 

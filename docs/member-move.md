@@ -69,7 +69,7 @@ A refused join out of X still leaves X.
 | assistants (`Assistant`) | `user` | moved | moved | |
 | promptgroups (`PromptGroup`) | `author` | moved | private moved; shared stay (heir) | |
 | prompts (`Prompt`) | `author` | moved | moved with their group | Prompts in a shared or a colleague's group stay, owned by the heir. |
-| mcpservers (`MCPServer`) | `author` | moved | private moved; shared stay (heir) | `serverName` is unique per tenant: a moving server whose name is taken is renamed `<name>-moved`; the person's moving agents' `mcpServerNames`, tool keys and tool options, their stored credentials (`PluginAuth.pluginKey` `mcp_<name>`) and OAuth tokens (`Token.identifier` `mcp:<name>`, `:client`, `:refresh`) follow before they move. |
+| mcpservers (`MCPServer`) | `author` | moved | private moved; shared stay (heir) | `serverName` is unique per tenant: a moving server whose name is taken is renamed `<name>-moved` (never to the name of a server staying in the source); the person's moving agents' `mcpServerNames`, tool keys and tool options, their stored credentials (`PluginAuth.pluginKey` `mcp_<name>`) and OAuth tokens (`Token.identifier` `mcp:<name>`, `:client`, `:refresh`) follow before they move. |
 | skills (`Skill`) | `author` | moved | private moved; shared stay (heir) | Unique per author and tenant: a taken name is renamed `<name>-moved`. |
 | skillfiles (`SkillFile`) | via `skillId` | only with a skill that moved | only with a skill that moved; a kept skill's files go to the heir | `storageTenantId` / `storageUserId` as for files. |
 | keys (`Key`) | `userId` | moved | moved | |
@@ -144,9 +144,15 @@ cached allowance is refetched because its quota account changed. Transactions ke
 - **Fence**: `User.movingUntil` is set for the lease while the move runs and renewed with it (every
   checkpoint, and every 100 records inside a long step); `requireJwtAuth` answers
   `503 ACCOUNT_MOVING` with `Retry-After: 5` until it is lifted, so no new request writes into the old
-  tenant. Any failure lifts it at once. The client (`packages/data-provider/src/request.ts`) waits as
-  asked and retries (at most 6 times), shows `com_ui_account_moving` once per burst
-  (`AccountMovingNotice`), and never signs the person out for it (`AuthContext`).
+  tenant. A failure lifts it at once only when nothing had moved yet; a half-moved person stays
+  fenced until the lease runs out (at most 5 minutes) so they do not write into the old tenant,
+  and a `failed` move lifts it. A trigger that lost its lease never touches the fence or the user.
+  The client waits as asked and retries: axios requests up to 6 times; `authenticatedFetch` (chat
+  send, uploads, generation control) and the chat stream (`useResumableSSE`) for as long as the
+  server keeps answering `ACCOUNT_MOVING`, up to 5 minutes, then show the refusal. The server turns
+  these away before any handler, so a resent POST cannot run twice. It shows
+  `com_ui_account_moving` once per burst (`AccountMovingNotice`), never signs the person out for
+  it, and asks for the user again 8 s after the last held-back request (`AuthContext`).
 - **Failure limit**: each trigger's attempt is counted. After 5 attempts, or 24 hours, the move is
   marked `failed`: the fence is lifted, a seat it took and never used is given back, a critical
   platform alert (`member_move:<moveId>`) tells a superadmin what was done, and the audit records
@@ -159,11 +165,15 @@ cached allowance is refetched because its quota account changed. Transactions ke
   together. A transaction running past 10 s, or failing (for example on a duplicate key), falls back
   to the sequential path.
 - **Sequential**: each step is applied with one `updateMany` and checkpointed (`completed`,
-  `moved.<step>`), guarded by the lease id. A retry skips completed steps; a step half-applied
+  `moved.<step>`), guarded by the lease id. While a step runs, a timer renews lease and fence every
+  third of a lease (at most every minute); redirects do the same. The lease is confirmed again
+  right before the user changes tenant (inside the transaction when there is one). A retry skips completed steps; a step half-applied
   before a crash matches only what is left, because every filter includes the old tenant.
 - **User last**: before the switch the move checks again that the target holds no other account of
-  the person's (also checked before the first step); one appearing mid-move refuses the move with
-  `duplicate_account` and brings the data back. The user change matches `{ _id, tenantId: from }`
+  the person's (also checked before the first step), and a unique-index clash on the switch itself
+  counts the same; one appearing mid-move refuses the move with `duplicate_account` and brings the
+  data back, including the MCP server names, tool keys and tool options stripping took from agents
+  (recorded per agent on the move as `strippedDetails`). The user change matches `{ _id, tenantId: from }`
   and must match one document. If someone else placed the person elsewhere meanwhile, the move is
   stopped before `userSwitched` and redirected: each source is planned afresh and moved to where the
   person now is. Leave rules (kept items, heir, clean-up) apply only to `from`, and only when the
@@ -172,7 +182,9 @@ cached allowance is refetched because its quota account changed. Transactions ke
 - **Seats once per move**: a seat is taken and given back through `reserveMoveSeat` /
   `releaseMoveSeat` (`packages/api/src/bdren/seats.ts`), which record `reserve:<moveId>` /
   `release:<moveId>` on the institution (`seatOps`) in the same update as the counter, so a crash
-  between the counter change and the move's checkpoint cannot count a seat twice. A release that
+  between the counter change and the move's checkpoint cannot count a seat twice. The list is not
+  capped; a move removes its own entries once it is over. A missing institution is an error the
+  move retries (and alerts on when it runs out of attempts), never "full". A release that
   finds the counter already at zero is logged as drift and audited (`seatDrift`), not taken as
   success.
 - Then seat release (recorded only once it succeeded; a failure is retried with the move), audience

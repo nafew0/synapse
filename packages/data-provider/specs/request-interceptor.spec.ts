@@ -786,3 +786,67 @@ describe('axios interceptor — account moving between institutions', () => {
     expect(getCallsForUrl('/api/auth/refresh')).toHaveLength(0);
   });
 });
+
+describe('authenticatedFetch — account moving between institutions', () => {
+  const movingResponse = (retryAfter = '0') =>
+    new Response(JSON.stringify({ code: 'ACCOUNT_MOVING' }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json', 'Retry-After': retryAfter },
+    });
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('resends a chat POST while the account is moving, announcing it, until it goes through', async () => {
+    setTokenHeader(createJwt(Date.now() + 3_600_000));
+    const announced = jest.fn();
+    window.addEventListener('accountMoving', announced);
+    const fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(movingResponse())
+      .mockResolvedValueOnce(movingResponse())
+      .mockResolvedValueOnce(new Response('{"streamId":"s"}', { status: 200 }));
+
+    const response = await dataRequest.authenticatedFetch('/api/agents/chat/agents', {
+      method: 'POST',
+      body: JSON.stringify({ text: 'hi' }),
+    });
+
+    window.removeEventListener('accountMoving', announced);
+    expect(response.status).toBe(200);
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(fetchSpy.mock.calls[2][1]?.body).toBe(JSON.stringify({ text: 'hi' }));
+    expect(announced).toHaveBeenCalledTimes(2);
+    expect(getCallsForUrl('/api/auth/refresh')).toHaveLength(0);
+  });
+
+  it('returns the refusal once five minutes of waiting are used up', async () => {
+    setTokenHeader(createJwt(Date.now() + 3_600_000));
+    let clock = 0;
+    jest.spyOn(Date, 'now').mockImplementation(() => clock);
+    const fetchSpy = jest.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      clock += 100_000;
+      return movingResponse();
+    });
+
+    const response = await dataRequest.authenticatedFetch('/api/files', {
+      method: 'POST',
+      body: new FormData(),
+    });
+
+    expect(response.status).toBe(503);
+    expect(fetchSpy.mock.calls.length).toBeGreaterThan(1);
+    expect(fetchSpy.mock.calls.length).toBeLessThanOrEqual(4);
+  });
+
+  it('passes any other 503 straight through', async () => {
+    setTokenHeader(createJwt(Date.now() + 3_600_000));
+    const fetchSpy = jest
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response('{"code":"SERVER_NOT_READY"}', { status: 503 }));
+
+    const response = await dataRequest.authenticatedFetch('/api/x', { method: 'GET' });
+
+    expect(response.status).toBe(503);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+});
