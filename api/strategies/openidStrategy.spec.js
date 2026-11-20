@@ -104,6 +104,23 @@ jest.mock('@librechat/api', () => {
     resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
   };
 });
+jest.mock('~/server/services/bdrenAllowance', () => ({
+  bdrenProvisioner: {
+    tenantForNewMember: jest.fn().mockResolvedValue(null),
+    reviewExistingMember: jest.fn().mockResolvedValue(undefined),
+  },
+}));
+/** Activation answers with the user as last saved (created or updated), now active, as the real service does. */
+jest.mock('~/server/services/institutionMembers', () => ({
+  activateProvisionedMember: jest.fn(async ({ tenantId }) => {
+    const { createUser, updateUser } = require('~/models');
+    const saves = [createUser, updateUser].flatMap((fn) =>
+      fn.mock.results.map((result, i) => ({ order: fn.mock.invocationCallOrder[i], result })),
+    );
+    const last = saves.sort((x, y) => y.order - x.order)[0];
+    return { ...(await last.result.value), tenantId, membershipStatus: 'active' };
+  }),
+}));
 jest.mock('~/models', () => ({
   findUser: jest.fn(),
   createUser: jest.fn(),
@@ -2544,6 +2561,78 @@ describe('setupOpenId', () => {
       const { user, details } = await validate(tokenset);
       expect(user).toBe(false);
       expect(details).toEqual({ message: 'Email domain not allowed' });
+    });
+  });
+
+  describe('bdren.ai institution membership', () => {
+    const { bdrenProvisioner } = require('~/server/services/bdrenAllowance');
+    const { activateProvisionedMember } = require('~/server/services/institutionMembers');
+
+    beforeEach(() => {
+      bdrenProvisioner.tenantForNewMember.mockReset().mockResolvedValue(null);
+      bdrenProvisioner.reviewExistingMember.mockReset().mockResolvedValue(undefined);
+      activateProvisionedMember.mockClear();
+    });
+
+    it('puts a first-time user in the institution bdren.ai names, as an active member', async () => {
+      bdrenProvisioner.tenantForNewMember.mockResolvedValue('dhaka-university');
+
+      const { user } = await validate(tokenset);
+
+      expect(bdrenProvisioner.tenantForNewMember).toHaveBeenCalledWith({
+        issuer: 'https://fake-issuer.com',
+        subject: tokenset.claims().sub,
+      });
+      expect(createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 'dhaka-university', membershipStatus: 'suspended' }),
+        expect.anything(),
+        true,
+        true,
+      );
+      expect(activateProvisionedMember).toHaveBeenCalledWith({
+        userId: 'newUserId',
+        tenantId: 'dhaka-university',
+      });
+      expect(user.tenantId).toBe('dhaka-university');
+      expect(user.membershipStatus).toBe('active');
+    });
+
+    it('leaves a first-time user without a tenant when bdren.ai names none', async () => {
+      const { user } = await validate(tokenset);
+
+      expect(createUser.mock.calls[0][0]).not.toHaveProperty('tenantId');
+      expect(activateProvisionedMember).not.toHaveBeenCalled();
+      expect(user.tenantId).toBeUndefined();
+    });
+
+    it('lets login through when the institution lookup throws', async () => {
+      bdrenProvisioner.tenantForNewMember.mockRejectedValue(new Error('boom'));
+
+      const { user } = await validate(tokenset);
+
+      expect(user).toBeTruthy();
+      expect(createUser.mock.calls[0][0]).not.toHaveProperty('tenantId');
+    });
+
+    it('does not move an existing user; it only asks for the coverage to be reviewed', async () => {
+      const existing = {
+        _id: 'existingIndividual',
+        provider: 'openid',
+        email: tokenset.claims().email,
+        openidId: tokenset.claims().sub,
+        username: 'solo',
+        name: 'Solo',
+        role: 'USER',
+      };
+      findUser.mockResolvedValue(existing);
+      bdrenProvisioner.tenantForNewMember.mockResolvedValue('dhaka-university');
+
+      const { user } = await validate(tokenset);
+
+      expect(bdrenProvisioner.tenantForNewMember).not.toHaveBeenCalled();
+      expect(bdrenProvisioner.reviewExistingMember).toHaveBeenCalledTimes(1);
+      expect(user.tenantId).toBeUndefined();
+      expect(activateProvisionedMember).not.toHaveBeenCalled();
     });
   });
 });

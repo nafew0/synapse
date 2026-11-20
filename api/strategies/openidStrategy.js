@@ -45,6 +45,30 @@ const activateProvisionedMember = (...args) =>
   require('~/server/services/institutionMembers').activateProvisionedMember(...args);
 
 /**
+ * The institution bdren.ai says a first-time user belongs to (created in Synapse on first sight),
+ * or `null`. Required on use like the member service, and never allowed to fail a login.
+ */
+async function bdrenTenantForNewUser(identity) {
+  try {
+    return await require('~/server/services/bdrenAllowance').bdrenProvisioner.tenantForNewMember(
+      identity,
+    );
+  } catch (error) {
+    logger.error('[openidStrategy] bdren.ai institution lookup failed', error);
+    return null;
+  }
+}
+
+/** Records, without waiting, an existing user covered by an institution other than their own. */
+function reviewBdrenCoverage(user) {
+  try {
+    void require('~/server/services/bdrenAllowance').bdrenProvisioner.reviewExistingMember(user);
+  } catch (error) {
+    logger.error('[openidStrategy] bdren.ai coverage review failed', error);
+  }
+}
+
+/**
  * @typedef {import('openid-client').ClientMetadata} ClientMetadata
  * @typedef {import('openid-client').Configuration} Configuration
  **/
@@ -697,7 +721,11 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     throw new Error('User does not exist');
   }
 
+  const isNewUser = !user;
   if (!user) {
+    const tenantId =
+      userinfo.tenantId ||
+      (await bdrenTenantForNewUser({ issuer: openidIssuer, subject: userinfo.sub }));
     user = {
       provider: 'openid',
       openidId: userinfo.sub,
@@ -707,9 +735,9 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
       name: fullName,
       idOnTheSource: userinfo.oid,
       openidIssuer,
-      ...(userinfo.tenantId
+      ...(tenantId
         ? {
-            tenantId: userinfo.tenantId,
+            tenantId,
             membershipStatus: InstitutionMembershipStatuses.SUSPENDED,
           }
         : null),
@@ -855,6 +883,9 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   }
 
   user = await updateUser(user._id, user);
+  if (!isNewUser) {
+    reviewBdrenCoverage(user);
+  }
   if (user?.tenantId && user.membershipStatus !== InstitutionMembershipStatuses.ACTIVE) {
     user = await activateProvisionedMember({
       userId: user._id.toString(),

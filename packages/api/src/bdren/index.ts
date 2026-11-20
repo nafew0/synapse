@@ -9,6 +9,7 @@ export * from './identity';
 export * from './credits';
 export * from './carryover';
 export * from './webhook';
+export * from './provision';
 export * from './meter';
 export * from './managed';
 export * from './usage';

@@ -44,6 +44,7 @@ export interface ResolvedAllowance {
   packageVersion: number | null;
   institutionId: string | null;
   institutionName: string | null;
+  institutionSlug?: string | null;
   upgradeUrl: string;
   renews: string | null;
   subscriptionEndsAt: Date | null;
