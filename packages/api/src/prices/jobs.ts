@@ -12,7 +12,7 @@ import { addUsedModels, collectConfiguredModels, UNLISTED_OK } from './models';
 import { runPriceSync, SYNC_INTERVAL_MS } from './sync';
 
 /** How often each server re-reads stored prices, so a sync or override made on another server applies within a minute. */
-export const REFRESH_INTERVAL_MS = 60 * 1000;
+export const REFRESH_INTERVAL_MS: number = 60 * 1000;
 const STARTUP_DELAY_MS = 15 * 1000;
 const LEDGER_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 

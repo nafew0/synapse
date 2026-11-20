@@ -8,13 +8,14 @@ import type {
   PriceVersionSource,
 } from '@librechat/data-schemas';
 import type { CatalogOptions, CatalogModel } from './openrouter';
+import type { RedisLockClient } from './lock';
 import type { ModelUses } from './models';
 import { fetchAllCatalogs } from './openrouter';
 import { UNLISTED_OK } from './models';
 import { acquireLock } from './lock';
 
-export const SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
-export const FAILURE_NOTICE_MS = 24 * 60 * 60 * 1000;
+export const SYNC_INTERVAL_MS: number = 6 * 60 * 60 * 1000;
+export const FAILURE_NOTICE_MS: number = 24 * 60 * 60 * 1000;
 const LOCK_KEY = 'model-price-sync';
 const LOCK_TTL_SECONDS = 120;
 
@@ -25,6 +26,8 @@ export interface SyncDeps {
   collectModels: () => Promise<ModelUses>;
   catalog?: CatalogOptions;
   now?: () => Date;
+  /** Overrides the lock's Redis client; unset uses the configured one. */
+  lockClient?: RedisLockClient | null;
 }
 
 export interface SyncResult {
@@ -75,7 +78,10 @@ export async function runPriceSync(
   options: { trigger: IModelPriceSync['trigger']; actor?: string } = { trigger: 'timer' },
 ): Promise<SyncResult> {
   const { store, models } = deps;
-  const lock = await acquireLock(LOCK_KEY, LOCK_TTL_SECONDS);
+  const lock =
+    deps.lockClient === undefined
+      ? await acquireLock(LOCK_KEY, LOCK_TTL_SECONDS)
+      : await acquireLock(LOCK_KEY, LOCK_TTL_SECONDS, deps.lockClient);
   if (!lock.acquired) {
     return empty({ skipped: 'locked' });
   }
