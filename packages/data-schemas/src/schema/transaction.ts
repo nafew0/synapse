@@ -65,6 +65,17 @@ export interface ITransaction extends Document {
   costSource?: 'provider';
   fileId?: string;
   tenantId?: string;
+  /** Set once a cost-correction script has repriced this row; holds the values it replaced. */
+  costCorrection?: CostCorrection;
+}
+
+export interface CostCorrection {
+  /** Which correction ran, e.g. `haiku-5.5-long-prompt-tier`. */
+  id: string;
+  runId: string;
+  at: Date;
+  previousTokenValue: number;
+  previousRate: number;
 }
 
 const transactionSchema: Schema<ITransaction> = new Schema(
@@ -144,6 +155,17 @@ const transactionSchema: Schema<ITransaction> = new Schema(
     tenantId: {
       type: String,
       index: true,
+    },
+    costCorrection: {
+      type: {
+        _id: false,
+        id: { type: String, required: true },
+        runId: { type: String, required: true },
+        at: { type: Date, required: true },
+        previousTokenValue: { type: Number, required: true },
+        previousRate: { type: Number, required: true },
+      },
+      default: undefined,
     },
   },
   {

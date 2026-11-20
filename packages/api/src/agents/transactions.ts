@@ -134,7 +134,7 @@ export interface BulkWriteDeps {
   updateBalance: (params: { user: string; incrementValue: number }) => Promise<unknown>;
 }
 
-function calculateTokenValue(
+export function calculateTokenValue(
   txData: StandardTxData,
   pricing: PricingFns,
 ): { tokenValue: number; rate: number } {
@@ -151,7 +151,7 @@ function calculateTokenValue(
   return { tokenValue, rate };
 }
 
-function calculateStructuredTokenValue(
+export function calculateStructuredTokenValue(
   txData: StructuredTxData,
   pricing: PricingFns,
 ): { tokenValue: number; rate: number; rawAmount: number; rateDetail?: Record<string, number> } {
