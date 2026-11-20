@@ -15,6 +15,7 @@ type Entry = Pick<
   | 'fetchedAt'
   | 'verifiedAt'
   | 'invalidatedAt'
+  | 'previousWindows'
 >;
 
 const model = (): Model<IBdrenAllowance> =>
@@ -29,6 +30,7 @@ export function saveEntry(
   who: AllowanceSubject,
   payload: BdrenAllowancePayload,
   now: Date,
+  previousWindows: Entry['previousWindows'] = null,
 ): Promise<unknown> {
   return runAsSystem(() =>
     model()
@@ -44,10 +46,20 @@ export function saveEntry(
             fetchedAt: now,
             verifiedAt: now,
             invalidatedAt: null,
+            previousWindows,
           },
         },
         { upsert: true },
       )
+      .exec(),
+  );
+}
+
+/** The old windows have been used for an upgrade; forget them so a later event cannot reuse them. */
+export function clearPreviousWindows(userId: string): Promise<unknown> {
+  return runAsSystem(() =>
+    model()
+      .updateOne({ userId }, { $set: { previousWindows: null } })
       .exec(),
   );
 }

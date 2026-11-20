@@ -45,6 +45,8 @@ export interface IBdrenAllowance {
   verifiedAt: Date;
   /** Set by a webhook: the entry must be refetched before it is used again. */
   invalidatedAt?: Date | null;
+  /** The windows of the answer this one replaced, kept so an upgrade can still find the old period. */
+  previousWindows?: Record<string, BdrenAllowanceWindow> | null;
   createdAt?: Date;
   updatedAt?: Date;
 }

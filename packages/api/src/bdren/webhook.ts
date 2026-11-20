@@ -6,7 +6,13 @@ import type { Request, Response } from 'express';
 import type { Model } from 'mongoose';
 import type { AllowanceSubject, BdrenConfig } from './types';
 import type { AllowanceService } from './allowance';
-import { invalidateOrganization, invalidateSubject, readEntry } from './store';
+import {
+  readEntry,
+  invalidateSubject,
+  clearPreviousWindows,
+  invalidateOrganization,
+} from './store';
+import { normalizeOpenIdIssuer } from '~/auth/openid';
 import { verifyWebhookSignature } from './signature';
 import { carryOverUsage } from './carryover';
 
@@ -54,19 +60,23 @@ export function createWebhookHandler({
 }: WebhookDeps) {
   async function process(event: z.infer<typeof eventSchema>, at: Date): Promise<void> {
     if (event.user) {
+      const issuer = normalizeOpenIdIssuer(event.user.issuer) ?? event.user.issuer;
       const who =
         event.type === 'subscription.upgraded'
-          ? await findSubject(event.user.issuer, event.user.subject)
+          ? await findSubject(issuer, event.user.subject)
           : null;
       const before = who ? await readEntry(who.userId) : null;
-      await invalidateSubject(event.user.issuer, event.user.subject, at);
+      await invalidateSubject(issuer, event.user.subject, at);
       if (who && before && before.subject === who.subject && before.tenantId === who.account) {
         const fresh = await service.refresh(who);
         const after = await readEntry(who.userId);
-        if (after && fresh.origin === 'fresh') {
-          const moved = await carryOverUsage(who, before.allowance, after.allowance, event.id);
-          logger.info(`[bdren] upgrade carry-over seeded month=${moved.month} week=${moved.week}`);
+        if (fresh.origin !== 'fresh' || !after) {
+          throw new Error('allowance refresh failed; the upgrade is retried on redelivery');
         }
+        const oldWindows = after.previousWindows ?? before.allowance.windows;
+        const moved = await carryOverUsage(who, oldWindows, after.allowance.windows, event.id, at);
+        await clearPreviousWindows(who.userId);
+        logger.info(`[bdren] upgrade carry-over seeded month=${moved.month} week=${moved.week}`);
       }
     }
     if (event.organization) {

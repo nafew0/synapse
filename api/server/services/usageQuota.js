@@ -660,7 +660,7 @@ async function persistReservation({
 }
 
 /** Remaining capacity of each limited scope, read before reserving so a refusal can name the binding window. */
-async function readScopeRemaining(tenantId, scopes) {
+async function readScopeRemaining(tenantId, scopes, { countReserved = true } = {}) {
   const limited = scopes.filter((scope) => scope.limit != null);
   const buckets = await Promise.all(
     limited.map((scope) =>
@@ -679,7 +679,9 @@ async function readScopeRemaining(tenantId, scopes) {
   return limited.map((scope, index) => ({
     scope,
     remaining: Math.max(
-      scope.limit - (buckets[index]?.usedTokens ?? 0) - (buckets[index]?.reservedTokens ?? 0),
+      scope.limit -
+        (buckets[index]?.usedTokens ?? 0) -
+        (countReserved ? (buckets[index]?.reservedTokens ?? 0) : 0),
       0,
     ),
   }));
@@ -866,7 +868,8 @@ async function canAffordCredits({ tenantId, userId, memberPackage, allowance, cr
   }
   const { ranges, limits } = await resolveCreditView({ institution, memberPackage, allowance });
   const scopes = buildCreditScopes({ tenantId, userId, limits, ranges });
-  const remaining = await readScopeRemaining(tenantId, scopes);
+  /** Open chat reservations are estimates that settle to the real cost, so only settled use counts. */
+  const remaining = await readScopeRemaining(tenantId, scopes, { countReserved: false });
   return remaining.every((entry) => entry.remaining >= Math.max(credits, 1));
 }
 

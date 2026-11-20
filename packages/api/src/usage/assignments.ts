@@ -53,7 +53,7 @@ export interface UsageAssignmentDeps {
    * True while bdren.ai supplies the limits. A member package is then only a support override: it
    * needs a reason and an end, and lasts at most 90 days.
    */
-  limitsManagedElsewhere?: () => boolean;
+  limitsManagedElsewhere?: (user: IUser) => boolean;
 }
 
 const MAX_OVERRIDE_DAYS = 90;
@@ -206,7 +206,14 @@ export function createUsageAssignmentHandlers(deps: UsageAssignmentDeps): UsageA
       if (expiresAt != null && expiresAt <= new Date()) {
         return res.status(400).json({ error: 'expiresAt must be in the future' });
       }
-      const override = deps.limitsManagedElsewhere?.() === true;
+      const [user] = await Promise.all([
+        deps.getUserById(userId, 'name email tenantId usagePackage openidId openidIssuer'),
+        requirePackage(key, 'member'),
+      ]);
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+      const override = deps.limitsManagedElsewhere?.(user) === true;
       if (override && (!reason || expiresAt == null)) {
         return res
           .status(400)
@@ -220,13 +227,6 @@ export function createUsageAssignmentHandlers(deps: UsageAssignmentDeps): UsageA
         return res
           .status(400)
           .json({ error: `An override lasts at most ${MAX_OVERRIDE_DAYS} days` });
-      }
-      const [user] = await Promise.all([
-        deps.getUserById(userId, 'name email tenantId usagePackage'),
-        requirePackage(key, 'member'),
-      ]);
-      if (!user) {
-        return res.status(404).json({ error: 'User not found' });
       }
       const usagePackage: MemberUsagePackage = {
         packageKey: key,

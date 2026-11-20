@@ -1,10 +1,6 @@
 import mongoose from 'mongoose';
 import { runAsSystem } from '@librechat/data-schemas';
-import type {
-  IUsageBucket,
-  IUsageReservation,
-  BdrenAllowancePayload,
-} from '@librechat/data-schemas';
+import type { IUsageBucket, IUsageReservation } from '@librechat/data-schemas';
 import type { Model } from 'mongoose';
 import type { AllowanceSubject, AllowanceWindow } from './types';
 import { bucketRanges } from './windows';
@@ -13,9 +9,11 @@ const reservation = (): Model<IUsageReservation> =>
   mongoose.models.UsageReservation as Model<IUsageReservation>;
 const bucket = (): Model<IUsageBucket> => mongoose.models.UsageBucket as Model<IUsageBucket>;
 
-function windowOf(payload: BdrenAllowancePayload, name: 'month' | 'week'): AllowanceWindow | null {
+type Windows = Record<string, { start: string; end: string | null }>;
+
+function windowOf(windows: Windows, name: 'month' | 'week'): AllowanceWindow | null {
   const range = (key: 'month' | 'week'): AllowanceWindow | null => {
-    const raw = payload.windows[key];
+    const raw = windows[key];
     if (!raw) {
       return null;
     }
@@ -126,15 +124,17 @@ async function seed(
  */
 export async function carryOverUsage(
   who: AllowanceSubject,
-  before: BdrenAllowancePayload,
-  after: BdrenAllowancePayload,
+  before: Windows,
+  after: Windows,
   eventId: string,
+  now: Date = new Date(),
 ): Promise<{ month: number; week: number }> {
   const result = { month: 0, week: 0 };
   for (const name of ['month', 'week'] as const) {
     const from = windowOf(before, name);
     const to = windowOf(after, name);
-    if (from && to && from.start.getTime() !== to.start.getTime()) {
+    /** A window that had already ended before the upgrade has nothing to carry over. */
+    if (from && to && from.end > now && from.start.getTime() !== to.start.getTime()) {
       result[name] = await seed(who, from, to, `${eventId}:${name}`, name);
     }
   }

@@ -12,6 +12,7 @@ export const bdrenAllowanceSchema: Schema<IBdrenAllowance> = new Schema<IBdrenAl
     fetchedAt: { type: Date, required: true },
     verifiedAt: { type: Date, required: true },
     invalidatedAt: { type: Date, default: null },
+    previousWindows: { type: Schema.Types.Mixed, default: null },
   },
   { timestamps: true },
 );

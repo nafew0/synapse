@@ -66,7 +66,15 @@ export function createAllowanceService({
       force ? undefined : entry?.etag,
     );
     if (result.status === 'ok') {
-      await saveEntry(who, result.payload, at);
+      const moved =
+        entry != null &&
+        entry.allowance.windows.month?.start !== result.payload.windows.month?.start;
+      await saveEntry(
+        who,
+        result.payload,
+        at,
+        moved ? entry.allowance.windows : (entry?.previousWindows ?? null),
+      );
       const resolved = resolveAllowance(result.payload, config, at);
       if (resolved) {
         return stamp(resolved, 'fresh');

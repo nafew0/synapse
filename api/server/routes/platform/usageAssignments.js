@@ -1,5 +1,9 @@
 const express = require('express');
-const { createUsageAssignmentHandlers, requirePackagesEditable } = require('@librechat/api');
+const {
+  allowanceSubjectFor,
+  requirePackagesEditable,
+  createUsageAssignmentHandlers,
+} = require('@librechat/api');
 const { bdrenConfig } = require('~/server/services/bdrenAllowance');
 const { requireJwtAuth } = require('~/server/middleware');
 const requirePlatformSuperadmin = require('~/server/middleware/platformAdmin');
@@ -12,7 +16,7 @@ const handlers = createUsageAssignmentHandlers({
   getUserById: db.getUserById,
   updateUser: db.updateUser,
   recordAuditEntry: db.recordAuditEntry,
-  limitsManagedElsewhere: () => bdrenConfig.enabled,
+  limitsManagedElsewhere: (user) => allowanceSubjectFor(user, bdrenConfig) != null,
 });
 
 const router = express.Router();

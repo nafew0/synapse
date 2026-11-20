@@ -545,7 +545,7 @@ describe('webhook', () => {
       expect(allowance.member.month.window.start.toISOString()).toBe('2026-11-20T04:00:00.000Z');
       expect(allowance.member.month.limit! - (month?.usedTokens ?? 0)).toBe(550);
       const weekStart = new Date(new Date(UPGRADE).getTime() + 1).toISOString();
-      expect((await usedBucket(weekStart))?.usedTokens).toBe(60);
+      expect(await usedBucket(weekStart)).toBeNull();
     });
 
     it('does not seed twice when the webhook is delivered twice', async () => {
@@ -556,7 +556,7 @@ describe('webhook', () => {
 
       expect((await usedBucket(UPGRADE))?.usedTokens).toBe(250);
       expect(await mongoose.models.UsageReservation.countDocuments({ providerKey: 'bdren' })).toBe(
-        2,
+        1,
       );
     });
 
@@ -586,6 +586,53 @@ describe('webhook', () => {
       expect(await usedBucket('2026-12-20T04:00:00Z')).toBeNull();
       expect(await usedBucket(UPGRADE, userB)).toBeNull();
       expect((await usedBucket(OLD_START, userB))?.usedTokens).toBe(111);
+    });
+
+    it('still carries the usage over when a request already refreshed the answer before the event arrived', async () => {
+      await setUpPro();
+      await service.refresh(subjects['sub-a']);
+
+      await deliver(upgraded('up-early'));
+
+      expect((await usedBucket(UPGRADE))?.usedTokens).toBe(250);
+    });
+
+    it('asks bdren.ai to redeliver when the refresh fails, and applies the carry-over then', async () => {
+      await setUpPro();
+      bdren.state.down = true;
+
+      expect((await deliver(upgraded('up-retry'))).status).toBe(500);
+      expect(await mongoose.models.BdrenEvent.countDocuments({ eventId: 'up-retry' })).toBe(0);
+
+      bdren.state.down = false;
+      expect((await deliver(upgraded('up-retry'))).status).toBe(204);
+      expect((await usedBucket(UPGRADE))?.usedTokens).toBe(250);
+    });
+
+    it('does not carry the usage of a period that had already ended', async () => {
+      await setUpPro();
+      clock = new Date('2026-12-30T00:00:00Z');
+      await mongoose.models.BdrenAllowance.updateOne(
+        { userId: userA },
+        { $set: { 'allowance.windows.month.end': '2026-11-10T00:00:00Z' } },
+      );
+
+      await deliver(upgraded('up-old'));
+
+      expect(await usedBucket(UPGRADE)).toBeNull();
+    });
+
+    it('matches the event issuer to the stored one even with a trailing slash', async () => {
+      bdren.answers.set('sub-a', answer('sub-a', { monthly: 1000, weekly: 350 }));
+      await service.getAllowance(subjects['sub-a']);
+
+      await deliver({
+        id: 'slash',
+        type: 'subscription.limits_changed',
+        user: { issuer: `${ISSUER}/`, subject: 'sub-a' },
+      });
+
+      expect((await entryOf(userA))?.invalidatedAt).toBeTruthy();
     });
 
     it('seeds nothing for a renewal or limits change that keeps the same window', async () => {

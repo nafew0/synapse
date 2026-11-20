@@ -290,6 +290,13 @@ describe('usageQuota with a bdren.ai allowance (replica set)', () => {
       expect(await afford(60, plan)).toBe(true);
     });
 
+    it('is not refused by the estimate an open chat reservation holds', async () => {
+      const plan = allowance({ month: 1000, week: 1000 });
+      await reserve({ allowance: plan, estimatedInputTokens: 100, requestedOutputTokens: 800 });
+
+      expect(await afford(50, plan)).toBe(true);
+    });
+
     it('does not refuse while the policy only observes', async () => {
       await models.UsagePolicy.deleteMany({ tenantId });
       await models.UsagePolicy.create({

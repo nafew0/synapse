@@ -26,6 +26,44 @@ async function findSubject(issuer, subject) {
   return allowanceSubjectFor(user, config);
 }
 
+const ORG_TENANT_TTL_MS = 60_000;
+const orgTenants = new Map();
+
+/** The Synapse tenant a bdren.ai organization is mapped to, cached briefly. */
+async function tenantOfOrganization(organizationId) {
+  const hit = orgTenants.get(organizationId);
+  if (hit && Date.now() - hit.at < ORG_TENANT_TTL_MS) {
+    return hit.tenantId;
+  }
+  const institution = await runAsSystem(() =>
+    mongoose.models.Institution.findOne({ bdrenOrganizationId: organizationId })
+      .select('tenantId')
+      .lean()
+      .exec(),
+  );
+  const tenantId = institution?.tenantId ?? null;
+  orgTenants.set(organizationId, { tenantId, at: Date.now() });
+  return tenantId;
+}
+
+/**
+ * The seat ceiling pools usage in one Synapse tenant, so it applies only when the seat's
+ * organization is the one mapped to the tenant the user is metered under.
+ */
+async function withCeilingForTenant(allowance, account) {
+  if (!allowance.institution) {
+    return allowance;
+  }
+  const tenantId = allowance.institutionId
+    ? await tenantOfOrganization(allowance.institutionId)
+    : null;
+  if (tenantId === account) {
+    return allowance;
+  }
+  logger.warn("[bdren] seat organization is not mapped to the user's tenant; ceiling not applied");
+  return { ...allowance, institution: null };
+}
+
 /**
  * The allowance a request is metered against, or `null` when bdren.ai does not manage this user
  * (the link is off, they did not sign in through bdren.ai, or a support override is in force).
@@ -40,7 +78,7 @@ async function getRequestAllowance(user, memberPackage = user?.usagePackage) {
     return null;
   }
   try {
-    return await service.getAllowance(who);
+    return await withCeilingForTenant(await service.getAllowance(who), who.account);
   } catch (error) {
     logger.error('[bdren] allowance lookup failed; using the Free fallback', error);
     return fallbackAllowance(config, new Date());
