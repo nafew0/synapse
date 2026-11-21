@@ -2624,3 +2624,58 @@ describe('initializeAgent — run-scoped MCP tool definitions', () => {
     expect(result.accessibleMcpServerNames).toEqual(['db_only_server', rawServerName]);
   });
 });
+
+describe('initializeAgent - maxToolResultChars precedence', () => {
+  type ToolCharsConfig = {
+    agentValue?: number;
+    providerValue?: number;
+    allValue?: number;
+  };
+
+  async function resolveToolChars({ agentValue, providerValue, allValue }: ToolCharsConfig) {
+    const { agent, req, res, loadTools, db } = createMocks();
+    mockExtractLibreChatParams.mockReturnValue({
+      resendFiles: false,
+      maxToolResultChars: agentValue,
+      modelOptions: { model: 'test-model' },
+    });
+    (req as { config: object }).config = {
+      endpoints: {
+        [Providers.OPENAI]: providerValue != null ? { maxToolResultChars: providerValue } : {},
+        ...(allValue != null ? { all: { maxToolResultChars: allValue } } : {}),
+      },
+    };
+    const result = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+      },
+      db,
+    );
+    return result.maxToolResultChars;
+  }
+
+  it('prefers the agent value over provider and all', async () => {
+    expect(await resolveToolChars({ agentValue: 10000, providerValue: 20000, allValue: 30000 })).toBe(
+      10000,
+    );
+  });
+
+  it('falls back to the provider endpoint, then to all', async () => {
+    expect(await resolveToolChars({ providerValue: 20000, allValue: 30000 })).toBe(20000);
+    expect(await resolveToolChars({ allValue: 30000 })).toBe(30000);
+  });
+
+  it('ignores a non-positive agent value', async () => {
+    expect(await resolveToolChars({ agentValue: 0, allValue: 30000 })).toBe(30000);
+  });
+
+  it('is undefined when nothing sets it', async () => {
+    expect(await resolveToolChars({})).toBeUndefined();
+  });
+});
