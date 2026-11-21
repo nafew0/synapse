@@ -1,6 +1,6 @@
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { EndpointTokenConfig } from '~/types';
-import { getModelMaxTokens, getModelMaxOutputTokens } from './tokens';
+import { getModelMaxTokens, getModelMaxOutputTokens, matchModelName } from './tokens';
 
 describe('getModelMaxTokens partial-override fallback', () => {
   const partialOverride: EndpointTokenConfig = {
@@ -157,6 +157,12 @@ describe('vendor-prefixed model ids', () => {
     expect(getModelMaxTokens('openrouter/foo', EModelEndpoint.custom, config)).toBe(900000);
     expect(getModelMaxTokens('openrouter/foo-latest', EModelEndpoint.custom, config)).toBe(900000);
     expect(getModelMaxTokens('other/foo-latest', EModelEndpoint.custom, config)).toBe(1000);
+  });
+
+  it('resolves Claude Haiku 5.5 to its own key, not the generic claude- prefix', () => {
+    expect(matchModelName('claude-haiku-5.5')).toBe('claude-haiku-5.5');
+    expect(matchModelName('anthropic/claude-haiku-5.5')).toBe('claude-haiku-5.5');
+    expect(getModelMaxTokens('anthropic/claude-haiku-5.5', EModelEndpoint.custom)).toBe(1000000);
   });
 
   it('leaves dot-separated bedrock ids alone', () => {
