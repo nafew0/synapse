@@ -139,9 +139,10 @@ async function getRequestAllowance(user, memberPackage = user?.usagePackage) {
 
 /**
  * A `membership.coverage_changed` for a person: ask bdren.ai afresh and move them if it changed.
- * It is bdren.ai's decision about them, so it also ends a migration hold.
+ * Only an admin's decision about them (`review.decided`) ends a migration hold; bdren.ai's own
+ * first-sign-in membership does not.
  */
-async function reviewMember(issuer, subject) {
+async function reviewMember(issuer, subject, review) {
   const user = await runAsSystem(() =>
     mongoose.models.User.findOne({ openidId: subject, openidIssuer: issuer })
       .select(
@@ -151,7 +152,10 @@ async function reviewMember(issuer, subject) {
       .exec(),
   );
   if (user) {
-    await provisioner.reviewExistingMember(user, { fresh: true, decided: true });
+    await provisioner.reviewExistingMember(user, {
+      fresh: true,
+      decided: review?.decided === true,
+    });
   }
 }
 

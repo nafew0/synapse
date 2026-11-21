@@ -214,7 +214,9 @@ async function main() {
   console.log(`Database: ${database.name}`);
 
   if (args.unlink) {
-    const result = await unlinkMigratedUser(db, args.unlink);
+    const result = await unlinkMigratedUser(db, args.unlink, {
+      staffEmails: configuredSuperadmins(),
+    });
     console.log(`Unlink ${args.unlink}: ${result}`);
     return;
   }

@@ -21,6 +21,7 @@ import type { ClientSession, Model, UpdateQuery, mongo } from 'mongoose';
 import type { MemberRecord } from './place';
 import type { SeatRelease } from './seats';
 import { forgetMoveSeats } from './seats';
+import { isPlatformStaff } from './scope';
 import { syncAlerts } from '~/admin/alerts/store';
 
 type Filter = mongo.Filter<mongo.Document>;
@@ -160,10 +161,6 @@ const DEFAULT_MAX_ATTEMPTS = 5;
 const DEFAULT_MAX_AGE_MS = 24 * 3_600_000;
 const HEARTBEAT_EVERY = 100;
 const SERVICE_ACTOR = { type: 'service', name: 'bdren.ai' } as const;
-export const PLATFORM_ROLES: ReadonlySet<string> = new Set<string>([
-  SystemRoles.ADMIN,
-  'PLATFORM_SUPERADMIN',
-]);
 /** Every resource kind the ACL can share, with the field naming its owner. */
 const SHAREABLE: ReadonlyArray<readonly [string, string]> = [
   ['Agent', 'author'],
@@ -908,27 +905,6 @@ class TransactionTooSlow extends Error {
     super('member move transaction ran past its time limit');
     this.name = 'TransactionTooSlow';
   }
-}
-
-/**
- * Whether a user is platform staff: a platform role, or an active `PlatformAdmin` row by id or
- * email. Staff register without an institution like individuals do, but are never moved.
- */
-export async function isPlatformStaff(
-  userId: string,
-  role?: string | null,
-  email?: string | null,
-): Promise<boolean> {
-  if (role && PLATFORM_ROLES.has(role)) {
-    return true;
-  }
-  const admin = await runAsSystem(() =>
-    mongoose.models.PlatformAdmin?.exists({
-      active: true,
-      $or: [{ userId }, ...(email ? [{ email: email.toLowerCase() }] : [])],
-    }).exec(),
-  );
-  return admin != null;
 }
 
 type ToolResources = Record<string, { file_ids?: string[] } | null | undefined>;

@@ -43,8 +43,37 @@ export interface WebhookDeps {
    * Re-checks one person's coverage with a fresh answer and moves them between institutions when
    * it changed. Called for `membership.coverage_changed`, after any new institution exists.
    */
-  reviewMember?: (issuer: string, subject: string) => Promise<void>;
+  reviewMember?: (issuer: string, subject: string, review: CoverageReview) => Promise<void>;
   now?: () => Date;
+}
+
+/** What a `membership.coverage_changed` says about the person it names. */
+export interface CoverageReview {
+  /** bdren.ai's `reason`; `null` from a bdren.ai that does not send one. */
+  reason: string | null;
+  /** An admin or BDREN support decided about this person (or their institution's status changed). */
+  decided: boolean;
+}
+
+/**
+ * `membership.coverage_changed` reasons that are a decision about the person. Anything else (the
+ * institution's own sign-in creating an affiliated membership, a sign-up request, no reason at all)
+ * is bdren.ai recording the person, not deciding about them.
+ */
+const COVERAGE_DECISIONS = new Set([
+  'covered',
+  'uncovered',
+  'seats_reduced',
+  'removed',
+  'suspended',
+  'reactivated',
+  'invite_accepted',
+  'organization_status',
+]);
+
+/** Whether a coverage event's `reason` is a decision about the person it names. */
+export function isCoverageDecision(reason?: string | null): boolean {
+  return reason != null && COVERAGE_DECISIONS.has(reason);
 }
 
 /** Events that mean an organization is live; teardown (expired, cancelled, downgraded, suspended) never creates one. */
@@ -126,9 +155,11 @@ export function createWebhookHandler({
       await invalidateOrganization(org.id, tenantId, at);
     }
     if (event.type === COVERAGE_EVENT && event.user && reviewMember) {
+      const reason = event.reason ?? null;
       await reviewMember(
         normalizeOpenIdIssuer(event.user.issuer) ?? event.user.issuer,
         event.user.subject,
+        { reason, decided: isCoverageDecision(reason) },
       );
     }
   }
