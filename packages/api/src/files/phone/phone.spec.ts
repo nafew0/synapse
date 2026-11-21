@@ -14,7 +14,7 @@ import {
   PHONE_UPLOAD_MAX_FILES,
   createPhoneUploadSessions,
 } from './session';
-import { createPhoneUploadHandlers } from './handlers';
+import { createPhoneUploadHandlers, phoneLinkHeaders } from './handlers';
 import { createPhoneUploadStore } from './store';
 
 jest.mock('@librechat/data-schemas', () => ({
@@ -41,6 +41,7 @@ const buildApp = (userId: string) => {
   };
   const app = express();
   app.use(express.json());
+  app.use('/u', phoneLinkHeaders);
   app.get('/u/:token', handlers.resolveLink, handlers.status);
   app.post(
     '/u/:token',
@@ -151,6 +152,15 @@ describe('phone upload', () => {
 
     clock += PHONE_UPLOAD_SEEN_MS + 1000;
     expect((await sessions.get(desktopUser, created.sessionId))?.phoneConnected).toBe(false);
+  });
+
+  it('tells browsers not to cache the link or pass it on', async () => {
+    const created = await sessions.create(desktopUser, {});
+    const res = await request(buildApp(desktopUser)).get(`/u/${created.token}`).expect(200);
+    expect(res.headers['referrer-policy']).toBe('no-referrer');
+    expect(res.headers['cache-control']).toBe('no-store');
+    const missing = await request(buildApp(desktopUser)).get('/u/unknown').expect(404);
+    expect(missing.headers['referrer-policy']).toBe('no-referrer');
   });
 
   it('stores only a hash of the link token', async () => {

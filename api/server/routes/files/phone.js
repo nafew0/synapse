@@ -7,6 +7,7 @@ const { mergeFileConfig } = require('librechat-data-provider');
 const {
   removePorts,
   limiterCache,
+  phoneLinkHeaders,
   createPhoneUploadStore,
   createPhoneUploadSessions,
   createPhoneUploadHandlers,
@@ -52,6 +53,7 @@ const initialize = async () => {
 
   const router = express.Router();
 
+  router.use('/u', phoneLinkHeaders);
   router.get('/u/:token', handlers.resolveLink, handlers.status);
   router.post(
     '/u/:token',

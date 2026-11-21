@@ -16,6 +16,7 @@ const {
   isEnabled,
   apiNotFound,
   createMetrics,
+  phoneLinkHeaders,
   ErrorController,
   memoryDiagnostics,
   performStartupChecks,
@@ -388,6 +389,9 @@ const startServer = async () => {
 
   /** 404 for unmatched API routes */
   app.use('/api', apiNotFound);
+
+  /** The phone upload page's address carries a secret; see phoneLinkHeaders. */
+  app.use('/phone', phoneLinkHeaders);
 
   /** SPA fallback - serve index.html for all unmatched routes */
   app.use(createSpaFallback(sendIndexHtml));

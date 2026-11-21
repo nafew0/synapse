@@ -57,6 +57,16 @@ const decodeName = (name: string): string => {
   }
 };
 
+/**
+ * Headers for anything that carries the phone link's secret: browsers must not cache the page or
+ * response, and must never pass the address on to another site.
+ */
+export function phoneLinkHeaders(_req: Request, res: Response, next: NextFunction): void {
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+}
+
 /** Express handlers for the QR-code handoff that sends phone files into a desktop chat. */
 export function createPhoneUploadHandlers({
   sessions,
