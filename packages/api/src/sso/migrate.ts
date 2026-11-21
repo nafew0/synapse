@@ -211,15 +211,23 @@ export async function loadStaff(db: mongo.Db, configured: string[] = []): Promis
   };
 }
 
+/**
+ * Platform staff keep synapse-admin's local login. A superadmin email (configured or an unbound
+ * `PlatformAdmin` row) only marks a staff account when it belongs to no institution: Synapse never
+ * treats an institution account as a superadmin (`ensurePlatformSuperadminForUser`), so an
+ * institution admin whose email is also on the superadmin list is migrated like any member.
+ */
 export function isStaff(
-  user: Pick<MigratingUser, '_id' | 'role' | 'email'>,
+  user: Pick<MigratingUser, '_id' | 'role' | 'email' | 'tenantId'>,
   staff: Staff,
 ): boolean {
-  return (
-    (user.role != null && PLATFORM_ROLES.has(user.role)) ||
-    staff.ids.has(user._id.toHexString()) ||
-    staff.emails.has(normalizeEmail(user.email))
-  );
+  if (user.role != null && PLATFORM_ROLES.has(user.role)) {
+    return true;
+  }
+  if (staff.ids.has(user._id.toHexString())) {
+    return true;
+  }
+  return !user.tenantId && staff.emails.has(normalizeEmail(user.email));
 }
 
 async function loadInstitutions(db: mongo.Db): Promise<Map<string, InstitutionRef>> {

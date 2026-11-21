@@ -100,7 +100,7 @@ describe('exportMembersForBdren', () => {
     });
   });
 
-  it('leaves out staff, unmigrated, other issuers, removed members, closed and unlinked institutions', async () => {
+  it('leaves out staff (an institution account on the superadmin email list is not staff), unmigrated, other issuers, removed members, closed and unlinked institutions', async () => {
     const staffRow = migrated('learn', 'staff-row@learn.test', { role: 'INSTITUTION_ADMIN' });
     await db()
       .collection('users')
@@ -125,9 +125,12 @@ describe('exportMembersForBdren', () => {
     });
 
     const learn = result.organizations.find((org) => org.tenantId === 'learn');
-    expect(learn?.people.map((person) => person.email)).toEqual(['kept@learn.test']);
+    expect(learn?.people.map((person) => person.email).sort()).toEqual([
+      'configured@learn.test',
+      'kept@learn.test',
+    ]);
     expect(result.skipped.people).toEqual({
-      platform_staff: 3,
+      platform_staff: 2,
       not_migrated: 1,
       other_issuer: 1,
       removed: 1,

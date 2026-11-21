@@ -388,7 +388,7 @@ describe('apply', () => {
 
   it('treats an active PlatformAdmin row as staff, by id or by email', async () => {
     const byId = await makeUser();
-    await makeUser({ email: 'staff@example.test' });
+    await makeUser({ email: 'staff@example.test', tenantId: undefined, accountScope: undefined });
     await mongoose.connection.collection('platformadmins').insertMany([
       { userId: byId._id, email: 'other-staff@example.test', active: true },
       { email: 'STAFF@example.test', active: true },
@@ -400,8 +400,31 @@ describe('apply', () => {
     await mongoose.connection.collection('platformadmins').deleteMany({});
   });
 
+  it('migrates an institution account whose email is on the superadmin list', async () => {
+    const institutionAdmin = await makeUser({
+      email: 'boss@example.test',
+      role: 'INSTITUTION_ADMIN',
+    });
+    await mongoose.connection
+      .collection('platformadmins')
+      .insertOne({ email: 'boss@example.test', active: true });
+
+    const report = await migrateUsersToZitadel(
+      { db: db(), zitadel: client() },
+      options({ staffEmails: ['boss@example.test'] }),
+    );
+
+    expect(entryFor(report, institutionAdmin._id)?.status).toBe('created');
+    expect((await load(institutionAdmin._id))?.provider).toBe('openid');
+    await mongoose.connection.collection('platformadmins').deleteMany({});
+  });
+
   it('treats superadmins named only in configuration as staff', async () => {
-    const configured = await makeUser({ email: 'boss@example.test' });
+    const configured = await makeUser({
+      email: 'boss@example.test',
+      tenantId: undefined,
+      accountScope: undefined,
+    });
     const member = await makeUser();
 
     const report = await migrateUsersToZitadel(
