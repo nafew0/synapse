@@ -23,6 +23,7 @@ const {
   AdminRefreshError,
   buildOpenIDRefreshParams,
   isEmailDomainAllowed,
+  readSsoOnly,
 } = require('@librechat/api');
 const { loginController } = require('~/server/controllers/auth/LoginController');
 const { hasCapability, requireCapability } = require('~/server/middleware/roles/capabilities');
@@ -54,7 +55,14 @@ const setBalanceConfig = createSetBalanceConfig({
 
 const router = express.Router();
 
+/**
+ * The admin panel's own OpenID sign-in. Off while the chat app is SSO-only: BDREN SSO is for the
+ * chat app, and synapse-admin keeps its local superadmin login so it never depends on bdren.ai.
+ */
 function getOptionalOpenIdConfig() {
+  if (readSsoOnly().enabled) {
+    return null;
+  }
   try {
     return getOpenIdConfig();
   } catch {
