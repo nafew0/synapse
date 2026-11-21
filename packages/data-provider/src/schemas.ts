@@ -991,6 +991,8 @@ export const tConversationSchema = z.object({
   parentMessageId: z.string().optional(),
   maxOutputTokens: coerceNumber.nullable().optional(),
   maxContextTokens: coerceNumber.optional(),
+  /** Per-agent cap on one tool result, in characters. */
+  maxToolResultChars: coerceNumber.optional(),
   max_tokens: coerceNumber.optional(),
   /* Anthropic */
   promptCache: z.boolean().optional(),

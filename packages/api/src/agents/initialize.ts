@@ -715,7 +715,12 @@ export async function initializeAgent(
     ),
   );
 
-  const { resendFiles, maxContextTokens, modelOptions } = extractLibreChatParams(
+  const {
+    resendFiles,
+    maxContextTokens,
+    maxToolResultChars: agentMaxToolResultChars,
+    modelOptions,
+  } = extractLibreChatParams(
     _modelOptions as Record<string, unknown>,
   );
 
@@ -1548,8 +1553,14 @@ export async function initializeAgent(
     'maxToolResultChars' in providerConfig
       ? (providerConfig.maxToolResultChars as number | undefined)
       : undefined;
+  const agentToolResultLimit =
+    typeof agentMaxToolResultChars === 'number' && agentMaxToolResultChars > 0
+      ? agentMaxToolResultChars
+      : undefined;
   const maxToolResultCharsResolved =
-    providerMaxToolResultChars ?? endpointConfigs?.all?.maxToolResultChars;
+    agentToolResultLimit ??
+    providerMaxToolResultChars ??
+    endpointConfigs?.all?.maxToolResultChars;
   const fileAuthoringToolNames = new Set(
     (toolDefinitions ?? [])
       .filter((toolDefinition) => isFileAuthoringToolDefinition(toolDefinition))

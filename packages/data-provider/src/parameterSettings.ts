@@ -121,6 +121,17 @@ export const librechat = {
     optionType: 'model',
     columnSpan: 2,
   } as const,
+  maxToolResultChars: {
+    key: 'maxToolResultChars',
+    label: 'com_endpoint_context_tokens',
+    labelCode: true,
+    type: 'number',
+    component: 'input',
+    placeholder: 'com_endpoint_default',
+    placeholderCode: true,
+    optionType: 'model',
+    columnSpan: 2,
+  } as const,
   resendFiles: {
     key: 'resendFiles',
     label: 'com_endpoint_plug_resend_files',
