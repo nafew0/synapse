@@ -3,14 +3,18 @@ import type {
   IKbIngestJob,
   IKbDocument,
   KbParserInfo,
-  IKbIngestJobDoc,
   IKbDocumentDoc,
+  IKbStorageDaily,
+  IKbIngestJobDoc,
+  KbStorageFigures,
   IKbDocumentVersion,
+  IKbStorageDailyDoc,
   IKbDocumentVersionDoc,
 } from '~/types';
 import type { KbDocType, KbDocumentStatus } from '~/common';
 import { KbLimits, KbDocumentStatuses, KbIngestJobStatuses } from '~/common';
 import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 
 export type KbFileInput = {
   fileRef: string;
@@ -38,6 +42,8 @@ export type CompleteKbIngestInput = {
   chunkCount: number;
   unreadablePages: number[];
   parser: KbParserInfo;
+  /** Parsed text bytes this version sent to the search index. */
+  parsedBytes?: number;
 };
 
 export type FailKbIngestInput = {
@@ -56,8 +62,17 @@ export type KbCatalogEntry = {
 
 export type KbUsage = {
   documents: number;
+  /** Live documents' current files: what the storage limit counts. */
   bytes: number;
+  /** Every stored version, the live ones included. */
+  versions: number;
+  /** Originals of every stored version plus their parsed text. */
+  totalBytes: number;
 };
+
+export type KbTenantStorage = KbStorageFigures & { tenantId: string };
+
+export type KbStorageDailyInput = KbTenantStorage & { day: string; measuredAt: Date };
 
 export interface KbMethods {
   createKbDocument(input: CreateKbDocumentInput): Promise<KbQueuedResult>;
@@ -70,6 +85,18 @@ export interface KbMethods {
   listKbDocuments(filter?: { status?: KbDocumentStatus }): Promise<IKbDocument[]>;
   getKbDocumentVersion(documentId: string, version: number): Promise<IKbDocumentVersion | null>;
   getKbUsage(): Promise<KbUsage>;
+  /**
+   * Storage figures per tenant, from the sizes recorded at write time: one tenant, or every
+   * tenant with records. Call inside `runAsSystem`.
+   */
+  measureKbStorage(tenantId?: string): Promise<KbTenantStorage[]>;
+  /**
+   * Writes each row as its tenant's figures for that day, unless the day already holds a later
+   * measurement. Call inside `runAsSystem`.
+   */
+  saveKbStorageDaily(rows: KbStorageDailyInput[]): Promise<void>;
+  /** Daily rows from `fromDay` on, oldest first; inside a tenant context only that tenant's. */
+  listKbStorageDaily(filter: { fromDay: string; tenantId?: string }): Promise<IKbStorageDaily[]>;
   /** Whether this tenant has anything searchable; read on every chat turn, so one indexed query. */
   hasReadyKbDocuments(tenantId: string): Promise<boolean>;
   /** A tenant's searchable documents, newest first: the chat prompt lists them, search keeps to them. */
@@ -110,6 +137,56 @@ export function createKbMethods(mongoose: typeof import('mongoose')): KbMethods 
   const documents = () => mongoose.models.KbDocument as Model<IKbDocumentDoc>;
   const versions = () => mongoose.models.KbDocumentVersion as Model<IKbDocumentVersionDoc>;
   const jobs = () => mongoose.models.KbIngestJob as Model<IKbIngestJobDoc>;
+  const storageDays = () => mongoose.models.KbStorageDaily as Model<IKbStorageDailyDoc>;
+
+  type VersionTotals = Pick<KbStorageFigures, 'versions' | 'originalBytes'> & {
+    _id: string | null;
+  };
+  type DocumentTotals = Pick<
+    KbStorageFigures,
+    'documents' | 'indexChunks' | 'parsedBytes' | 'unmeasuredVersions'
+  > & {
+    _id: string | null;
+    bytes: number;
+  };
+
+  /** Version totals grouped by tenant (`'$tenantId'`) or all together (`null`). */
+  const sumVersions = (match: object, by: '$tenantId' | null) =>
+    versions().aggregate<VersionTotals>([
+      { $match: match },
+      {
+        $group: {
+          _id: by,
+          versions: { $sum: 1 },
+          originalBytes: { $sum: '$sizeBytes' },
+        },
+      },
+    ]);
+
+  const live = { $gt: ['$currentVersion', 0] };
+
+  /**
+   * Document totals. Parsed text counts the live version only: activating a version drops every
+   * other version's chunks from the search index.
+   */
+  const sumDocuments = (match: object, by: '$tenantId' | null) =>
+    documents().aggregate<DocumentTotals>([
+      { $match: match },
+      {
+        $group: {
+          _id: by,
+          documents: { $sum: 1 },
+          bytes: { $sum: '$sizeBytes' },
+          indexChunks: { $sum: { $cond: [live, '$chunkCount', 0] } },
+          parsedBytes: { $sum: { $cond: [live, { $ifNull: ['$parsedBytes', 0] }, 0] } },
+          unmeasuredVersions: {
+            $sum: {
+              $cond: [{ $and: [live, { $eq: [{ $ifNull: ['$parsedBytes', null] }, null] }] }, 1, 0],
+            },
+          },
+        },
+      },
+    ]);
 
   async function queueVersion(
     document: IKbDocumentDoc,
@@ -201,11 +278,103 @@ export function createKbMethods(mongoose: typeof import('mongoose')): KbMethods 
   }
 
   async function getKbUsage(): Promise<KbUsage> {
-    const [usage] = await documents().aggregate<KbUsage>([
-      { $group: { _id: null, documents: { $sum: 1 }, bytes: { $sum: '$sizeBytes' } } },
-      { $project: { _id: 0, documents: 1, bytes: 1 } },
+    const [[docs], [stored]] = await Promise.all([sumDocuments({}, null), sumVersions({}, null)]);
+    return {
+      documents: docs?.documents ?? 0,
+      bytes: docs?.bytes ?? 0,
+      versions: stored?.versions ?? 0,
+      totalBytes: (stored?.originalBytes ?? 0) + (docs?.parsedBytes ?? 0),
+    };
+  }
+
+  async function measureKbStorage(tenantId?: string): Promise<KbTenantStorage[]> {
+    const match = tenantId ? { tenantId } : {};
+    const [docs, stored] = await Promise.all([
+      sumDocuments(match, '$tenantId'),
+      sumVersions(match, '$tenantId'),
     ]);
-    return usage ?? { documents: 0, bytes: 0 };
+    const byTenant = new Map<string, KbTenantStorage>();
+    const entry = (id: string): KbTenantStorage => {
+      const found = byTenant.get(id);
+      if (found) {
+        return found;
+      }
+      const empty: KbTenantStorage = {
+        tenantId: id,
+        documents: 0,
+        versions: 0,
+        originalBytes: 0,
+        parsedBytes: 0,
+        indexChunks: 0,
+        totalBytes: 0,
+        unmeasuredVersions: 0,
+      };
+      byTenant.set(id, empty);
+      return empty;
+    };
+    for (const { _id, documents: count, indexChunks, parsedBytes, unmeasuredVersions } of docs) {
+      Object.assign(entry(String(_id)), {
+        documents: count,
+        indexChunks,
+        parsedBytes,
+        unmeasuredVersions,
+      });
+    }
+    for (const { _id, versions: count, originalBytes } of stored) {
+      Object.assign(entry(String(_id)), { versions: count, originalBytes });
+    }
+    for (const row of byTenant.values()) {
+      row.totalBytes = row.originalBytes + row.parsedBytes;
+    }
+    if (tenantId) {
+      entry(tenantId);
+    }
+    return [...byTenant.values()];
+  }
+
+  /**
+   * Each field is replaced only when this measurement is not older than the stored one, so two
+   * writers racing on the same day leave the later figures. The filter is the unique key alone,
+   * which lets MongoDB retry an upsert that collides with a concurrent insert.
+   */
+  async function saveKbStorageDaily(rows: KbStorageDailyInput[]): Promise<void> {
+    if (rows.length === 0) {
+      return;
+    }
+    await tenantSafeBulkWrite(
+      storageDays(),
+      rows.map(({ tenantId, day, ...figures }) => {
+        const newer = {
+          $or: [
+            { $eq: [{ $type: '$measuredAt' }, 'missing'] },
+            { $lte: ['$measuredAt', figures.measuredAt] },
+          ],
+        };
+        const set = Object.fromEntries(
+          Object.entries(figures).map(([field, value]) => [
+            field,
+            { $cond: [newer, { $literal: value }, '$' + field] },
+          ]),
+        );
+        return { updateOne: { filter: { tenantId, day }, update: [{ $set: set }], upsert: true } };
+      }),
+      { ordered: false },
+    );
+  }
+
+  async function listKbStorageDaily(filter: {
+    fromDay: string;
+    tenantId?: string;
+  }): Promise<IKbStorageDaily[]> {
+    const query = {
+      day: { $gte: filter.fromDay },
+      ...(filter.tenantId ? { tenantId: filter.tenantId } : {}),
+    };
+    return (await storageDays()
+      .find(query)
+      .sort({ tenantId: 1, day: 1 })
+      .select('-_id -__v -createdAt -updatedAt')
+      .lean()) as IKbStorageDaily[];
   }
 
   async function hasReadyKbDocuments(tenantId: string): Promise<boolean> {
@@ -333,6 +502,7 @@ export function createKbMethods(mongoose: typeof import('mongoose')): KbMethods 
       parser: input.parser,
       pageCount: input.pageCount,
       chunkCount: input.chunkCount,
+      ...(input.parsedBytes != null ? { parsedBytes: input.parsedBytes } : {}),
     };
     await versions().updateOne(
       { documentId: job.documentId, version: job.version },
@@ -346,6 +516,7 @@ export function createKbMethods(mongoose: typeof import('mongoose')): KbMethods 
           pageCount: input.pageCount,
           chunkCount: input.chunkCount,
           unreadablePages: input.unreadablePages,
+          parsedBytes: input.parsedBytes ?? null,
         },
       },
       { new: true },
@@ -455,6 +626,9 @@ export function createKbMethods(mongoose: typeof import('mongoose')): KbMethods 
     listKbDocuments,
     getKbDocumentVersion,
     getKbUsage,
+    measureKbStorage,
+    saveKbStorageDaily,
+    listKbStorageDaily,
     hasReadyKbDocuments,
     listReadyKbCatalog,
     listKbDocumentIds,

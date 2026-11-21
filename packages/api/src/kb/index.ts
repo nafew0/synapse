@@ -6,5 +6,6 @@ export * from './chunk';
 export * from './rag';
 export * from './ingest';
 export * from './store';
+export * from './disk';
 export * from './tool';
 export * from './availability';

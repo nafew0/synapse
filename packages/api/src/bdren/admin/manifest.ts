@@ -13,6 +13,7 @@ export const ADMIN_SECTIONS: readonly ManifestSection[] = [
     title: 'Knowledge base',
     paths: {
       list: 'GET /api/bdren/institutions/{orgId}/knowledge',
+      storage: 'GET /api/bdren/institutions/{orgId}/knowledge/storage?days',
       uploadUrl: 'POST /api/bdren/institutions/{orgId}/knowledge/upload-url',
       update: 'PATCH /api/bdren/institutions/{orgId}/knowledge/{id}',
       remove: 'DELETE /api/bdren/institutions/{orgId}/knowledge/{id}',

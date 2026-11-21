@@ -7,6 +7,7 @@ import type { Request, Response } from 'express';
 import type { KbIndexClient } from '~/kb/rag';
 import type { KbFileStore } from '~/kb/store';
 import { forgetInstitutionKb } from '~/kb/availability';
+import { recordKbStorage } from '~/kb/disk';
 
 /** Extension decides the type: browsers send `application/octet-stream` for .md and others. */
 const TYPES_BY_EXTENSION: Readonly<Record<string, string>> = {
@@ -48,6 +49,8 @@ export interface AdminKbDeps {
     | 'listKbDocumentVersions'
     | 'deleteKbDocument'
     | 'retryKbDocument'
+    | 'measureKbStorage'
+    | 'saveKbStorageDaily'
   >;
   store: KbFileStore;
   index: Pick<KbIndexClient, 'remove' | 'rename'> | null;
@@ -238,6 +241,7 @@ export function createAdminKbHandlers(deps: AdminKbDeps): AdminKbHandlers {
           sizeBytes: file.sizeBytes,
         },
       });
+      await recordKbStorage(methods, tenantId);
       res.status(201).json({ document: toView(document) });
     } catch (error) {
       await store.remove(fileRef).catch(() => undefined);
@@ -266,6 +270,7 @@ export function createAdminKbHandlers(deps: AdminKbDeps): AdminKbHandlers {
         },
         userId(req),
       );
+      await recordKbStorage(methods, tenantId);
       res.status(201).json({ document: toView(document) });
     } catch (error) {
       await store.remove(fileRef).catch(() => undefined);
@@ -325,6 +330,7 @@ export function createAdminKbHandlers(deps: AdminKbDeps): AdminKbHandlers {
     const { fileRefs } = await methods.deleteKbDocument(documentId);
     forgetInstitutionKb(tenantId);
     await Promise.all(fileRefs.map((ref) => store.remove(ref).catch(() => undefined)));
+    await recordKbStorage(methods, tenantId);
     if (deps.index) {
       await removeFromIndex(deps.index, tenantId, documentId);
     }

@@ -15,7 +15,12 @@ import {
   createBdrenUploadTicketModel,
   createMemberMoveModel,
 } from './bdren';
-import { createKbDocumentModel, createKbDocumentVersionModel, createKbIngestJobModel } from './kb';
+import {
+  createKbDocumentModel,
+  createKbIngestJobModel,
+  createKbStorageDailyModel,
+  createKbDocumentVersionModel,
+} from './kb';
 import { createAgentTriggerLaneSequenceModel } from './triggerLaneSequence';
 import { createInstitutionImportJobModel } from './institutionImportJob';
 import { createAdminScopeAssignmentModel } from './adminScopeAssignment';
@@ -85,6 +90,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
   KbDocument: ReturnType<typeof createKbDocumentModel>;
   KbDocumentVersion: ReturnType<typeof createKbDocumentVersionModel>;
   KbIngestJob: ReturnType<typeof createKbIngestJobModel>;
+  KbStorageDaily: ReturnType<typeof createKbStorageDailyModel>;
   Message: ReturnType<typeof createMessageModel>;
   Agent: ReturnType<typeof createAgentModel>;
   AgentApiKey: ReturnType<typeof createAgentApiKeyModel>;
@@ -155,6 +161,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
     KbDocument: createKbDocumentModel(mongoose),
     KbDocumentVersion: createKbDocumentVersionModel(mongoose),
     KbIngestJob: createKbIngestJobModel(mongoose),
+    KbStorageDaily: createKbStorageDailyModel(mongoose),
     Message: createMessageModel(mongoose),
     Agent: createAgentModel(mongoose),
     AgentApiKey: createAgentApiKeyModel(mongoose),

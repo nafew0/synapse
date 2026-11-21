@@ -7,6 +7,7 @@ import type { KbIndexClient } from './rag';
 import type { KbOcrReader } from './ocr';
 import { DoclingRejectedError, type DoclingClient, type DoclingFile } from './docling';
 import { forgetInstitutionKb } from './availability';
+import { recordKbStorage } from './disk';
 import { readPdfPagesWithOcr } from './ocr';
 import { chunkElements } from './chunk';
 import { toElements } from './elements';
@@ -47,6 +48,8 @@ export interface KbIngestDeps {
     | 'updateKbDocument'
     | 'listKbDocumentIds'
     | 'listKbTenantIds'
+    | 'measureKbStorage'
+    | 'saveKbStorageDaily'
   >;
   docling: DoclingClient;
   index: KbIndexClient;
@@ -88,6 +91,14 @@ const pagesOf = (element: KbElement): (number | null)[] =>
   element.kind === 'table' ? [element.pageStart, element.pageEnd] : [element.page];
 
 const firstPageOf = (element: KbElement): number => pagesOf(element)[0] ?? 0;
+
+/** UTF-8 bytes of the text a version sends to the search index: each chunk and its embedded form. */
+export const parsedBytesOf = (chunks: KbChunk[]): number =>
+  chunks.reduce(
+    (total, chunk) =>
+      total + Buffer.byteLength(chunk.text, 'utf8') + Buffer.byteLength(chunk.embedText, 'utf8'),
+    0,
+  );
 
 /** A failure that retrying the same job will not fix. */
 class KbJobRejected extends Error {}
@@ -211,6 +222,7 @@ async function runJob(job: IKbIngestJob, deps: KbIngestDeps): Promise<void> {
     chunkCount: chunks.length,
     unreadablePages: unreadable,
     parser: ocrUsed ? KB_PARSER_WITH_OCR : KB_PARSER,
+    parsedBytes: parsedBytesOf(chunks),
   });
   forgetInstitutionKb(job.tenantId);
   await Promise.all(
@@ -220,6 +232,7 @@ async function runJob(job: IKbIngestJob, deps: KbIngestDeps): Promise<void> {
       }),
     ),
   );
+  await recordKbStorage(deps.methods, job.tenantId);
   logger.info(
     `[kb/ingest] ${job.tenantId}/${documentId} v${job.version}: ${chunks.length} chunks, ${parsed.pageCount} pages`,
   );

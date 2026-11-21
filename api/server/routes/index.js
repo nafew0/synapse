@@ -15,6 +15,7 @@ const adminAuditLog = require('./admin/audit');
 const adminBanner = require('./admin/banner');
 const adminKb = require('./admin/kb');
 const platformInstitutions = require('./platform/institutions');
+const platformKb = require('./platform/kb');
 const platformUsers = require('./platform/users');
 const platformUsagePackages = require('./platform/usagePackages');
 const platformAlerts = require('./platform/alerts');
@@ -74,6 +75,7 @@ module.exports = {
   adminBanner,
   adminKb,
   platformInstitutions,
+  platformKb,
   platformUsers,
   platformUsagePackages,
   platformAlerts,

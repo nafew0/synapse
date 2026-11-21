@@ -2,6 +2,7 @@ const {
   createKbIndexClient,
   createDoclingClient,
   startKbIngestWorker,
+  startKbStorageJob,
   createLocalKbFileStore,
   getKbRagApiUrl,
   createUnstructuredClient,
@@ -100,4 +101,7 @@ function startKnowledgeBaseWorker(appConfig) {
   );
 }
 
-module.exports = { store, index, startKnowledgeBaseWorker };
+/** Writes each tenant's knowledge base disk use once per Asia/Dhaka day. */
+const startKnowledgeBaseStorageJob = () => startKbStorageJob(db);
+
+module.exports = { store, index, startKnowledgeBaseWorker, startKnowledgeBaseStorageJob };

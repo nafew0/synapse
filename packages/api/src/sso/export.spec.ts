@@ -24,7 +24,7 @@ const migrated = (
   tenantId: string,
   email: string,
   extra: Record<string, unknown> = {},
-): Record<string, unknown> => {
+): Record<string, unknown> & { _id: mongoose.Types.ObjectId } => {
   const _id = new mongoose.Types.ObjectId();
   return {
     _id,

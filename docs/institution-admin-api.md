@@ -22,7 +22,8 @@ Writes to a suspended/closed institution → 403. Errors are `{ "error": string 
 | Route | Body / query | Response |
 |---|---|---|
 | `GET /admin-manifest` (no orgId) | | `{app:"synapse", version:1, sections:[{key,title,paths}]}` — keys `knowledge`, `access-groups`, `usage` |
-| `GET /knowledge` | | `{documents:[{id,title,docType,status:"queued\|processing\|ready\|failed",error,currentVersion,latestVersion,filename,mimeType,sizeBytes,pageCount,chunkCount,unreadablePages,createdAt,updatedAt}], usage:{documents,bytes}, limits:{maxDocuments,maxFileBytes,maxTotalBytes}, extensions, docTypes}` |
+| `GET /knowledge` | | `{documents:[{id,title,docType,status:"queued\|processing\|ready\|failed",error,currentVersion,latestVersion,filename,mimeType,sizeBytes,pageCount,chunkCount,unreadablePages,createdAt,updatedAt}], usage:{documents,bytes,versions,totalBytes}, limits:{maxDocuments,maxFileBytes,maxTotalBytes}, extensions, docTypes}`; `bytes` is the live files (what `maxTotalBytes` counts), `versions`/`totalBytes` include older stored versions and parsed text |
+| `GET /knowledge/storage?days=N` | `days` 1–365, default 90 (else 400) | `{current:{documents,versions,originalBytes,parsedBytes,indexChunks,totalBytes,limitBytes,measuredAt}, daily:[{day:"YYYY-MM-DD",documents,versions,originalBytes,parsedBytes,totalBytes}]}` — see *Knowledge base storage* |
 | `POST /knowledge/upload-url` | `{filename, sizeBytes, title?, docType?, documentId?}` (`documentId` = add a version) | 201 `{uploadUrl, method:"POST", fieldName:"file", expiresAt, maxBytes, filename}` |
 | `PATCH /knowledge/:id` | `{title?, docType?}` | `{document}` (also renames in the search index) |
 | `DELETE /knowledge/:id` | | 204 |
@@ -39,6 +40,21 @@ Writes to a suspended/closed institution → 403. Errors are `{ "error": string 
 
 Group members are referenced by ZITADEL **subject**; a subject that is not an active member of the tenant, or an agent
 the tenant may not use, gives 400 and changes nothing.
+
+## Knowledge base storage
+
+`GET /knowledge/storage` reports the disk use of the caller's knowledge base, from sizes Synapse records when files are
+written (no disk scan per request).
+
+- `originalBytes`: the uploaded files of every stored version (the live one plus up to 4 older ones kept after a replace).
+- `parsedBytes`: UTF-8 bytes of the parsed text the live versions hold in the search index (chunk text plus its embedded
+  form), recorded when a version is indexed; the index keeps no other version's text. Vectors and index overhead in the RAG
+  database are not counted (about 3 KB per chunk). Documents indexed before 2026-11-21 count 0 until they are indexed again.
+- `indexChunks`: search chunks of the live versions. `totalBytes = originalBytes + parsedBytes`.
+- `limitBytes`: the storage limit (`maxTotalBytes`). The limit counts live files only, i.e. `GET /knowledge` `usage.bytes`, not `totalBytes`.
+- `current` is measured at request time (`measuredAt`, ISO). `daily` has one row per Asia/Dhaka day, oldest first, written
+  once a day and rewritten on every upload, replace, indexing and delete; it holds the day's last figures. Days before tracking
+  began, or with the server down all day, have no row (no gap filling).
 
 ## Signed upload URL (the one browser-facing route)
 

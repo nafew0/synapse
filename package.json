@@ -121,6 +121,7 @@
     "b:balance": "bun config/add-balance.js",
     "b:list-balances": "bun config/list-balances.js",
     "reset-terms": "node config/reset-terms.js",
+    "backfill-kb-storage": "node config/backfill-kb-storage.js",
     "migrate:terms-timestamp": "node config/migrate-terms-timestamp.js",
     "flush-cache": "node config/flush-cache.js",
     "migrate:agent-permissions:dry-run": "node config/migrate-agent-permissions.js --dry-run",

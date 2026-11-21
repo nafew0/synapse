@@ -1,6 +1,6 @@
 import path from 'path';
 import { KbDocTypes } from 'librechat-data-provider';
-import { KbLimits, tenantStorage } from '@librechat/data-schemas';
+import { KbLimits, logger, tenantStorage } from '@librechat/data-schemas';
 import type { IBdrenUploadTicket } from '@librechat/data-schemas';
 import type { KbMethods } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
@@ -10,13 +10,14 @@ import type { KbFileStore } from '~/kb/store';
 import type { AdminRequest } from './types';
 import type { Auditor } from './audit';
 import { findActorInTenant, findInstitutionByOrganization } from './guard';
+import { KB_STORAGE_MAX_DAYS, readKbStorage, readStorageDays } from '~/kb/disk';
 import { createAdminKbHandlers, KB_UPLOAD_EXTENSIONS } from '~/admin/kb';
 import { normalizeOpenIdIssuer } from '~/auth/openid';
 import { withAudit } from './audit';
 
 export interface KnowledgeDeps {
   methods: Parameters<typeof createAdminKbHandlers>[0]['methods'] &
-    Pick<KbMethods, 'getKbDocument'>;
+    Pick<KbMethods, 'getKbDocument' | 'listKbStorageDaily'>;
   store: KbFileStore;
   index: Pick<KbIndexClient, 'remove' | 'rename'> | null;
   tickets: TicketService;
@@ -43,6 +44,7 @@ type KnowledgeHandler = (req: AdminRequest, res: Response) => Promise<void>;
 
 export interface KnowledgeHandlers {
   list: KnowledgeHandler;
+  storage: KnowledgeHandler;
   versions: KnowledgeHandler;
   update: KnowledgeHandler;
   remove: KnowledgeHandler;
@@ -168,8 +170,29 @@ export function createKnowledgeHandlers(deps: KnowledgeDeps): KnowledgeHandlers 
       next();
     };
 
+  /** Disk use now and per Asia/Dhaka day; the tenant is the guard's, never the caller's. */
+  async function storage(req: AdminRequest, res: Response): Promise<void> {
+    const tenantId = req.bdren?.tenantId;
+    if (!tenantId) {
+      fail(res, 403, 'No institution context');
+      return;
+    }
+    const days = readStorageDays(req.query.days);
+    if (days == null) {
+      fail(res, 400, `days must be a whole number from 1 to ${KB_STORAGE_MAX_DAYS}`);
+      return;
+    }
+    try {
+      res.json(await readKbStorage(methods, tenantId, days));
+    } catch (error) {
+      logger.error('[bdren/knowledge] storage request failed', error);
+      fail(res, 500, 'Knowledge base storage request failed');
+    }
+  }
+
   return {
     list: kb.list as KnowledgeHandler,
+    storage,
     versions: kb.versions as KnowledgeHandler,
     update: withAudit(audit, 'institution.kb_document_renamed', documentTarget, kb.update as never),
     remove: withAudit(audit, 'institution.kb_document_deleted', documentTarget, kb.remove as never),
