@@ -40,12 +40,15 @@ const users = (): Model<IUser> => mongoose.models.User as Model<IUser>;
  * them; their own data is then re-checked, because a chat may have started in between.
  */
 export function createMemberPlacer({ activate }: PlacerDeps): MemberPlacer {
-  const rollback = (userId: string, tenantId: string) =>
+  /** Back to no tenant, with the account scope the user had before the claim. */
+  const rollback = (userId: string, tenantId: string, scope: IUser['accountScope']) =>
     runAsSystem(() =>
       users()
         .updateOne(
           { _id: userId, tenantId, membershipStatus: InstitutionMembershipStatuses.SUSPENDED },
-          { $unset: { tenantId: 1, membershipStatus: 1 } },
+          scope
+            ? { $set: { accountScope: scope }, $unset: { tenantId: 1, membershipStatus: 1 } }
+            : { $unset: { tenantId: 1, membershipStatus: 1, accountScope: 1 } },
         )
         .exec(),
     );
@@ -76,18 +79,28 @@ export function createMemberPlacer({ activate }: PlacerDeps): MemberPlacer {
   }
 
   return async (userId, tenantId, options = {}) => {
+    let scope: IUser['accountScope'];
     try {
-      const claimed = await runAsSystem(() =>
+      const before = await runAsSystem(() =>
         users()
-          .updateOne(
+          .findOneAndUpdate(
             { _id: userId, tenantId: null },
-            { $set: { tenantId, membershipStatus: InstitutionMembershipStatuses.SUSPENDED } },
+            {
+              $set: {
+                tenantId,
+                accountScope: 'institution',
+                membershipStatus: InstitutionMembershipStatuses.SUSPENDED,
+              },
+            },
+            { new: false, projection: { accountScope: 1 } },
           )
+          .lean<Pick<IUser, 'accountScope'>>()
           .exec(),
       );
-      if (claimed.modifiedCount !== 1) {
+      if (!before) {
         return REFUSED;
       }
+      scope = before.accountScope;
     } catch (error) {
       if ((error as { code?: number })?.code === DUPLICATE_KEY) {
         return resolveDuplicate(userId, options.replaceDuplicate === true);
@@ -97,7 +110,7 @@ export function createMemberPlacer({ activate }: PlacerDeps): MemberPlacer {
     }
     try {
       if (await userOwnsData(userId)) {
-        await rollback(userId, tenantId);
+        await rollback(userId, tenantId, scope);
         return REFUSED;
       }
       return { status: 'placed', user: await activate({ userId, tenantId }) };
@@ -106,7 +119,7 @@ export function createMemberPlacer({ activate }: PlacerDeps): MemberPlacer {
         `[bdren] activating ${userId} in ${tenantId} failed; left without a tenant`,
         error,
       );
-      await rollback(userId, tenantId);
+      await rollback(userId, tenantId, scope);
       return REFUSED;
     }
   };

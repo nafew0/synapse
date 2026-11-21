@@ -13,10 +13,10 @@ import type { BdrenConfig, ResolvedAllowance } from './types';
 import type { MemberMover, MoveOutcome } from './move';
 import type { AllowanceService } from './allowance';
 import type { IdentityUser } from './identity';
+import { isPlatformStaff, ensureStandaloneScope } from './scope';
 import { normalizeOpenIdIssuer } from '~/auth/openid';
 import { allowanceSubjectFor } from './identity';
 import { syncAlerts } from '~/admin/alerts/store';
-import { isPlatformStaff } from './move';
 
 /** The bdren.ai organization an institution is created for. */
 export interface OrganizationRef {
@@ -367,6 +367,12 @@ export function createProvisioner(deps: ProvisionDeps): Provisioner {
     } catch (error) {
       logger.error(`[bdren] placing user ${userId} in ${tenantId} failed`, error);
     }
+    const left = await runAsSystem(() =>
+      users().findById(userId).select('tenantId accountScope role email').lean<IUser>().exec(),
+    );
+    await ensureStandaloneScope(left).catch((error) =>
+      logger.error('[bdren] marking the unplaced user an individual failed', error),
+    );
     const institution = await runAsSystem(() =>
       institutions()
         .findOne({ tenantId })
@@ -483,6 +489,9 @@ export function createProvisioner(deps: ProvisionDeps): Provisioner {
       );
       if (!who || (await isPlatformStaff(who.userId, user.role, user.email))) {
         return null;
+      }
+      if (!user.tenantId && !user.accountScope) {
+        await ensureStandaloneScope({ ...user, _id: who.userId });
       }
       const settled = await finishUnfinishedMove(who.userId);
       if (settled === 'busy') {

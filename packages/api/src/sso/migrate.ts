@@ -3,7 +3,7 @@ import type { mongo } from 'mongoose';
 import type { IInstitution, IUser } from '@librechat/data-schemas';
 import type { HumanUserInput, ZitadelClient, ZitadelUser } from './zitadel';
 import { normalizeOpenIdIssuer } from '~/auth/openid';
-import { PLATFORM_ROLES } from '~/bdren/move';
+import { PLATFORM_ROLES } from '~/bdren/scope';
 
 export type MigratingUser = Pick<
   IUser,
@@ -570,21 +570,48 @@ export async function migrateUsersToZitadel(
 
 export type UnlinkResult = 'unlinked' | 'not_migrated';
 
+export interface UnlinkOptions {
+  /** Superadmins named only by configuration (`PLATFORM_SUPERADMIN_EMAILS`); also staff. */
+  staffEmails?: string[];
+}
+
+/** An individual left without an account scope would never be metered; staff stay without one. */
+async function scopeAfterUnlink(
+  db: mongo.Db,
+  user: MigratingUser & { accountScope?: string },
+  staffEmails?: string[],
+): Promise<Record<string, string>> {
+  if (user.tenantId || user.accountScope) {
+    return {};
+  }
+  return isStaff(user, await loadStaff(db, staffEmails)) ? {} : { accountScope: 'standalone' };
+}
+
 /**
  * Turns a migrated account back into a local-password one (its hash was never removed). The ZITADEL
- * user is left for the operator to delete or keep.
+ * user is left for the operator to delete or keep. A tenantless individual without an account
+ * scope is made `standalone`, as every individual is.
  */
-export async function unlinkMigratedUser(db: mongo.Db, userId: string): Promise<UnlinkResult> {
-  const written = await db.collection<MigratingUser>('users').updateOne(
-    {
-      _id: new Types.ObjectId(userId),
-      provider: 'openid',
-      ssoMigratedAt: { $exists: true },
-    },
-    {
-      $set: { provider: 'local' },
-      $unset: { openidId: '', openidIssuer: '', ssoMigratedAt: '', bdrenHoldTenantId: '' },
-    },
-  );
+export async function unlinkMigratedUser(
+  db: mongo.Db,
+  userId: string,
+  options: UnlinkOptions = {},
+): Promise<UnlinkResult> {
+  const users = db.collection<MigratingUser & { accountScope?: string }>('users');
+  const filter = {
+    _id: new Types.ObjectId(userId),
+    provider: 'openid',
+    ssoMigratedAt: { $exists: true },
+  };
+  const user = await users.findOne(filter, {
+    projection: { tenantId: 1, accountScope: 1, role: 1, email: 1 },
+  });
+  if (!user) {
+    return 'not_migrated';
+  }
+  const written = await users.updateOne(filter, {
+    $set: { provider: 'local', ...(await scopeAfterUnlink(db, user, options.staffEmails)) },
+    $unset: { openidId: '', openidIssuer: '', ssoMigratedAt: '', bdrenHoldTenantId: '' },
+  });
   return written.matchedCount === 1 ? 'unlinked' : 'not_migrated';
 }

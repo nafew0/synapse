@@ -344,6 +344,17 @@ describe('an unlinked institution already holds the slug', () => {
 });
 
 describe('reviewExistingMember', () => {
+  it('makes a tenantless individual without a scope standalone, never staff', async () => {
+    const solo = await makeUser();
+    const staff = await makeUser({ role: 'ADMIN' });
+    for (const user of [solo, staff]) {
+      bdren.answers.set(user.openidId as string, freeAnswer(user.openidId as string));
+      await provisioner.reviewExistingMember(user);
+    }
+    expect((await User().findById(solo._id).lean<typeof solo>())?.accountScope).toBe('standalone');
+    expect((await User().findById(staff._id).lean<typeof staff>())?.accountScope).toBeUndefined();
+  });
+
   it('never creates an institution; it records an unlinked one once and moves nobody', async () => {
     const user = await makeUser();
     bdren.answers.set(user.openidId as string, institutionAnswer(user.openidId as string));
@@ -701,6 +712,7 @@ describe('first login of a new member', () => {
 
     const saved = await User().findById(user._id).lean<typeof user>();
     expect(saved?.tenantId).toBeUndefined();
+    expect(saved?.accountScope).toBe('standalone');
     expect(await User().countDocuments({ membershipStatus: 'suspended' })).toBe(0);
     expect(await audits('member.coverage_mismatch')).toHaveLength(1);
   });
@@ -711,7 +723,11 @@ describe('first login of a new member', () => {
     const placed = await provisioner.adoptNewMember(String(user._id), 'dhaka-university');
     expect(placed.status).toBe('placed');
     expect(placed).toMatchObject({
-      user: { tenantId: 'dhaka-university', membershipStatus: 'active' },
+      user: {
+        tenantId: 'dhaka-university',
+        membershipStatus: 'active',
+        accountScope: 'institution',
+      },
     });
   });
 });
@@ -719,9 +735,14 @@ describe('first login of a new member', () => {
 describe('placement safety', () => {
   it('keeps a user tenantless when the target is full, with no suspended row left', async () => {
     await linked({ limits: { maxActiveMembers: 1 }, stats: { activeMembers: 1 } });
-    const user = await makeUser();
+    const user = await makeUser({ accountScope: 'standalone' });
+    const legacy = await makeUser();
     expect(await place(String(user._id), 'dhaka-university')).toEqual({ status: 'refused' });
-    expect((await User().findById(user._id).lean<typeof user>())?.tenantId).toBeUndefined();
+    expect(await place(String(legacy._id), 'dhaka-university')).toEqual({ status: 'refused' });
+    const saved = await User().findById(user._id).lean<typeof user>();
+    expect(saved?.tenantId).toBeUndefined();
+    expect(saved?.accountScope).toBe('standalone');
+    expect((await User().findById(legacy._id).lean<typeof user>())?.accountScope).toBeUndefined();
     expect(await User().countDocuments({ membershipStatus: 'suspended' })).toBe(0);
   });
 

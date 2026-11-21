@@ -30,6 +30,7 @@ const {
   getOpenIdProxyDispatcher,
   getOpenIdRoleSyncOptions,
   getOpenIdRolesForOpenIdSync,
+  ensureStandaloneScope,
   getLibreChatRolesForOpenIdSync,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -97,6 +98,19 @@ const findAccountAcrossTenants = (openidId, openidIssuer) =>
   runAsSystem(() => findUser({ openidId, openidIssuer }));
 
 const DEFAULT_LOGIN_MOVE_WAIT_MS = 4000;
+
+/**
+ * A user with no institution who is not platform staff is an individual: without the scope the
+ * meter would treat them like staff and never limit them. Never throws.
+ */
+async function withStandaloneScope(user) {
+  try {
+    return (await ensureStandaloneScope(user)) ? { ...user, accountScope: 'standalone' } : user;
+  } catch (error) {
+    logger.error('[openidStrategy] marking the user an individual failed', error);
+    return user;
+  }
+}
 
 /** How long a login waits for a coverage review (and any move it starts) before going on. */
 function loginMoveWaitMs() {
@@ -833,6 +847,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
 
     const balanceConfig = getBalanceConfig(appConfig);
     user = await createUser(user, balanceConfig, true, true);
+    user = await withStandaloneScope(user);
     if (user.tenantId) {
       user = await activateProvisionedMember({
         userId: user._id.toString(),
@@ -984,6 +999,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   if (!isNewUser) {
     user = (await reviewBdrenCoverage(user, tokenset.id_token)) ?? user;
   }
+  user = await withStandaloneScope(user);
   if (user?.tenantId && user.membershipStatus !== InstitutionMembershipStatuses.ACTIVE) {
     user = await activateProvisionedMember({
       userId: user._id.toString(),

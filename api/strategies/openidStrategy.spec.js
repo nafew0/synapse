@@ -102,6 +102,10 @@ jest.mock('@librechat/api', () => {
         : params;
     }),
     resolveAppConfigForUser: jest.fn(async (_getAppConfig, _user) => ({})),
+    /** The real rule (tested against MongoDB in packages/api), with `_id: 'staff'` standing in for platform staff. */
+    ensureStandaloneScope: jest.fn(
+      async (user) => !!user?._id && user._id !== 'staff' && !user.tenantId && !user.accountScope,
+    ),
   };
 });
 jest.mock('~/server/services/bdrenAllowance', () => ({
@@ -2614,6 +2618,48 @@ describe('setupOpenId', () => {
       expect(user.tenantId).toBeUndefined();
       expect(createUser.mock.calls[0][0]).not.toHaveProperty('membershipStatus');
       expect(activateProvisionedMember).not.toHaveBeenCalled();
+    });
+
+    it('makes a first-time user with no institution an individual, so they are metered', async () => {
+      const { ensureStandaloneScope } = require('@librechat/api');
+      ensureStandaloneScope.mockClear();
+
+      const { user } = await validate(tokenset);
+
+      expect(ensureStandaloneScope).toHaveBeenCalledWith(
+        expect.objectContaining({ _id: 'newUserId' }),
+      );
+      expect(user.tenantId).toBeUndefined();
+      expect(user.accountScope).toBe('standalone');
+    });
+
+    it('marks an existing tenantless user without a scope at sign-in, but not a member or staff', async () => {
+      const { ensureStandaloneScope } = require('@librechat/api');
+      const signIn = async (existing) => {
+        findUser.mockImplementation(async (query) =>
+          query.openidId === tokenset.claims().sub ? { ...existing } : null,
+        );
+        updateUser.mockImplementation(async (id, data) => ({ ...existing, ...data, _id: id }));
+        ensureStandaloneScope.mockClear();
+        const { user } = await validate(tokenset);
+        return user;
+      };
+
+      const individual = await signIn({ _id: 'solo', provider: 'openid', email: 'solo@x.test' });
+      expect(individual.accountScope).toBe('standalone');
+      expect(ensureStandaloneScope).toHaveBeenCalled();
+
+      const member = await signIn({
+        _id: 'member',
+        provider: 'openid',
+        tenantId: 'dhaka-university',
+        membershipStatus: 'active',
+        accountScope: 'institution',
+      });
+      expect(member.accountScope).toBe('institution');
+
+      const staff = await signIn({ _id: 'staff', provider: 'openid' });
+      expect(staff.accountScope).toBeUndefined();
     });
 
     it('lets login through when placing the user throws', async () => {

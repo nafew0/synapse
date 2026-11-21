@@ -594,6 +594,32 @@ describe('unlinkMigratedUser', () => {
     expect(await unlinkMigratedUser(db(), member._id.toHexString())).toBe('not_migrated');
   });
 
+  it('makes a tenantless individual without a scope standalone, but never staff', async () => {
+    const solo = await makeUser({ tenantId: undefined, accountScope: undefined });
+    const boss = await makeUser({
+      tenantId: undefined,
+      accountScope: undefined,
+      email: 'boss@example.test',
+    });
+    const member = await makeUser();
+    await migrateUsersToZitadel({ db: db(), zitadel: client() }, options({ includeAdmins: true }));
+
+    for (const user of [solo, boss, member]) {
+      expect(
+        await unlinkMigratedUser(db(), user._id.toHexString(), {
+          staffEmails: ['BOSS@example.test'],
+        }),
+      ).toBe('unlinked');
+    }
+
+    expect((await load(solo._id))?.accountScope).toBe('standalone');
+    expect((await load(boss._id))?.accountScope).toBeUndefined();
+    expect(await load(member._id)).toMatchObject({
+      tenantId: 'dhaka-university',
+      accountScope: 'institution',
+    });
+  });
+
   it('never touches an account that was not migrated', async () => {
     const sso = await makeUser({ provider: 'openid', openidId: 'x', openidIssuer: ISSUER });
     expect(await unlinkMigratedUser(db(), sso._id.toHexString())).toBe('not_migrated');

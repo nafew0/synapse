@@ -178,7 +178,9 @@ node config/migrate-users-to-zitadel.js --db <synapse-db> --i-know-this-is-produ
 
 This only touches accounts the migration changed (`ssoMigratedAt` set): `provider` goes back to
 `local` and `openidId`, `openidIssuer`, `ssoMigratedAt` and `bdrenHoldTenantId` are removed. The
-username or name the first SSO login wrote stay. The ZITADEL user is left in place; delete it in
+username or name the first SSO login wrote stay. An account with no institution and no account
+scope that is not platform staff is given `accountScope: standalone`, so it is metered as an
+individual. The ZITADEL user is left in place; delete it in
 ZITADEL if the person should not keep it (a rerun would then create it again with the same id).
 
 Everyone (only before Synapse is switched to SSO-only):
