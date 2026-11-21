@@ -69,6 +69,7 @@ export function createBdrenRouter(deps: InstitutionAdminRouterDeps): Router {
   const institution = Router({ mergeParams: true });
   institution.use(createInstitutionGuard({ getIssuer: deps.issuer }) as RequestHandler);
   institution.get('/knowledge', knowledge.list as RequestHandler);
+  institution.get('/knowledge/storage', knowledge.storage as RequestHandler);
   institution.post('/knowledge/upload-url', knowledge.issueUploadUrl as RequestHandler);
   institution.get('/knowledge/:documentId/versions', knowledge.versions as RequestHandler);
   institution.patch('/knowledge/:documentId', knowledge.update as RequestHandler);

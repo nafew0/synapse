@@ -23,6 +23,8 @@ export interface IKbDocument {
   pageCount: number;
   chunkCount: number;
   unreadablePages: number[];
+  /** Parsed text bytes of the current version in the search index; null when not recorded. */
+  parsedBytes?: number | null;
   createdBy?: Types.ObjectId | string | null;
   updatedBy?: Types.ObjectId | string | null;
   createdAt?: Date;
@@ -44,6 +46,40 @@ export interface IKbDocumentVersion {
   parser?: KbParserInfo | null;
   pageCount?: number;
   chunkCount?: number;
+  /**
+   * UTF-8 bytes of the parsed text this version sent to the search index (chunk text plus the
+   * text that was embedded), measured when it was indexed. Null for versions indexed before it
+   * was recorded, and for versions not indexed yet.
+   */
+  parsedBytes?: number | null;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+/** What a tenant's knowledge base takes up, from the sizes recorded at write time. */
+export interface KbStorageFigures {
+  /** Document records, in any state. */
+  documents: number;
+  /** Stored versions: the live one plus the older ones kept for history. */
+  versions: number;
+  /** Original files on disk, every stored version. */
+  originalBytes: number;
+  /** Parsed text in the search index: the live versions only, the index keeps no other. */
+  parsedBytes: number;
+  /** Search index chunks of the live versions. */
+  indexChunks: number;
+  /** `originalBytes + parsedBytes`. */
+  totalBytes: number;
+  /** Live versions whose parsed size was never recorded (indexed before it was). */
+  unmeasuredVersions: number;
+}
+
+/** One tenant's knowledge base storage on one Asia/Dhaka day; the day's last measurement wins. */
+export interface IKbStorageDaily extends KbStorageFigures {
+  tenantId: string;
+  /** Asia/Dhaka calendar day, `YYYY-MM-DD`. */
+  day: string;
+  measuredAt: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -64,4 +100,5 @@ export interface IKbIngestJob {
 
 export type IKbDocumentDoc = Omit<IKbDocument, '_id'> & Document<Types.ObjectId>;
 export type IKbDocumentVersionDoc = Omit<IKbDocumentVersion, '_id'> & Document<Types.ObjectId>;
+export type IKbStorageDailyDoc = IKbStorageDaily & Document<Types.ObjectId>;
 export type IKbIngestJobDoc = Omit<IKbIngestJob, '_id'> & Document<Types.ObjectId>;

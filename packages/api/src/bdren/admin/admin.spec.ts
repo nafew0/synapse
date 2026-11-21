@@ -7,11 +7,19 @@ import express from 'express';
 import mongoose, { Types } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { AccessRoleIds, ResourceType } from 'librechat-data-provider';
-import { createModels, createMethods, runAsSystem, tenantStorage } from '@librechat/data-schemas';
+import {
+  KbLimits,
+  runAsSystem,
+  createModels,
+  createMethods,
+  tenantStorage,
+} from '@librechat/data-schemas';
 import type { AllMethods } from '@librechat/data-schemas';
 import type { RequestHandler } from 'express';
 import type { AddressInfo } from 'net';
 import { createLocalKbFileStore } from '~/kb/store';
+import { recordKbStorage } from '~/kb/disk';
+import { dhakaDay } from '~/usage/rollup';
 import { createBdrenRouter } from './router';
 
 const KEY = 'bdren_prod_key_test';
@@ -199,6 +207,7 @@ beforeEach(async () => {
     'KbDocument',
     'KbDocumentVersion',
     'KbIngestJob',
+    'KbStorageDaily',
     'UsageDaily',
     'BdrenUploadTicket',
   ];
@@ -264,6 +273,7 @@ beforeEach(async () => {
 
 const READ_ROUTES: [string, string][] = [
   ['GET', '/knowledge'],
+  ['GET', '/knowledge/storage'],
   ['GET', '/groups'],
   ['GET', '/agents'],
   ['GET', '/members'],
@@ -414,6 +424,51 @@ describe('knowledge base', () => {
     expect(a.body.documents.map((d: { title: string }) => d.title)).toEqual(['a-doc']);
     const b = await call('GET', '/knowledge', { org: 'org-b', sub: 'sub-admin-b' });
     expect(b.body.documents.map((d: { title: string }) => d.title)).toEqual(['b-doc']);
+  });
+
+  it("reports only the caller's disk use, now and per day, and adds versions to usage", async () => {
+    await makeDoc('tenant-a', 'a-doc');
+    await makeDoc('tenant-a', 'a-doc-2');
+    await makeDoc('tenant-b', 'b-doc');
+    await recordKbStorage(methods, 'tenant-a');
+    await recordKbStorage(methods, 'tenant-b');
+
+    const a = await call('GET', '/knowledge/storage?days=30');
+    expect(a.status).toBe(200);
+    expect(a.body).toEqual({
+      current: {
+        documents: 2,
+        versions: 2,
+        originalBytes: 20,
+        parsedBytes: 0,
+        indexChunks: 0,
+        totalBytes: 20,
+        limitBytes: KbLimits.maxTotalBytes,
+        measuredAt: expect.any(String),
+      },
+      daily: [
+        {
+          day: dhakaDay(new Date()),
+          documents: 2,
+          versions: 2,
+          originalBytes: 20,
+          parsedBytes: 0,
+          totalBytes: 20,
+        },
+      ],
+    });
+    const b = await call('GET', '/knowledge/storage', { org: 'org-b', sub: 'sub-admin-b' });
+    expect(b.body.current).toMatchObject({ documents: 1, totalBytes: 10 });
+    expect(b.body.daily).toEqual([expect.objectContaining({ totalBytes: 10 })]);
+
+    const crossed = await call('GET', '/knowledge/storage', { org: 'org-b', sub: 'sub-admin-a' });
+    expect(crossed.status).toBe(403);
+    for (const days of ['0', '366', 'x', '1.5']) {
+      expect((await call('GET', `/knowledge/storage?days=${days}`)).status).toBe(400);
+    }
+
+    const listed = await call('GET', '/knowledge');
+    expect(listed.body.usage).toEqual({ documents: 2, bytes: 20, versions: 2, totalBytes: 20 });
   });
 
   const issue = (extra: Record<string, unknown> = {}, who: { org?: string; sub?: string } = {}) =>

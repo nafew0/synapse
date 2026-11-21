@@ -13,6 +13,8 @@ export interface KbFileStore {
   save(file: KbStoredFile): Promise<string>;
   read(fileRef: string): Promise<Buffer>;
   remove(fileRef: string): Promise<void>;
+  /** Bytes the stored file takes, or null when it is missing. */
+  size(fileRef: string): Promise<number | null>;
 }
 
 const SAFE_EXTENSION = /^\.[a-z0-9]{1,8}$/;
@@ -48,5 +50,15 @@ export function createLocalKbFileStore(root: string): KbFileStore {
     await fs.rm(resolve(fileRef), { force: true });
   };
 
-  return { save, read, remove };
+  const size = async (fileRef: string): Promise<number | null> => {
+    const stat = await fs.stat(resolve(fileRef)).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') {
+        return null;
+      }
+      throw error;
+    });
+    return stat ? stat.size : null;
+  };
+
+  return { save, read, remove, size };
 }

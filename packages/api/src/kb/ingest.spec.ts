@@ -16,6 +16,7 @@ import type { DoclingDocument } from './types';
 import type { KbIngestOcr } from './ingest';
 import {
   pageRanges,
+  parsedBytesOf,
   processNextKbJob,
   reconcileKbIndex,
   startKbIngestWorker,
@@ -103,7 +104,7 @@ afterEach(async () => {
   uploads.length = 0;
   activated.length = 0;
   await Promise.all(
-    ['KbDocument', 'KbDocumentVersion', 'KbIngestJob'].map((name) =>
+    ['KbDocument', 'KbDocumentVersion', 'KbIngestJob', 'KbStorageDaily'].map((name) =>
       mongoose.models[name].deleteMany({}),
     ),
   );
@@ -206,6 +207,29 @@ describe('processNextKbJob', () => {
     await processNextKbJob(deps(docling(convert)));
     expect(convert).not.toHaveBeenCalled();
     expect(uploads[0].chunks[0].text).toBe('NOC email: noc@bdren.net.bd\n\nHours: 24/7');
+  });
+
+  it('records the parsed text size it indexed and refreshes the day’s storage row', async () => {
+    const body = 'নীতিমালা: ছুটি বিশ দিন\n\nLeave: twenty days';
+    const file = await upload('uni-a', 1, 'text/plain', body);
+    const { document } = await asTenant('uni-a', () =>
+      methods.createKbDocument({ title: 'Leave', file }),
+    );
+    await processNextKbJob(deps(docling(jest.fn())));
+    const expected = parsedBytesOf(uploads[0].chunks);
+    expect(expected).toBeGreaterThan(Buffer.byteLength(body));
+    const version = await asTenant('uni-a', () =>
+      methods.getKbDocumentVersion(String(document._id), 1),
+    );
+    expect(version?.parsedBytes).toBe(expected);
+    const row = await mongoose.models.KbStorageDaily.findOne({ tenantId: 'uni-a' }).lean();
+    expect(row).toMatchObject({
+      parsedBytes: expected,
+      originalBytes: file.sizeBytes,
+      totalBytes: file.sizeBytes + expected,
+      indexChunks: uploads[0].chunks.length,
+      unmeasuredVersions: 0,
+    });
   });
 
   it('converts a long PDF in page ranges and joins them in page order', async () => {

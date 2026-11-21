@@ -7,6 +7,7 @@ import { createModels, createMethods, KbLimits, tenantStorage } from '@librechat
 import type { AllMethods } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import { createLocalKbFileStore } from '~/kb/store';
+import { dhakaDay } from '~/usage/rollup';
 import { createAdminKbHandlers } from './kb';
 
 let mongoServer: MongoMemoryServer;
@@ -90,7 +91,7 @@ beforeEach(() => {
 afterEach(async () => {
   fs.rmSync(root, { recursive: true, force: true });
   await Promise.all(
-    ['KbDocument', 'KbDocumentVersion', 'KbIngestJob'].map((name) =>
+    ['KbDocument', 'KbDocumentVersion', 'KbIngestJob', 'KbStorageDaily'].map((name) =>
       mongoose.models[name].deleteMany({}),
     ),
   );
@@ -180,6 +181,43 @@ describe('admin knowledge base handlers', () => {
     expect(
       (versions.body as { versions: { version: number }[] }).versions.map((v) => v.version),
     ).toEqual([2, 1]);
+  });
+
+  it('records the day’s disk use on upload, replace and delete, and lists all versions in usage', async () => {
+    const kb = handlersFor('uni-a');
+    const today = () =>
+      mongoose.models.KbStorageDaily.find({ tenantId: 'uni-a' }).lean<
+        { day: string; versions: number; originalBytes: number; documents: number }[]
+      >();
+
+    const created = await call(kb.upload, { file: upload('policy.txt', '12345') });
+    const id = (created.body as { document: { id: string } }).document.id;
+    expect(await today()).toEqual([
+      expect.objectContaining({
+        day: dhakaDay(new Date()),
+        documents: 1,
+        versions: 1,
+        originalBytes: 5,
+      }),
+    ]);
+
+    await call(kb.replace, { params: { documentId: id }, file: upload('policy.txt', '1234567') });
+    expect(await today()).toEqual([
+      expect.objectContaining({ documents: 1, versions: 2, originalBytes: 12 }),
+    ]);
+    const listed = await call(kb.list, {});
+    expect((listed.body as { usage: unknown }).usage).toEqual({
+      documents: 1,
+      bytes: 7,
+      versions: 2,
+      totalBytes: 12,
+    });
+
+    await call(kb.remove, { params: { documentId: id } });
+    expect(await today()).toEqual([
+      expect.objectContaining({ documents: 0, versions: 0, originalBytes: 0 }),
+    ]);
+    expect(await mongoose.models.KbStorageDaily.countDocuments({ tenantId: 'uni-b' })).toBe(0);
   });
 
   it('renames a document and rejects an empty title', async () => {

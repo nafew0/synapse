@@ -61,7 +61,7 @@ const {
   syncAllTenantInterfacePermissions,
   syncAllInstitutionAdminCapabilities,
 } = require('./services/tenancy');
-const { startKnowledgeBaseWorker } = require('./services/kb');
+const { startKnowledgeBaseWorker, startKnowledgeBaseStorageJob } = require('./services/kb');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
@@ -231,6 +231,7 @@ const startServer = async () => {
     await syncAllInstitutionAdminCapabilities();
   });
   startKnowledgeBaseWorker(appConfig);
+  startKnowledgeBaseStorageJob();
 
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
   let indexHTML = fs.readFileSync(indexPath, 'utf8');
@@ -368,6 +369,7 @@ const startServer = async () => {
   app.use('/api/admin/banner', routes.adminBanner);
   app.use('/api/bdren', routes.bdren);
   app.use('/api/admin/kb', routes.adminKb);
+  app.use('/api/platform', routes.platformKb);
   app.use('/api/platform/institutions', routes.platformInstitutions);
   app.use('/api/platform/users', routes.platformUsers);
   app.use('/api/platform/usage-packages', routes.platformUsagePackages);
