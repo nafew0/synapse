@@ -16,6 +16,7 @@ const {
   isEnabled,
   apiNotFound,
   createMetrics,
+  phoneLinkHeaders,
   ErrorController,
   memoryDiagnostics,
   performStartupChecks,
@@ -369,6 +370,7 @@ const startServer = async () => {
   app.use('/api/models', routes.models);
   app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);
   app.use('/api/assistants', routes.assistants);
+  app.use('/api/phone-upload', await routes.phoneUpload.initialize());
   app.use('/api/files', await routes.files.initialize());
   app.use('/images/', createValidateImageRequest(appConfig.secureImageLinks), routes.staticRoute);
   app.use('/api/share', preAuthTenantMiddleware, routes.share);
@@ -387,6 +389,9 @@ const startServer = async () => {
 
   /** 404 for unmatched API routes */
   app.use('/api', apiNotFound);
+
+  /** The phone upload page's address carries a secret; see phoneLinkHeaders. */
+  app.use('/phone', phoneLinkHeaders);
 
   /** SPA fallback - serve index.html for all unmatched routes */
   app.use(createSpaFallback(sendIndexHtml));

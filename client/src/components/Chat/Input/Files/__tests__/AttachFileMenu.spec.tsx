@@ -79,6 +79,21 @@ jest.mock('@librechat/client', () => {
   };
 });
 
+jest.mock('~/hooks/Files/usePhoneUpload', () => ({
+  __esModule: true,
+  default: jest.fn(() => ({
+    view: { state: 'starting', received: [], restart: jest.fn() },
+    isDialogOpen: false,
+    openDialog: jest.fn(),
+    setDialogOpen: jest.fn(),
+  })),
+}));
+
+jest.mock('../Phone', () => ({
+  PhoneUploadDialog: (props: { open: boolean }) =>
+    props.open ? <div data-testid="phone-upload-dialog" /> : null,
+}));
+
 jest.mock('@ariakit/react', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const R = require('react');
@@ -520,6 +535,60 @@ describe('AttachFileMenu', () => {
       renderMenu({ endpointType: EModelEndpoint.openAI });
       openMenu();
       expect(screen.queryByText('Upload from SharePoint')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Upload from phone', () => {
+    const mockUsePhoneUpload = jest.requireMock('~/hooks/Files/usePhoneUpload').default;
+
+    it('starts the phone flow for this chat from the menu', () => {
+      setupMocks();
+      const openDialog = jest.fn();
+      mockUsePhoneUpload.mockReturnValue({
+        view: { state: 'starting', received: [], restart: jest.fn() },
+        isDialogOpen: false,
+        openDialog,
+        setDialogOpen: jest.fn(),
+      });
+      renderMenu({
+        conversationId: 'convo-1',
+        endpoint: EModelEndpoint.agents,
+        endpointType: EModelEndpoint.agents,
+      });
+      expect(screen.queryByTestId('phone-upload-dialog')).not.toBeInTheDocument();
+      openMenu();
+      fireEvent.click(screen.getByText('com_ui_upload_from_phone'));
+      expect(openDialog).toHaveBeenCalled();
+      expect(mockUsePhoneUpload).toHaveBeenLastCalledWith(
+        expect.objectContaining({ conversationId: 'convo-1', endpoint: EModelEndpoint.agents }),
+      );
+    });
+
+    it('shows the QR dialog while the phone flow has it open', () => {
+      setupMocks();
+      mockUsePhoneUpload.mockReturnValue({
+        view: { state: 'ready', received: [], restart: jest.fn() },
+        isDialogOpen: true,
+        openDialog: jest.fn(),
+        setDialogOpen: jest.fn(),
+      });
+      renderMenu({ endpointType: EModelEndpoint.openAI });
+      expect(screen.getByTestId('phone-upload-dialog')).toBeInTheDocument();
+    });
+
+    it('uploads phone files through the per-file route when preparation is on', () => {
+      setupMocks();
+      const handleFiles = jest.fn();
+      mockUseFileHandlingNoChatContext.mockReturnValue({
+        handleFileChange: jest.fn(),
+        handleFiles,
+      });
+      mockUseGetStartupConfig.mockReturnValue({ data: { autoFilePreparationEnabled: true } });
+      renderMenu({ endpointType: EModelEndpoint.openAI });
+      const { onFiles } = mockUsePhoneUpload.mock.calls.at(-1)[0];
+      const photo = new File(['x'], 'photo.jpg', { type: 'image/jpeg' });
+      onFiles([photo]);
+      expect(handleFiles).toHaveBeenCalledWith([photo], 'per-file');
     });
   });
 

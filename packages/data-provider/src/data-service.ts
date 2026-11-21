@@ -538,6 +538,41 @@ export const markFilesUsage = (body: f.TFilesUsageBody): Promise<f.TFilesUsageRe
   return request.post(endpoints.fileUsage(), body);
 };
 
+/* upload from phone */
+
+export const createPhoneUploadSession = (
+  body: f.PhoneUploadSessionBody,
+): Promise<f.PhoneUploadSessionCreated> => request.post(endpoints.phoneUploadSessions(), body);
+
+export const getPhoneUploadSession = (sessionId: string): Promise<f.PhoneUploadSession> =>
+  request.get(endpoints.phoneUploadSession(sessionId));
+
+/** Downloads one staged phone file as a blob so the desktop can upload it like a picked file. */
+export const downloadPhoneUploadFile = async (sessionId: string, fileId: string): Promise<Blob> => {
+  const response = await request.getResponse<AxiosResponse<Blob>>(
+    endpoints.phoneUploadSessionFile(sessionId, fileId),
+    { responseType: 'blob' },
+  );
+  return response.data;
+};
+
+export const closePhoneUploadSession = (sessionId: string): Promise<void> =>
+  request.delete(endpoints.phoneUploadSession(sessionId));
+
+export const getPhoneUploadStatus = (token: string): Promise<f.PhoneUploadStatus> =>
+  request.get(endpoints.phoneUploadLink(token));
+
+export const sendPhoneUploadFile = (
+  token: string,
+  data: FormData,
+  onProgress?: UploadProgressHandler,
+): Promise<f.PhoneUploadFile> =>
+  request.postMultiPart(
+    endpoints.phoneUploadLink(token),
+    data,
+    getUploadConfig(data, undefined, onProgress),
+  );
+
 /* actions */
 
 export const updateAction = (data: m.UpdateActionVariables): Promise<m.UpdateActionResponse> => {

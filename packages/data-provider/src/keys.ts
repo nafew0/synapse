@@ -30,6 +30,8 @@ export enum QueryKeys {
   agent = 'agent',
   files = 'files',
   fileConfig = 'fileConfig',
+  phoneUploadSession = 'phoneUploadSession',
+  phoneUploadStatus = 'phoneUploadStatus',
   tools = 'tools',
   toolAuth = 'toolAuth',
   toolCalls = 'toolCalls',

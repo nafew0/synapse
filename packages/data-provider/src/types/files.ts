@@ -341,3 +341,41 @@ export type DeleteMutationOptions = {
   onMutate?: (variables: DeleteFilesBody) => void | Promise<unknown>;
   onError?: (error: unknown, variables: DeleteFilesBody, context?: unknown) => void;
 };
+
+/** A file sent from a phone and waiting for the desktop to collect it. */
+export type PhoneUploadFile = {
+  fileId: string;
+  filename: string;
+  mimeType: string;
+  bytes: number;
+  uploadedAt: string;
+};
+
+/** The desktop's view of an open "upload from phone" session. */
+export type PhoneUploadSession = {
+  sessionId: string;
+  expiresAt: string;
+  maxFiles: number;
+  /** The phone page has checked in within the last few seconds. */
+  phoneConnected: boolean;
+  files: PhoneUploadFile[];
+};
+
+export type PhoneUploadSessionBody = {
+  endpoint?: string | null;
+  endpointType?: string | null;
+};
+
+export type PhoneUploadSessionCreated = {
+  sessionId: string;
+  /** Secret for the phone link; shown only in the QR code. */
+  token: string;
+  expiresAt: string;
+};
+
+/** What the phone sees about the session its link opens. */
+export type PhoneUploadStatus = {
+  expiresAt: string;
+  received: number;
+  maxFiles: number;
+};

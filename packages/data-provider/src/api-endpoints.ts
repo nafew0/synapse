@@ -318,6 +318,16 @@ export const filePreview = (fileId: string) =>
 export const fileConfig = () => `${BASE_URL}/api/files/config`;
 /** Owner-scoped usage touch so queued attachments outlive the upload-window TTL. */
 export const fileUsage = () => `${BASE_URL}/api/files/usage`;
+
+const phoneUploadRoot = `${BASE_URL}/api/phone-upload`;
+export const phoneUploadSessions = () => `${phoneUploadRoot}/sessions`;
+export const phoneUploadSession = (sessionId: string) =>
+  `${phoneUploadSessions()}/${encodeURIComponent(sessionId)}`;
+export const phoneUploadSessionFile = (sessionId: string, fileId: string) =>
+  `${phoneUploadSession(sessionId)}/files/${encodeURIComponent(fileId)}`;
+/** Public link the phone opens; the token is its only credential. */
+export const phoneUploadLink = (token: string) =>
+  `${phoneUploadRoot}/u/${encodeURIComponent(token)}`;
 export const agentFiles = (agentId: string) => `${BASE_URL}/api/files/agent/${agentId}`;
 
 export const images = () => `${files()}/images`;
