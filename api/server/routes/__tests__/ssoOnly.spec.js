@@ -382,18 +382,20 @@ describe('SSO-only sign-in through bdren.ai', () => {
       return request(app).get('/api/admin/oauth/openid/callback');
     };
 
-    it('turns an institution admin away from the admin OpenID callback while on', async () => {
+    it('switches the admin panel OpenID sign-in off while on, so synapse-admin keeps its own login', async () => {
       setSsoOnly(true);
-      const res = await callback(users.ssoInstitutionAdmin);
-      expect(res.status).toBe(302);
-      expect(res.headers.location).toContain('error=superadmin_only');
-    });
-
-    it('lets a platform superadmin through the admin OpenID callback while on', async () => {
-      setSsoOnly(true);
-      const res = await callback(users.ssoSuperadmin);
-      expect(res.status).toBe(302);
-      expect(res.headers.location).not.toContain('error=');
+      for (const path of [
+        '/api/admin/oauth/openid/check',
+        '/api/admin/oauth/openid',
+        '/api/admin/oauth/openid/callback',
+      ]) {
+        const res = await request(app).get(path);
+        expect(res.status).toBe(404);
+        expect(res.body.error_code).toBe('OPENID_NOT_CONFIGURED');
+      }
+      ssoAdminUser = { ...users.ssoSuperadmin.toObject(), id: users.ssoSuperadmin._id.toString() };
+      const viaCallback = await request(app).get('/api/admin/oauth/openid/callback');
+      expect(viaCallback.headers['set-cookie']).toBeUndefined();
     });
 
     it('lets an institution admin through the admin OpenID callback while off', async () => {
