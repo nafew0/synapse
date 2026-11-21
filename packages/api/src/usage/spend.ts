@@ -666,7 +666,11 @@ export function createSpendHandlers(deps: SpendDeps): SpendHandlers {
       activeMembers: active.total,
       byService: byService(rows, rates),
       byModel: [
-        ...groupBy(rows, (row) => `${row.service}|${String(row.key.modelKey ?? '')}`, rates),
+        ...groupBy(
+          rows.filter((row) => row.service === 'openrouter'),
+          (row) => `${row.service}|${String(row.key.modelKey ?? '')}`,
+          rates,
+        ),
       ]
         .map(([key, value]) => {
           const [service, model] = key.split('|');

@@ -253,7 +253,8 @@ describe('services, timeseries, members, institution detail', () => {
     expect(body.name).toBe('University A');
     expect(body.activeMembers).toBe(2);
     expect(body.byModel[0].model).toBe('claude-haiku-5.5');
-    expect(body.byModel.some((m: any) => m.service === 'unstructured')).toBe(true);
+    expect(body.byModel.every((m: any) => m.service === 'openrouter')).toBe(true);
+    expect(body.byService.unstructured).toBeGreaterThan(0);
     expect(body.byMember).toHaveLength(2);
     expect(body.byDay).toHaveLength(1);
     expect(body.cost.costUsd).toBeCloseTo(14.5);
