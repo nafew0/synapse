@@ -619,6 +619,39 @@ describe('a member migrated to SSO', () => {
       expect(bdren.bodies.length).toBeGreaterThanOrEqual(3);
     });
 
+    it('ends the hold as covered when the Synapse member import covers them there, without a move', async () => {
+      await linked({ stats: { activeMembers: 1 } });
+      const user = await hold();
+      const subject = user.openidId as string;
+      bdren.answers.set(subject, institutionAnswer(subject));
+
+      await coverageChanged(subject, 'imported');
+
+      const saved = await User().findById(user._id).lean<typeof user>();
+      expect(saved?.tenantId).toBe('dhaka-university');
+      expect(saved?.bdrenHoldTenantId).toBeUndefined();
+      expect(await holdEnds()).toEqual(['covered']);
+      expect(await mongoose.models.MemberMove.countDocuments()).toBe(0);
+      expect(await audits('member.moved')).toHaveLength(0);
+    });
+
+    it('keeps an imported member the import could not cover (suspended, over the seats) on hold', async () => {
+      await linked({ stats: { activeMembers: 1 } });
+      const user = await hold();
+      const subject = user.openidId as string;
+      bdren.answers.set(subject, freeAnswer(subject));
+
+      await coverageChanged(subject, 'imported');
+
+      const saved = await User().findById(user._id).lean<typeof user>();
+      expect(saved).toMatchObject({
+        tenantId: 'dhaka-university',
+        bdrenHoldTenantId: 'dhaka-university',
+      });
+      expect(await holdEnds()).toEqual([]);
+      expect(await audits('member.moved')).toHaveLength(0);
+    });
+
     it.each(['uncovered', 'removed'])(
       'ends the hold when an admin decision says %s, and they leave',
       async (reason) => {

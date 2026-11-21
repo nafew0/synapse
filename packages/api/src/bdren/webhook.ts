@@ -57,8 +57,9 @@ export interface CoverageReview {
 
 /**
  * `membership.coverage_changed` reasons that are a decision about the person. Anything else (the
- * institution's own sign-in creating an affiliated membership, a sign-up request, no reason at all)
- * is bdren.ai recording the person, not deciding about them.
+ * institution's own sign-in creating an affiliated membership, a sign-up request, `imported` from
+ * the one-off Synapse member import, no reason at all) is bdren.ai recording the person, not
+ * deciding about them: the review still ends a migration hold once they are covered there.
  */
 const COVERAGE_DECISIONS = new Set([
   'covered',
