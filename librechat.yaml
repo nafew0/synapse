@@ -357,6 +357,8 @@ modelSpecs:
       preset:
         endpoint: OpenRouter
         model: openai/gpt-6-luna
+        # GPT-6 Luna bills 2x above 272K prompt tokens.
+        maxContextTokens: 262144
         promptPrefix: |
           You return transcripts of audio files the user attaches.
 
@@ -517,7 +519,8 @@ modelSpecs:
       preset:
         endpoint: OpenRouter
         model: anthropic/claude-haiku-5.5
-        maxContextTokens: 262144
+        # Claude Haiku 5.5 bills 5x above 100K prompt tokens; 90K keeps every call under it.
+        maxContextTokens: 90000
         promptCache: true
         promptPrefix: *chatPrefix
 
@@ -535,7 +538,7 @@ modelSpecs:
       hideBadgeRow: true
       skills: false
       preset:
-        endpoint: OpenRouter
+        endpoint: OpenRouter DeepSeek
         model: deepseek/deepseek-v4-flash-0731
         maxContextTokens: 262144
         promptCache: true
@@ -612,12 +615,9 @@ modelSpecs:
 
 endpoints:
   agents:
-    allowedProviders: ['OpenRouter', 'OpenRouter Image']
-    # Bounds how much text from a single tool result (e.g. execute_code stdout,
-    # OCR'd document text) gets inserted into the conversation per call — without
-    # this, a large-document read/edit can dump tens of thousands of characters
-    # into context on one turn.
-    maxToolResultChars: 25000
+    allowedProviders: ['OpenRouter', 'OpenRouter Image', 'OpenRouter DeepSeek']
+    # The Office Assistant sets its own tool-result limit (maxToolResultChars) in
+    # config/phase-one-office-agents.yaml; a value here is never read.
     # Hard ceiling on graph steps for any agent run. Each tool call costs about two
     # steps (model turn + tool run) and context summaries add more, so Office agents
     # raise their own limit (recursion_limit in config/phase-one-office-agents.yaml);
@@ -683,6 +683,31 @@ endpoints:
           read: 0.01
           write: 0.125
           context: 1000000
+
+    # Separate endpoint for the Coding Expert spec only: OpenRouter spreads DeepSeek over many
+    # hosts, so prompt caching rarely hits. `provider` routing can only be set per endpoint, so
+    # it is pinned here to hosts that cache, with fallback to any other host so a request never
+    # fails. No tokenConfig: usage is priced from the built-in deepseek-v4-flash rate, as on
+    # the OpenRouter endpoint.
+    - name: OpenRouter DeepSeek
+      apiKey: '${OPENROUTER_KEY}'
+      baseURL: 'https://openrouter.ai/api/v1'
+      headers:
+        x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
+      models:
+        default:
+          - deepseek/deepseek-v4-flash-0731
+        fetch: false
+      titleConvo: true
+      titleEndpoint: OpenRouter
+      titleModel: openai/gpt-6-luna
+      dropParams: ['stop']
+      modelDisplayLabel: 'OpenRouter DeepSeek'
+      addParams:
+        provider:
+          order: ['deepinfra/fp8', 'nebius/fp8']
+          allow_fallbacks: true
+          data_collection: deny
 
     # Separate endpoint so `addParams` below (modalities/image_config) only ever
     # reaches the image models. Sending `modalities: ["image","text"]`
