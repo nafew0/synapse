@@ -193,12 +193,12 @@ async function duplicateEmails(users: mongo.Collection<MigratingUser>): Promise<
   return new Set(groups.map((group) => group._id));
 }
 
-interface Staff {
+export interface Staff {
   ids: Set<string>;
   emails: Set<string>;
 }
 
-async function loadStaff(db: mongo.Db, configured: string[] = []): Promise<Staff> {
+export async function loadStaff(db: mongo.Db, configured: string[] = []): Promise<Staff> {
   const rows = await db
     .collection<{ userId?: Types.ObjectId | string; email?: string }>('platformadmins')
     .find({ active: true }, { projection: { userId: 1, email: 1 } })
@@ -211,7 +211,10 @@ async function loadStaff(db: mongo.Db, configured: string[] = []): Promise<Staff
   };
 }
 
-function isStaff(user: MigratingUser, staff: Staff): boolean {
+export function isStaff(
+  user: Pick<MigratingUser, '_id' | 'role' | 'email'>,
+  staff: Staff,
+): boolean {
   return (
     (user.role != null && PLATFORM_ROLES.has(user.role)) ||
     staff.ids.has(user._id.toHexString()) ||

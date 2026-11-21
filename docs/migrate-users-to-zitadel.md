@@ -132,6 +132,44 @@ hashes.
 - ZITADEL: users appear in the right organizations, with "password set" and the expected email
   verification state.
 
+## Step 2: carry institution admins and members into bdren.ai
+
+The migration writes nothing to bdren.ai. Right after it (and before switching Synapse to
+SSO-only), copy every linked institution's migrated admins and members into their bdren.ai
+organization, so institution admins can use the bdren.ai institution console at once and every
+member keeps their institution package with a seat:
+
+```bash
+# Synapse: read-only. The file holds names and emails: mode 600, only counts are printed.
+node config/export-members-for-bdren.js --db <db> --out /secure/path/synapse-members.json
+# a database named *prod* also needs --i-know-this-is-production; --issuer defaults to OPENID_ISSUER
+
+# bdren.ai (backend/): dry run first, then apply. Safe to rerun.
+python manage.py import_synapse_members /secure/path/synapse-members.json
+python manage.py import_synapse_members /secure/path/synapse-members.json --apply
+```
+
+Delete the file afterwards. The export (`exportMembersForBdren`, `packages/api/src/sso/export.ts`)
+lists, per active institution with a `bdrenOrganizationId`, each migrated person (OpenID, BDREN
+issuer): ZITADEL subject, issuer, email, email-verified flag, names (split as the migration gave
+them to ZITADEL), role (`admin` for `INSTITUTION_ADMIN`, else `member`) and status (`active` /
+`suspended`), admins first. Left out and counted: platform staff, accounts not migrated or on
+another issuer, removed members, closed institutions and institutions not linked to bdren.ai.
+
+bdren.ai (its `docs/SYNAPSE_MEMBER_IMPORT.md`) creates each person's user by identity only (never
+by email, so their sign-in later finds the same user), makes admins `admin` and members `member` of
+the organization, covered, and keeps suspended members suspended. It respects its own rules and
+reports instead of failing: seats are filled admins first and the rest is `overflow`; people in
+another institution, people on a paid personal plan (consent needed) and people BDREN support
+removed are skipped; anyone already covered is left as is.
+
+Each membership it writes sends `membership.coverage_changed` with reason `imported`. Synapse
+treats that as a refresh, not a decision: the review finds the person covered in the institution
+they are already in and ends their hold as `covered`, with no move. Anyone the import could not
+cover stays on hold (see below) until their admin decides in the console or the grace period ends,
+so check the import's per-organization `overflow` and `skipped` counts and raise seats or tell the
+admins before `BDREN_MIGRATION_HOLD_DAYS` runs out.
+
 ## Institution coverage after migration
 
 bdren.ai decides whether a person is covered by their institution. A migrated member is new to
@@ -148,7 +186,7 @@ The hold ends, with a `member.migration_hold_ended` audit entry naming the reaso
 |---|---|
 | `covered` | bdren.ai covers them in that institution. Nothing moves. |
 | `institution_inactive` | The held institution is closed or suspended. The normal rules apply (a not-covered member leaves it). |
-| `coverage_decided` | bdren.ai sends a `membership.coverage_changed` webhook naming them whose `reason` is an admin decision about them (`covered`, `uncovered`, `seats_reduced`, `removed`, `suspended`, `reactivated`, `invite_accepted`, or `organization_status`): the normal rules apply. The `sign_in_join` event bdren.ai sends for its own first-sign-in membership (affiliated, not covered), sign-up events, and events without a `reason` (an older bdren.ai) are not decisions: they refresh the allowance and the hold stays. |
+| `coverage_decided` | bdren.ai sends a `membership.coverage_changed` webhook naming them whose `reason` is an admin decision about them (`covered`, `uncovered`, `seats_reduced`, `removed`, `suspended`, `reactivated`, `invite_accepted`, or `organization_status`): the normal rules apply. The `sign_in_join` event bdren.ai sends for its own first-sign-in membership (affiliated, not covered), sign-up events, `imported` (step 2 above), and events without a `reason` (an older bdren.ai) are not decisions: they refresh the allowance and the hold stays. |
 | `grace_expired` | `BDREN_MIGRATION_HOLD_DAYS` (default **30**) have passed since `ssoMigratedAt`. The next review (login or webhook) applies the normal rules, so someone never added in bdren.ai leaves the institution, keeping their private data. |
 
 Set `BDREN_MIGRATION_HOLD_DAYS` in Synapse's environment before the migration if institution admins
