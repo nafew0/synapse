@@ -56,7 +56,11 @@ export interface ReviewOptions {
   idToken?: string;
   /** Ask bdren.ai now, ignoring the cache (a webhook said the answer changed). */
   fresh?: boolean;
-  /** bdren.ai sent a coverage decision naming this person; a migration hold no longer applies. */
+  /**
+   * bdren.ai sent a coverage decision about this person (an admin covered, uncovered or removed
+   * them, or their institution's status changed); a migration hold no longer applies. Not set for
+   * bdren.ai recording them on its own, e.g. the affiliated membership of a first sign-in.
+   */
   decided?: boolean;
 }
 

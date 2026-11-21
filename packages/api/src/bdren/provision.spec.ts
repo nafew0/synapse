@@ -526,6 +526,109 @@ describe('a member migrated to SSO', () => {
     expect(await holdEnds()).toEqual(['grace_expired']);
   });
 
+  describe('through the coverage webhook', () => {
+    let app: http.Server;
+    let hookUrl: string;
+
+    beforeEach(async () => {
+      const client = createAllowanceClient(config);
+      const handler = createWebhookHandler({
+        config,
+        service: createAllowanceService({ config, client }),
+        findSubject: async () => null,
+        ensureInstitution: provisioner.ensureInstitutionForOrganization,
+        reviewMember: async (issuer, subject, review) => {
+          const found = await User()
+            .findOne({ openidId: subject, openidIssuer: issuer })
+            .lean<Awaited<ReturnType<typeof makeUser>>>();
+          if (found) {
+            await provisioner.reviewExistingMember(found, {
+              fresh: true,
+              decided: review.decided,
+            });
+          }
+        },
+      });
+      const server = express();
+      server.post('/hook', express.raw({ type: () => true }), (req, res) => void handler(req, res));
+      app = await new Promise<http.Server>((resolve) => {
+        const listener = server.listen(0, '127.0.0.1', () => resolve(listener));
+      });
+      hookUrl = `http://127.0.0.1:${(app.address() as AddressInfo).port}/hook`;
+    });
+
+    afterEach(async () => {
+      await new Promise((done) => app.close(done));
+    });
+
+    let eventSeq = 0;
+    async function coverageChanged(subject: string, reason?: string) {
+      eventSeq += 1;
+      const body = JSON.stringify({
+        id: `evt-hold-${eventSeq}`,
+        type: 'membership.coverage_changed',
+        ...(reason ? { reason } : {}),
+        user: { issuer: ISSUER, subject },
+        organization: { id: ORG.id, slug: 'dhaka-university', name: 'Dhaka University' },
+      });
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const signature = createHmac('sha256', SECRET).update(`${timestamp}.${body}`).digest('hex');
+      const response = await fetch(hookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-BdREN-Timestamp': timestamp,
+          'X-BdREN-Signature': `v1=${signature}`,
+        },
+        body,
+      });
+      expect(response.status).toBe(204);
+    }
+
+    it("keeps them through bdren.ai's own first-sign-in event, or one without a reason", async () => {
+      await linked({ stats: { activeMembers: 1 } });
+      const user = await hold();
+      const subject = user.openidId as string;
+      bdren.answers.set(subject, freeAnswer(subject));
+
+      await provisioner.reviewExistingMember(user, { idToken: 'first-login' });
+      await coverageChanged(subject, 'sign_in_join');
+      await coverageChanged(subject);
+
+      const saved = await User().findById(user._id).lean<typeof user>();
+      expect(saved).toMatchObject({
+        tenantId: 'dhaka-university',
+        bdrenHoldTenantId: 'dhaka-university',
+      });
+      expect(await holdEnds()).toEqual([]);
+      expect(await mongoose.models.MemberMove.countDocuments()).toBe(0);
+      expect(await audits('member.moved')).toHaveLength(0);
+      const kept = await audits('member.coverage_mismatch');
+      expect(kept.map((entry) => entry.metadata?.reason)).toEqual(['migrated_not_covered']);
+      expect(bdren.bodies.length).toBeGreaterThanOrEqual(3);
+    });
+
+    it.each(['uncovered', 'removed'])(
+      'ends the hold when an admin decision says %s, and they leave',
+      async (reason) => {
+        await linked({ stats: { activeMembers: 1 } });
+        const user = await hold();
+        const subject = user.openidId as string;
+        bdren.answers.set(subject, freeAnswer(subject));
+
+        await provisioner.reviewExistingMember(user);
+        await coverageChanged(subject, 'sign_in_join');
+        await coverageChanged(subject, reason);
+
+        const saved = await User().findById(user._id).lean<typeof user>();
+        expect(saved?.tenantId).toBeUndefined();
+        expect(saved?.bdrenHoldTenantId).toBeUndefined();
+        expect(await holdEnds()).toEqual(['coverage_decided']);
+        expect(await audits('member.moved')).toHaveLength(1);
+      },
+    );
+  });
+
   it('reads the grace period from BDREN_MIGRATION_HOLD_DAYS', () => {
     const days = (value?: string) =>
       readBdrenConfig({ BDREN_MIGRATION_HOLD_DAYS: value }).migrationHoldMs / 86_400_000;

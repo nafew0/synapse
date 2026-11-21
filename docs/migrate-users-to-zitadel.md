@@ -148,7 +148,7 @@ The hold ends, with a `member.migration_hold_ended` audit entry naming the reaso
 |---|---|
 | `covered` | bdren.ai covers them in that institution. Nothing moves. |
 | `institution_inactive` | The held institution is closed or suspended. The normal rules apply (a not-covered member leaves it). |
-| `coverage_decided` | bdren.ai sends a `membership.coverage_changed` webhook naming them: it has made a decision, so the normal rules apply. |
+| `coverage_decided` | bdren.ai sends a `membership.coverage_changed` webhook naming them whose `reason` is an admin decision about them (`covered`, `uncovered`, `seats_reduced`, `removed`, `suspended`, `reactivated`, `invite_accepted`, or `organization_status`): the normal rules apply. The `sign_in_join` event bdren.ai sends for its own first-sign-in membership (affiliated, not covered), sign-up events, and events without a `reason` (an older bdren.ai) are not decisions: they refresh the allowance and the hold stays. |
 | `grace_expired` | `BDREN_MIGRATION_HOLD_DAYS` (default **30**) have passed since `ssoMigratedAt`. The next review (login or webhook) applies the normal rules, so someone never added in bdren.ai leaves the institution, keeping their private data. |
 
 Set `BDREN_MIGRATION_HOLD_DAYS` in Synapse's environment before the migration if institution admins
