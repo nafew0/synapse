@@ -8,6 +8,7 @@ type LibreChatParams = {
   resendFiles: boolean;
   promptPrefix?: string | null;
   maxContextTokens?: number;
+  maxToolResultChars?: number;
   fileTokenLimit?: number;
   modelLabel?: string | null;
 };
@@ -33,6 +34,7 @@ export function extractLibreChatParams(
     (librechat.resendFiles.default as boolean);
   const promptPrefix = (delete modelOptions.promptPrefix, options.promptPrefix);
   const maxContextTokens = (delete modelOptions.maxContextTokens, options.maxContextTokens);
+  const maxToolResultChars = (delete modelOptions.maxToolResultChars, options.maxToolResultChars);
   const fileTokenLimit = (delete modelOptions.fileTokenLimit, options.fileTokenLimit);
   const modelLabel = (delete modelOptions.modelLabel, options.modelLabel);
 
@@ -42,6 +44,7 @@ export function extractLibreChatParams(
       LibreChatKeys
     >,
     maxContextTokens,
+    maxToolResultChars,
     fileTokenLimit,
     promptPrefix,
     resendFiles,

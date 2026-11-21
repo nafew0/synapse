@@ -2199,3 +2199,28 @@ describe('getOpenAIConfig', () => {
     });
   });
 });
+
+describe('getOpenAIConfig - pinned OpenRouter provider routing', () => {
+  const addParams = {
+    provider: {
+      order: ['deepinfra/fp8', 'nebius/fp8'],
+      allow_fallbacks: true,
+      data_collection: 'deny',
+    },
+  };
+
+  it('sends nested provider routing in the request body for an OpenRouter-named endpoint', () => {
+    const result = getOpenAIConfig(
+      'test-api-key',
+      {
+        reverseProxyUrl: 'https://openrouter.ai/api/v1',
+        modelOptions: { model: 'deepseek/deepseek-v4-flash-0731' },
+        addParams,
+      },
+      'OpenRouter DeepSeek',
+    );
+
+    expect(result.llmConfig.modelKwargs).toMatchObject(addParams);
+    expect(result.provider).toBe('openrouter');
+  });
+});

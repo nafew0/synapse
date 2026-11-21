@@ -1,6 +1,14 @@
 import { extractLibreChatParams } from './llm';
 
 describe('extractLibreChatParams', () => {
+  it('should strip maxToolResultChars from model options and return it', () => {
+    const result = extractLibreChatParams({ model: 'gpt-4', maxToolResultChars: 10000 });
+
+    expect(result.maxToolResultChars).toBe(10000);
+    expect(result.modelOptions).toEqual({ model: 'gpt-4' });
+    expect(result.modelOptions).not.toHaveProperty('maxToolResultChars');
+  });
+
   it('should return defaults when options is undefined', () => {
     const result = extractLibreChatParams(undefined);
 
