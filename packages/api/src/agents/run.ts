@@ -59,8 +59,8 @@ import { stripIntentFromToolRegistry, stripIntentFromToolDefinitions } from '~/a
 import { isSteeringSupported, isSteerPreemptSupported } from '~/agents/steering/runtime';
 import { getLLMConfig as getAnthropicLLMConfig } from '~/endpoints/anthropic/llm';
 import { resolveStreamLimits, resolveSubagentMaxTurns } from '~/agents/config';
-import { READ_DOCUMENT_TOOL_NAME } from '~/files/unstructured/definitions';
 import { CREATE_FILE_TOOL_NAME, EDIT_FILE_TOOL_NAME } from '~/agents/tools';
+import { READ_DOCUMENT_TOOL_NAME } from '~/files/unstructured/definitions';
 import { buildAgentInitialToolSessions } from '~/agents/codeFilesSession';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { extractDefaultParams } from '~/endpoints/openai/llm';

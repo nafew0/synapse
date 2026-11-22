@@ -13,6 +13,7 @@ const {
   sanitizeModelSpecs,
   excludeHiddenModelSpecs,
   isFileSnapshotEnabled,
+  ssoOnlyStartupFields,
 } = require('@librechat/api');
 const { EModelEndpoint, defaultSocialLogins } = require('librechat-data-provider');
 const { logger, getTenantId, SystemCapabilities } = require('@librechat/data-schemas');
@@ -109,6 +110,11 @@ function buildPreLoginPayload() {
   const minPasswordLength = parseInt(process.env.MIN_PASSWORD_LENGTH, 10);
   if (minPasswordLength && !isNaN(minPasswordLength)) {
     payload.minPasswordLength = minPasswordLength;
+  }
+
+  const ssoOnly = ssoOnlyStartupFields();
+  if (ssoOnly) {
+    return { ...payload, ...ssoOnly };
   }
 
   if (ldap) {
@@ -229,8 +235,8 @@ router.get('/', async function (req, res) {
 
       /** @type {Partial<TStartupConfig>} */
       const payload = {
-        ...preLoginPayload,
         socialLogins: baseConfig?.registration?.socialLogins ?? defaultSocialLogins,
+        ...preLoginPayload,
         turnstile: baseConfig?.turnstileConfig,
         ...(rum ? { rum } : {}),
       };
@@ -291,11 +297,11 @@ router.get('/', async function (req, res) {
 
     /** @type {TStartupConfig} */
     const payload = {
+      socialLogins: appConfig?.registration?.socialLogins ?? defaultSocialLogins,
       ...preLoginPayload,
       ...publicSharePayload,
       ...buildPostLoginPayload(),
       sharedLinksSnapshotFilesEnabled: sharedLinksEnabled && isFileSnapshotEnabled(appConfig),
-      socialLogins: appConfig?.registration?.socialLogins ?? defaultSocialLogins,
       interface: appConfig?.interfaceConfig,
       titleGenerationTiming: resolveTitleTiming({
         appConfig,

@@ -58,5 +58,6 @@ async function invalidateConfigCaches(tenantId) {
 module.exports = {
   getAppConfig,
   clearAppConfigCache,
+  clearOverrideCache,
   invalidateConfigCaches,
 };

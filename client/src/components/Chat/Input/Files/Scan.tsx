@@ -1,6 +1,6 @@
 import { memo, useRef } from 'react';
-import type { CSSProperties } from 'react';
 import type { UploadStageName } from 'librechat-data-provider';
+import type { CSSProperties } from 'react';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 

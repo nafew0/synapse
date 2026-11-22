@@ -1,6 +1,6 @@
 import { Schema } from 'mongoose';
-import { InstitutionStatuses } from '~/common';
 import type { IInstitution } from '~/types';
+import { InstitutionStatuses } from '~/common';
 
 const institutionSchema: Schema<IInstitution> = new Schema<IInstitution>(
   {
@@ -16,6 +16,11 @@ const institutionSchema: Schema<IInstitution> = new Schema<IInstitution>(
       trim: true,
     },
     slug: {
+      type: String,
+      trim: true,
+    },
+    /** The bdren.ai organization this institution is. Members' seats and limits come from there. */
+    bdrenOrganizationId: {
       type: String,
       trim: true,
     },
@@ -44,17 +49,11 @@ const institutionSchema: Schema<IInstitution> = new Schema<IInstitution>(
       default: 0,
       min: 0,
     },
-    packageAssignment: {
+    /** Usage package keys: the institution's own pooled allowance and the default for its members. */
+    usagePackage: {
       type: {
-        packageId: { type: String, trim: true },
-        packageSnapshot: {
-          name: { type: String, required: true },
-          description: { type: String, default: '' },
-          price: { type: Number, min: 0 },
-          currency: { type: String, uppercase: true },
-          monthlyTokenLimit: { type: Number, min: 1 },
-        },
-        monthlyTokenLimit: { type: Number, min: 1 },
+        packageKey: { type: String, trim: true, default: null },
+        memberPackageKey: { type: String, trim: true, default: null },
         assignedAt: { type: Date },
         assignedBy: { type: Schema.Types.ObjectId, ref: 'User' },
       },
@@ -79,6 +78,15 @@ const institutionSchema: Schema<IInstitution> = new Schema<IInstitution>(
         },
       },
       default: {},
+    },
+    /**
+     * Seat changes member moves already applied (`reserve:<moveId>`, `release:<moveId>`), so a
+     * retried move never counts a seat twice. Bounded to the most recent entries.
+     */
+    seatOps: {
+      type: [String],
+      default: undefined,
+      select: false,
     },
     createdBy: {
       type: Schema.Types.ObjectId,
@@ -109,6 +117,10 @@ const institutionSchema: Schema<IInstitution> = new Schema<IInstitution>(
 );
 
 institutionSchema.index({ tenantId: 1 }, { unique: true });
+institutionSchema.index(
+  { bdrenOrganizationId: 1 },
+  { unique: true, partialFilterExpression: { bdrenOrganizationId: { $type: 'string' } } },
+);
 institutionSchema.index({ slug: 1 }, { unique: true, sparse: true });
 
 export default institutionSchema;

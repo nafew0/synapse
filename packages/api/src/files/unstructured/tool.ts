@@ -4,8 +4,8 @@ import { tool } from '@librechat/agents/langchain/tools';
 import { defaultAutoPreparation, extractEnvVariable } from 'librechat-data-provider';
 import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
 import type { TDocumentOcrConfig } from 'librechat-data-provider';
-import type { UnstructuredClient } from './client';
 import type { UnstructuredClientOptions, UnstructuredElement } from './types';
+import type { UnstructuredClient } from './client';
 import { READ_DOCUMENT_TOOL_NAME, documentReadToolDefinition } from './definitions';
 import { elementsToMarkdown, mergePages } from './merge';
 import { readPdfPages } from '../scan/read';
@@ -57,7 +57,7 @@ export interface DocumentReadDeps {
   readBytes: (file: DocumentFile) => Promise<Buffer | null>;
   getCached: (key: string) => Promise<DocumentReading | undefined>;
   setCached: (key: string, reading: DocumentReading) => Promise<void>;
-  /** Whether the allowance covers this many pages. Absent means usage is recorded, not enforced. */
+  /** Whether the allowance covers this many pages. Absent means pages are not metered. */
   checkAllowance?: (pages: number) => Promise<boolean>;
   recordCharge: (charge: DocumentCharge) => Promise<void>;
   uploadToSandbox: (name: string, content: string) => Promise<SandboxFileRef>;

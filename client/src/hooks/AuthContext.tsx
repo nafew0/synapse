@@ -15,6 +15,8 @@ import {
   SystemRoles,
   setTokenHeader,
   isSystemRoleName,
+  ACCOUNT_MOVING_EVENT,
+  isAccountMovingError,
   buildLoginRedirectUrl,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
@@ -27,9 +29,12 @@ import {
   useRefreshTokenMutation,
 } from '~/data-provider';
 import { TAuthConfig, TUserContext, TAuthContext, TResError } from '~/common';
-import { SESSION_KEY, isSafeRedirect, getPostLoginRedirect } from '~/utils';
+import { SESSION_KEY, isSafeRedirect, markExplicitLogout, getPostLoginRedirect } from '~/utils';
 import useTimeout from './useTimeout';
 import store from '~/store';
+
+/** Quiet time after the last held-back request before the move is taken to be over. */
+const MOVING_SETTLE_MS = 8_000;
 
 const AuthContext = (import.meta.hot?.data?.__AuthContext ??
   createContext<TAuthContext | undefined>(undefined)) as React.Context<TAuthContext | undefined>;
@@ -160,12 +165,37 @@ const AuthContextProvider = ({
       if (redirect) {
         logoutRedirectRef.current = redirect;
       }
+      markExplicitLogout();
       logoutUser.mutate(undefined);
     },
     [logoutUser],
   );
 
   const userQuery = useGetUserQuery({ enabled: !!(token ?? '') });
+
+  /**
+   * While an account moves between institutions requests are held back (`ACCOUNT_MOVING`). Once no
+   * request has been held back for a while the move is over: a user lookup that gave up meanwhile
+   * is asked again, so the session carries on instead of staying errored.
+   */
+  const refetchUser = userQuery.refetch;
+  const userLookupFailed = userQuery.isError;
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onMoving = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (userLookupFailed) {
+          refetchUser?.();
+        }
+      }, MOVING_SETTLE_MS);
+    };
+    window.addEventListener(ACCOUNT_MOVING_EVENT, onMoving);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener(ACCOUNT_MOVING_EVENT, onMoving);
+    };
+  }, [refetchUser, userLookupFailed]);
 
   const login = (data: t.TLoginUser) => {
     loginUser.mutate(data);
@@ -227,7 +257,8 @@ const AuthContextProvider = ({
     }
     if (userQuery.data) {
       setUser(userQuery.data);
-    } else if (userQuery.isError) {
+    } else if (userQuery.isError && !isAccountMovingError(userQuery.error)) {
+      /** A moving account is held back, not signed out; the effect below asks again once the burst ends. */
       doSetError((userQuery.error as Error).message);
       navigate(buildLoginRedirectUrl(), { replace: true });
     }

@@ -53,6 +53,12 @@ const promptGroupSchema: Schema<IPromptGroupDocument> = new Schema<IPromptGroupD
         `Command cannot be longer than ${Constants.COMMANDS_MAX_LENGTH} characters`,
       ],
     }, // Casting here bypasses the type error for the command field.
+    /** Set when a member left the institution and this item stayed: the person who owned it. */
+    transferredFrom: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      default: undefined,
+    },
     tenantId: {
       type: String,
       index: true,

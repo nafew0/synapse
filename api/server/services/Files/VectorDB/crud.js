@@ -3,7 +3,13 @@ const axios = require('axios');
 const FormData = require('form-data');
 const { logger } = require('@librechat/data-schemas');
 const { FileSources } = require('librechat-data-provider');
-const { logAxiosError, generateShortLivedToken, sanitizeFilename } = require('@librechat/api');
+const {
+  logAxiosError,
+  sanitizeFilename,
+  getEmbeddingBilling,
+  recordEmbeddingCharge,
+  generateShortLivedToken,
+} = require('@librechat/api');
 
 /**
  * Deletes a file from the vector database. This function takes a file object, constructs the full path, and
@@ -102,6 +108,20 @@ async function uploadVectors({ req, file, file_id, entity_id, storageMetadata })
 
     if (!responseData.status) {
       throw new Error('File embedding failed.');
+    }
+
+    const billing = getEmbeddingBilling(req);
+    if (billing) {
+      /* The RAG API embeds the file, so its token count is not known here unless it says so; the
+       * file's size in characters is an upper bound for text and close enough at $0.15 per 1M. */
+      await recordEmbeddingCharge({
+        ...billing,
+        phase: 'index',
+        jobId: file_id,
+        fileId: file_id,
+        tokens: responseData.token_count,
+        chars: file.size,
+      });
     }
 
     /* The sanitized name, because this one wins: `processAgentFileUpload` and

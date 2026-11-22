@@ -7,9 +7,9 @@ import { AttachmentGroup } from './Attachment';
 import parseJsonField from './parseJsonField';
 import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
+import StepRow from './StepRow';
 import Stdout from './Stdout';
 import { cn } from '~/utils';
-import StepRow from './StepRow';
 
 export default function SkillCall({
   isSubmitting,

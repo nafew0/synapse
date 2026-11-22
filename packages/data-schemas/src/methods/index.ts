@@ -55,6 +55,8 @@ import { createChatProjectMethods, type ChatProjectMethods } from './chatProject
 import { createKbMethods, type KbMethods } from './kb';
 export type {
   KbUsage,
+  KbTenantStorage,
+  KbStorageDailyInput,
   KbCatalogEntry,
   KbFileInput,
   KbQueuedResult,
@@ -124,6 +126,11 @@ import { createAgentMethods, type AgentMethods, type AgentDeps } from './agent';
 /* Config */
 import { createConfigMethods, type ConfigMethods } from './config';
 import { createInstitutionMethods, type InstitutionMethods } from './institution';
+import {
+  createUsagePackageMethods,
+  type QuotaOwner,
+  type UsagePackageMethods,
+} from './usagePackage';
 import { createPlatformAdminMethods, type PlatformAdminMethods } from './platformAdmin';
 import {
   createMCPAuthorityMethods,
@@ -214,6 +221,7 @@ export type AllMethods = UserMethods &
   AgentMethods &
   ConfigMethods &
   InstitutionMethods &
+  UsagePackageMethods &
   PlatformAdminMethods &
   MCPAuthorityMethods &
   InsightsMethods;
@@ -360,6 +368,7 @@ export function createMethods(
     /* Config */
     ...createConfigMethods(mongoose),
     ...institutionMethods,
+    ...createUsagePackageMethods(mongoose),
     ...platformAdminMethods,
     /* MCP authority proofs */
     ...createMCPAuthorityMethods(mongoose),
@@ -421,6 +430,8 @@ export type {
   AgentMethods,
   ConfigMethods,
   InstitutionMethods,
+  UsagePackageMethods,
+  QuotaOwner,
   PlatformAdminMethods,
   MCPAuthorityMethods,
   MCPAuthorityMethodHooks,

@@ -96,6 +96,21 @@ const skillFileSchema: Schema<ISkillFileDocument> = new Schema(
       ref: 'User',
       required: true,
     },
+    /** Set when a member left the institution and this item stayed: the person who owned it. */
+    transferredFrom: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      default: undefined,
+    },
+    /** The tenant and user in the stored object's key, kept when a member move re-scopes or re-owns the record. */
+    storageTenantId: {
+      type: String,
+      default: undefined,
+    },
+    storageUserId: {
+      type: String,
+      default: undefined,
+    },
     tenantId: {
       type: String,
       index: true,

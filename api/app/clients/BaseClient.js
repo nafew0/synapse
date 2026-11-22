@@ -37,8 +37,10 @@ const {
   releaseUsage,
   reserveUsage,
   settleUsage,
+  resolveQuotaAccount,
   isEnforcementDenial,
 } = require('~/server/services/usageQuota');
+const { getRequestAllowance } = require('~/server/services/bdrenAllowance');
 const { logViolation } = require('~/cache');
 const TextStream = require('./TextStream');
 const db = require('~/models');
@@ -78,8 +80,10 @@ function applyQuotaOutputCap(target, cap, setIfMissing = false) {
       applied = true;
     }
   }
+  /** `maxTokens` is the key the run's LangChain chat models read; `max_output_tokens` on
+   *  agent parameters was ignored, so an uncapped spec ran past its quota cap. */
   if (!applied && setIfMissing) {
-    target.max_output_tokens = cap;
+    target.maxTokens = cap;
   }
   if (target.modelKwargs && typeof target.modelKwargs === 'object') {
     applyQuotaOutputCap(target.modelKwargs, cap);
@@ -605,6 +609,26 @@ class BaseClient {
     };
   }
 
+  /**
+   * The institution, or the individuals account for a standalone user; staff are not metered.
+   * A failed lookup meters nothing, as a failed reservation does.
+   */
+  async resolveQuotaTenant() {
+    const user = this.options.req?.user;
+    if (!user) {
+      return null;
+    }
+    try {
+      return await resolveQuotaAccount(user);
+    } catch (error) {
+      logger.error(
+        '[BaseClient] quota account lookup failed; continuing without quota accounting',
+        error,
+      );
+      return null;
+    }
+  }
+
   async sendMessage(message, opts = {}) {
     const appConfig = this.options.req?.config;
     /** @type {Promise<TMessage>} */
@@ -776,7 +800,7 @@ class BaseClient {
       );
     }
 
-    const tenantId = this.options.req?.user?.tenantId;
+    const tenantId = await this.resolveQuotaTenant();
     const quotaReservationKey = `${conversationId}:${responseMessageId}:primary:0`;
     let quota;
     if (tenantId) {
@@ -785,7 +809,16 @@ class BaseClient {
           tenantId,
           userId: this.user ?? this.options.req.user?.id,
           provider: this.options.endpointType ?? this.options.endpoint,
+          /** The raw endpoint decides the quota weight and unit. `provider`
+           *  cannot: direct Claude and the Office Assistant's Claude both
+           *  resolve to `anthropic`, and the image endpoint is billed per
+           *  image rather than per token. */
+          endpoint: this.options.endpoint,
           model: this.modelOptions?.model ?? this.model,
+          /** Credit metering: the member's own package, and the model the request is priced at. */
+          memberPackage: this.options.req?.user?.usagePackage,
+          allowance: await getRequestAllowance(this.options.req?.user),
+          pricingContext: this.getQuotaPricingContext?.(),
           reservationKey: quotaReservationKey,
           estimatedInputTokens: promptTokens,
           requestedOutputTokens: resolveRequestedOutputTokens(
@@ -810,11 +843,17 @@ class BaseClient {
       applyQuotaOutputCap(payload, quota.outputTokenCap);
       applyQuotaOutputCap(opts, quota.outputTokenCap);
       applyQuotaOutputCap(this.options.agent?.model_parameters, quota.outputTokenCap, true);
-      if (quota.outputCapped) {
-        this.options.res?.setHeader?.('X-Quota-Event', 'QUOTA_OUTPUT_CAPPED');
-        this.options.res?.setHeader?.('X-Quota-Output-Cap', String(quota.outputTokenCap));
+      /** Streaming routes have already sent their headers, and setting one then throws
+       *  ERR_HTTP_HEADERS_SENT after the reservation is held. The cap still reaches the
+       *  client through `metadata.quota` on the response message. */
+      const res = this.options.res;
+      if (quota.outputCapped && res?.setHeader && !res.headersSent) {
+        res.setHeader('X-Quota-Event', 'QUOTA_OUTPUT_CAPPED');
+        res.setHeader('X-Quota-Output-Cap', String(quota.outputTokenCap));
       }
     }
+    /** Before the run is built: lets the client drop work the remaining allowance cannot cover. */
+    this.applyQuotaToRun?.(quota);
 
     let completionResult;
     try {
@@ -824,8 +863,7 @@ class BaseClient {
         /** An aborted generation still consumed whatever the provider produced
          * before the stop, so settle it when usage is known and release only
          * when nothing was billed. Leaving the reservation untouched would hold
-         * the tenant's capacity until the TTL expired and would count against
-         * the shadow stale-reservation rate. */
+         * the tenant's capacity until the TTL expired. */
         const abortedUsage =
           (error?.name === 'AbortError' || this.abortController?.signal?.aborted === true) &&
           this.getQuotaUsage != null
@@ -842,6 +880,7 @@ class BaseClient {
               tenantId,
               reservationKey: quotaReservationKey,
               usage: abortedUsage,
+              credits: this.getQuotaCredits?.(),
             });
           } else {
             await releaseUsage({ tenantId, reservationKey: quotaReservationKey });
@@ -966,6 +1005,12 @@ class BaseClient {
       const settlement = {
         tenantId,
         reservationKey: quotaReservationKey,
+        /** Images are billed per image, so they settle on their own meter. Only
+         *  the agent client can report them: the reservation was made on the
+         *  `agents` endpoint before any subagent chose a model. */
+        images: this.getQuotaImageCount != null ? this.getQuotaImageCount() : 0,
+        /** Credit reservations settle at the run's actual cost, priced per call like `Transaction`. */
+        credits: this.getQuotaCredits?.(),
         usage: {
           inputTokens: Math.max(
             Number(

@@ -9,7 +9,12 @@ export { default as bannerSchema } from './banner';
 export { default as bannerViewSchema } from './bannerView';
 export { default as categoriesSchema } from './categories';
 export { default as chatProjectSchema } from './chatProject';
-export { kbDocumentSchema, kbDocumentVersionSchema, kbIngestJobSchema } from './kb';
+export {
+  kbDocumentSchema,
+  kbIngestJobSchema,
+  kbStorageDailySchema,
+  kbDocumentVersionSchema,
+} from './kb';
 export { default as conversationTagSchema } from './conversationTag';
 export { default as convoSchema } from './convo';
 export { default as fileSchema } from './file';
@@ -46,3 +51,7 @@ export { default as adminScopeAssignmentSchema } from './adminScopeAssignment';
 export { default as triggerDeliverySchema } from './triggerDelivery';
 export { default as triggerLaneSequenceSchema } from './triggerLaneSequence';
 export { default as triggerUserPurgeSchema } from './triggerUserPurge';
+export { default as usageDailySchema } from './usageDaily';
+export * from './modelPrice';
+export { default as taskCostProfileSchema } from './taskCostProfile';
+export { default as usageJobSchema } from './usageJob';

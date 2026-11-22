@@ -98,7 +98,11 @@ function SocialLoginRender({
             <OpenIDIcon />
           )
         }
-        label={startupConfig.openidLabel}
+        label={
+          startupConfig.ssoOnly === true
+            ? localize('com_auth_sign_in_bdren')
+            : startupConfig.openidLabel
+        }
         id="openid"
         immersive={immersive}
       />

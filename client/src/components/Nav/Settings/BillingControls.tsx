@@ -1,6 +1,7 @@
 import type { TBalanceResponse } from 'librechat-data-provider';
+import { useGetStartupConfig, useGetUserBalance, useGetUserQuota } from '~/data-provider';
 import AutoRefillSettings from '../SettingsTabs/Balance/AutoRefillSettings';
-import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
+import UsageQuotaItem from '../SettingsTabs/Balance/UsageQuotaItem';
 import TokenCreditsItem from '../SettingsTabs/Balance/TokenCreditsItem';
 import { useAuthContext, useLocalize } from '~/hooks';
 
@@ -15,8 +16,20 @@ function useBalance(): Partial<TBalanceResponse> {
   return balanceQuery.data ?? {};
 }
 
+/**
+ * Shows the plan allowance when the tenant is on a usage policy, falling back to
+ * the raw credit ledger otherwise. The two are different units — weighted
+ * billing tokens vs. real cost — so they are never shown together.
+ */
 export function TokenCredits() {
+  const { isAuthenticated } = useAuthContext();
+  const quotaQuery = useGetUserQuota({ enabled: !!isAuthenticated });
   const { tokenCredits = 0 } = useBalance();
+
+  if (quotaQuery.data?.meters?.length) {
+    return <UsageQuotaItem quota={quotaQuery.data} />;
+  }
+
   return <TokenCreditsItem tokenCredits={tokenCredits} />;
 }
 

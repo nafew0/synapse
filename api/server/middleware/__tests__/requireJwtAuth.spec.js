@@ -70,6 +70,9 @@ jest.mock('@librechat/api', () => {
     isEnabled: jest.fn(() => false),
     recordRumProxyRequest: jest.fn(),
     getAuthFailureReasonCategory: actualApi.getAuthFailureReasonCategory,
+    SsoRefusals: actualApi.SsoRefusals,
+    sendSsoRefusal: actualApi.sendSsoRefusal,
+    needsSsoSession: actualApi.needsSsoSession,
     buildSafeAuthLogContext: actualApi.buildSafeAuthLogContext,
     getValidOpenIdReuseUserId: (token) => {
       if (!token || !process.env.JWT_REFRESH_SECRET) {
@@ -126,6 +129,7 @@ function mockRes() {
     status: jest.fn().mockReturnThis(),
     json: jest.fn().mockReturnThis(),
     end: jest.fn().mockReturnThis(),
+    set: jest.fn().mockReturnThis(),
   };
 }
 
@@ -224,6 +228,28 @@ describe('requireJwtAuth tenant context chaining', () => {
   it('ALS tenant context is NOT set when user has no tenantId', async () => {
     const tenantId = await runAuth({ role: 'user' });
     expect(tenantId).toBeUndefined();
+  });
+
+  it('asks a request to retry while the account is moving between institutions', () => {
+    const moving = mockReq({
+      tenantId: 'tenant-abc',
+      role: 'user',
+      movingUntil: new Date(Date.now() + 60_000),
+    });
+    const res = mockRes();
+    const next = jest.fn();
+
+    requireJwtAuth(moving, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.set).toHaveBeenCalledWith('Retry-After', '5');
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'ACCOUNT_MOVING' }));
+
+    const moved = mockReq({ role: 'user', movingUntil: new Date(Date.now() - 1_000) });
+    const after = jest.fn();
+    requireJwtAuth(moved, mockRes(), after);
+    expect(after).toHaveBeenCalled();
   });
 
   it('returns 401 when no strategy authenticates a user', async () => {

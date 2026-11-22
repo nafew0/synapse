@@ -1,12 +1,12 @@
 import type { AxiosResponse } from 'axios';
 import type { TInsightsAccessResponse, TInsightsParams, TInsightsResponse } from './types/insights';
+import type { UploadStageHandler, UploadProgressHandler } from './upload';
 import type { TIssueReportRequest } from './errors';
 import type { TFileConfig } from './file-config';
 import type * as t from './types';
+import { uploadEventStream, getUploadConfig } from './upload';
 import * as permissions from './accessPermissions';
 import * as endpoints from './api-endpoints';
-import { uploadEventStream, getUploadConfig } from './upload';
-import type { UploadStageHandler, UploadProgressHandler } from './upload';
 import * as mcp from './types/mcpServers';
 import * as a from './types/assistants';
 import * as m from './types/mutations';
@@ -198,6 +198,10 @@ export function updateUserPreferences(
 
 export function getUserBalance(): Promise<t.TBalanceResponse> {
   return request.get(endpoints.balance());
+}
+
+export function getUserQuota(): Promise<t.TQuotaResponse> {
+  return request.get(endpoints.quota());
 }
 
 export const updateTokenCount = (text: string) => {

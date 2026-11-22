@@ -1,6 +1,6 @@
 const cookie = require('cookie');
 const jwt = require('jsonwebtoken');
-const { isEnabled } = require('@librechat/api');
+const { isEnabled, needsSsoSession } = require('@librechat/api');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const { SystemRoles } = require('librechat-data-provider');
 const { getUserById, findSession } = require('~/models');
@@ -71,7 +71,7 @@ const optionalShareFileAuth = async (req, res, next) => {
     const user = await runAsSystem(() =>
       getUserById(userId, '-password -__v -totpSecret -backupCodes'),
     );
-    if (user) {
+    if (user && !needsSsoSession(user, req.originalUrl)) {
       user.id = user._id.toString();
       if (!user.role) {
         user.role = SystemRoles.USER;

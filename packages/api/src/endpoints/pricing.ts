@@ -1,4 +1,5 @@
 import { EModelEndpoint } from 'librechat-data-provider';
+import { findPrice, withoutUnpricedFlags } from '@librechat/data-schemas';
 import type { TModelsConfig, TTokenConfigMap, TModelTokenomics } from 'librechat-data-provider';
 import type { TxMethods } from '@librechat/data-schemas';
 import type { EndpointTokenConfig } from '~/types';
@@ -27,6 +28,10 @@ export function buildTokenConfigMap(
   params: TokenConfigParams,
   deps: TokenomicsDeps,
 ): TTokenConfigMap {
+  return withoutUnpricedFlags(() => buildMap(params, deps));
+}
+
+function buildMap(params: TokenConfigParams, deps: TokenomicsDeps): TTokenConfigMap {
   const { modelsConfig, endpointTokenConfigs, includePricing = false } = params;
   const map: TTokenConfigMap = {};
 
@@ -50,7 +55,7 @@ export function buildTokenConfigMap(
       }
 
       if (includePricing) {
-        const overrideRates = override?.[model];
+        const overrideRates = findPrice(model) ? undefined : override?.[model];
         if (overrideRates?.prompt != null || overrideRates?.completion != null) {
           tokenomics.prompt = overrideRates.prompt;
           tokenomics.completion = overrideRates.completion;

@@ -4,6 +4,7 @@ import type {
   StatefulCodeEnvironment,
 } from 'librechat-data-provider';
 import type { Document, Types } from 'mongoose';
+import type { MemberUsagePackage } from './usagePackage';
 import { CursorPaginationParams, InstitutionMembershipStatus } from '~/common';
 
 export interface IUser extends Document {
@@ -66,10 +67,18 @@ export interface IUser extends Document {
   updatedAt?: Date;
   /** Field for external source identification (for consistency with TPrincipal schema) */
   idOnTheSource?: string;
+  movingUntil?: Date | null;
   tenantId?: string;
   /** Explicit SaaS account scope; legacy records derive this from tenantId. */
   accountScope?: 'institution' | 'standalone';
   membershipStatus?: InstitutionMembershipStatus;
+  /** The bdren.ai organization a coverage mismatch was last recorded for, so a login does not record it again. */
+  bdrenNotedOrganizationId?: string;
+  /** When this account was moved from a local password to the bdren.ai SSO identity. */
+  ssoMigratedAt?: Date;
+  /** The institution a migrated account keeps until bdren.ai covers it there. */
+  bdrenHoldTenantId?: string;
+  usagePackage?: MemberUsagePackage | null;
   suspendedAt?: Date | null;
   suspendedBy?: string | Types.ObjectId | null;
   removedAt?: Date | null;

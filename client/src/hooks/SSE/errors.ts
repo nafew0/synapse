@@ -1,5 +1,6 @@
 import { ErrorTypes, PublicErrorCodes } from 'librechat-data-provider';
 import { getErrorInfo } from '~/utils/errors';
+import { extractJson } from '~/utils/json';
 
 type TErrorEnvelope = {
   error?: unknown;
@@ -27,6 +28,44 @@ function unwrapPayload(payload: unknown): unknown {
   return payload;
 }
 
+/** What a usage-limit notice needs to name the allowance and its reset; all set by the server. */
+const QUOTA_DISPLAY_FIELDS = ['limitCode', 'window', 'meter', 'resetAt'] as const;
+
+type TQuotaDisplay = Partial<Record<(typeof QUOTA_DISPLAY_FIELDS)[number], string>>;
+
+function parseObject(value: unknown): Record<string, unknown> | undefined {
+  if (value != null && typeof value === 'object') {
+    return value as Record<string, unknown>;
+  }
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  try {
+    const parsed: unknown = JSON.parse(extractJson(value) || value);
+    return parsed != null && typeof parsed === 'object'
+      ? (parsed as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The display fields of a usage-limit refusal, so the live notice can name the wall and its reset. */
+function quotaDisplay(code: string, payload: unknown): TQuotaDisplay {
+  if (code !== ErrorTypes.TOKEN_QUOTA_EXCEEDED) {
+    return {};
+  }
+  const body = parseObject(payload);
+  const display: TQuotaDisplay = {};
+  for (const field of QUOTA_DISPLAY_FIELDS) {
+    const value = body?.[field];
+    if (typeof value === 'string') {
+      display[field] = value;
+    }
+  }
+  return display;
+}
+
 /** The institution's message on a `chat_access_ended` refusal: written by a platform admin, not a provider. */
 function accessEndedInfo(raw: unknown): string | undefined {
   let body = raw;
@@ -43,15 +82,17 @@ function accessEndedInfo(raw: unknown): string | undefined {
 
 /**
  * Reduces any error payload (HTTP body, SSE event, thrown error, legacy raw text) to the
- * JSON text `{"type": code, "requestId"?}` that the chat error box renders. Raw text never passes;
- * the one extra field is the admin-written `info` of a `chat_access_ended` refusal.
+ * JSON text `{"type": code, "requestId"?}` that the chat error box renders. Raw text never
+ * passes; a usage-limit refusal also keeps its display fields (limit, window, reset), and a
+ * `chat_access_ended` refusal its admin-written `info`.
  */
 export function toErrorText(payload: unknown): string {
-  const raw = unwrapPayload(payload);
-  const { code, requestId } = getErrorInfo(raw);
-  const info = code === ErrorTypes.CHAT_ACCESS_ENDED ? accessEndedInfo(raw) : undefined;
+  const unwrapped = unwrapPayload(payload);
+  const { code, requestId } = getErrorInfo(unwrapped);
+  const info = code === ErrorTypes.CHAT_ACCESS_ENDED ? accessEndedInfo(unwrapped) : undefined;
   return JSON.stringify({
     type: code,
+    ...quotaDisplay(code, unwrapped),
     ...(requestId != null && { requestId }),
     ...(info != null && { info }),
   });

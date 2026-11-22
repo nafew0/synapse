@@ -46,6 +46,9 @@ const {
   configureFileConfigRegexEngine,
   waitForKeyvRedisClient,
   captureLoggedErrors,
+  startAlertScheduler,
+  startProviderSync,
+  readSsoOnly,
 } = require('@librechat/api');
 const { connectDb, indexSync } = require('~/db');
 const {
@@ -59,7 +62,7 @@ const {
   syncAllTenantInterfacePermissions,
   syncAllInstitutionAdminCapabilities,
 } = require('./services/tenancy');
-const { startKnowledgeBaseWorker } = require('./services/kb');
+const { startKnowledgeBaseWorker, startKnowledgeBaseStorageJob } = require('./services/kb');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
@@ -72,7 +75,8 @@ const initializeMCPs = require('./services/initializeMCPs');
 const configureSocialLogins = require('./socialLogins');
 const createSpaFallback = require('./utils/fallback');
 const { getAppConfig } = require('./services/Config');
-const { assertEnforcementTopology, reconcileQuotaState } = require('./services/usageQuota');
+const { startUsageJobs, startPriceSync } = require('@librechat/api');
+const { checkQuotaTopology, reconcileQuotaState } = require('./services/usageQuota');
 const staticCache = require('./utils/staticCache');
 const noIndex = require('./middleware/noIndex');
 const routes = require('./routes');
@@ -144,10 +148,12 @@ const startServer = async () => {
   await connectDb();
 
   logger.info('Connected to MongoDB');
-  const quotaTopology = await assertEnforcementTopology();
-  logger.info(
-    `[usageQuota] mode=${quotaTopology.enforcing ? 'enforce' : 'shadow'} transactionCapable=${quotaTopology.transactionCapable}`,
-  );
+  const quotaTopology = await checkQuotaTopology();
+  if (!quotaTopology.transactionCapable) {
+    logger.warn(
+      '[usageQuota] MongoDB has no transaction support (needs a replica set or mongos): every request with a usage limit will be refused',
+    );
+  }
   const quotaReconcilerInterval = setInterval(
     () => {
       reconcileQuotaState().catch((err) => {
@@ -157,6 +163,10 @@ const startServer = async () => {
     Math.max(Number(process.env.QUOTA_RECONCILE_INTERVAL_MS) || 60_000, 10_000),
   );
   quotaReconcilerInterval.unref();
+  startAlertScheduler();
+  startProviderSync();
+  startUsageJobs();
+  startPriceSync({ getConfig: () => getAppConfig({ baseOnly: true }) });
   indexSync().catch((err) => {
     logger.error('[indexSync] Background sync failed:', err);
   });
@@ -222,6 +232,7 @@ const startServer = async () => {
     await syncAllInstitutionAdminCapabilities();
   });
   startKnowledgeBaseWorker(appConfig);
+  startKnowledgeBaseStorageJob();
 
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
   let indexHTML = fs.readFileSync(indexPath, 'utf8');
@@ -270,6 +281,12 @@ const startServer = async () => {
   app.use('/api/agents/chat', agentStartupIngressMiddleware);
   app.use(metricsMiddleware);
   app.use(noIndex);
+  /** bdren.ai's signed webhook needs the body exactly as sent, so it is read raw, before JSON parsing. */
+  app.post(
+    '/api/bdren/webhook',
+    express.raw({ type: () => true, limit: '256kb' }),
+    require('~/server/services/bdrenAllowance').webhookHandler,
+  );
   app.use(express.json({ limit: '3mb' }));
   app.use(express.urlencoded({ extended: true, limit: '3mb' }));
   app.use(handleJsonParseError);
@@ -307,7 +324,12 @@ const startServer = async () => {
   }
   app.use('/api/agents/chat', agentStartupTelemetryMiddleware);
 
-  if (!ALLOW_SOCIAL_LOGIN) {
+  const ssoOnly = readSsoOnly();
+  if (ssoOnly.enabled) {
+    logger.info('[auth] SSO-only: chat sign-in is through BDREN OpenID only', {
+      issuer: ssoOnly.issuer ?? '(BDREN_ISSUER not set)',
+    });
+  } else if (!ALLOW_SOCIAL_LOGIN) {
     console.warn('Social logins are disabled. Set ALLOW_SOCIAL_LOGIN=true to enable them.');
   }
 
@@ -321,7 +343,7 @@ const startServer = async () => {
     passport.use(ldapLogin);
   }
 
-  if (isEnabled(ALLOW_SOCIAL_LOGIN)) {
+  if (ssoOnly.enabled || isEnabled(ALLOW_SOCIAL_LOGIN)) {
     await configureSocialLogins(app);
   }
 
@@ -344,13 +366,18 @@ const startServer = async () => {
   app.use('/api/admin/skills', routes.adminSkills);
   app.use('/api/admin/usage', routes.adminUsage);
   app.use('/api/admin/users', routes.adminUsers);
-  app.use('/api/admin/billing', routes.adminBilling);
   app.use('/api/admin/audit-log', routes.adminAuditLog);
   app.use('/api/admin/banner', routes.adminBanner);
+  app.use('/api/bdren', routes.bdren);
   app.use('/api/admin/kb', routes.adminKb);
+  app.use('/api/platform', routes.platformKb);
   app.use('/api/platform/institutions', routes.platformInstitutions);
   app.use('/api/platform/users', routes.platformUsers);
-  app.use('/api/platform/institution-packages', routes.platformInstitutionPackages);
+  app.use('/api/platform/usage-packages', routes.platformUsagePackages);
+  app.use('/api/platform/alerts', routes.platformAlerts);
+  app.use('/api/platform/costs', routes.platformCosts);
+  app.use('/api/platform/model-prices', routes.platformPrices);
+  app.use('/api/platform', routes.platformUsageAssignments);
   app.use('/api/platform/agents/catalog', routes.platformAgentsCatalog);
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
@@ -367,6 +394,7 @@ const startServer = async () => {
   app.use('/api/categories', routes.categories);
   app.use('/api/endpoints', routes.endpoints);
   app.use('/api/balance', routes.balance);
+  app.use('/api/quota', routes.quota);
   app.use('/api/models', routes.models);
   app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);
   app.use('/api/assistants', routes.assistants);

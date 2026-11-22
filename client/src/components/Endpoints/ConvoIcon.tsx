@@ -1,12 +1,12 @@
 import React, { useMemo } from 'react';
 import { getEndpointField } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
+import { getModelBrand, ModelIcon } from '~/components/Chat/Menus/Endpoints/components/ModelIcon';
+import OfficeAssistantAvatar, { isOfficeAssistant } from '~/components/OfficeAssistantAvatar';
 import { getIconKey, getEntity, getIconEndpoint } from '~/utils';
 import ConvoIconURL from '~/components/Endpoints/ConvoIconURL';
 import { icons } from '~/hooks/Endpoint/Icons';
 import { isImageURL } from '~/utils/icons';
-import OfficeAssistantAvatar, { isOfficeAssistant } from '~/components/OfficeAssistantAvatar';
-import { getModelBrand, ModelIcon } from '~/components/Chat/Menus/Endpoints/components/ModelIcon';
 
 export default function ConvoIcon({
   conversation,

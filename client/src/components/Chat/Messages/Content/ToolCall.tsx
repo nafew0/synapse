@@ -13,8 +13,8 @@ import { useLocalize, useProgress, useExpandCollapse, useLazyCollapseBody } from
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { resolveToolCallPhase } from '~/utils/toolCallPhase';
-import { useToolCallIntent } from './Parts/intent';
 import { logger, getToolDisplayLabel } from '~/utils';
+import { useToolCallIntent } from './Parts/intent';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';

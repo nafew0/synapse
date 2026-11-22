@@ -727,7 +727,11 @@ export async function deleteFileFromS3(req: ServerRequest, file: TFile): Promise
   const key = resolveStoredS3Key(file);
   const parsedKey = parseS3Key(key);
   const ownerId = file.user?.toString?.();
-  const fileTenantId = file.tenantId?.toString?.() ?? null;
+  /** A moved member's record keeps the key it was stored under; the key's tenant is then `storageTenantId`. */
+  const fileTenantId =
+    file.storageTenantId !== undefined
+      ? file.storageTenantId
+      : (file.tenantId?.toString?.() ?? null);
 
   if (!ownerId) {
     const message = `[deleteFileFromS3] File record has no owner: ${key}`;
@@ -735,7 +739,9 @@ export async function deleteFileFromS3(req: ServerRequest, file: TFile): Promise
     throw new Error(message);
   }
 
-  if (!parsedKey || parsedKey.userId !== ownerId) {
+  /** A record handed to someone else when its owner left keeps the key it was stored under. */
+  const keyUserId = file.storageUserId ?? ownerId;
+  if (!parsedKey || parsedKey.userId !== keyUserId) {
     const message = `[deleteFileFromS3] File owner mismatch: ${ownerId} vs ${key}`;
     logger.error(message);
     throw new Error(message);

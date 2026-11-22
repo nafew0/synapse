@@ -5,9 +5,9 @@ import { FileSources } from 'librechat-data-provider';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import type { UploadStageName } from 'librechat-data-provider';
 import SourceIcon from './SourceIcon';
-import Scan from './Scan';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
+import Scan from './Scan';
 
 type styleProps = {
   backgroundImage?: string;

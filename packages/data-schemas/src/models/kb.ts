@@ -1,6 +1,16 @@
 import { Model } from 'mongoose';
-import type { IKbDocumentDoc, IKbDocumentVersionDoc, IKbIngestJobDoc } from '~/types';
-import { kbDocumentSchema, kbDocumentVersionSchema, kbIngestJobSchema } from '~/schema/kb';
+import type {
+  IKbDocumentDoc,
+  IKbIngestJobDoc,
+  IKbStorageDailyDoc,
+  IKbDocumentVersionDoc,
+} from '~/types';
+import {
+  kbDocumentSchema,
+  kbIngestJobSchema,
+  kbStorageDailySchema,
+  kbDocumentVersionSchema,
+} from '~/schema/kb';
 import { applyTenantIsolation } from '~/models/plugins/tenantIsolation';
 
 export function createKbDocumentModel(mongoose: typeof import('mongoose')): Model<IKbDocumentDoc> {
@@ -32,5 +42,15 @@ export function createKbIngestJobModel(
   return (
     mongoose.models.KbIngestJob ||
     mongoose.model<IKbIngestJobDoc>('KbIngestJob', kbIngestJobSchema, 'kbingestjobs')
+  );
+}
+
+export function createKbStorageDailyModel(
+  mongoose: typeof import('mongoose'),
+): Model<IKbStorageDailyDoc> {
+  applyTenantIsolation(kbStorageDailySchema);
+  return (
+    mongoose.models.KbStorageDaily ||
+    mongoose.model<IKbStorageDailyDoc>('KbStorageDaily', kbStorageDailySchema, 'kbstoragedailies')
   );
 }

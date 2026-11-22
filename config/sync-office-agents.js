@@ -158,9 +158,7 @@ async function createOrUpdateAgent(agentDef, author, dryRun) {
   const { id, name, provider, model, ...config } = agentDef;
 
   // Check if agent exists
-  const existing = await runAsSystem(() =>
-    mongoose.models.Agent.findOne({ id }).lean().exec(),
-  );
+  const existing = await runAsSystem(() => mongoose.models.Agent.findOne({ id }).lean().exec());
 
   if (existing && !dryRun) {
     // Update existing agent
@@ -273,8 +271,10 @@ async function grantAgentPermissions(agent, author, groupId, tenantId, isPublic,
       accessRoleId: AccessRoleIds.REMOTE_AGENT_OWNER,
       grantedBy: author._id,
       tenantId: tenantId || undefined,
-    }).catch(err => {
-      console.error(`[error] Failed to grant REMOTE_AGENT_OWNER to ${author.email}: ${err.message}`);
+    }).catch((err) => {
+      console.error(
+        `[error] Failed to grant REMOTE_AGENT_OWNER to ${author.email}: ${err.message}`,
+      );
       return null;
     }),
   );
@@ -290,7 +290,7 @@ async function grantAgentPermissions(agent, author, groupId, tenantId, isPublic,
         accessRoleId: AccessRoleIds.AGENT_VIEWER,
         grantedBy: author._id,
         tenantId: tenantId || undefined,
-      }).catch(err => {
+      }).catch((err) => {
         console.error(`[error] Failed to grant VIEWER to group ${groupId}: ${err.message}`);
         return null;
       }),
@@ -306,8 +306,10 @@ async function grantAgentPermissions(agent, author, groupId, tenantId, isPublic,
         accessRoleId: AccessRoleIds.REMOTE_AGENT_VIEWER,
         grantedBy: author._id,
         tenantId: tenantId || undefined,
-      }).catch(err => {
-        console.error(`[error] Failed to grant REMOTE_AGENT_VIEWER to group ${groupId}: ${err.message}`);
+      }).catch((err) => {
+        console.error(
+          `[error] Failed to grant REMOTE_AGENT_VIEWER to group ${groupId}: ${err.message}`,
+        );
         return null;
       }),
     );
@@ -362,7 +364,8 @@ async function ensureAccessRolesExist(dryRun) {
       name: 'Agent Owner',
       description: 'Full control over agents',
       resourceType: ResourceType.AGENT,
-      permBits: PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE,
+      permBits:
+        PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE,
     },
     {
       accessRoleId: AccessRoleIds.REMOTE_AGENT_VIEWER,
@@ -376,7 +379,8 @@ async function ensureAccessRolesExist(dryRun) {
       name: 'Remote Agent Owner',
       description: 'Full control over remote agents',
       resourceType: ResourceType.REMOTE_AGENT,
-      permBits: PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE,
+      permBits:
+        PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE,
     },
   ];
 
@@ -402,16 +406,16 @@ async function setupSubagentConnections(master, specialists, dryRun) {
     description: spec.description,
   }));
 
-  await runAsSystem(() =>
-    Agent.updateOne({ _id: master._id }, { $set: { edges } }).exec(),
-  );
+  await runAsSystem(() => Agent.updateOne({ _id: master._id }, { $set: { edges } }).exec());
 }
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
 
   console.log('\n=== Office Agent Synchronization ===');
-  console.log(`MODE: ${args.apply ? 'APPLY' : 'DRY RUN'} (re-run with --apply to create/update agents)`);
+  console.log(
+    `MODE: ${args.apply ? 'APPLY' : 'DRY RUN'} (re-run with --apply to create/update agents)`,
+  );
   console.log(`Manifest: ${args.manifestPath}`);
   console.log('');
 
@@ -429,11 +433,7 @@ async function main() {
 
     // Create/update master agent
     console.log('--- Master Agent ---');
-    const master = await createOrUpdateAgent(
-      manifest.master,
-      author,
-      args.dryRun,
-    );
+    const master = await createOrUpdateAgent(manifest.master, author, args.dryRun);
 
     // Create/update specialist agents
     console.log('\n--- Specialist Agents ---');
@@ -469,13 +469,27 @@ async function main() {
         }
       }
 
-      await grantAgentPermissions(master, author, args.groupId, args.tenantId, args.isPublic, args.dryRun);
+      await grantAgentPermissions(
+        master,
+        author,
+        args.groupId,
+        args.tenantId,
+        args.isPublic,
+        args.dryRun,
+      );
       console.log(`[grant] OWNER to ${author.email}`);
       if (args.groupId) console.log(`[grant] VIEWER to group ${args.groupId}`);
       if (args.isPublic) console.log(`[grant] VIEWER to all users (PUBLIC)`);
 
       for (const spec of specialists) {
-        await grantAgentPermissions(spec, author, args.groupId, args.tenantId, args.isPublic, args.dryRun);
+        await grantAgentPermissions(
+          spec,
+          author,
+          args.groupId,
+          args.tenantId,
+          args.isPublic,
+          args.dryRun,
+        );
       }
 
       // Scope to tenant if provided
@@ -484,10 +498,7 @@ async function main() {
         await runAsSystem(async () => {
           const allAgents = [master, ...specialists];
           for (const agent of allAgents) {
-            await Agent.updateOne(
-              { _id: agent._id },
-              { $set: { tenantId: args.tenantId } },
-            ).exec();
+            await Agent.updateOne({ _id: agent._id }, { $set: { tenantId: args.tenantId } }).exec();
             await AclEntry.updateMany(
               { resourceId: agent._id, tenantId: { $exists: false } },
               { $set: { tenantId: args.tenantId } },

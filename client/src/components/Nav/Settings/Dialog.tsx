@@ -13,11 +13,19 @@ import Content from './Content';
 import { TABS } from './types';
 import { cn } from '~/utils';
 
-export default function SettingsDialog({ open, onOpenChange }: TDialogProps) {
+export default function SettingsDialog({
+  open,
+  onOpenChange,
+  initialTab,
+}: TDialogProps & { initialTab?: string | null }) {
   const localize = useLocalize();
   const ctx = useSettingsContext();
   const isSmallScreen = useMediaQuery('(max-width: 767px)');
-  const [activeTab, setActiveTab] = useState<SettingsTab>(SettingsTabValues.GENERAL);
+  /** A deep link (e.g. "Manage plan" on the usage notice) names the tab to land
+   *  on; otherwise the dialog opens where it always has. */
+  const [activeTab, setActiveTab] = useState<SettingsTab>(
+    (initialTab as SettingsTab | null) ?? SettingsTabValues.GENERAL,
+  );
   const [query, setQuery] = useState('');
   const [mobileDetail, setMobileDetail] = useState(false);
 

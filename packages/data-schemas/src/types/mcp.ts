@@ -10,5 +10,7 @@ export interface MCPServerDocument
     Document<Types.ObjectId> {
   normalizedServerName: string;
   author: Types.ObjectId; // ObjectId reference in DB (vs string in API)
+  /** The person who owned this before they left the institution and it stayed. */
+  transferredFrom?: Types.ObjectId | null;
   tenantId?: string;
 }

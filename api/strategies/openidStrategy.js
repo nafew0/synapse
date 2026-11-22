@@ -6,6 +6,7 @@ const jwtDecode = require('jsonwebtoken/decode');
 const {
   hashToken,
   logger,
+  runAsSystem,
   tenantStorage,
   INSTITUTION_ADMIN_ROLE,
 } = require('@librechat/data-schemas');
@@ -14,6 +15,8 @@ const { CacheKeys, ErrorTypes, SystemRoles } = require('librechat-data-provider'
 const {
   isEnabled,
   logHeaders,
+  readSsoOnly,
+  isBdrenIssuer,
   safeStringify,
   findOpenIDUser,
   getOpenIdEmail,
@@ -27,6 +30,7 @@ const {
   getOpenIdProxyDispatcher,
   getOpenIdRoleSyncOptions,
   getOpenIdRolesForOpenIdSync,
+  ensureStandaloneScope,
   getLibreChatRolesForOpenIdSync,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -43,6 +47,106 @@ const { InstitutionMembershipStatuses } = require('@librechat/data-schemas');
  * required. */
 const activateProvisionedMember = (...args) =>
   require('~/server/services/institutionMembers').activateProvisionedMember(...args);
+
+/**
+ * The login scope. With the bdren.ai link on it also asks ZITADEL for the user's organization, so
+ * the ID token carries the claim bdren.ai routes institution members by.
+ */
+function loginScope() {
+  try {
+    const { readBdrenConfig, withOrganizationScope } = require('@librechat/api');
+    return withOrganizationScope(process.env.OPENID_SCOPE, readBdrenConfig());
+  } catch {
+    return process.env.OPENID_SCOPE;
+  }
+}
+
+/**
+ * The institution bdren.ai says a first-time user belongs to (created in Synapse on first sight),
+ * or `null`. Required on use like the member service, and never allowed to fail a login.
+ */
+async function bdrenTenantForNewUser(identity) {
+  try {
+    return await require('~/server/services/bdrenAllowance').bdrenProvisioner.tenantForNewMember(
+      identity,
+    );
+  } catch (error) {
+    logger.error('[openidStrategy] bdren.ai institution lookup failed', error);
+    return null;
+  }
+}
+
+/**
+ * Places the account this login just created in its institution. The answer is `placed` (with the
+ * active member), `duplicate` (a concurrent login already made the account; `existing` is it) or
+ * `refused` (the user keeps no tenant). Never throws.
+ */
+async function adoptBdrenMember(userId, tenantId) {
+  try {
+    return await require('~/server/services/bdrenAllowance').bdrenProvisioner.adoptNewMember(
+      userId,
+      tenantId,
+    );
+  } catch (error) {
+    logger.error('[openidStrategy] placing the new user in their institution failed', error);
+    return { status: 'refused' };
+  }
+}
+
+/** An account for this identity in any tenant, which a concurrent first login may have just placed. */
+const findAccountAcrossTenants = (openidId, openidIssuer) =>
+  runAsSystem(() => findUser({ openidId, openidIssuer }));
+
+const DEFAULT_LOGIN_MOVE_WAIT_MS = 4000;
+
+/**
+ * A user with no institution who is not platform staff is an individual: without the scope the
+ * meter would treat them like staff and never limit them. Never throws.
+ */
+async function withStandaloneScope(user) {
+  try {
+    return (await ensureStandaloneScope(user)) ? { ...user, accountScope: 'standalone' } : user;
+  } catch (error) {
+    logger.error('[openidStrategy] marking the user an individual failed', error);
+    return user;
+  }
+}
+
+/** How long a login waits for a coverage review (and any move it starts) before going on. */
+function loginMoveWaitMs() {
+  const value = Number(process.env.BDREN_LOGIN_MOVE_WAIT_MS);
+  return Number.isFinite(value) && value >= 0 ? value : DEFAULT_LOGIN_MOVE_WAIT_MS;
+}
+
+/**
+ * Brings an existing user's institution in line with bdren.ai before the session starts, so the
+ * login usually carries on with their new scope. The wait is bounded: past it the login goes on in
+ * the current scope while the move finishes in the background (it is resumable, and requests are
+ * asked to retry until it is done). Resolves to the moved user, or `null`. Never throws.
+ */
+async function reviewBdrenCoverage(user, idToken) {
+  let timer;
+  try {
+    const review = require('~/server/services/bdrenAllowance')
+      .bdrenProvisioner.reviewExistingMember(user, { idToken })
+      .catch((error) => {
+        logger.error('[openidStrategy] bdren.ai coverage review failed', error);
+        return null;
+      });
+    const timeout = new Promise((resolve) => {
+      timer = setTimeout(() => {
+        logger.warn('[openidStrategy] bdren.ai coverage review still running; login goes on');
+        resolve(null);
+      }, loginMoveWaitMs());
+    });
+    return await Promise.race([review, timeout]);
+  } catch (error) {
+    logger.error('[openidStrategy] bdren.ai coverage review failed', error);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * @typedef {import('openid-client').ClientMetadata} ClientMetadata
@@ -592,6 +696,13 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
 
   const email = getOpenIdEmail(userinfo);
   const openidIssuer = getOpenIdIssuer(claims, openidConfig);
+  const ssoOnly = readSsoOnly();
+  if (ssoOnly.enabled && !isBdrenIssuer(openidIssuer, ssoOnly)) {
+    logger.error('[openidStrategy] SSO-only: refused a login from an issuer other than BDREN', {
+      issuer: openidIssuer,
+    });
+    throw new Error(ErrorTypes.AUTH_FAILED);
+  }
 
   const baseConfig = await getAppConfig({ baseOnly: true });
   if (!isEmailDomainAllowed(email, baseConfig?.registration?.allowedDomains)) {
@@ -612,6 +723,12 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   let user = result.user;
   const error = result.error;
 
+  if (error && ssoOnly.enabled && result.conflictingProvider) {
+    logger.warn('[openidStrategy] SSO-only: the account for this email is not linked to bdren.ai', {
+      provider: result.conflictingProvider,
+    });
+    throw new Error(ErrorTypes.ACCOUNT_NOT_LINKED);
+  }
   if (error) {
     throw new Error(ErrorTypes.AUTH_FAILED);
   }
@@ -697,7 +814,20 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     throw new Error('User does not exist');
   }
 
-  if (!user) {
+  let isNewUser = !user;
+  const bdrenTenantId =
+    isNewUser && !userinfo.tenantId
+      ? await bdrenTenantForNewUser({
+          issuer: openidIssuer,
+          subject: userinfo.sub,
+          idToken: tokenset.id_token,
+        })
+      : null;
+  if (isNewUser) {
+    user = await findAccountAcrossTenants(userinfo.sub, openidIssuer);
+    isNewUser = !user;
+  }
+  if (isNewUser) {
     user = {
       provider: 'openid',
       openidId: userinfo.sub,
@@ -717,11 +847,20 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
 
     const balanceConfig = getBalanceConfig(appConfig);
     user = await createUser(user, balanceConfig, true, true);
+    user = await withStandaloneScope(user);
     if (user.tenantId) {
       user = await activateProvisionedMember({
         userId: user._id.toString(),
         tenantId: user.tenantId,
       });
+    } else if (bdrenTenantId) {
+      const placement = await adoptBdrenMember(user._id.toString(), bdrenTenantId);
+      if (placement.status === 'placed') {
+        user = placement.user;
+      } else if (placement.status === 'duplicate') {
+        user = placement.existing;
+        isNewUser = false;
+      }
     }
   } else {
     user.provider = 'openid';
@@ -854,7 +993,13 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     }
   }
 
-  user = await updateUser(user._id, user);
+  /** Tenant and status are not this login's to write: a placement may have changed them since `user` was read. */
+  const { tenantId: _tenantId, membershipStatus: _membershipStatus, ...profile } = user;
+  user = await updateUser(user._id, profile);
+  if (!isNewUser) {
+    user = (await reviewBdrenCoverage(user, tokenset.id_token)) ?? user;
+  }
+  user = await withStandaloneScope(user);
   if (user?.tenantId && user.membershipStatus !== InstitutionMembershipStatuses.ACTIVE) {
     user = await activateProvisionedMember({
       userId: user._id.toString(),
@@ -898,7 +1043,7 @@ function createOpenIDCallback(existingUsersOnly) {
       if (err.message === 'Email domain not allowed') {
         return done(null, false, { message: err.message });
       }
-      if (err.message === ErrorTypes.AUTH_FAILED) {
+      if (err.message === ErrorTypes.AUTH_FAILED || err.message === ErrorTypes.ACCOUNT_NOT_LINKED) {
         return done(null, false, { message: err.message });
       }
       if (err.message && err.message.includes('role to log in')) {
@@ -949,6 +1094,13 @@ const setupOpenIdAdmin = (openidConfig) => {
  */
 async function setupOpenId() {
   try {
+    const ssoOnly = readSsoOnly();
+    if (ssoOnly.enabled && !isBdrenIssuer(process.env.OPENID_ISSUER, ssoOnly)) {
+      logger.error(
+        '[openidStrategy] SSO-only: OPENID_ISSUER is not BDREN_ISSUER; OpenID login is not registered',
+      );
+      return null;
+    }
     const usePKCE = isEnabled(process.env.OPENID_USE_PKCE);
     const shouldGenerateNonce = isEnabled(process.env.OPENID_GENERATE_NONCE);
 
@@ -991,7 +1143,7 @@ async function setupOpenId() {
     const openidLogin = new CustomOpenIDStrategy(
       {
         config: openidConfig,
-        scope: process.env.OPENID_SCOPE,
+        scope: loginScope(),
         callbackURL: process.env.DOMAIN_SERVER + process.env.OPENID_CALLBACK_URL,
         clockTolerance: process.env.OPENID_CLOCK_TOLERANCE || 300,
         usePKCE,

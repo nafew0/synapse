@@ -62,6 +62,17 @@ const showShortcutsDialog = atom<boolean>({
   default: false,
 });
 
+/**
+ * Requests the settings dialog open on a given tab, from anywhere in the app.
+ * Settings is otherwise local state inside `AccountSettings`, unreachable from a
+ * chat message — this follows the existing `showShortcutsDialog` pattern rather
+ * than lifting the dialog itself. `null` means no request is pending.
+ */
+const requestedSettingsTab = atom<string | null>({
+  key: 'requestedSettingsTab',
+  default: null,
+});
+
 export type KeyboardDeleteTarget = {
   conversationId: string;
   title: string;
@@ -99,6 +110,7 @@ export default {
   queriesEnabled,
   isEditingBadges,
   showShortcutsDialog,
+  requestedSettingsTab,
   keyboardDeleteTarget,
   customShortcuts,
   shortcutsEnabled,

@@ -5,7 +5,6 @@ const usagePolicySchema: Schema<IUsagePolicy> = new Schema<IUsagePolicy>(
   {
     tenantId: { type: String, required: true, trim: true, index: true, immutable: true },
     version: { type: Number, required: true, min: 1, immutable: true },
-    mode: { type: String, enum: ['shadow', 'enforce'], default: 'shadow', immutable: true },
     timezone: {
       type: String,
       required: true,
@@ -13,16 +12,23 @@ const usagePolicySchema: Schema<IUsagePolicy> = new Schema<IUsagePolicy>(
       trim: true,
       immutable: true,
     },
+    /** Windows this policy enforces. Calendar, not rolling: a hard wall needs a
+     *  definite reset instant to display, and a rolling window never resets. */
     period: {
-      type: String,
-      enum: ['calendar_month'],
-      default: 'calendar_month',
+      type: [String],
+      enum: ['calendar_month', 'calendar_week'],
+      default: ['calendar_month'],
       immutable: true,
     },
     limits: {
       type: {
         institutionTokens: { type: Number, default: null, min: 0 },
+        /** `null` means unlimited — `reserveBucket` skips the capacity filter
+         *  when a scope limit is null, while still recording usage. */
         memberTokens: { type: Number, default: null, min: 0 },
+        memberTokensWeekly: { type: Number, default: null, min: 0 },
+        memberImages: { type: Number, default: null, min: 0 },
+        memberImagesWeekly: { type: Number, default: null, min: 0 },
         modelTokens: {
           type: [
             {

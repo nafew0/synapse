@@ -46,6 +46,8 @@ export const userPreferences = () => `${user()}/preferences`;
 
 export const balance = () => `${BASE_URL}/api/balance`;
 
+export const quota = () => `${BASE_URL}/api/quota`;
+
 export const userPlugins = () => `${BASE_URL}/api/user/plugins`;
 
 export const deleteUser = () => `${BASE_URL}/api/user/delete`;

@@ -1,4 +1,5 @@
 import type { TxData, TransactionResult } from './transaction';
+import type { TransactionService } from '~/schema/transaction';
 import logger from '~/config/winston';
 
 /** Base transaction context passed by callers — does not include fields added internally */
@@ -11,6 +12,8 @@ export interface SpendTxData {
   context?: string;
   usageKind?: string;
   usageUnit?: 'tokens' | 'images' | 'seconds' | 'operations';
+  service?: TransactionService;
+  billable?: boolean;
   requestKey?: string;
   tenantId?: string;
   requireTenant?: boolean;

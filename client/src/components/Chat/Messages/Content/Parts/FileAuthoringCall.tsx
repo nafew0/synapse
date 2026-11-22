@@ -11,8 +11,8 @@ import { AttachmentGroup } from './Attachment';
 import { langFromPath } from './ReadFileCall';
 import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 import StepRow from './StepRow';
+import { cn } from '~/utils';
 
 type FileAuthoringToolName = 'create_file' | 'edit_file';
 

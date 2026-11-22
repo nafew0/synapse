@@ -11,8 +11,8 @@ import {
   Zap,
   Wrench,
 } from 'lucide-react';
-import LangIcon from '~/components/Messages/Content/LangIcon';
 import { WEB_READ_TOOL_NAMES, WEB_SEARCH_TOOL_NAMES } from '~/utils/toolLabels';
+import LangIcon from '~/components/Messages/Content/LangIcon';
 import { cn } from '~/utils';
 
 function BashIcon({ className }: { className?: string }) {

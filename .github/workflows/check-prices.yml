@@ -1,0 +1,35 @@
+name: Check model prices
+
+# Fails when a model named in librechat.yaml has no price or OpenRouter no longer lists it.
+# Also runs weekly, because OpenRouter can retire a model without any change to this repo.
+on:
+  pull_request:
+    paths:
+      - 'librechat.yaml'
+      - 'librechat.example.yaml'
+      - 'packages/api/src/prices/**'
+      - 'config/check-prices.js'
+      - '.github/workflows/check-prices.yml'
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-prices:
+    name: Check model prices
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24.16.0'
+      - run: npm ci
+      - run: npm run build:data-provider
+      - run: npm run build:data-schemas
+      - run: npm run build:api
+      - name: Check every configured model has a price
+        run: npm run check:prices

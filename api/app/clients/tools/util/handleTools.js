@@ -7,6 +7,8 @@ const {
   mcpToolPattern,
   isFirecrawlTool,
   createFirecrawlTool,
+  resolveServicePricing,
+  getEmbeddingBilling,
   INSTITUTION_KB_TOOL_NAME,
   createInstitutionKbTool,
   getKbRagApiUrl,
@@ -65,6 +67,7 @@ const {
 } = require('~/server/services/MCP');
 const { getMCPRequestContext } = require('~/server/services/MCPRequestContext');
 const { createFileSearchTool, primeFiles: primeSearchFiles } = require('./fileSearch');
+const { createServiceMeter } = require('~/server/services/serviceMeter');
 const { createChatFileTool } = require('~/server/services/Files/authoring');
 const { createDocumentReader } = require('~/server/services/Files/documents');
 const { primeFiles: primeCodeFiles } = require('~/server/services/Files/Code/process');
@@ -412,6 +415,9 @@ const loadTools = async ({
           files,
           entity_id: agent?.id,
           fileCitations,
+          billing: getEmbeddingBilling(options.req),
+          conversationId: options.req?.body?.conversationId,
+          messageId: options.req?.body?.messageId,
         });
       };
       continue;
@@ -474,6 +480,15 @@ const loadTools = async ({
             streamId: options.req?._resumableStreamId,
             jobCreatedAt: options.jobCreatedAt,
           }),
+          ledger: {
+            user,
+            tenantId: options.req?.user?.tenantId,
+            conversationId: options.req?.body?.conversationId,
+            messageId: options.req?.body?.messageId,
+            pricePerCreditUsd: resolveServicePricing(options.req?.config?.servicePricing).firecrawl
+              .pricePerCreditUsd,
+            meter: await createServiceMeter(options.req?.user),
+          },
         });
       continue;
     } else if (tool === SET_MEMORY_TOOL_NAME || tool === DELETE_MEMORY_TOOL_NAME) {

@@ -47,6 +47,12 @@ const Action: mongoose.Schema<IAction> = new Schema<IAction>({
     oauth_client_id: String,
     oauth_client_secret: String,
   },
+  /** Set when a member left the institution and this action stayed: the person who owned it. */
+  transferredFrom: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: undefined,
+  },
   tenantId: {
     type: String,
     index: true,

@@ -1083,7 +1083,25 @@ describe('recordCollectedUsage', () => {
       expect(mockInsertMany).toHaveBeenCalledTimes(1);
       expect(mockSpendTokens).not.toHaveBeenCalled();
       expect(mockSpendStructuredTokens).not.toHaveBeenCalled();
-      expect(result).toEqual({ input_tokens: 100, output_tokens: 50 });
+      expect(result).toEqual({ input_tokens: 100, output_tokens: 50, credits: 150 });
+    });
+
+    it('reports the credits of exactly the transactions it inserted', async () => {
+      (mockPricing.getMultiplier as jest.Mock).mockImplementation(({ tokenType }) =>
+        tokenType === 'completion' ? 1.2 : 0.2,
+      );
+      const result = await recordCollectedUsage(bulkDeps, {
+        ...baseParams,
+        context: 'title',
+        collectedUsage: [
+          { input_tokens: 50, output_tokens: 38, model: 'gpt-4' },
+          { input_tokens: 10, output_tokens: 5, model: 'gpt-4' },
+        ],
+      });
+      const inserted = mockInsertMany.mock.calls[0][0] as Array<{ tokenValue: number }>;
+      const ledger = inserted.reduce((sum, doc) => sum + Math.abs(doc.tokenValue), 0);
+      expect(result?.credits).toBeCloseTo(ledger, 6);
+      expect(result?.credits).toBeCloseTo(60 * 0.2 + 43 * 1.2, 6);
     });
 
     it('should batch all entries into a single insertMany call', async () => {
@@ -1405,7 +1423,7 @@ describe('recordCollectedUsage', () => {
       expect(messageContextDocs).toHaveLength(2);
       expect(summarizationContextDocs).toHaveLength(2);
 
-      expect(result).toEqual({ input_tokens: 200, output_tokens: 100 });
+      expect(result).toMatchObject({ input_tokens: 200, output_tokens: 100 });
     });
 
     it('handles summarization-only usage in bulk mode', async () => {
@@ -1435,7 +1453,7 @@ describe('recordCollectedUsage', () => {
       );
       expect(summarizationContextDocs).toHaveLength(2);
 
-      expect(result).toEqual({ input_tokens: 0, output_tokens: 25 });
+      expect(result).toMatchObject({ input_tokens: 0, output_tokens: 25 });
     });
 
     it('handles message-only usage in bulk mode', async () => {
@@ -1462,7 +1480,7 @@ describe('recordCollectedUsage', () => {
       );
       expect(messageContextDocs).toHaveLength(4);
 
-      expect(result).toEqual({ input_tokens: 100, output_tokens: 110 });
+      expect(result).toMatchObject({ input_tokens: 100, output_tokens: 110 });
     });
   });
 });

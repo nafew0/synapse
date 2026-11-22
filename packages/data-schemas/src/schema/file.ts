@@ -66,6 +66,22 @@ const file: Schema<IMongoFile> = new Schema(
     storageRegion: {
       type: String,
     },
+    /** The tenant in the object's storage key, kept when a member move re-scopes the record; `null` means no tenant segment. */
+    storageTenantId: {
+      type: String,
+      default: undefined,
+    },
+    /** The user in the stored object's key, kept when a member move hands the record to someone else. */
+    storageUserId: {
+      type: String,
+      default: undefined,
+    },
+    /** Set when a member left the institution and this file stayed: the person who owned it. */
+    transferredFrom: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: undefined,
+    },
     object: {
       type: String,
       required: true,

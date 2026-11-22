@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 /** Memories */
 import { z } from 'zod';
 import { logger } from '@librechat/data-schemas';
@@ -34,6 +35,7 @@ import type { BaseMessage, ToolMessage } from '@librechat/agents/langchain/messa
 import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
 import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
 import type { Response as ServerResponse } from 'express';
+import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { ServerRequest, RunLLMConfig } from '~/types';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
 import { resolveConfigHeaders, createSafeUser } from '~/utils';
@@ -66,6 +68,11 @@ function normalizeMemoryLLMConfig(llmConfig?: Partial<LLMConfig>): SanitizedMemo
     delete config.apiKey;
   }
   return config as SanitizedMemoryLLMConfig;
+}
+
+export interface MemoryRunOptions {
+  /** Receives the token usage of each model call in the memory run */
+  collectedUsage?: UsageMetadata[];
 }
 
 export const memoryInstructions =
@@ -695,6 +702,28 @@ export async function buildInlineMemoryTool({
   });
 }
 
+/** Collects token usage from the memory run so the caller can record it. */
+const createMemoryUsageHandler = (
+  collectedUsage: UsageMetadata[],
+  runId: string,
+  llmConfig?: Partial<LLMConfig>,
+): EventHandler => ({
+  handle: (_event, data, metadata) => {
+    const usage = (data as { output?: { usage_metadata?: UsageMetadata } } | undefined)?.output
+      ?.usage_metadata;
+    if (!usage) {
+      return;
+    }
+    const model = metadata?.ls_model_name ?? (llmConfig as { model?: string } | undefined)?.model;
+    collectedUsage.push({
+      ...usage,
+      runId,
+      ...(typeof model === 'string' ? { model } : {}),
+      ...(llmConfig?.provider ? { provider: llmConfig.provider } : {}),
+    });
+  },
+});
+
 export class BasicToolEndHandler implements EventHandler {
   private callback?: ToolEndCallback;
   constructor(callback?: ToolEndCallback) {
@@ -737,6 +766,7 @@ export async function processMemory({
   streamId = null,
   jobCreatedAt,
   user,
+  collectedUsage,
 }: {
   res: ServerResponse;
   setMemory: MemoryMethods['setMemory'];
@@ -756,6 +786,8 @@ export async function processMemory({
   streamId?: string | null;
   jobCreatedAt?: number;
   user?: IUser;
+  /** Receives the token usage of each model call in the memory run */
+  collectedUsage?: UsageMetadata[];
 }): Promise<(TAttachment | null)[] | undefined> {
   try {
     const memoryTool = createMemoryTool({
@@ -870,6 +902,15 @@ ${memory ?? 'No existing memories'}`;
     });
     const customHandlers = {
       [GraphEvents.TOOL_END]: new BasicToolEndHandler(memoryCallback),
+      ...(collectedUsage
+        ? {
+            [GraphEvents.CHAT_MODEL_END]: createMemoryUsageHandler(
+              collectedUsage,
+              randomUUID(),
+              llmConfig,
+            ),
+          }
+        : {}),
     };
 
     /**
@@ -981,7 +1022,15 @@ export async function createMemoryProcessor({
   streamId?: string | null;
   jobCreatedAt?: number;
   user?: IUser;
-}): Promise<[string, (messages: BaseMessage[]) => Promise<(TAttachment | null)[] | undefined>]> {
+}): Promise<
+  [
+    string,
+    (
+      messages: BaseMessage[],
+      options?: MemoryRunOptions,
+    ) => Promise<(TAttachment | null)[] | undefined>,
+  ]
+> {
   const { validKeys, instructions, llmConfig, tokenLimit } = config;
   const finalInstructions = instructions || getDefaultInstructions(validKeys, tokenLimit);
 
@@ -992,7 +1041,10 @@ export async function createMemoryProcessor({
 
   return [
     withoutKeys,
-    async function (messages: BaseMessage[]): Promise<(TAttachment | null)[] | undefined> {
+    async function (
+      messages: BaseMessage[],
+      options?: MemoryRunOptions,
+    ): Promise<(TAttachment | null)[] | undefined> {
       try {
         return await processMemory({
           res,
@@ -1012,6 +1064,7 @@ export async function createMemoryProcessor({
           setMemory: memoryMethods.setMemory,
           deleteMemory: memoryMethods.deleteMemory,
           user,
+          collectedUsage: options?.collectedUsage,
         });
       } catch (error) {
         logger.error('Memory Agent failed to process memory', error);

@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider, QueryCache } from '@tanstack/react-qu
 import { Toast, ThemeProvider, ToastProvider, useInputModality } from '@librechat/client';
 import { ReportHost, ReportToastProvider } from './components/Report';
 import { ScreenshotProvider, useApiErrorBoundary } from './hooks';
+import AccountMovingNotice from '~/components/System/AccountMovingNotice';
 import WakeLockManager from '~/components/System/WakeLockManager';
 import QueryDevtoolsGate from '~/components/QueryDevtoolsGate';
 import LanguageSync from '~/components/System/LanguageSync';
@@ -71,6 +72,7 @@ const App = () => {
                     <QueryDevtoolsGate />
                     <ReportHost />
                     <Toast />
+                    <AccountMovingNotice />
                     <RadixToast.Viewport className="pointer-events-none fixed left-[var(--toast-area-left,0px)] right-[var(--toast-area-right,0px)] top-0 z-[1000] mx-auto my-2 flex max-w-[560px] flex-col items-stretch justify-start" />
                   </DndProvider>
                 </ReportToastProvider>

@@ -62,5 +62,7 @@ export interface IAgent extends Omit<Document, 'model'> {
   subagents?: AgentSubagentsConfig;
   /** Memory partition: 'agent' isolates memories per (user, agent); default shared pool */
   memory_scope?: MemoryScope;
+  /** The person who owned this before they left the institution and it stayed. */
+  transferredFrom?: Types.ObjectId | null;
   tenantId?: string;
 }

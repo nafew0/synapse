@@ -1,6 +1,11 @@
 import { Schema } from 'mongoose';
+import type {
+  IKbDocumentDoc,
+  IKbIngestJobDoc,
+  IKbStorageDailyDoc,
+  IKbDocumentVersionDoc,
+} from '~/types';
 import { KbDocTypes, KbDocumentStatuses, KbIngestJobStatuses } from '~/common';
-import type { IKbDocumentDoc, IKbDocumentVersionDoc, IKbIngestJobDoc } from '~/types';
 
 export const kbDocumentSchema: Schema<IKbDocumentDoc> = new Schema<IKbDocumentDoc>(
   {
@@ -21,6 +26,8 @@ export const kbDocumentSchema: Schema<IKbDocumentDoc> = new Schema<IKbDocumentDo
     pageCount: { type: Number, default: 0, min: 0 },
     chunkCount: { type: Number, default: 0, min: 0 },
     unreadablePages: { type: [Number], default: [] },
+    /** Parsed text of the current version in the search index; null when not recorded. */
+    parsedBytes: { type: Number, default: null, min: 0 },
     createdBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     updatedBy: { type: Schema.Types.ObjectId, ref: 'User', default: null },
   },
@@ -49,6 +56,7 @@ export const kbDocumentVersionSchema: Schema<IKbDocumentVersionDoc> =
       },
       pageCount: { type: Number, default: 0 },
       chunkCount: { type: Number, default: 0 },
+      parsedBytes: { type: Number, default: null, min: 0 },
     },
     { timestamps: true },
   );
@@ -75,3 +83,28 @@ export const kbIngestJobSchema: Schema<IKbIngestJobDoc> = new Schema<IKbIngestJo
 
 kbIngestJobSchema.index({ status: 1, availableAt: 1 });
 kbIngestJobSchema.index({ documentId: 1, version: 1 }, { unique: true });
+
+const storageFigure = { type: Number, required: true, min: 0, default: 0 };
+
+/**
+ * One row per tenant and Asia/Dhaka day. Rewritten whenever the knowledge base changes and by the
+ * daily job, so a day keeps its latest measurement; never incremented.
+ */
+export const kbStorageDailySchema: Schema<IKbStorageDailyDoc> = new Schema<IKbStorageDailyDoc>(
+  {
+    tenantId: { type: String, required: true, trim: true },
+    day: { type: String, required: true },
+    documents: storageFigure,
+    versions: storageFigure,
+    originalBytes: storageFigure,
+    parsedBytes: storageFigure,
+    indexChunks: storageFigure,
+    totalBytes: storageFigure,
+    unmeasuredVersions: storageFigure,
+    measuredAt: { type: Date, required: true },
+  },
+  { timestamps: true },
+);
+
+kbStorageDailySchema.index({ tenantId: 1, day: 1 }, { unique: true });
+kbStorageDailySchema.index({ day: 1 });

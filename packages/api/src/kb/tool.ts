@@ -2,8 +2,8 @@ import { KbDocTypes } from 'librechat-data-provider';
 import { tool } from '@librechat/agents/langchain/tools';
 import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
 import type { ExtendedJsonSchema } from '~/tools/registry/schema';
-import { createAxiosInstance } from '~/utils/axios';
 import type { KbCatalogItem } from './availability';
+import { createAxiosInstance } from '~/utils/axios';
 import { generateKbToken } from '~/crypto/jwt';
 
 const axios = createAxiosInstance();

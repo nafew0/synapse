@@ -1629,7 +1629,6 @@ export const interfaceSchema = z
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
 export type TBalanceConfig = z.infer<typeof balanceSchema>;
-export type TCreditPackagesConfig = z.infer<typeof creditPackagesSchema>;
 export type TTransactionsConfig = z.infer<typeof transactionsSchema>;
 
 export const turnstileOptionsSchema = z
@@ -1675,7 +1674,6 @@ export type TStartupConfig = {
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;
-  creditPackages?: TCreditPackagesConfig;
   transactions?: TTransactionsConfig;
   discordLoginEnabled: boolean;
   facebookLoginEnabled: boolean;
@@ -1700,6 +1698,8 @@ export type TStartupConfig = {
   /** Path of the admin console when it is hosted alongside this app, e.g.
    *  `/adminpanel`. Unset when the console is not publicly reachable. */
   adminPanelPath?: string;
+  /** Sign-in only through BDREN OpenID: the login page shows only that button and redirects to it. */
+  ssoOnly?: boolean;
   emailLoginEnabled: boolean;
   registrationEnabled: boolean;
   socialLoginEnabled: boolean;
@@ -1952,6 +1952,28 @@ export const documentOcrSchema = z.object({
 
 export type TDocumentOcrConfig = z.infer<typeof documentOcrSchema>;
 
+/**
+ * What the paid services outside the model price table cost us. The cost of a call is worked out
+ * from these when its ledger row is written, so changing a price never rewrites history.
+ * Defaults: Firecrawl Hobby ($19 for 5,000 credits), xAI speech-to-text ($0.10 an hour), Gemini
+ * Embedding 001 ($0.15 per 1M tokens). Re-check them against the providers' pricing pages.
+ */
+export const servicePricingSchema = z.object({
+  firecrawl: z.object({ pricePerCreditUsd: z.number().nonnegative().default(0.0038) }).default({}),
+  stt: z
+    .object({
+      pricePerSecondUsd: z
+        .number()
+        .nonnegative()
+        .default(0.1 / 3600),
+    })
+    .default({}),
+  embeddings: z.object({ pricePer1MTokensUsd: z.number().nonnegative().default(0.15) }).default({}),
+});
+
+export type TServicePricingConfig = z.infer<typeof servicePricingSchema>;
+export type TServicePricingInput = z.input<typeof servicePricingSchema>;
+
 export const balanceSchema = z.object({
   enabled: z.boolean().optional().default(false),
   startBalance: z.number().optional().default(20000),
@@ -1959,33 +1981,6 @@ export const balanceSchema = z.object({
   refillIntervalValue: z.number().optional().default(30),
   refillIntervalUnit: z.enum(REFILL_INTERVAL_UNITS).optional().default('days'),
   refillAmount: z.number().optional().default(10000),
-});
-
-export const creditPackagesSchema = z.object({
-  currency: z.string().trim().min(1).default('BDT'),
-  list: z
-    .array(
-      z.object({
-        id: z.string().trim().min(1),
-        label: z.string().trim().min(1),
-        price: z.number().nonnegative(),
-        credits: z.number().int().positive(),
-      }),
-    )
-    .min(1)
-    .superRefine((packages, ctx) => {
-      const ids = new Set<string>();
-      packages.forEach((pkg, index) => {
-        if (ids.has(pkg.id)) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            path: [index, 'id'],
-            message: 'Package IDs must be unique',
-          });
-        }
-        ids.add(pkg.id);
-      });
-    }),
 });
 
 export const transactionsSchema = z.object({
@@ -2153,6 +2148,7 @@ export const configSchema = z.object({
   cache: z.boolean().default(true),
   ocr: ocrSchema.optional(),
   documentOcr: documentOcrSchema.optional(),
+  servicePricing: servicePricingSchema.optional(),
   webSearch: webSearchSchema.optional(),
   langfuse: langfuseConfigSchema.optional(),
   memory: memorySchema.optional(),
@@ -2187,7 +2183,6 @@ export const configSchema = z.object({
     })
     .default({ socialLogins: defaultSocialLogins }),
   balance: balanceSchema.optional(),
-  creditPackages: creditPackagesSchema.optional(),
   transactions: transactionsSchema.optional(),
   speech: z
     .object({
@@ -2886,6 +2881,10 @@ export enum ErrorTypes {
    */
   AUTH_FAILED = 'auth_failed',
   /**
+   * An OpenID login matched an account that still signs in with a password (not yet moved to bdren.ai)
+   */
+  ACCOUNT_NOT_LINKED = 'account_not_linked',
+  /**
    * Model refused to respond (content policy violation)
    */
   REFUSAL = 'refusal',
@@ -2893,6 +2892,12 @@ export enum ErrorTypes {
    * SSE stream 404 — job completed, expired, or was deleted before the subscriber connected
    */
   STREAM_EXPIRED = 'stream_expired',
+  /**
+   * A usage-plan allowance ran out. Carries the exhausted window and the instant
+   * it reopens, so the refusal can tell the user when to come back rather than
+   * only that they were blocked.
+   */
+  TOKEN_QUOTA_EXCEEDED = 'token_quota_exceeded',
   /**
    * The user's institution has ended chat access (e.g. a free trial is over).
    */

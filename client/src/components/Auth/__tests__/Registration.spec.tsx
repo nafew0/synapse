@@ -2,12 +2,12 @@ import * as reactRouter from 'react-router-dom';
 import userEvent from '@testing-library/user-event';
 import * as mockDataProvider from 'librechat-data-provider/react-query';
 import type { TStartupConfig } from 'librechat-data-provider';
+import Registration, { getRegistrationError } from '~/components/Auth/Registration';
 import * as endpointQueries from '~/data-provider/Endpoints/queries';
-import { act, render, screen } from 'test/layout-test-utils';
 import * as miscDataProvider from '~/data-provider/Misc/queries';
 import * as authMutations from '~/data-provider/Auth/mutations';
+import { act, render, screen } from 'test/layout-test-utils';
 import * as authQueries from '~/data-provider/Auth/queries';
-import Registration, { getRegistrationError } from '~/components/Auth/Registration';
 import AuthLayout from '~/components/Auth/AuthLayout';
 
 jest.mock('librechat-data-provider/react-query');

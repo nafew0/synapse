@@ -4,9 +4,9 @@ import { isAssistantsEndpoint, isAgentsEndpoint } from 'librechat-data-provider'
 import type { TMessageProps } from '~/common';
 import { useMessagesViewContext, useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
 import useCopyToClipboard, { hasCopyableText } from './useCopyToClipboard';
+import { hideOfficeWorkNotes } from '~/utils/workNotes';
 import { useGetAddedConvo } from '~/hooks/Chat';
 import { logger } from '~/utils';
-import { hideOfficeWorkNotes } from '~/utils/workNotes';
 
 export default function useMessageHelpers(props: TMessageProps) {
   const { message, currentEditId, setCurrentEditId } = props;

@@ -1,8 +1,8 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { KbFileInput } from './kb';
-import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { KbLimits, KbDocumentStatuses, KbIngestJobStatuses } from '~/common';
+import { tenantStorage, runAsSystem } from '~/config/tenantContext';
 import { createKbMethods, type KbMethods } from './kb';
 import { createModels } from '~/models';
 
@@ -51,7 +51,7 @@ afterAll(async () => {
 
 afterEach(async () => {
   await Promise.all(
-    ['KbDocument', 'KbDocumentVersion', 'KbIngestJob'].map((name) =>
+    ['KbDocument', 'KbDocumentVersion', 'KbIngestJob', 'KbStorageDaily'].map((name) =>
       mongoose.models[name].deleteMany({}),
     ),
   );
@@ -103,6 +103,8 @@ describe('knowledge base documents', () => {
     expect(await asTenant('uni-b', () => methods.getKbUsage())).toEqual({
       documents: 1,
       bytes: 1000,
+      versions: 1,
+      totalBytes: 1000,
     });
   });
 
@@ -326,5 +328,139 @@ describe('knowledge base documents', () => {
     expect(retried).toMatchObject({ status: KbDocumentStatuses.QUEUED, error: null });
     const again = await claim();
     expect(again).toMatchObject({ version: 1, attempts: 1 });
+  });
+});
+
+describe('knowledge base storage', () => {
+  const complete = async (chunkCount: number, parsedBytes?: number) => {
+    const job = await claim();
+    await asTenant(job!.tenantId, () =>
+      methods.completeKbIngestJob({
+        jobId: job!._id,
+        pageCount: 1,
+        chunkCount,
+        unreadablePages: [],
+        parser,
+        parsedBytes,
+      }),
+    );
+  };
+
+  it('counts every stored original and the live parsed text, while the limit keeps counting live files', async () => {
+    const { document } = await asTenant('uni-a', () =>
+      methods.createKbDocument({ title: 'Policy', file: file(1, 1000) }),
+    );
+    await complete(4, 300);
+    const id = String(document._id);
+    await asTenant('uni-a', () => methods.addKbDocumentVersion(id, file(2, 2500)));
+    await complete(6, 450);
+    await asTenant('uni-b', () => methods.createKbDocument({ title: 'B', file: file(3, 70) }));
+
+    const version = await asTenant('uni-a', () => methods.getKbDocumentVersion(id, 2));
+    expect(version?.parsedBytes).toBe(450);
+    expect(await asTenant('uni-a', () => methods.getKbUsage())).toEqual({
+      documents: 1,
+      bytes: 2500,
+      versions: 2,
+      totalBytes: 1000 + 2500 + 450,
+    });
+
+    const measured = await runAsSystem(() => methods.measureKbStorage());
+    const byTenant = Object.fromEntries(measured.map((row) => [row.tenantId, row]));
+    expect(byTenant['uni-a']).toEqual({
+      tenantId: 'uni-a',
+      documents: 1,
+      versions: 2,
+      originalBytes: 3500,
+      parsedBytes: 450,
+      indexChunks: 6,
+      totalBytes: 3950,
+      unmeasuredVersions: 0,
+    });
+    expect(byTenant['uni-b']).toMatchObject({ documents: 1, versions: 1, indexChunks: 0 });
+
+    const one = await runAsSystem(() => methods.measureKbStorage('uni-b'));
+    expect(one).toEqual([expect.objectContaining({ tenantId: 'uni-b', originalBytes: 70 })]);
+    const none = await runAsSystem(() => methods.measureKbStorage('uni-none'));
+    expect(none).toEqual([expect.objectContaining({ tenantId: 'uni-none', totalBytes: 0 })]);
+  });
+
+  it('flags live versions whose parsed size was never recorded', async () => {
+    await asTenant('uni-a', () => methods.createKbDocument({ title: 'Old', file: file(1) }));
+    await complete(2);
+    const [row] = await runAsSystem(() => methods.measureKbStorage('uni-a'));
+    expect(row).toMatchObject({ parsedBytes: 0, unmeasuredVersions: 1, totalBytes: 1000 });
+  });
+
+  it('keeps the latest measurement of a day and reads only the caller tenant', async () => {
+    const at = (iso: string) => new Date(iso);
+    const figures = (totalBytes: number) => ({
+      documents: 1,
+      versions: 1,
+      originalBytes: totalBytes,
+      parsedBytes: 0,
+      indexChunks: 1,
+      totalBytes,
+      unmeasuredVersions: 0,
+    });
+    await runAsSystem(() =>
+      methods.saveKbStorageDaily([
+        {
+          tenantId: 'uni-a',
+          day: '2026-11-20',
+          measuredAt: at('2026-11-20T10:00:00Z'),
+          ...figures(10),
+        },
+        {
+          tenantId: 'uni-a',
+          day: '2026-11-21',
+          measuredAt: at('2026-11-21T10:00:00Z'),
+          ...figures(20),
+        },
+        {
+          tenantId: 'uni-b',
+          day: '2026-11-21',
+          measuredAt: at('2026-11-21T10:00:00Z'),
+          ...figures(99),
+        },
+      ]),
+    );
+    await runAsSystem(() =>
+      methods.saveKbStorageDaily([
+        {
+          tenantId: 'uni-a',
+          day: '2026-11-21',
+          measuredAt: at('2026-11-21T09:00:00Z'),
+          ...figures(5),
+        },
+        {
+          tenantId: 'uni-a',
+          day: '2026-11-20',
+          measuredAt: at('2026-11-20T12:00:00Z'),
+          ...figures(15),
+        },
+      ]),
+    );
+    await runAsSystem(() =>
+      methods.saveKbStorageDaily([
+        {
+          tenantId: 'uni-a',
+          day: '2026-11-20',
+          measuredAt: at('2026-11-20T12:00:00Z'),
+          ...figures(15),
+        },
+      ]),
+    );
+
+    const own = await asTenant('uni-a', () =>
+      methods.listKbStorageDaily({ fromDay: '2026-11-01' }),
+    );
+    expect(own.map((row) => [row.tenantId, row.day, row.totalBytes])).toEqual([
+      ['uni-a', '2026-11-20', 15],
+      ['uni-a', '2026-11-21', 20],
+    ]);
+    const all = await runAsSystem(() => methods.listKbStorageDaily({ fromDay: '2026-11-21' }));
+    expect(all.map((row) => row.tenantId)).toEqual(['uni-a', 'uni-b']);
+    expect(await mongoose.models.KbStorageDaily.countDocuments({})).toBe(3);
   });
 });

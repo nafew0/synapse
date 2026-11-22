@@ -4,6 +4,7 @@ export * from './common';
 export * from './crypto';
 export * from './schema';
 export * from './utils';
+export * from './pricing';
 export { createModels } from './models';
 export {
   createMethods,
@@ -43,6 +44,11 @@ export {
   digestMCPAuthorityValue,
 } from './methods';
 export { FAVORITE_ITEM_TYPES } from './types/favorite';
+export {
+  USAGE_ACCOUNT_NAMES,
+  USAGE_PACKAGE_SCOPES,
+  INDIVIDUAL_USAGE_ACCOUNT,
+} from './types/usagePackage';
 export type * from './types';
 export type * from './methods';
 export {
@@ -53,6 +59,13 @@ export {
   AUDIT_ACTOR_TYPES,
   AUDIT_ACTION_CATEGORY,
 } from './types/admin';
+export { TRANSACTION_SERVICES, TASK_TYPES } from './schema/transaction';
+export type {
+  TransactionService,
+  TaskType,
+  ITransaction,
+  CostCorrection,
+} from './schema/transaction';
 export { GENESIS_HASH, PLATFORM_CHAIN_KEY } from './schema/auditLog';
 export { default as logger } from './config/winston';
 export { default as meiliLogger } from './config/meiliLogger';

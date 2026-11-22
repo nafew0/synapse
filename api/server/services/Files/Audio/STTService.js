@@ -9,6 +9,8 @@ const {
   applyAxiosProxyConfig,
   resolveConfigSecret,
   applySSRFSafeAgentIfDirect,
+  getVoiceCharge,
+  recordVoiceCharge,
 } = require('@librechat/api');
 const { extractEnvVariable, STTProviders } = require('librechat-data-provider');
 const { getAppConfig } = require('~/server/services/Config');
@@ -284,11 +286,18 @@ class STTService {
    * @param {Buffer} requestData.audioBuffer - The audio data to be transcribed.
    * @param {Object} requestData.audioFile - The audio file object containing originalname, mimetype, and size.
    * @param {string} requestData.language - The language code for the transcription.
+   * @param {{ user: string, tenantId?: string, pricePerSecondUsd: number }} [requestData.charge] - Who the
+   *   call is billed to in the ledger; omitted calls are not recorded.
    * @param {string[]} [allowedAddresses] - Section-level SSRF exemption list of host:port pairs.
    * @returns {Promise<string>} A promise that resolves to the transcribed text.
    * @throws {Error} If the provider is invalid, the response status is not 200, or the response data is missing.
    */
-  async sttRequest(provider, sttSchema, { audioBuffer, audioFile, language }, allowedAddresses) {
+  async sttRequest(
+    provider,
+    sttSchema,
+    { audioBuffer, audioFile, language, charge },
+    allowedAddresses,
+  ) {
     const strategy = this.providerStrategies[provider];
     if (!strategy) {
       throw new Error('Invalid provider');
@@ -339,6 +348,15 @@ class STTService {
         throw new Error('Missing data in response from the STT API');
       }
 
+      if (charge) {
+        await recordVoiceCharge({
+          ...charge,
+          buffer: audioBuffer,
+          mimetype: audioFile.mimetype,
+          providerSeconds: response.data.duration,
+        });
+      }
+
       return response.data.text.trim();
     } catch (error) {
       logAxiosError({ message: `STT request failed for provider ${provider}:`, error });
@@ -371,7 +389,7 @@ class STTService {
       const text = await this.sttRequest(
         provider,
         sttSchema,
-        { audioBuffer, audioFile, language },
+        { audioBuffer, audioFile, language, charge: getVoiceCharge(req) },
         allowedAddresses,
       );
       res.json({ text });

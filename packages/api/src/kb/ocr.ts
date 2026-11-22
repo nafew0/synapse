@@ -1,7 +1,7 @@
 import type { PartitionFile, UnstructuredElement } from '~/files/unstructured/types';
 import type { KbElement } from './types';
-import { subsetPdf } from '~/files/unstructured/pages';
 import { asListItem, cleanCell, cleanText } from './normalize';
+import { subsetPdf } from '~/files/unstructured/pages';
 
 const TEXT_TYPES = new Set([
   'NarrativeText',

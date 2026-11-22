@@ -17,8 +17,8 @@ import { ERROR_PATTERNS } from './ExecuteCode';
 import { AttachmentGroup } from './Attachment';
 import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 import StepRow from './StepRow';
+import { cn } from '~/utils';
 
 export default function BashCall({
   isSubmitting,

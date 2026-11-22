@@ -73,6 +73,8 @@ import {
   createStatefulCodeEnvironmentPolicyError,
   isFatalAgentInitializationError,
 } from './errors';
+import { INSTITUTION_KB_TOOL_NAME, buildInstitutionKbInstructions } from '~/kb/tool';
+import { getKbRagApiUrl, getInstitutionKbCatalog } from '~/kb/availability';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { buildUnreachableAttachmentsNote } from './attachments';
@@ -80,8 +82,6 @@ import { applyBackgroundToolCalls } from './background';
 import { filterFilesByEndpointConfig } from '~/files';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
-import { INSTITUTION_KB_TOOL_NAME, buildInstitutionKbInstructions } from '~/kb/tool';
-import { getKbRagApiUrl, getInstitutionKbCatalog } from '~/kb/availability';
 import { primeResources } from './resources';
 
 /**

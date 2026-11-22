@@ -8,8 +8,8 @@ import type {
   SearchResultData,
   PartMetadata,
 } from 'librechat-data-provider';
-import { SourceList, SourceFaviconStack } from '~/components/Web/SourceList';
 import { useLocalize, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
+import { SourceList, SourceFaviconStack } from '~/components/Web/SourceList';
 import { StackedFavicons } from '~/components/Web/Sources';
 import { useToolCallIntent } from './Parts/intent';
 import { useSearchContext } from '~/Providers';

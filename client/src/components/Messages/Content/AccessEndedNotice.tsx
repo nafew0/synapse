@@ -3,8 +3,8 @@ import { Lock } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { ErrorTypes, QueryKeys } from 'librechat-data-provider';
 import type { TUser } from 'librechat-data-provider';
-import { useLocalize } from '~/hooks';
 import { extractJson } from '~/utils/json';
+import { useLocalize } from '~/hooks';
 
 /** The institution's own message from a `chat_access_ended` refusal, or `undefined` for any other text. */
 export function parseAccessEnded(text: string): { info?: string } | undefined {

@@ -7,8 +7,8 @@ import { useRegisterUserMutation } from 'librechat-data-provider/react-query';
 import { ThemeContext, SecretInput, Spinner, Button, Input, isDark } from '@librechat/client';
 import type { TRegisterUser } from 'librechat-data-provider';
 import type { TLoginLayoutContext } from '~/common';
-import { useLocalize, TranslationKeys } from '~/hooks';
 import { getErrorInfo, getErrorMessage } from '~/utils/errors';
+import { useLocalize, TranslationKeys } from '~/hooks';
 import { ErrorMessage } from './ErrorMessage';
 
 /** The handle is chosen on this form, not recalled, so it must not advertise itself as the

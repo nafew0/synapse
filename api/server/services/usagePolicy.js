@@ -1,13 +1,16 @@
 const mongoose = require('mongoose');
-const { buildQuotaModelRows } = require('@librechat/api');
+const { isUsageAccount, buildQuotaModelRows } = require('@librechat/api');
 const { getTransactionSupport, runAsSystem } = require('@librechat/data-schemas');
 const models = require('~/db/models');
 const {
   canonicalizeModel,
   getActivePolicy,
+  getCreditConsole,
+  loadQuotaContext,
   getCalendarMonthRange,
   getQuotaHealth,
-  getShadowReadiness,
+  quotaOwnerModel,
+  ensureUsageAccount,
 } = require('./usageQuota');
 const { getQuotaModelSources } = require('./usageLabels');
 
@@ -31,11 +34,17 @@ function normalizeNullableLimit(value, label) {
   return parsed;
 }
 
+/** Whether a policy sets any limit. Limits are always enforced, so they need transactions. */
+function setsAnyLimit(policy) {
+  const { modelTokens, ...scalar } = policy.limits;
+  return (
+    Object.values(scalar).some((value) => value != null) ||
+    modelTokens.some((entry) => entry.maxTokens != null)
+  );
+}
+
+/** Builds a policy from admin input. A `mode` sent by an older console is ignored. */
 function normalizePolicyInput(input, fallback) {
-  const mode = input.mode ?? fallback.mode;
-  if (!['shadow', 'enforce'].includes(mode)) {
-    throw new PolicyError(400, 'INVALID_POLICY', 'mode must be shadow or enforce');
-  }
   const timezone = String(input.timezone ?? fallback.timezone ?? 'Asia/Dhaka').trim();
   try {
     getCalendarMonthRange(timezone);
@@ -76,9 +85,8 @@ function normalizePolicyInput(input, fallback) {
     );
   }
   return {
-    mode,
     timezone,
-    period: 'calendar_month',
+    period: ['calendar_month', 'calendar_week'],
     limits: {
       institutionTokens: normalizeNullableLimit(
         input.limits?.institutionTokens ?? fallback.limits?.institutionTokens,
@@ -87,6 +95,18 @@ function normalizePolicyInput(input, fallback) {
       memberTokens: normalizeNullableLimit(
         input.limits?.memberTokens ?? fallback.limits?.memberTokens,
         'Member limit',
+      ),
+      memberTokensWeekly: normalizeNullableLimit(
+        input.limits?.memberTokensWeekly ?? fallback.limits?.memberTokensWeekly,
+        'Member weekly limit',
+      ),
+      memberImages: normalizeNullableLimit(
+        input.limits?.memberImages ?? fallback.limits?.memberImages,
+        'Member image limit',
+      ),
+      memberImagesWeekly: normalizeNullableLimit(
+        input.limits?.memberImagesWeekly ?? fallback.limits?.memberImagesWeekly,
+        'Member weekly image limit',
       ),
       modelTokens: [...modelLimits.values()],
     },
@@ -168,25 +188,18 @@ async function createUsagePolicy({
   }
 
   const transactionCapable = await getTransactionSupport(mongoose);
-  if (preview.proposedPolicy.mode === 'enforce' && !transactionCapable) {
+  if (setsAnyLimit(preview.proposedPolicy) && !transactionCapable) {
     throw new PolicyError(
       409,
       'QUOTA_ENFORCEMENT_REQUIRES_TRANSACTIONS',
-      'Enforce mode requires MongoDB replica-set or mongos transaction support',
+      'Usage limits require MongoDB replica-set or mongos transaction support',
     );
   }
-  if (preview.proposedPolicy.mode === 'enforce' && preview.currentVersion >= 1) {
-    const readiness = await getShadowReadiness({ tenantId });
-    if (!readiness.ready) {
-      throw new PolicyError(
-        409,
-        'QUOTA_SHADOW_GATE_NOT_MET',
-        'The 7-day/1,000-call shadow acceptance gate has not passed',
-        { readiness },
-      );
-    }
-  }
 
+  if (isUsageAccount(tenantId)) {
+    await ensureUsageAccount(tenantId);
+  }
+  const owner = quotaOwnerModel(tenantId);
   const nextVersion = preview.currentVersion + 1;
   const session = transactionCapable ? await mongoose.startSession() : null;
   let created;
@@ -202,19 +215,20 @@ async function createUsagePolicy({
             ],
           }
         : { tenantId, usagePolicyVersion: preview.currentVersion };
-    const institution = await models.Institution.findOneAndUpdate(
-      versionFilter,
-      {
-        $set: {
-          usagePolicyVersion: nextVersion,
-          timezone: preview.proposedPolicy.timezone,
+    const updatedOwner = await owner
+      .findOneAndUpdate(
+        versionFilter,
+        {
+          $set: {
+            usagePolicyVersion: nextVersion,
+            timezone: preview.proposedPolicy.timezone,
+          },
         },
-      },
-      { new: true, session },
-    )
+        { new: true, session },
+      )
       .lean()
       .exec();
-    if (!institution) {
+    if (!updatedOwner) {
       throw new PolicyError(409, 'POLICY_VERSION_CONFLICT', 'The policy changed; reload and retry');
     }
     const docs = await models.UsagePolicy.create(
@@ -241,7 +255,7 @@ async function createUsagePolicy({
   } catch (error) {
     if (!session && error instanceof Error) {
       await runAsSystem(() =>
-        models.Institution.updateOne(
+        owner.updateOne(
           { tenantId, usagePolicyVersion: nextVersion },
           { $set: { usagePolicyVersion: preview.currentVersion } },
         ),
@@ -260,6 +274,7 @@ async function listUsagePolicies({ tenantId, limit = 50, offset = 0 }) {
   const [policies, total] = await runAsSystem(() =>
     Promise.all([
       models.UsagePolicy.find({ tenantId })
+        .select('-mode')
         .sort({ version: -1 })
         .skip(safeOffset)
         .limit(safeLimit)
@@ -278,17 +293,21 @@ async function listUsagePolicies({ tenantId, limit = 50, offset = 0 }) {
  * the engine's own keys.
  */
 async function getPolicyConsole({ tenantId }) {
-  const [policy, health, sources] = await Promise.all([
-    getActivePolicy(tenantId),
+  const [{ institution: owner, policy }, health, sources, credits] = await Promise.all([
+    loadQuotaContext(tenantId),
     getQuotaHealth({ tenantId }),
-    getQuotaModelSources(tenantId),
+    /** An account that is not an institution sees the platform's own model list. */
+    getQuotaModelSources(isUsageAccount(tenantId) ? undefined : tenantId),
+    getCreditConsole({ tenantId }),
   ]);
   const models = buildQuotaModelRows({
     sources,
     buckets: health.buckets,
     limits: policy.limits?.modelTokens ?? [],
   });
-  return { policy, health, models };
+  /** `credits` is set once the institution is on usage packages; the token view stays for the rest. */
+  /** The packages the console edits: an account's default member package is its trial. */
+  return { policy, health, models, credits, usagePackage: owner.usagePackage ?? null };
 }
 
 module.exports = {

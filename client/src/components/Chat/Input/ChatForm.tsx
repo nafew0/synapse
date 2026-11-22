@@ -23,13 +23,13 @@ import {
   useAssistantsMapContext,
 } from '~/Providers';
 import { cn, getModelSpec, hasIncompleteFiles, removeFocusRings } from '~/utils';
+import { useGetStartupConfig, useGetUserQuery } from '~/data-provider';
 import PendingManualSkillsChips from './PendingManualSkillsChips';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
 import InterruptSteerButton from './InterruptSteerButton';
 import DuringRunSendButton from './DuringRunSendButton';
 import ProjectLandingChip from '../ProjectLandingChip';
-import { useGetStartupConfig, useGetUserQuery } from '~/data-provider';
 import { mainTextareaId, BadgeItem } from '~/common';
 import PendingSteerChips from './PendingSteerChips';
 import PendingQuoteChips from './PendingQuoteChips';

@@ -1,10 +1,10 @@
 import { WebSearchToolDefinition, CalculatorToolDefinition } from '@librechat/agents';
 import type { ExtendedJsonSchema } from './schema';
 import { AskUserQuestionToolDefinition } from '~/agents/hitl/askUserQuestionTool';
-import { firecrawlToolkit } from '~/tools/firecrawl/definitions';
-import { institutionKbToolDefinition } from '~/kb/tool';
 import { documentReadToolDefinition } from '~/files/unstructured/definitions';
 import { fileAuthoringToolkit } from '~/files/authoring/definitions';
+import { firecrawlToolkit } from '~/tools/firecrawl/definitions';
+import { institutionKbToolDefinition } from '~/kb/tool';
 import { geminiToolkit } from '~/tools/toolkits/gemini';
 import { oaiToolkit } from '~/tools/toolkits/oai';
 

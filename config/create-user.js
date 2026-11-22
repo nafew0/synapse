@@ -97,9 +97,9 @@ If \`n\`, and email service is configured, the user will be sent a verification 
 If \`n\`, and email service is not configured, you must have the \`ALLOW_UNVERIFIED_EMAIL_LOGIN\` .env variable set to true,
 or the user will need to attempt logging in to have a verification link sent to them.`);
 
-    const normalizedEmailVerifiedInput = emailVerifiedInput.trim().toLowerCase()
+    const normalizedEmailVerifiedInput = emailVerifiedInput.trim().toLowerCase();
 
-    emailVerified = true
+    emailVerified = true;
 
     if (normalizedEmailVerifiedInput === 'n') {
       emailVerified = false;
@@ -133,7 +133,9 @@ or the user will need to attempt logging in to have a verification link sent to 
   const register = () => registerUser(user, additionalData);
   let result;
   try {
-    result = await (tenantId !== undefined ? tenantStorage.run({ tenantId }, register) : register());
+    result = await (tenantId !== undefined
+      ? tenantStorage.run({ tenantId }, register)
+      : register());
   } catch (error) {
     console.red('Error: ' + error.message);
     silentExit(1);

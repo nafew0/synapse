@@ -579,3 +579,66 @@ describe('AuthContextProvider — custom role detection and fetching', () => {
     jest.useRealTimers();
   });
 });
+
+describe('AuthContextProvider — account moving between institutions', () => {
+  const { useGetUserQuery } = jest.requireMock('~/data-provider') as {
+    useGetUserQuery: jest.Mock;
+  };
+
+  afterEach(() => {
+    useGetUserQuery.mockImplementation(() => ({ data: undefined, isError: false, error: null }));
+    mockNavigate.mockClear();
+  });
+
+  it('does not sign the person out while their account is moving', () => {
+    useGetUserQuery.mockImplementation(() => ({
+      data: undefined,
+      isError: true,
+      error: { message: 'moving', response: { status: 503, data: { code: 'ACCOUNT_MOVING' } } },
+    }));
+
+    renderProvider();
+
+    expect(mockNavigate).not.toHaveBeenCalledWith(expect.stringContaining('/login'), {
+      replace: true,
+    });
+  });
+
+  it('asks for the user again once requests stop being held back', () => {
+    jest.useFakeTimers();
+    const refetch = jest.fn();
+    useGetUserQuery.mockImplementation(() => ({
+      data: undefined,
+      isError: true,
+      refetch,
+      error: { message: 'moving', response: { status: 503, data: { code: 'ACCOUNT_MOVING' } } },
+    }));
+
+    renderProvider();
+    act(() => {
+      window.dispatchEvent(new CustomEvent('accountMoving'));
+      jest.advanceTimersByTime(4_000);
+      window.dispatchEvent(new CustomEvent('accountMoving'));
+      jest.advanceTimersByTime(4_000);
+    });
+    expect(refetch).not.toHaveBeenCalled();
+    act(() => {
+      jest.advanceTimersByTime(4_500);
+    });
+
+    expect(refetch).toHaveBeenCalledTimes(1);
+    jest.useRealTimers();
+  });
+
+  it('still signs out on any other user lookup failure', () => {
+    useGetUserQuery.mockImplementation(() => ({
+      data: undefined,
+      isError: true,
+      error: { message: 'gone', response: { status: 401 } },
+    }));
+
+    renderProvider();
+
+    expect(mockNavigate).toHaveBeenCalledWith(expect.stringContaining('/login'), { replace: true });
+  });
+});

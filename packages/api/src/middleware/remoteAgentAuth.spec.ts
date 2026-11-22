@@ -469,6 +469,40 @@ describe('createRemoteAgentAuth', () => {
   });
 
   describe('when OIDC verification succeeds', () => {
+    describe('with SSO-only sign-in through bdren.ai', () => {
+      afterEach(() => {
+        delete process.env.BDREN_SSO_ONLY;
+        delete process.env.BDREN_ISSUER;
+      });
+
+      it('accepts a user who signs in through the BDREN issuer', async () => {
+        process.env.BDREN_SSO_ONLY = 'true';
+        process.env.BDREN_ISSUER = BASE_ISSUER;
+        setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+        const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+        const { res } = makeRes();
+
+        await createRemoteAgentAuth(asDeps(makeDeps()))(req as Request, res, mockNext);
+
+        expect(mockNext).toHaveBeenCalledWith();
+      });
+
+      it('refuses a user who does not sign in through the BDREN issuer', async () => {
+        process.env.BDREN_SSO_ONLY = 'true';
+        process.env.BDREN_ISSUER = 'https://auth.bdren.test';
+        setupOidcMocks({ sub: 'sub123', email: 'agent@test.com' });
+        const req = makeReq({ authorization: `Bearer ${FAKE_TOKEN}` });
+        const { res, status, json } = makeRes();
+
+        await createRemoteAgentAuth(asDeps(makeDeps()))(req as Request, res, mockNext);
+
+        expect(status).toHaveBeenCalledWith(401);
+        expect(json).toHaveBeenCalledWith(expect.objectContaining({ code: 'SSO_REQUIRED' }));
+        expect(mockNext).not.toHaveBeenCalled();
+        expect(req.user).toBeUndefined();
+      });
+    });
+
     it('sets req.user and calls next()', async () => {
       setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', exp: 9999999999 });
       const deps = makeDeps();

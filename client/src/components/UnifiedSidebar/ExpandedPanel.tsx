@@ -8,8 +8,8 @@ import type { NavLink } from '~/common';
 import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
 import { useActivePanel, resolveActivePanel, DEFAULT_PANEL } from '~/Providers';
 import { CLOSE_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
-import { Logo } from '~/components/Brand';
 import useNewChat from '~/hooks/Chat/useNewChat';
+import { Logo } from '~/components/Brand';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
