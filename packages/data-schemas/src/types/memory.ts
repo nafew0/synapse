@@ -59,4 +59,6 @@ export interface FormattedMemoriesResult {
   withoutKeys: string;
   totalTokens?: number;
   tokenCountsByKey?: Map<string, number>;
+  /** Current value of each key, so writes can merge into what is saved */
+  valuesByKey?: Map<string, string>;
 }

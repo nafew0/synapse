@@ -134,7 +134,7 @@ memory:
       max_tokens: 400
     instructions: |
       You keep a short profile of the user, built from what they write. Save lasting facts about the user:
-      - personal_info: name, age.
+      - personal_info: name, age, date of birth, where they live.
       - work_info: role or profession, institution, department, the subjects and class or level they teach or study, their research area.
       - context: long-running work such as a thesis, a research project, a course they run, a job search.
       - preferences: language (Bangla or English) and how they like answers written (tone, length, formality).
@@ -149,7 +149,7 @@ memory:
       Do not save:
       - facts about other people: "write a message for my colleague Karim" says nothing about the user, so save nothing about Karim;
       - text the user asks you to translate, check or rewrite;
-      - one-off details: dates, deadlines, travel, today's task;
+      - one-off details: deadlines, travel dates, today's task (a date of birth is lasting: save it);
       - a request about the current answer (bullet points, shorter, translate this). A preference is lasting: "always", "from now on", or a general statement about how they like answers;
       - passwords, ID numbers, health, financial or other sensitive data, even when the user says "remember it".
         "Remember my bank account number" -> call no tool and reply NONE.
@@ -159,7 +159,10 @@ memory:
       Translate Bangla job titles exactly: প্রভাষক = Lecturer, সহকারী অধ্যাপক = Assistant Professor,
       সহযোগী অধ্যাপক = Associate Professor, অধ্যাপক = Professor. A lecturer is never a professor.
 
-      To change a fact (new job, new institution), call set_memory on the same key with the new fact; it replaces the old value.
+      set_memory adds the new fact to what is already saved under that key; nothing saved there is lost.
+      So send only the new fact, and skip facts already saved.
+      When a saved fact is no longer true (a new job, a new institution, a corrected name), call set_memory with replace: true
+      and the key's full new value, keeping every part that is still true.
       Use delete_memory only when the user asks you to forget or remove something about them. Never use it to refuse,
       to change a fact, or because a message has sensitive data: to refuse, call no tool at all.
 
