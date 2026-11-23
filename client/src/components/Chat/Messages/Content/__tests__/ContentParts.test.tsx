@@ -242,9 +242,23 @@ describe('ContentParts — thinking-dot header alignment', () => {
     expect(screen.getByTestId('empty-text')).toHaveAttribute('data-under-header-icon', 'false');
   });
 
-  it('keeps the cursor flush when a memory-artifact row renders above it', () => {
+  it('keeps the memory note out of the way while the reply streams', () => {
     render(<ContentParts {...submittingProps} attachments={[memoryAttachment]} />);
-    expect(screen.getByTestId('empty-text')).toHaveAttribute('data-under-header-icon', 'false');
+    expect(screen.queryByTestId('memory-artifacts')).toBeNull();
+    expect(screen.getByTestId('empty-text')).toHaveAttribute('data-under-header-icon', 'true');
+  });
+
+  it('shows the memory note after the finished reply', () => {
+    render(
+      <ContentParts
+        {...baseProps}
+        content={[{ type: ContentTypes.TEXT, text: 'Hello' } as TMessageContentParts]}
+        attachments={[memoryAttachment]}
+      />,
+    );
+    const text = screen.getByTestId('real-part-text');
+    const memory = screen.getByTestId('memory-artifacts');
+    expect(text.compareDocumentPosition(memory) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('keeps the cursor flush inside a nested activity phase', () => {
