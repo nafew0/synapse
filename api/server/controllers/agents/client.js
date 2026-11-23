@@ -87,6 +87,7 @@ const {
   getRequestMemories,
   getMemoryAgentId,
   createMemoryProcessor,
+  linkMemoryAbort,
   agentHasInlineMemoryTools,
   loadAgent: loadAgentFn,
   createMultiAgentMapper,
@@ -2207,7 +2208,8 @@ class AgentClient extends BaseClient {
       user: this.user ?? req.user?.id,
       tenantId: req.user?.tenantId,
       conversationId: this.conversationId,
-      model: this.model ?? this.options.agent.model_parameters.model,
+      model:
+        req.config?.memory?.agent?.model ?? this.model ?? this.options.agent.model_parameters.model,
       messageId: this.responseMessageId,
       transactions: getTransactionsConfig(req.config),
       endpointTokenConfig: this.options.endpointTokenConfig,
@@ -2247,7 +2249,7 @@ class AgentClient extends BaseClient {
     }
   }
 
-  async runMemory(messages) {
+  async runMemory(messages, signal) {
     try {
       if (this.processMemory == null) {
         return;
@@ -2323,7 +2325,7 @@ class AgentClient extends BaseClient {
       const bufferMessage = new HumanMessage(limitedMemoryInput);
       const collectedUsage = [];
       try {
-        return await this.processMemory([bufferMessage], { collectedUsage });
+        return await this.processMemory([bufferMessage], { signal, collectedUsage });
       } finally {
         await this.recordMemoryUsage(collectedUsage, usageContext);
       }
@@ -3174,6 +3176,7 @@ class AgentClient extends BaseClient {
     let run;
     /** @type {Promise<(TAttachment | null)[] | undefined>} */
     let memoryPromise;
+    let detachMemoryAbort;
     const appConfig = this.options.req.config;
     const balanceConfig = getBalanceConfig(appConfig);
     const transactionsConfig = getTransactionsConfig(appConfig);
@@ -3397,7 +3400,9 @@ class AgentClient extends BaseClient {
         // }
 
         if (this.processMemory) {
-          memoryPromise = this.runMemory(memoryMessages);
+          const memoryAbort = linkMemoryAbort(abortController.signal);
+          detachMemoryAbort = memoryAbort.detach;
+          memoryPromise = this.runMemory(memoryMessages, memoryAbort.signal);
         }
 
         /** Seed calibration state from previous run if encoding matches */
@@ -3682,6 +3687,8 @@ class AgentClient extends BaseClient {
         await Promise.allSettled(this.pendingSubagentEmits);
         this.pendingSubagentEmits = [];
       }
+
+      detachMemoryAbort?.();
 
       try {
         const attachments = await this.awaitMemoryWithTimeout(memoryPromise);

@@ -1,11 +1,14 @@
 import { Types } from 'mongoose';
 import { Tools, MemoryScope } from 'librechat-data-provider';
 import { Run, Providers, GraphEvents } from '@librechat/agents';
+import { logger } from '@librechat/data-schemas';
+import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { IUser } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import {
   processMemory,
   createMemoryProcessor,
+  linkMemoryAbort,
   createMemoryTool,
   getMemoryAgentId,
   getRequestMemories,
@@ -160,6 +163,97 @@ describe('Memory attachment generation fencing', () => {
       },
       { expectedCreatedAt: 1234 },
     );
+  });
+});
+
+describe('linkMemoryAbort', () => {
+  it('cancels extraction when the reply is stopped', () => {
+    const reply = new AbortController();
+    const { signal } = linkMemoryAbort(reply.signal);
+    reply.abort();
+    expect(signal.aborted).toBe(true);
+  });
+
+  it('keeps extraction running when the job aborts after the reply settled', () => {
+    const reply = new AbortController();
+    const { signal, detach } = linkMemoryAbort(reply.signal);
+    detach();
+    reply.abort();
+    expect(signal.aborted).toBe(false);
+  });
+
+  it('starts cancelled when the reply is already stopped', () => {
+    const reply = new AbortController();
+    reply.abort();
+    expect(linkMemoryAbort(reply.signal).signal.aborted).toBe(true);
+  });
+});
+
+describe('Memory run usage and cancellation', () => {
+  const createRunner = async () => {
+    const [, runMemory] = await createMemoryProcessor({
+      res: { headersSent: true, write: jest.fn() } as unknown as Response,
+      userId: 'user-1',
+      messageId: 'response-1',
+      conversationId: 'conversation-1',
+      config: { llmConfig: { provider: Providers.OPENROUTER, model: 'memory-model' } as never },
+      memoryMethods: {
+        setMemory: jest.fn(),
+        deleteMemory: jest.fn(),
+        getFormattedMemories: jest.fn().mockResolvedValue({
+          withKeys: '',
+          withoutKeys: '',
+          totalTokens: 0,
+        }),
+      },
+    });
+    return runMemory;
+  };
+
+  it('collects the usage of each model call in the memory run', async () => {
+    const processStream = jest.fn(async () => {
+      const runConfig = (Run.create as jest.Mock).mock.lastCall[0];
+      runConfig.customHandlers[GraphEvents.CHAT_MODEL_END].handle(GraphEvents.CHAT_MODEL_END, {
+        output: { usage_metadata: { input_tokens: 40, output_tokens: 5 } },
+      });
+      return 'success';
+    });
+    (Run.create as jest.Mock).mockReturnValueOnce({ processStream });
+    const collectedUsage: UsageMetadata[] = [];
+
+    await (
+      await createRunner()
+    )([], { collectedUsage });
+
+    expect(collectedUsage).toEqual([
+      {
+        input_tokens: 40,
+        output_tokens: 5,
+        model: 'memory-model',
+        provider: Providers.OPENROUTER,
+        runId: expect.any(String),
+      },
+    ]);
+  });
+
+  it('stops with the reply: passes the signal and resolves quietly on abort', async () => {
+    const controller = new AbortController();
+    const processStream = jest.fn(
+      (_inputs: unknown, config: { signal: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          config.signal.addEventListener('abort', () => reject(new Error('Aborted')));
+        }),
+    );
+    (Run.create as jest.Mock).mockReturnValueOnce({ processStream });
+    const errorSpy = jest.spyOn(logger, 'error');
+
+    const pending = (await createRunner())([], { signal: controller.signal });
+    await new Promise((resolve) => setImmediate(resolve));
+    controller.abort();
+
+    await expect(pending).resolves.toBeUndefined();
+    expect(processStream.mock.calls[0][1].signal).toBe(controller.signal);
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -697,6 +791,32 @@ describe('createMemoryTool tokenLimit enforcement', () => {
     expect(setMemory).toHaveBeenCalledTimes(2);
   });
 
+  it('treats a persisted key as a replacement in a new tool instance', async () => {
+    const setMemory = jest.fn().mockResolvedValue({ ok: true });
+    /** ~100 tokens; adding this value to its previous version would exceed the
+     *  limit, while replacing it correctly remains within the limit. */
+    const value = 'word '.repeat(100).trim();
+    const firstTool = createMemoryTool({
+      userId: 'user-1',
+      setMemory,
+      tokenLimit: 150,
+    });
+
+    await firstTool.invoke({ key: 'k1', value });
+
+    const secondTool = createMemoryTool({
+      userId: 'user-1',
+      setMemory,
+      tokenLimit: 150,
+      totalTokens: 100,
+      tokenCountsByKey: new Map([['k1', 100]]),
+    });
+
+    await secondTool.invoke({ key: 'k1', value });
+
+    expect(setMemory).toHaveBeenCalledTimes(2);
+  });
+
   it('fires onWrite after a successful set, but not when the write fails', async () => {
     const onWrite = jest.fn();
     const okTool = createMemoryTool({
@@ -728,6 +848,37 @@ describe('createMemoryTool tokenLimit enforcement', () => {
     await tool.invoke({ key: 'k1' });
 
     expect(onWrite).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('memory token limit guidance', () => {
+  it('describes the aggregate limit and never reports negative remaining capacity', async () => {
+    const [, process] = await createMemoryProcessor({
+      res: { headersSent: false, write: jest.fn() } as unknown as Response,
+      userId: 'user-1',
+      messageId: 'message-1',
+      conversationId: 'conversation-1',
+      config: { tokenLimit: 100 },
+      memoryMethods: {
+        setMemory: jest.fn().mockResolvedValue({ ok: true }),
+        deleteMemory: jest.fn().mockResolvedValue({ ok: true }),
+        getFormattedMemories: jest.fn().mockResolvedValue({
+          withKeys: 'existing memory',
+          withoutKeys: 'existing memory',
+          totalTokens: 150,
+          tokenCountsByKey: new Map([['preferences', 150]]),
+        }),
+      },
+    });
+
+    await process([]);
+
+    const runCalls = (Run.create as jest.Mock).mock.calls;
+    const runConfig = runCalls[runCalls.length - 1][0];
+    expect(runConfig.graphConfig.instructions).toContain(
+      'Maximum 100 tokens across all memory values.',
+    );
+    expect(runConfig.graphConfig.additional_instructions).toContain('Remaining capacity: 0 tokens');
   });
 });
 
