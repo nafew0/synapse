@@ -129,6 +129,13 @@ export async function takeFinishedMemory<T>(
 export const memoryInstructions =
   'The system automatically stores important user information and can update or delete memories based on user requests, enabling dynamic memory management.';
 
+/**
+ * Tells the chat model that a background agent saves memories by itself, so it
+ * neither asks the user whether to remember something nor claims it cannot.
+ */
+export const autoMemoryInstructions =
+  'Synapse remembers lasting facts about the user by itself: a background process reads every message and saves them, and the user can see or edit them in Settings. Never ask whether to remember or save something, never offer to, and never say you cannot remember earlier chats. Use the saved facts when they help.';
+
 export const SET_MEMORY_TOOL_NAME = 'set_memory';
 export const DELETE_MEMORY_TOOL_NAME = 'delete_memory';
 

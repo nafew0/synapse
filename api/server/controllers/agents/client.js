@@ -17,6 +17,7 @@ const {
   omitTitleOptions,
   getProviderConfig,
   memoryInstructions,
+  autoMemoryInstructions,
   createTokenCounter,
   applyContextToAgent,
   isMemoryAgentEnabled,
@@ -1775,8 +1776,13 @@ class AgentClient extends BaseClient {
      *  `delete_memory`; everyone else gets the unkeyed values only. */
     /** Partition the loaded memories belong to (the primary agent's). */
     const loadedMemoryAgentId = getMemoryAgentId(this.options.agent);
-    const buildMemoryContext = (text) =>
-      text ? `${memoryInstructions}\n\n# Existing memory about the user:\n${text}` : undefined;
+    const buildMemoryContext = (text, autoSaves) => {
+      const instructions = autoSaves ? autoMemoryInstructions : memoryInstructions;
+      if (text) {
+        return `${instructions}\n\n# Existing memory about the user:\n${text}`;
+      }
+      return autoSaves ? `${instructions}\n\nNothing is saved about this user yet.` : undefined;
+    };
     /** Resolves formatted memories for an agent's own partition. A defined
      *  `memories` means the run-level gates (permission, opt-out, config)
      *  passed; agents on other partitions fetch through the request-scoped
@@ -1845,6 +1851,7 @@ class AgentClient extends BaseClient {
         const partitionMemories = await getAgentPartitionMemories(agent);
         const agentMemoryContext = buildMemoryContext(
           agentHasMemory ? partitionMemories?.withKeys : partitionMemories?.withoutKeys,
+          memoryAgentEnabled && partitionMemories != null,
         );
         if (agentMemoryContext) {
           agentRunContextParts.push(agentMemoryContext);
