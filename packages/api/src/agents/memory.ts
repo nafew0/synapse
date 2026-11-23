@@ -34,9 +34,10 @@ import type { BaseMessage, ToolMessage } from '@librechat/agents/langchain/messa
 import type { DynamicStructuredTool } from '@librechat/agents/langchain/tools';
 import type { TAttachment, MemoryArtifact } from 'librechat-data-provider';
 import type { Response as ServerResponse } from 'express';
+import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { ServerRequest, RunLLMConfig } from '~/types';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
-import { resolveConfigHeaders, createSafeUser } from '~/utils';
+import { resolveConfigHeaders, createSafeUser, writeGuarded } from '~/utils';
 import { checkAccess } from '~/middleware/access';
 import { isMemoryEnabled } from '~/memory';
 import Tokenizer from '~/utils/tokenizer';
@@ -66,6 +67,33 @@ function normalizeMemoryLLMConfig(llmConfig?: Partial<LLMConfig>): SanitizedMemo
     delete config.apiKey;
   }
   return config as SanitizedMemoryLLMConfig;
+}
+
+export interface MemoryRunOptions {
+  signal?: AbortSignal;
+  collectedUsage?: UsageMetadata[];
+}
+
+/**
+ * Links memory extraction to the reply's abort signal for as long as the reply
+ * runs. `completeJob` also aborts that signal on successful completion, so call
+ * `detach` once the reply settles or slow extractions get cancelled.
+ */
+export function linkMemoryAbort(replySignal: AbortSignal): {
+  signal: AbortSignal;
+  detach: () => void;
+} {
+  const controller = new AbortController();
+  const stop = () => controller.abort();
+  if (replySignal.aborted) {
+    stop();
+  } else {
+    replySignal.addEventListener('abort', stop, { once: true });
+  }
+  return {
+    signal: controller.signal,
+    detach: () => replySignal.removeEventListener('abort', stop),
+  };
 }
 
 export const memoryInstructions =
@@ -108,7 +136,7 @@ The \`delete_memory\` tool should only be used in two scenarios:
 
 ${validKeys && validKeys.length > 0 ? `\nVALID KEYS: ${validKeys.join(', ')}` : ''}
 
-${tokenLimit ? `\nTOKEN LIMIT: Maximum ${tokenLimit} tokens per memory value.` : ''}
+${tokenLimit ? `\nTOKEN LIMIT: Maximum ${tokenLimit} tokens across all memory values.` : ''}
 
 When in doubt, and the user hasn't asked to remember or forget anything, END THE TURN IMMEDIATELY.`;
 
@@ -125,6 +153,7 @@ export const createMemoryTool = ({
   charLimit,
   tokenLimit,
   totalTokens = 0,
+  tokenCountsByKey,
   onWrite,
 }: {
   userId: string | ObjectId;
@@ -135,6 +164,7 @@ export const createMemoryTool = ({
   charLimit?: number;
   tokenLimit?: number;
   totalTokens?: number;
+  tokenCountsByKey?: ReadonlyMap<string, number>;
   onWrite?: () => void;
 }): DynamicStructuredTool => {
   /** Running token total, advanced after each successful write. Writes are
@@ -143,10 +173,10 @@ export const createMemoryTool = ({
    *  check against the same stale total and collectively exceed `tokenLimit`. */
   let currentTotalTokens = totalTokens;
   let writeChain: Promise<unknown> = Promise.resolve();
-  /** Tokens this instance has already committed per key. `set_memory` upserts,
-   *  so a repeat write to the same key REPLACES its value — the running total
-   *  must swap the prior contribution for the new one, not add both. */
-  const writtenTokensByKey = new Map<string, number>();
+  /** Token counts are seeded from persisted memory and advanced after each
+   *  successful write. `set_memory` upserts, so every write replaces this
+   *  key's prior contribution instead of adding both values to the total. */
+  const currentTokensByKey = new Map(tokenCountsByKey);
 
   return tool(
     async ({ key, value }) => {
@@ -174,9 +204,9 @@ export const createMemoryTool = ({
           }
 
           const tokenCount = Tokenizer.getTokenCount(value, 'o200k_base');
-          /** Total excluding this key's prior in-instance write, so a same-key
-           *  rewrite is measured as a replacement rather than an addition. */
-          const baseTotalTokens = currentTotalTokens - (writtenTokensByKey.get(key) ?? 0);
+          /** Total excluding this key's prior persisted or in-instance value,
+           *  so a rewrite is measured as a replacement rather than an addition. */
+          const baseTotalTokens = currentTotalTokens - (currentTokensByKey.get(key) ?? 0);
           const remainingTokens = tokenLimit ? tokenLimit - baseTotalTokens : Infinity;
 
           if (tokenLimit && remainingTokens <= 0) {
@@ -233,7 +263,7 @@ export const createMemoryTool = ({
           if (result.ok) {
             if (tokenLimit) {
               currentTotalTokens = newTotalTokens;
-              writtenTokensByKey.set(key, tokenCount);
+              currentTokensByKey.set(key, tokenCount);
             }
             onWrite?.();
             logger.debug(`Memory set for key "${key}" (${tokenCount} tokens) for user "${userId}"`);
@@ -666,6 +696,7 @@ export async function buildInlineMemoryTool({
   const charLimit = memoryConfig?.charLimit as number | undefined;
   const tokenLimit = memoryConfig?.tokenLimit as number | undefined;
   let totalTokens = 0;
+  let tokenCountsByKey: ReadonlyMap<string, number> | undefined;
   if (tokenLimit) {
     try {
       const formatted = await getRequestMemories({
@@ -675,6 +706,7 @@ export async function buildInlineMemoryTool({
         getFormattedMemories: memoryMethods.getFormattedMemories,
       });
       totalTokens = formatted?.totalTokens ?? 0;
+      tokenCountsByKey = formatted?.tokenCountsByKey;
     } catch (error) {
       logger.error('[memory] Failed to load memory token count for set_memory', error);
       /** Fail closed: without the current usage total a configured tokenLimit
@@ -691,9 +723,30 @@ export async function buildInlineMemoryTool({
     charLimit,
     tokenLimit,
     totalTokens,
+    tokenCountsByKey,
     onWrite: () => invalidateRequestMemories(req, memoryAgentId),
   });
 }
+
+/** Collects token usage from the memory run so the caller can record it. */
+const createMemoryUsageHandler = (
+  collectedUsage: UsageMetadata[],
+  llmConfig?: Partial<LLMConfig>,
+): EventHandler => ({
+  handle: (_event, data, metadata) => {
+    const usage = (data as { output?: { usage_metadata?: UsageMetadata } } | undefined)?.output
+      ?.usage_metadata;
+    if (!usage) {
+      return;
+    }
+    const model = metadata?.ls_model_name ?? (llmConfig as { model?: string } | undefined)?.model;
+    collectedUsage.push({
+      ...usage,
+      ...(typeof model === 'string' ? { model } : {}),
+      ...(llmConfig?.provider ? { provider: llmConfig.provider } : {}),
+    });
+  },
+});
 
 export class BasicToolEndHandler implements EventHandler {
   private callback?: ToolEndCallback;
@@ -734,9 +787,12 @@ export async function processMemory({
   llmConfig,
   tokenLimit,
   totalTokens = 0,
+  tokenCountsByKey,
   streamId = null,
   jobCreatedAt,
   user,
+  signal,
+  collectedUsage,
 }: {
   res: ServerResponse;
   setMemory: MemoryMethods['setMemory'];
@@ -752,10 +808,15 @@ export async function processMemory({
   instructions: string;
   tokenLimit?: number;
   totalTokens?: number;
+  tokenCountsByKey?: ReadonlyMap<string, number>;
   llmConfig?: Partial<LLMConfig>;
   streamId?: string | null;
   jobCreatedAt?: number;
   user?: IUser;
+  /** Cancels extraction when the user stops the reply */
+  signal?: AbortSignal;
+  /** Receives the token usage of each model call in the memory run */
+  collectedUsage?: UsageMetadata[];
 }): Promise<(TAttachment | null)[] | undefined> {
   try {
     const memoryTool = createMemoryTool({
@@ -765,6 +826,7 @@ export async function processMemory({
       setMemory,
       validKeys,
       totalTokens,
+      tokenCountsByKey,
     });
     const deleteMemoryTool = createDeleteMemoryTool({
       userId,
@@ -778,7 +840,7 @@ export async function processMemory({
     let memoryStatus = `# Existing memory:\n${memory ?? 'No existing memories'}`;
 
     if (tokenLimit) {
-      const remainingTokens = tokenLimit - currentMemoryTokens;
+      const remainingTokens = Math.max(tokenLimit - currentMemoryTokens, 0);
       memoryStatus = `# Memory Status:
 Current memory usage: ${currentMemoryTokens} tokens
 Token limit: ${tokenLimit} tokens
@@ -870,6 +932,9 @@ ${memory ?? 'No existing memories'}`;
     });
     const customHandlers = {
       [GraphEvents.TOOL_END]: new BasicToolEndHandler(memoryCallback),
+      ...(collectedUsage
+        ? { [GraphEvents.CHAT_MODEL_END]: createMemoryUsageHandler(collectedUsage, llmConfig) }
+        : {}),
     };
 
     /**
@@ -933,6 +998,7 @@ ${memory ?? 'No existing memories'}`;
       streamMode: 'values',
       recursionLimit: 3,
       version: 'v2',
+      ...(signal ? { signal } : {}),
     } as const;
 
     const inputs = {
@@ -951,6 +1017,10 @@ ${memory ?? 'No existing memories'}`;
     }
     return await Promise.all(artifactPromises);
   } catch (error) {
+    if (signal?.aborted) {
+      logger.debug('[MemoryAgent] Stopped with the reply', { userId, conversationId, messageId });
+      return;
+    }
     logger.error(
       `[MemoryAgent] Failed to process memory | userId: ${userId} | conversationId: ${conversationId} | messageId: ${messageId}`,
       { error },
@@ -981,18 +1051,30 @@ export async function createMemoryProcessor({
   streamId?: string | null;
   jobCreatedAt?: number;
   user?: IUser;
-}): Promise<[string, (messages: BaseMessage[]) => Promise<(TAttachment | null)[] | undefined>]> {
+}): Promise<
+  [
+    string,
+    (
+      messages: BaseMessage[],
+      options?: MemoryRunOptions,
+    ) => Promise<(TAttachment | null)[] | undefined>,
+  ]
+> {
   const { validKeys, instructions, llmConfig, tokenLimit } = config;
   const finalInstructions = instructions || getDefaultInstructions(validKeys, tokenLimit);
 
-  const { withKeys, withoutKeys, totalTokens } = await memoryMethods.getFormattedMemories({
-    userId,
-    agentId,
-  });
+  const { withKeys, withoutKeys, totalTokens, tokenCountsByKey } =
+    await memoryMethods.getFormattedMemories({
+      userId,
+      agentId,
+    });
 
   return [
     withoutKeys,
-    async function (messages: BaseMessage[]): Promise<(TAttachment | null)[] | undefined> {
+    async function (
+      messages: BaseMessage[],
+      options?: MemoryRunOptions,
+    ): Promise<(TAttachment | null)[] | undefined> {
       try {
         return await processMemory({
           res,
@@ -1008,10 +1090,13 @@ export async function createMemoryProcessor({
           conversationId,
           memory: withKeys,
           totalTokens: totalTokens || 0,
+          tokenCountsByKey,
           instructions: finalInstructions,
           setMemory: memoryMethods.setMemory,
           deleteMemory: memoryMethods.deleteMemory,
           user,
+          signal: options?.signal,
+          collectedUsage: options?.collectedUsage,
         });
       } catch (error) {
         logger.error('Memory Agent failed to process memory', error);
@@ -1064,7 +1149,7 @@ async function handleMemoryArtifact({
       { expectedCreatedAt: jobCreatedAt },
     );
   } else {
-    res.write(`event: attachment\ndata: ${JSON.stringify(attachment)}\n\n`);
+    writeGuarded(res, `event: attachment\ndata: ${JSON.stringify(attachment)}\n\n`);
   }
   return attachment;
 }

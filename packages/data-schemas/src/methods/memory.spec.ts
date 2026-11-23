@@ -126,17 +126,33 @@ describe('memory partitions', () => {
     expect(created.ok).toBe(true);
   });
 
+  it('createMemory never overwrites an existing entry and stores one document per key', async () => {
+    await methods.createMemory({ userId, key: 'context', value: 'original', tokenCount: 1 });
+    const results = await Promise.allSettled([
+      methods.createMemory({ userId, key: 'context', value: 'dupe 1', tokenCount: 9 }),
+      methods.createMemory({ userId, key: 'context', value: 'dupe 2', tokenCount: 9 }),
+    ]);
+
+    expect(results.every((result) => result.status === 'rejected')).toBe(true);
+    const stored = await MemoryEntry.find({ userId, key: 'context' }).lean();
+    expect(stored).toHaveLength(1);
+    expect(stored[0].value).toBe('original');
+    expect(stored[0].tokenCount).toBe(1);
+  });
+
   it('formats memories per partition with partition-scoped totals', async () => {
     await methods.setMemory({ userId, key: 'one', value: 'personal one', tokenCount: 5 });
     await methods.setMemory({ userId, key: 'two', value: 'agent two', tokenCount: 7, agentId });
 
     const personal = await methods.getFormattedMemories({ userId });
     expect(personal.totalTokens).toBe(5);
+    expect(personal.tokenCountsByKey).toEqual(new Map([['one', 5]]));
     expect(personal.withoutKeys).toContain('personal one');
     expect(personal.withoutKeys).not.toContain('agent two');
 
     const partitionA = await methods.getFormattedMemories({ userId, agentId });
     expect(partitionA.totalTokens).toBe(7);
+    expect(partitionA.tokenCountsByKey).toEqual(new Map([['two', 7]]));
     expect(partitionA.withKeys).toContain('"key": "two"');
     expect(partitionA.withKeys).not.toContain('personal one');
   });

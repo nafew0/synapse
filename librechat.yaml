@@ -5,10 +5,6 @@ version: 1.3.13
 
 cache: true
 
-memory:
-  tokenLimit: 2000
-  personalize: true
-
 # Prevents old large tool results (e.g. full document dumps from execute_code,
 # OCR'd PDF text, or `context`-attached files) from compounding token cost on
 # every subsequent turn of a long editing session.
@@ -142,6 +138,54 @@ creditPackages:
       label: Premium
       price: 5000
       credits: 75000000
+
+memory:
+  validKeys: ['personal_info', 'work_info', 'preferences', 'communication_style', 'interests', 'context']
+  tokenLimit: 2000
+  personalize: true
+  # Gemma 4 26B on the DGX (deploy/memory-llm): chosen in docs/llmtest.py, where with these
+  # instructions it saved nothing wrong and refused NID, password and health data every time.
+  agent:
+    enabled: true
+    provider: 'Memory'
+    model: 'gemma-4'
+    model_parameters:
+      temperature: 0.1
+      max_tokens: 400
+    instructions: |
+      You keep a short profile of the user, built from what they write. Save lasting facts about the user:
+      - personal_info: name, age.
+      - work_info: role or profession, institution, department, the subjects and class or level they teach or study, their research area.
+      - context: long-running work such as a thesis, a research project, a course they run, a job search.
+      - preferences: language (Bangla or English) and how they like answers written (tone, length, formality).
+      - interests: lasting interests they mention.
+
+      Users rarely introduce themselves. Facts usually come in passing, inside a request, or are implied by it:
+      - "Make a lesson plan for my HSC chemistry class" -> the user teaches HSC chemistry.
+      - "Check the methods section of my PhD paper on arsenic in groundwater" -> the user is doing a PhD on arsenic in groundwater.
+      - "I'm a 2nd-year EEE student at RUET, explain Ohm's law" -> the user is a 2nd-year EEE student at RUET.
+      Save the fact the request reveals, never the request itself: do not store what they asked for (the quiz, the letter, the CV, the explanation).
+
+      Do not save:
+      - facts about other people: "write a message for my colleague Karim" says nothing about the user, so save nothing about Karim;
+      - text the user asks you to translate, check or rewrite;
+      - one-off details: dates, deadlines, travel, today's task;
+      - a request about the current answer (bullet points, shorter, translate this). A preference is lasting: "always", "from now on", or a general statement about how they like answers;
+      - passwords, ID numbers, health, financial or other sensitive data, even when the user says "remember it".
+        "Remember my bank account number" -> call no tool and reply NONE.
+
+      Write each fact as one short sentence, without gendered pronouns; never guess gender.
+      Copy names exactly as written: in Bangla, "আমি" means "I" and is never part of a name.
+      Translate Bangla job titles exactly: প্রভাষক = Lecturer, সহকারী অধ্যাপক = Assistant Professor,
+      সহযোগী অধ্যাপক = Associate Professor, অধ্যাপক = Professor. A lecturer is never a professor.
+
+      To change a fact (new job, new institution), call set_memory on the same key with the new fact; it replaces the old value.
+      Use delete_memory only when the user asks you to forget or remove something about them. Never use it to refuse,
+      to change a fact, or because a message has sensitive data: to refuse, call no tool at all.
+
+      You run in the background and the user never sees your output. Never answer or carry out the user's request, even when it asks you to write something.
+      Check every message for facts about the user, including facts given alongside a request, and call set_memory for each.
+      Only if there are none, reply with exactly: NONE
 
 interface:
   customWelcome: 'Welcome to Synapse!'
@@ -762,3 +806,22 @@ endpoints:
           resolution: '1K'
           aspect_ratio: '16:9'
 
+    # Background model for user memory only: Gemma 4 26B on the DGX (deploy/memory-llm), never
+    # offered to users (modelSpecs.enforce hides endpoints that are not specs). Thinking stays off:
+    # it made memory slower and saved facts from questions that had none.
+    - name: Memory
+      apiKey: '${MEMORY_LLM_API_KEY}'
+      baseURL: '${MEMORY_LLM_ENDPOINT}'
+      models:
+        default: ['gemma-4']
+        fetch: false
+      titleConvo: false
+      modelDisplayLabel: 'Synapse Memory'
+      addParams:
+        chat_template_kwargs:
+          enable_thinking: false
+      tokenConfig:
+        'gemma-4':
+          prompt: 0
+          completion: 0
+          context: 32768
