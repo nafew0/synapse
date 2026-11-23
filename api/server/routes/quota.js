@@ -1,8 +1,9 @@
 const express = require('express');
 const { logger } = require('@librechat/data-schemas');
+const { createPlanUsageHandler } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const { getMemberQuota, resolveQuotaAccount } = require('~/server/services/usageQuota');
-const { getRequestAllowance } = require('~/server/services/bdrenAllowance');
+const { getRequestAllowance, bdrenConfig } = require('~/server/services/bdrenAllowance');
 
 const router = express.Router();
 
@@ -34,5 +35,17 @@ router.get('/', requireJwtAuth, async (req, res) => {
     return res.status(500).json({ error: 'Failed to load usage quota' });
   }
 });
+
+/** The caller's plan (bdren.ai package or Synapse package) and AI allowance, for Settings. */
+router.get(
+  '/plan',
+  requireJwtAuth,
+  createPlanUsageHandler({
+    linked: () => bdrenConfig.enabled,
+    resolveAccount: resolveQuotaAccount,
+    getAllowance: (user) => getRequestAllowance(user),
+    getMemberQuota,
+  }),
+);
 
 module.exports = router;

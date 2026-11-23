@@ -77,6 +77,24 @@ export const useGetUserQuota = (
   });
 };
 
+/**
+ * The signed-in user's plan and AI allowance for Settings. Always refetched on mount, so opening
+ * Settings shows a plan changed on bdren.ai as soon as its webhook or allowance refresh has landed.
+ */
+export const useGetPlanUsage = (
+  config?: UseQueryOptions<t.TPlanUsageResponse>,
+): QueryObserverResult<t.TPlanUsageResponse> => {
+  const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
+  return useQuery<t.TPlanUsageResponse>([QueryKeys.quotaPlan], () => dataService.getPlanUsage(), {
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchOnMount: 'always',
+    staleTime: 0,
+    ...config,
+    enabled: (config?.enabled ?? true) === true && queriesEnabled,
+  });
+};
+
 export const useGetSearchEnabledQuery = (
   config?: UseQueryOptions<boolean>,
 ): QueryObserverResult<boolean> => {

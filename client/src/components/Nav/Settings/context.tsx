@@ -30,6 +30,7 @@ export function useSettingsContext(): SettingsContextValue {
    *  presence of meters is itself the signal that a policy applies. */
   const quotaQuery = useGetUserQuota({ enabled: user != null });
   const quotaEnabled = (quotaQuery.data?.meters?.length ?? 0) > 0;
+  const quotaInCredits = quotaQuery.data?.unit === 'credits';
   const langfuseConnectionAccess = startupConfig?.langfuseConnectionAccess === true;
   const adminPanelURL = startupConfig?.adminPanelURL ?? '';
   const isLocalProvider = user?.provider === 'local';
@@ -46,6 +47,7 @@ export function useSettingsContext(): SettingsContextValue {
     () => ({
       balanceEnabled,
       quotaEnabled,
+      quotaInCredits,
       hasAnyPersonalizationFeature,
       hasMemoryOptOut,
       hasStatefulCodeSessions,
@@ -62,6 +64,7 @@ export function useSettingsContext(): SettingsContextValue {
     [
       balanceEnabled,
       quotaEnabled,
+      quotaInCredits,
       hasAnyPersonalizationFeature,
       hasMemoryOptOut,
       hasStatefulCodeSessions,

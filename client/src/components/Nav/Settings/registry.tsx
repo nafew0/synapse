@@ -27,6 +27,7 @@ import StatefulWorkspaceDefault from './StatefulWorkspaceDefault';
 import { ManageFiles } from '../SettingsTabs/Data/ManageFiles';
 import { ClearChats } from '../SettingsTabs/Data/ClearChats';
 import { TokenCredits, AutoRefill } from './BillingControls';
+import PlanUsage from '../SettingsTabs/Plan';
 import AdminPanel from '../SettingsTabs/General/AdminPanel';
 import SharedLinks from '../SettingsTabs/Data/SharedLinks';
 import { EngineSTTSetting } from './SpeechControls';
@@ -405,6 +406,17 @@ export const registry: SettingEntry[] = [
     show: (ctx) => ctx.isLocalProvider && ctx.twoFactorEnabled,
     Component: BackupCodesItem,
   },
+  // Account · Plan & usage
+  {
+    id: 'planUsage',
+    tab: ACCOUNT,
+    section: 'plan',
+    labelKey: 'com_ui_plan_usage',
+    keywords: ['plan', 'package', 'upgrade', 'bkash', 'allowance', 'usage', 'quota', 'limit'],
+    /** A credit allowance is shown here; a token-policy one keeps its own rows under Billing. */
+    show: (ctx) => !ctx.quotaEnabled || ctx.quotaInCredits,
+    Component: PlanUsage,
+  },
   // Account · Billing
   {
     id: 'usageQuota',
@@ -414,7 +426,7 @@ export const registry: SettingEntry[] = [
     keywords: ['quota', 'limit', 'allowance', 'tokens', 'images', 'usage'],
     /** Quota and the credit ledger are different units — weighted billing tokens
      *  vs. real cost — so exactly one of these two rows ever renders. */
-    show: (ctx) => ctx.quotaEnabled,
+    show: (ctx) => ctx.quotaEnabled && !ctx.quotaInCredits,
     Component: TokenCredits,
   },
   {

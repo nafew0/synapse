@@ -33,6 +33,7 @@ export type SectionId =
   | 'danger'
   | 'profile'
   | 'security'
+  | 'plan'
   | 'billing';
 
 export interface SettingsContextValue {
@@ -41,6 +42,8 @@ export interface SettingsContextValue {
    *  `balanceEnabled`, since quota and the credit ledger are different units
    *  and only one is ever shown. */
   quotaEnabled: boolean;
+  /** The member's quota is metered in credits, so Plan & usage shows it rather than the token rows. */
+  quotaInCredits: boolean;
   hasAnyPersonalizationFeature: boolean;
   hasMemoryOptOut: boolean;
   hasStatefulCodeSessions: boolean;
@@ -155,6 +158,7 @@ export const TABS: TabMeta[] = [
     icon: createElement(UserIcon),
     sections: [
       { id: 'profile', labelKey: 'com_ui_settings_section_profile' },
+      { id: 'plan', labelKey: 'com_ui_plan_usage' },
       { id: 'security', labelKey: 'com_ui_settings_section_security' },
       { id: 'billing', labelKey: 'com_ui_settings_section_billing' },
       { id: 'danger', labelKey: 'com_ui_settings_section_danger_zone', danger: true },

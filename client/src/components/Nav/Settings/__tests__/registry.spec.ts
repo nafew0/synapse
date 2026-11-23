@@ -10,6 +10,7 @@ const validTabSections = new Map(TABS.map((t) => [t.id, new Set(t.sections.map((
 const settingsContext: SettingsContextValue = {
   balanceEnabled: false,
   quotaEnabled: false,
+  quotaInCredits: false,
   hasAnyPersonalizationFeature: false,
   hasMemoryOptOut: false,
   hasStatefulCodeSessions: false,
@@ -134,5 +135,17 @@ describe('billing rows', () => {
     const ids = shown({ balanceEnabled: false, quotaEnabled: false });
     expect(ids).not.toContain('tokenCredits');
     expect(ids).not.toContain('usageQuota');
+  });
+
+  it('shows a credit allowance under Plan & usage instead of the token rows', () => {
+    const ids = shown({ balanceEnabled: false, quotaEnabled: true, quotaInCredits: true });
+    expect(ids).toContain('planUsage');
+    expect(ids).not.toContain('usageQuota');
+  });
+
+  it('keeps a token-policy allowance under Billing and hides Plan & usage', () => {
+    const ids = shown({ balanceEnabled: false, quotaEnabled: true, quotaInCredits: false });
+    expect(ids).toContain('usageQuota');
+    expect(ids).not.toContain('planUsage');
   });
 });

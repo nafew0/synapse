@@ -898,6 +898,30 @@ export type TQuotaResponse = {
   meters: TQuotaMeterState[];
 };
 
+/** Who pays for the plan: bdren.ai's Free plan, the person's own package, or their institution. */
+export type TPlanSource = 'free' | 'personal' | 'institution';
+
+export type TPlanUsageResponse = {
+  /** Whether this server takes plans from bdren.ai (`BDREN_ISSUER` and the allowance link set). */
+  linked: boolean;
+  /** Whether bdren.ai answers for this user; `false` for local logins or a support override. */
+  managed: boolean;
+  plan: {
+    name: string;
+    /** `null` for a Synapse package, which has no bdren.ai source. */
+    source: TPlanSource | null;
+    institutionName: string | null;
+    /** ISO instant the paid term ends, when bdren.ai gave one. */
+    endsAt: string | null;
+    upgradeUrl: string | null;
+    /** bdren.ai could not be reached and the last or Free answer is shown. */
+    stale: boolean;
+    unlimited: boolean;
+  } | null;
+  /** The AI allowance windows, week first, in credits with taka alongside. */
+  periods: TQuotaMeterState[];
+};
+
 export type TBalanceResponse = {
   tokenCredits: number;
   // Automatic refill settings

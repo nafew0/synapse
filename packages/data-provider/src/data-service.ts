@@ -204,6 +204,10 @@ export function getUserQuota(): Promise<t.TQuotaResponse> {
   return request.get(endpoints.quota());
 }
 
+export function getPlanUsage(): Promise<t.TPlanUsageResponse> {
+  return request.get(endpoints.quotaPlan());
+}
+
 export const updateTokenCount = (text: string) => {
   return request.post(endpoints.tokenizer(), { arg: text });
 };
