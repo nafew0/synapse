@@ -16,6 +16,7 @@ export enum QueryKeys {
   models = 'models',
   balance = 'balance',
   quota = 'quota',
+  quotaPlan = 'quotaPlan',
   endpoints = 'endpoints',
   tokenConfig = 'tokenConfig',
   presets = 'presets',

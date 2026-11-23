@@ -19,3 +19,4 @@ export * from './meter';
 export * from './managed';
 export * from './usage';
 export * from './admin';
+export * from './plan';
