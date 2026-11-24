@@ -1,6 +1,7 @@
 import type { BdrenConfig } from './types';
 
-const DEFAULT_UPGRADE_URL = 'https://bdren.ai/profile/billing';
+/** bdren.ai's pricing page, at its "Buy online with bKash" section; used when bdren.ai sends no `upgrade_url`. */
+const DEFAULT_UPGRADE_URL = 'https://bdren.ai/pricing#subscribe';
 /** Free at ৳30 a month and ৳135 a dollar; a stand-in until bdren.ai answers, never unlimited. */
 const DEFAULT_FALLBACK_MONTHLY = 222_000;
 const DEFAULT_FALLBACK_WEEKLY = 78_000;
