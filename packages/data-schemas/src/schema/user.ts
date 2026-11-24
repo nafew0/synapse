@@ -78,6 +78,10 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
     openidIssuer: {
       type: String,
     },
+    openidEndedSessions: {
+      type: [{ _id: false, sid: { type: String }, endedAt: { type: Date, required: true } }],
+      default: undefined,
+    },
     samlId: {
       type: String,
     },

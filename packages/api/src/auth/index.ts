@@ -12,3 +12,4 @@ export * from './openidRoleSync';
 export * from './userDocCache';
 export * from './reuse';
 export * from './sso';
+export * from './backchannel';
