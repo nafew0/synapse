@@ -126,7 +126,12 @@ describe('GET /api/quota/plan', () => {
       }),
     ).get('/api/quota/plan');
 
-    expect(res.body.plan).toMatchObject({ name: 'Free', source: 'free', stale: true });
+    expect(res.body.plan).toMatchObject({
+      name: 'Free',
+      source: 'free',
+      stale: true,
+      upgradeUrl: 'https://bdren.ai/pricing#subscribe',
+    });
   });
 
   it('with the bdren.ai link off, shows the Synapse package and says it is not linked', async () => {
