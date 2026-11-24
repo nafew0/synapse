@@ -94,6 +94,9 @@ describe('route guards', () => {
     oauth.get('/:provider/callback', (_req, res) => {
       res.sendStatus(200);
     });
+    oauth.post('/:provider/backchannel-logout', (_req, res) => {
+      res.sendStatus(200);
+    });
     server.use('/oauth', oauth);
     return server;
   }
@@ -124,6 +127,11 @@ describe('route guards', () => {
       ].map(async (path) => (await request(app(true)).get(path)).status),
     );
     expect(statuses).toEqual([200, 200, 403, 403, 403]);
+  });
+
+  it("keeps the IdP's back-channel logout open while on", async () => {
+    const res = await request(app(true)).post('/oauth/openid/backchannel-logout');
+    expect(res.status).toBe(200);
   });
 });
 

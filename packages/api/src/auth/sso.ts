@@ -132,8 +132,13 @@ export function refuseWhenSsoOnly(
   };
 }
 
-/** OAuth router paths that stay open while SSO-only is on: the OpenID login and its error page. */
-const OPENID_OAUTH_PATHS = new Set(['/openid', '/openid/callback', '/error']);
+/** OAuth router paths that stay open while SSO-only is on: the OpenID login, its logout notice and error page. */
+const OPENID_OAUTH_PATHS = new Set([
+  '/openid',
+  '/openid/callback',
+  '/openid/backchannel-logout',
+  '/error',
+]);
 
 /** Mounted on the `/oauth` router: every provider but OpenID is refused while SSO-only is on. */
 export function refuseOtherProvidersWhenSsoOnly(

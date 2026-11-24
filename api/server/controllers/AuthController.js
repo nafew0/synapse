@@ -10,6 +10,7 @@ const {
   sendSsoRefusal,
   findOpenIDUser,
   getOpenIdIssuer,
+  isOpenIdSessionEnded,
   buildOpenIDRefreshParams,
 } = require('@librechat/api');
 const {
@@ -71,9 +72,39 @@ const sanitizeUserForAuthResponse = (user) => {
     totpSecret: _ts,
     backupCodes: _bc,
     federatedTokens: _ft,
+    openidEndedSessions: _oes,
     ...safeUser
   } = source;
   return safeUser;
+};
+
+const OPENID_SESSION_COOKIES = [
+  'refreshToken',
+  'openid_access_token',
+  'openid_id_token',
+  'openid_user_id',
+  'token_provider',
+];
+
+/**
+ * The IdP ended this sign-in (back-channel logout): revoke the refresh token there (best effort),
+ * drop the stored tokens and cookies, and refuse the refresh so the client signs out.
+ */
+const refuseEndedOpenIDSession = async (req, res, refreshToken) => {
+  try {
+    await openIdClient.tokenRevocation(getOpenIdConfig(), refreshToken, {
+      token_type_hint: 'refresh_token',
+    });
+  } catch (err) {
+    logger.warn(
+      `[refreshController] Could not revoke the ended session's refresh token: ${err.message}`,
+    );
+  }
+  if (req.session) {
+    delete req.session.openidTokens;
+  }
+  OPENID_SESSION_COOKIES.forEach((name) => res.clearCookie(name));
+  return res.status(403).send('OpenID session ended');
 };
 
 const getValidOpenIDReuseUserId = (parsedCookies) => {
@@ -184,6 +215,12 @@ const refreshController = async (req, res) => {
       const reuseUserId = reusableSessionToken ? getValidOpenIDReuseUserId(parsedCookies) : null;
       if (reuseUserId) {
         const user = await getUserById(reuseUserId, AUTH_REFRESH_USER_PROJECTION);
+        if (
+          user &&
+          isOpenIdSessionEnded(user.openidEndedSessions, jwt.decode(reusableSessionToken.token))
+        ) {
+          return refuseEndedOpenIDSession(req, res, refreshToken);
+        }
         if (user) {
           const cloudFrontCookiesSet = setCloudFrontAuthCookies(req, res, user);
           logger.debug('[refreshController] OpenID session token reused', {
@@ -236,6 +273,10 @@ const refreshController = async (req, res) => {
           `[refreshController] Redirecting to /login: error=${error ?? 'null'}, user=${user ? 'exists' : 'null'}`,
         );
         return res.status(401).redirect('/login');
+      }
+
+      if (isOpenIdSessionEnded(user.openidEndedSessions, claims)) {
+        return refuseEndedOpenIDSession(req, res, refreshToken);
       }
 
       // Handle migration: update user with openidId if found by email without openidId

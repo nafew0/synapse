@@ -7,6 +7,15 @@ import type { Document, Types } from 'mongoose';
 import type { MemberUsagePackage } from './usagePackage';
 import { CursorPaginationParams, InstitutionMembershipStatus } from '~/common';
 
+/**
+ * An IdP sign-in session that has ended. With `sid`, tokens carrying that session id are refused;
+ * without it, every token authenticated at or before `endedAt` is.
+ */
+export interface OpenIdEndedSession {
+  sid?: string;
+  endedAt: Date;
+}
+
 export interface IUser extends Document {
   _id: Types.ObjectId;
   /**
@@ -35,6 +44,8 @@ export interface IUser extends Document {
   appleId?: string;
   plugins?: string[];
   openidIssuer?: string;
+  /** IdP sign-in sessions ended by back-channel logout; tokens from them are refused. */
+  openidEndedSessions?: OpenIdEndedSession[];
   twoFactorEnabled?: boolean;
   totpSecret?: string;
   backupCodes?: Array<{

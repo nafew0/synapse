@@ -5,8 +5,10 @@ const { randomState } = require('openid-client');
 const { logger } = require('@librechat/data-schemas');
 const { ErrorTypes } = require('librechat-data-provider');
 const {
+  isEnabled,
   buildOAuthFailureLog,
   createOpenIDCallbackAuthenticator,
+  createOpenIdBackchannelLogout,
   createSetBalanceConfig,
   getOAuthFailureMessage,
   redirectToAuthFailure,
@@ -14,7 +16,14 @@ const {
 } = require('@librechat/api');
 const { checkDomainAllowed, loginLimiter, logHeaders } = require('~/server/middleware');
 const { createOAuthHandler } = require('~/server/controllers/auth/oauth');
-const { findBalanceByUser, upsertBalanceFields } = require('~/models');
+const {
+  findUser,
+  endOpenIdSession,
+  findBalanceByUser,
+  upsertBalanceFields,
+  deleteAllUserSessions,
+} = require('~/models');
+const { getOpenIdConfig } = require('~/strategies');
 const { getAppConfig } = require('~/server/services/Config');
 
 const setBalanceConfig = createSetBalanceConfig({
@@ -37,6 +46,25 @@ const authFailureRedirectOptions = {
 
 router.use(logHeaders);
 router.use(refuseOtherProvidersWhenSsoOnly());
+
+/**
+ * IdP back-channel logout (server-to-server). Registered before `loginLimiter`: every call comes
+ * from the IdP's address, so a per-IP login limit would drop logouts.
+ */
+router.post(
+  '/openid/backchannel-logout',
+  createOpenIdBackchannelLogout({
+    getOpenIdConfig,
+    findUser,
+    endOpenIdSession,
+    afterSessionEnded: async (userId) => {
+      if (!isEnabled(process.env.OPENID_REUSE_TOKENS)) {
+        await deleteAllUserSessions({ userId });
+      }
+    },
+  }),
+);
+
 router.use(loginLimiter);
 
 const oauthHandler = createOAuthHandler();
