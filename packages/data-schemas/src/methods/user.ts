@@ -5,10 +5,19 @@ import {
   type RefillIntervalUnit,
   type StatefulCodeEnvironment,
 } from 'librechat-data-provider';
-import type { IUser, BalanceConfig, CreateUserRequest, UserDeleteResult } from '~/types';
+import type {
+  IUser,
+  BalanceConfig,
+  CreateUserRequest,
+  UserDeleteResult,
+  OpenIdEndedSession,
+} from '~/types';
 import type { CacheStore } from '~/types';
 import { escapeRegExp } from '~/utils/string';
 import { signPayload } from '~/crypto';
+
+/** How many ended IdP sessions a user keeps; older entries drop off. */
+export const MAX_OPENID_ENDED_SESSIONS = 50;
 
 /** Default JWT session expiry: 15 minutes in milliseconds */
 export const DEFAULT_SESSION_EXPIRY: number = 1000 * 60 * 15;
@@ -45,6 +54,7 @@ export function createUserMethods(
     returnUser?: boolean,
   ) => Promise<mongoose.Types.ObjectId | Partial<IUser>>;
   updateUser: (userId: string, updateData: Partial<IUser>) => Promise<IUser | null>;
+  endOpenIdSession: (userId: string, ended: OpenIdEndedSession) => Promise<boolean>;
   acceptTerms: (userId: string) => Promise<IUser | null>;
   searchUsers: ({
     searchPattern,
@@ -288,6 +298,24 @@ export function createUserMethods(
     }).lean<IUser>();
     await invalidateAuthUserDocCache(userId);
     return updated;
+  }
+
+  /**
+   * Records an ended IdP session on the user, once per `sid`, keeping the newest
+   * `MAX_OPENID_ENDED_SESSIONS` entries. Returns whether a new entry was written.
+   */
+  async function endOpenIdSession(userId: string, ended: OpenIdEndedSession): Promise<boolean> {
+    const User = mongoose.models.User;
+    const notYetEnded = ended.sid ? { 'openidEndedSessions.sid': { $ne: ended.sid } } : {};
+    const entry = ended.sid
+      ? { sid: ended.sid, endedAt: ended.endedAt }
+      : { endedAt: ended.endedAt };
+    const result = await User.updateOne(
+      { _id: userId, ...notYetEnded },
+      { $push: { openidEndedSessions: { $each: [entry], $slice: -MAX_OPENID_ENDED_SESSIONS } } },
+    );
+    await invalidateAuthUserDocCache(userId);
+    return result.modifiedCount > 0;
   }
 
   async function invalidateAuthUserDocCache(userId: string): Promise<void> {
@@ -699,6 +727,7 @@ export function createUserMethods(
     countUsers,
     createUser,
     updateUser,
+    endOpenIdSession,
     acceptTerms,
     searchUsers,
     getUserById,

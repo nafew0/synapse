@@ -16,6 +16,7 @@ const {
   invalidateCachedAuthUserDoc,
   setCachedAuthUserDoc,
   getHttpsProxyAgent,
+  isOpenIdSessionEnded,
   math,
 } = require('@librechat/api');
 const { updateUser, findUser, isAgentTriggerPrincipalActive } = require('~/models');
@@ -178,6 +179,10 @@ const openIdJwtLogin = (openIdConfig) => {
               message: 'Account deletion is in progress',
               code: 'ACCOUNT_DELETION_IN_PROGRESS',
             });
+            return;
+          }
+          if (isOpenIdSessionEnded(user.openidEndedSessions, payload)) {
+            done(null, false, { message: 'Session ended' });
             return;
           }
           /** Absent on the full doc means local user; null skips getUserPrincipals' fallback lookup */
