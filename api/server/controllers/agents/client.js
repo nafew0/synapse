@@ -2242,8 +2242,10 @@ class AgentClient extends BaseClient {
     } catch (error) {
       logger.error('[AgentClient] Failed to record memory usage', error);
     }
+    /** Extraction usually ends after the reply, once the client is disposed: tag with the ids
+     *  captured when it started. */
     if (this.taskType) {
-      await this.tagTaskType();
+      await this.tagTaskType(usageContext);
     }
   }
 
@@ -2336,25 +2338,29 @@ class AgentClient extends BaseClient {
    * Stamps this request's ledger rows with the kind of task it was, decided from the tools and skills
    * it used. Runs when the reply settles; later charges for the same reply (title, labels, memory)
    * call it again once a type is set, so they carry it too. Never throws.
+   * @param {{ user?: string, conversationId?: string, messageId?: string }} [ids] Ids captured
+   *   before the client is disposed, for charges that settle after the request ends.
    */
-  async tagTaskType() {
+  async tagTaskType(ids) {
     try {
-      const req = this.options.req;
-      const user = this.user ?? req.user?.id;
-      if (!user || !this.conversationId || !this.responseMessageId) {
+      const req = this.options?.req;
+      const user = ids?.user ?? this.user ?? req?.user?.id;
+      const conversationId = ids?.conversationId ?? this.conversationId;
+      const messageId = ids?.messageId ?? this.responseMessageId;
+      if (!user || !conversationId || !messageId) {
         return;
       }
       this.taskSince ??= new Date();
       this.taskType ??= classifyTask(
         extractTaskSignals(
           this.contentParts,
-          Boolean(req.body?.files?.length || this.options.attachments),
+          Boolean(req?.body?.files?.length || this.options?.attachments),
         ),
       );
       await tagRequestTaskType({
         user,
-        conversationId: this.conversationId,
-        messageId: this.responseMessageId,
+        conversationId,
+        messageId,
         taskType: this.taskType,
         since: this.taskSince,
       });
