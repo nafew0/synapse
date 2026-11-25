@@ -2355,7 +2355,7 @@ class AgentClient extends BaseClient {
       this.taskType ??= classifyTask(
         extractTaskSignals(
           this.contentParts,
-          Boolean(req?.body?.files?.length || this.options?.attachments),
+          Boolean(req?.body?.files?.length || this.options?.attachments?.length),
         ),
       );
       await tagRequestTaskType({
