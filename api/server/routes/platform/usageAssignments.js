@@ -1,6 +1,6 @@
 const express = require('express');
 const {
-  allowanceSubjectFor,
+  limitsManagedElsewhere,
   requirePackagesEditable,
   createUsageAssignmentHandlers,
 } = require('@librechat/api');
@@ -16,7 +16,7 @@ const handlers = createUsageAssignmentHandlers({
   getUserById: db.getUserById,
   updateUser: db.updateUser,
   recordAuditEntry: db.recordAuditEntry,
-  limitsManagedElsewhere: (user) => allowanceSubjectFor(user, bdrenConfig) != null,
+  limitsManagedElsewhere: (user) => limitsManagedElsewhere(user, bdrenConfig),
 });
 
 const router = express.Router();

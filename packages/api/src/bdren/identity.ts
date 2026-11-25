@@ -27,3 +27,14 @@ export function allowanceSubjectFor(
   }
   return { userId: String(userId), account, issuer, subject: user.openidId };
 }
+
+/**
+ * Whether bdren.ai supplies this user's limits. A Synapse member package is then only a support
+ * override: it needs a reason and an end, and lasts at most 90 days.
+ */
+export function limitsManagedElsewhere(
+  user: IdentityUser | null | undefined,
+  config: BdrenConfig,
+): boolean {
+  return allowanceSubjectFor(user, config) != null;
+}

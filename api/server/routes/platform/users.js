@@ -1,5 +1,6 @@
 const express = require('express');
 const { runAsSystem } = require('@librechat/data-schemas');
+const { limitsManagedElsewhere, readBdrenOverride } = require('@librechat/api');
 const { requireJwtAuth } = require('~/server/middleware');
 const requirePlatformSuperadmin = require('~/server/middleware/platformAdmin');
 const { refuseManaged } = require('~/server/middleware/ssoOnly');
@@ -8,6 +9,7 @@ const { resendUserVerificationEmail } = require('~/server/services/AuthService')
 const { isPlatformAdminEmail } = require('~/server/services/platformAdmin');
 const { resolveMemberRole } = require('~/server/services/accountRoles');
 const { getMemberUsageSummary } = require('~/server/services/institutionUsage');
+const { bdrenConfig } = require('~/server/services/bdrenAllowance');
 const {
   HttpError,
   listPlatformInstitutionMembers,
@@ -97,6 +99,7 @@ async function resolvePlatformMutationTarget(id) {
 }
 
 async function mapPlatformUser(user) {
+  const managed = limitsManagedElsewhere(user, bdrenConfig);
   const institution = user.tenantId
     ? await runAsSystem(() =>
         models.Institution.findOne({ tenantId: user.tenantId }).select('name').lean().exec(),
@@ -127,8 +130,13 @@ async function mapPlatformUser(user) {
       ? {
           packageKey: user.usagePackage.packageKey,
           expiresAt: user.usagePackage.expiresAt?.toISOString?.() ?? null,
+          ...(user.usagePackage.override
+            ? { override: true, reason: user.usagePackage.reason ?? null }
+            : null),
         }
       : null,
+    limitsManagedElsewhere: managed,
+    bdrenOverride: managed ? await readBdrenOverride(user._id.toString()) : null,
   };
 }
 

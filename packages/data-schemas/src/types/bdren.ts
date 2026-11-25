@@ -6,6 +6,15 @@ export interface BdrenAllowanceWindow {
   end: string | null;
 }
 
+/** A bdren.ai superadmin's override in effect for this person (never its reason or who set it). */
+export interface BdrenAllowanceOverride {
+  scope: string;
+  kind: string;
+  starts_at: string;
+  ends_at: string;
+  package: { name: string; slug: string; kind: string } | null;
+}
+
 export interface BdrenAllowancePayload {
   product: string;
   user: { subject: string; email?: string };
@@ -29,6 +38,7 @@ export interface BdrenAllowancePayload {
   windows: Record<string, BdrenAllowanceWindow>;
   renews?: string;
   upgrade_url?: string;
+  override?: BdrenAllowanceOverride | null;
   etag: string;
 }
 

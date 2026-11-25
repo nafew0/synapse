@@ -33,6 +33,16 @@ const payloadSchema = z.object({
   windows: z.record(z.string(), windowSchema),
   renews: z.string().optional(),
   upgrade_url: z.string().optional(),
+  override: z
+    .object({
+      scope: z.string(),
+      kind: z.string(),
+      starts_at: z.string(),
+      ends_at: z.string(),
+      package: z.object({ name: z.string(), slug: z.string(), kind: z.string() }).nullable(),
+    })
+    .nullable()
+    .optional(),
   etag: z.string(),
 });
 
