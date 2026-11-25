@@ -14,6 +14,10 @@ export interface IInstitution extends Document {
   ocrAccess?: boolean;
   usagePolicyVersion?: number;
   usagePackage?: InstitutionUsagePackage | null;
+  browserControl?: {
+    extensionEnabled?: boolean;
+    blockedDomains?: string[];
+  };
   limits?: {
     maxActiveMembers?: number | null;
   };

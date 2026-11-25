@@ -854,6 +854,11 @@ export type TAcceptTermsResponse = {
 
 export type TBannerResponse = TBanner | null;
 
+/** A one-time code the browser extension exchanges for its sign-in token. */
+export type TBrowserExtensionCode = { code: string; expiresAt: string };
+
+export type TBrowserExtensionSignOut = { removed: number };
+
 export type TUpdateFeedbackRequest = {
   feedback?: TMinimalFeedback;
 };

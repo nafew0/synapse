@@ -63,6 +63,11 @@ import { createBalanceModel } from './balance';
 import { createMessageModel } from './message';
 import { createActionModel } from './action';
 import { createBannerModel } from './banner';
+import {
+  createBrowserExtensionCredentialModel,
+  createBrowserExtensionReportModel,
+  createBrowserExtensionUsageModel,
+} from './browserExtension';
 import { createPresetModel } from './preset';
 import { createPromptModel } from './prompt';
 import { createMemoryModel } from './memory';
@@ -101,6 +106,9 @@ export function createModels(mongoose: typeof import('mongoose')): {
   Assistant: ReturnType<typeof createAssistantModel>;
   File: ReturnType<typeof createFileModel>;
   Banner: ReturnType<typeof createBannerModel>;
+  BrowserExtensionCredential: ReturnType<typeof createBrowserExtensionCredentialModel>;
+  BrowserExtensionUsage: ReturnType<typeof createBrowserExtensionUsageModel>;
+  BrowserExtensionReport: ReturnType<typeof createBrowserExtensionReportModel>;
   BannerView: ReturnType<typeof createBannerViewModel>;
   Key: ReturnType<typeof createKeyModel>;
   PluginAuth: ReturnType<typeof createPluginAuthModel>;
@@ -172,6 +180,9 @@ export function createModels(mongoose: typeof import('mongoose')): {
     Assistant: createAssistantModel(mongoose),
     File: createFileModel(mongoose),
     Banner: createBannerModel(mongoose),
+    BrowserExtensionCredential: createBrowserExtensionCredentialModel(mongoose),
+    BrowserExtensionUsage: createBrowserExtensionUsageModel(mongoose),
+    BrowserExtensionReport: createBrowserExtensionReportModel(mongoose),
     BannerView: createBannerViewModel(mongoose),
     Key: createKeyModel(mongoose),
     PluginAuth: createPluginAuthModel(mongoose),

@@ -1393,6 +1393,14 @@ export function markBannerSeen(bannerId: string): Promise<void> {
   return request.post(endpoints.bannerSeen(bannerId));
 }
 
+export function createBrowserExtensionCode(): Promise<t.TBrowserExtensionCode> {
+  return request.post(endpoints.browserExtensionCodes());
+}
+
+export function signOutBrowserExtensions(): Promise<t.TBrowserExtensionSignOut> {
+  return request.delete(endpoints.browserExtensionTokens());
+}
+
 export function dismissBanner(bannerId: string): Promise<void> {
   return request.post(endpoints.bannerDismiss(bannerId));
 }
