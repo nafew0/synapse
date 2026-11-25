@@ -18,6 +18,7 @@ const {
   getProviderConfig,
   memoryInstructions,
   autoMemoryInstructions,
+  memoryTextForPrompt,
   createTokenCounter,
   applyContextToAgent,
   isMemoryAgentEnabled,
@@ -1761,12 +1762,25 @@ class AgentClient extends BaseClient {
      *  `delete_memory`; everyone else gets the unkeyed values only. */
     /** Partition the loaded memories belong to (the primary agent's). */
     const loadedMemoryAgentId = getMemoryAgentId(this.options.agent);
-    const buildMemoryContext = (text, autoSaves) => {
+    /** The user's last two messages pick which saved facts reach the prompt. */
+    const recentUserTexts = [];
+    for (let i = orderedMessages.length - 1; i >= 0 && recentUserTexts.length < 2; i--) {
+      if (orderedMessages[i].isCreatedByUser) {
+        recentUserTexts.unshift(orderedMessages[i].text ?? '');
+      }
+    }
+    const buildMemoryContext = ({ text, partial, hasSaved }, autoSaves) => {
       const instructions = autoSaves ? autoMemoryInstructions : memoryInstructions;
       if (text) {
-        return `${instructions}\n\n# Existing memory about the user:\n${text}`;
+        const scope = partial
+          ? '\nOnly the saved facts that look relevant to this conversation are listed.'
+          : '';
+        return `${instructions}${scope}\n\n# Existing memory about the user:\n${text}`;
       }
-      return autoSaves ? `${instructions}\n\nNothing is saved about this user yet.` : undefined;
+      if (!autoSaves) {
+        return undefined;
+      }
+      return hasSaved ? instructions : `${instructions}\n\nNothing is saved about this user yet.`;
     };
     /** Resolves formatted memories for an agent's own partition. A defined
      *  `memories` means the run-level gates (permission, opt-out, config)
@@ -1835,7 +1849,11 @@ class AgentClient extends BaseClient {
       if (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory) {
         const partitionMemories = await getAgentPartitionMemories(agent);
         const agentMemoryContext = buildMemoryContext(
-          agentHasMemory ? partitionMemories?.withKeys : partitionMemories?.withoutKeys,
+          memoryTextForPrompt({
+            memories: partitionMemories,
+            keyed: agentHasMemory,
+            recentMessages: recentUserTexts,
+          }),
           memoryAgentEnabled && partitionMemories != null,
         );
         if (agentMemoryContext) {
@@ -1948,7 +1966,7 @@ class AgentClient extends BaseClient {
   }
 
   /**
-   * @returns {Promise<{ withKeys?: string; withoutKeys?: string } | undefined>}
+   * @returns {Promise<{ withKeys?: string; withoutKeys?: string; valuesByKey?: Map<string, string> } | undefined>}
    */
   async useMemory() {
     const user = this.options.req.user;
@@ -1981,13 +1999,13 @@ class AgentClient extends BaseClient {
 
     if (!isMemoryAgentEnabled(memoryConfig)) {
       try {
-        const { withKeys, withoutKeys } = await getRequestMemories({
+        const { withKeys, withoutKeys, valuesByKey } = await getRequestMemories({
           req: this.options.req,
           userId,
           agentId: memoryAgentId,
           getFormattedMemories: db.getFormattedMemories,
         });
-        return { withKeys, withoutKeys };
+        return { withKeys, withoutKeys, valuesByKey };
       } catch (error) {
         logger.error(
           '[api/server/controllers/agents/client.js #useMemory] Error loading memories',
@@ -2109,8 +2127,9 @@ class AgentClient extends BaseClient {
 
     this.processMemory = processMemory;
     let withKeys = withoutKeys;
+    let valuesByKey;
     try {
-      ({ withKeys } = await getRequestMemories({
+      ({ withKeys, valuesByKey } = await getRequestMemories({
         req: this.options.req,
         userId,
         agentId: memoryAgentId,
@@ -2122,7 +2141,7 @@ class AgentClient extends BaseClient {
         error,
       );
     }
-    return { withKeys, withoutKeys };
+    return { withKeys, withoutKeys, valuesByKey };
   }
 
   /**
