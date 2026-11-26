@@ -314,8 +314,11 @@ function judgeExisting(
   return match.organizationId === organizationId ? null : 'email_in_other_organization';
 }
 
+/** The ZITADEL calls that only read users. */
+export type ZitadelUserReader = Pick<ZitadelClient, 'getUser' | 'findUsersByEmail'>;
+
 async function planIdentity(
-  zitadel: ZitadelClient,
+  zitadel: ZitadelUserReader,
   userId: string,
   email: string,
   organizationId: string,
@@ -335,6 +338,20 @@ async function planIdentity(
   }
   const reason = judgeExisting(matches[0], email, organizationId);
   return reason ? { kind: 'conflict', reason } : { kind: 'link', userId: matches[0].userId };
+}
+
+/** The ZITADEL user an unmigrated account would sign in as (its own id or a linkable account), without writing anything. */
+export async function findZitadelSubject(
+  zitadel: ZitadelUserReader,
+  userId: string,
+  email: string,
+  organizationId: string,
+): Promise<{ subject: string } | { missing: true } | { conflict: ConflictReason }> {
+  const plan = await planIdentity(zitadel, userId, normalizeEmail(email), organizationId);
+  if (plan.kind === 'conflict') {
+    return { conflict: plan.reason };
+  }
+  return plan.kind === 'create' ? { missing: true } : { subject: plan.userId };
 }
 
 /** After ZITADEL said "already exists": an earlier run's user, the same person by username, or a conflict. */

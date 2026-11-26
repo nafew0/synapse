@@ -9,8 +9,14 @@ require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 
 const mongoose = require('mongoose');
-const { withDatabase, isProductionDbName, exportMembersForBdren } = require('@librechat/api');
+const {
+  withDatabase,
+  isProductionDbName,
+  createZitadelClient,
+  exportMembersForBdren,
+} = require('@librechat/api');
 
+const TOKEN_ENV = 'ZITADEL_MIGRATION_TOKEN';
 const PRODUCTION_FLAG = '--i-know-this-is-production';
 
 const USAGE = `Usage: node config/export-members-for-bdren.js --out <file> [options]
@@ -19,6 +25,12 @@ const USAGE = `Usage: node config/export-members-for-bdren.js --out <file> [opti
   --db <name>                Database to read (replaces the database in MONGO_URI).
   ${PRODUCTION_FLAG}  Required for a database whose name contains "prod".
   --issuer <url>             BDREN OpenID issuer (default OPENID_ISSUER).
+  --org-map <file>           JSON {"<tenantId>": "<bdren.ai organization id>"} for institutions
+                             without a stored bdrenOrganizationId (nothing is written to the database).
+  --lookup-zitadel           Also export people still on password login whose ZITADEL account
+                             already exists (same id, or the same verified email). Needs ${TOKEN_ENV}.
+  --zitadel-url <url>        ZITADEL address (default ZITADEL_URL, else the issuer).
+  --org-id <id>              ZITADEL organization a linkable account must be in (default ZITADEL_DEFAULT_ORG_ID).
 
   Only counts are printed; the file holds names and emails.`;
 
@@ -54,6 +66,18 @@ function readArgs(argv) {
       case '--issuer':
         args.issuer = take();
         break;
+      case '--org-map':
+        args.orgMap = take();
+        break;
+      case '--lookup-zitadel':
+        args.lookupZitadel = true;
+        break;
+      case '--zitadel-url':
+        args.zitadelUrl = take();
+        break;
+      case '--org-id':
+        args.orgId = take();
+        break;
       default:
         throw new Error(`Unknown option ${argv[i]}`);
     }
@@ -66,6 +90,38 @@ const configuredSuperadmins = () =>
     .split(',')
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean);
+
+function readOrgMap(file) {
+  if (!file) {
+    return undefined;
+  }
+  const map = JSON.parse(fs.readFileSync(path.resolve(file), 'utf8'));
+  const valid =
+    map &&
+    typeof map === 'object' &&
+    !Array.isArray(map) &&
+    Object.values(map).every((id) => typeof id === 'string' && id.trim());
+  if (!valid) {
+    throw new Error('--org-map must be {"<tenantId>": "<bdren.ai organization id>"}');
+  }
+  return map;
+}
+
+function zitadelLookup(args, issuer) {
+  if (!args.lookupZitadel) {
+    return undefined;
+  }
+  const token = process.env[TOKEN_ENV];
+  const organizationId = args.orgId || process.env.ZITADEL_DEFAULT_ORG_ID;
+  if (!token) {
+    throw new Error(`--lookup-zitadel needs ${TOKEN_ENV}`);
+  }
+  if (!organizationId) {
+    throw new Error('--lookup-zitadel needs --org-id or ZITADEL_DEFAULT_ORG_ID');
+  }
+  const baseUrl = args.zitadelUrl || process.env.ZITADEL_URL || issuer;
+  return { client: createZitadelClient({ baseUrl, token }), organizationId };
+}
 
 /** Writes `data` readable by the owner only, also when the file already existed. */
 function writePrivate(file, data) {
@@ -116,6 +172,8 @@ async function main() {
   const result = await exportMembersForBdren(mongoose.connection.db, {
     issuer,
     staffEmails: configuredSuperadmins(),
+    organizationIds: readOrgMap(args.orgMap),
+    zitadel: zitadelLookup(args, issuer),
   });
   const file = path.resolve(args.out);
   writePrivate(file, `${JSON.stringify(result, null, 2)}\n`);

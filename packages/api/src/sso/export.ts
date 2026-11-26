@@ -5,15 +5,15 @@ import {
 } from '@librechat/data-schemas';
 import type { IInstitution } from '@librechat/data-schemas';
 import type { Types, mongo } from 'mongoose';
-import type { BdrenInstitutionLink, MigratingUser } from './migrate';
-import { isStaff, loadStaff, profileNames } from './migrate';
+import type { BdrenInstitutionLink, MigratingUser, ZitadelUserReader } from './migrate';
+import { findZitadelSubject, isStaff, loadStaff, profileNames } from './migrate';
 import { normalizeOpenIdIssuer } from '~/auth/openid';
 
 export const MEMBER_EXPORT_FORMAT = 'synapse-members/1';
 
 /** One migrated person as bdren.ai's `provision_user` would see them at sign-in. */
 export interface ExportedPerson {
-  /** ZITADEL subject (`openidId`; the Synapse `_id` for migrated accounts). */
+  /** ZITADEL subject (`openidId`, or the ZITADEL user found for an unmigrated account). */
   subject: string;
   issuer: string;
   email: string;
@@ -37,6 +37,8 @@ export interface ExportedOrganization {
 export type PersonSkip =
   | 'platform_staff'
   | 'not_migrated'
+  | 'no_zitadel_account'
+  | 'zitadel_conflict'
   | 'other_issuer'
   | 'removed'
   | 'institution_closed'
@@ -59,6 +61,13 @@ export interface MemberExportOptions {
   issuer: string;
   /** Superadmins named only by configuration (`PLATFORM_SUPERADMIN_EMAILS`). */
   staffEmails?: string[];
+  /** bdren.ai organization id by tenant, for institutions whose `bdrenOrganizationId` is not stored. */
+  organizationIds?: Record<string, string>;
+  /**
+   * Includes accounts still on password login when ZITADEL already holds them (same id, or one
+   * linkable account with the same verified email in `organizationId`). Read-only on both sides.
+   */
+  zitadel?: { client: ZitadelUserReader; organizationId: string };
   now?: () => Date;
 }
 
@@ -101,16 +110,20 @@ function institutionSkip(institution: InstitutionRow): PersonSkip | null {
   return institution.bdrenOrganizationId ? null : 'institution_not_linked';
 }
 
+const isMigrated = (user: ExportingUser): boolean =>
+  user.provider === 'openid' && Boolean(user.openidId);
+
 function personSkip(
   user: ExportingUser,
   issuer: string,
   staff: Awaited<ReturnType<typeof loadStaff>>,
+  lookup: boolean,
 ): PersonSkip | null {
   if (isStaff(user, staff)) {
     return 'platform_staff';
   }
-  if (user.provider !== 'openid' || !user.openidId) {
-    return 'not_migrated';
+  if (!isMigrated(user)) {
+    return lookup && user.provider === 'local' ? null : 'not_migrated';
   }
   if (normalizeOpenIdIssuer(user.openidIssuer ?? undefined) !== issuer) {
     return 'other_issuer';
@@ -121,10 +134,32 @@ function personSkip(
   return null;
 }
 
-function toPerson(user: ExportingUser, issuer: string): ExportedPerson {
+async function resolveSubject(
+  user: ExportingUser,
+  zitadel: MemberExportOptions['zitadel'],
+): Promise<{ subject: string } | { skip: PersonSkip }> {
+  if (isMigrated(user)) {
+    return { subject: String(user.openidId) };
+  }
+  if (!zitadel) {
+    return { skip: 'not_migrated' };
+  }
+  const found = await findZitadelSubject(
+    zitadel.client,
+    String(user._id),
+    user.email ?? '',
+    zitadel.organizationId,
+  );
+  if ('subject' in found) {
+    return found;
+  }
+  return { skip: 'missing' in found ? 'no_zitadel_account' : 'zitadel_conflict' };
+}
+
+function toPerson(user: ExportingUser, issuer: string, subject: string): ExportedPerson {
   const names = profileNames(user);
   return {
-    subject: String(user.openidId),
+    subject,
     issuer,
     email: (user.email ?? '').trim().toLowerCase(),
     emailVerified: user.emailVerified === true,
@@ -163,9 +198,18 @@ export async function exportMembersForBdren(
       .toArray(),
     loadStaff(db, options.staffEmails),
   ]);
-  const byTenant = new Map(institutions.map((institution) => [institution.tenantId, institution]));
+  const byTenant = new Map(
+    institutions.map((institution) => [
+      institution.tenantId,
+      {
+        ...institution,
+        bdrenOrganizationId:
+          options.organizationIds?.[institution.tenantId] ?? institution.bdrenOrganizationId,
+      },
+    ]),
+  );
   const organizations = new Map<string, ExportedOrganization>(
-    institutions.filter(isLinked).map((institution) => [
+    [...byTenant.values()].filter(isLinked).map((institution) => [
       institution.tenantId,
       {
         organizationId: String(institution.bdrenOrganizationId),
@@ -185,8 +229,11 @@ export async function exportMembersForBdren(
   for await (const user of cursor) {
     const tenantId = String(user.tenantId);
     const institution = byTenant.get(tenantId) as InstitutionRow;
-    const skip = personSkip(user, issuer, staff) ?? institutionSkip(institution);
-    if (skip) {
+    const resolved =
+      personSkip(user, issuer, staff, Boolean(options.zitadel)) ?? institutionSkip(institution);
+    const identity = resolved ? { skip: resolved } : await resolveSubject(user, options.zitadel);
+    if ('skip' in identity) {
+      const skip = identity.skip;
       skippedPeople[skip] = (skippedPeople[skip] ?? 0) + 1;
       if (skip === 'institution_closed' || skip === 'institution_not_linked') {
         skippedInstitutions.set(tenantId, (skippedInstitutions.get(tenantId) ?? 0) + 1);
@@ -194,7 +241,7 @@ export async function exportMembersForBdren(
       continue;
     }
     const organization = organizations.get(tenantId) as ExportedOrganization;
-    const person = toPerson(user, issuer);
+    const person = toPerson(user, issuer, identity.subject);
     organization.people.push(person);
     organization.counts[person.role === 'admin' ? 'admins' : 'members'] += 1;
     if (person.status === 'suspended') {
@@ -211,7 +258,7 @@ export async function exportMembersForBdren(
       people: organization.people.sort(byRoleThenEmail),
     })),
     skipped: {
-      institutions: institutions
+      institutions: [...byTenant.values()]
         .filter((institution) => !isLinked(institution))
         .map((institution) => ({
           tenantId: institution.tenantId,

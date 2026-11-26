@@ -1,5 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import type { ZitadelUser } from './zitadel';
+import type { ZitadelUserReader } from './migrate';
 import { MEMBER_EXPORT_FORMAT, exportMembersForBdren } from './export';
 
 const ISSUER = 'https://auth.bdren.test';
@@ -152,5 +154,89 @@ describe('exportMembersForBdren', () => {
     await exportMembersForBdren(db(), { issuer: ISSUER });
 
     expect(await db().collection('users').findOne({ _id: user._id })).toEqual(before);
+  });
+
+  describe('with a ZITADEL lookup for people still on password login', () => {
+    const ZITADEL_ORG = 'org-default';
+    const local = (tenantId: string, email: string, extra: Record<string, unknown> = {}) =>
+      migrated(tenantId, email, {
+        provider: 'local',
+        openidId: undefined,
+        openidIssuer: undefined,
+        ...extra,
+      });
+
+    function reader(users: ZitadelUser[]): ZitadelUserReader & { calls: string[] } {
+      const calls: string[] = [];
+      return {
+        calls,
+        getUser: async (userId) => {
+          calls.push(userId);
+          return users.find((user) => user.userId === userId) ?? null;
+        },
+        findUsersByEmail: async (email) => {
+          calls.push(email);
+          return users.filter((user) => user.email === email);
+        },
+      };
+    }
+
+    const zitadelUser = (userId: string, email: string, extra: Partial<ZitadelUser> = {}) => ({
+      userId,
+      email,
+      username: email,
+      organizationId: ZITADEL_ORG,
+      emailVerified: true,
+      ...extra,
+    });
+
+    it('exports them under the ZITADEL account they will sign in as, and skips the rest', async () => {
+      const resumed = local('learn', 'same-id@learn.test', { role: 'INSTITUTION_ADMIN' });
+      const linked = local('learn', 'by-email@learn.test');
+      const missing = local('learn', 'new@learn.test');
+      const clash = local('learn', 'clash@learn.test');
+      const done = migrated('learn', 'done@learn.test');
+      await db().collection('users').insertMany([resumed, linked, missing, clash, done]);
+      const zitadel = reader([
+        zitadelUser(String(resumed._id), 'same-id@learn.test'),
+        zitadelUser('z-linked', 'by-email@learn.test'),
+        zitadelUser('z-clash', 'clash@learn.test', { organizationId: 'org-other' }),
+      ]);
+
+      const result = await exportMembersForBdren(db(), {
+        issuer: ISSUER,
+        zitadel: { client: zitadel, organizationId: ZITADEL_ORG },
+      });
+
+      const learn = result.organizations.find((org) => org.tenantId === 'learn');
+      expect(learn?.people.map((person) => [person.email, person.subject, person.role])).toEqual([
+        ['same-id@learn.test', String(resumed._id), 'admin'],
+        ['by-email@learn.test', 'z-linked', 'member'],
+        ['done@learn.test', String(done._id), 'member'],
+      ]);
+      expect(result.skipped.people).toEqual({ no_zitadel_account: 1, zitadel_conflict: 1 });
+      expect(zitadel.calls).not.toContain(String(done._id));
+    });
+
+    it('takes bdren.ai organization ids from the map without asking ZITADEL for skipped people', async () => {
+      const legacy = local('legacy', 'l@legacy.test');
+      const closed = local('test01', 'c@test.test');
+      await db().collection('users').insertMany([legacy, closed]);
+      const zitadel = reader([zitadelUser(String(legacy._id), 'l@legacy.test')]);
+      const before = await db().collection('institutions').find({}).toArray();
+
+      const result = await exportMembersForBdren(db(), {
+        issuer: ISSUER,
+        organizationIds: { legacy: 'org-legacy' },
+        zitadel: { client: zitadel, organizationId: ZITADEL_ORG },
+      });
+
+      const org = result.organizations.find((entry) => entry.tenantId === 'legacy');
+      expect(org?.organizationId).toBe('org-legacy');
+      expect(org?.people.map((person) => person.subject)).toEqual([String(legacy._id)]);
+      expect(result.skipped.people).toEqual({ institution_closed: 1 });
+      expect(zitadel.calls).not.toContain(String(closed._id));
+      expect(await db().collection('institutions').find({}).toArray()).toEqual(before);
+    });
   });
 });
