@@ -2,9 +2,10 @@ import sharp from 'sharp';
 import { HARD_MAX_TOOL_RESULT_CHARS } from '@librechat/agents';
 
 /**
- * Every tool result of one model turn shares a single {@link HARD_MAX_TOOL_RESULT_CHARS} budget,
- * and the SDK drops all of them when the total is over. A quarter of it lets a turn read three
- * images (a scan and two crops) with room for their text lines.
+ * The images read in one model turn share one {@link HARD_MAX_TOOL_RESULT_CHARS} budget (the
+ * patched SDK projects them with twice that, and keeps half for images), and every image past
+ * the total is dropped. A quarter each lets a turn read four images, such as a grid and two crops.
+ * The configured `maxToolResultChars` caps tool text only, not these images.
  */
 const MAX_IMAGE_BASE64_CHARS = Math.floor(HARD_MAX_TOOL_RESULT_CHARS / 4);
 
