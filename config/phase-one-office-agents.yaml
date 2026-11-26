@@ -294,10 +294,13 @@ master:
   # budget is about 81K: older consumed tool results are masked at roughly 80% of it and older
   # turns are summarised past it, so no call crosses 100K. (contextPruning does not run while
   # summarization is on.) maxToolResultChars caps one tool result at 10,000 characters.
+  # maxTokens must be set: without it the usage quota caps output at its 4,096 default, and a
+  # scanned page's build step (about 5.4K reasoning plus 3.4K of script) ended empty at 4,096.
   model_parameters:
     reasoning_effort: medium
     maxContextTokens: 90000
     maxToolResultChars: 10000
+    maxTokens: 32000
   tools: [ask_user_question, execute_code, file_search, search_web, read_web_page, read_document]
   skills_enabled: true
   subagents: { enabled: true, allowSelf: false }
