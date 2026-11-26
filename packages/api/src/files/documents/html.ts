@@ -2,6 +2,7 @@ import yauzl from 'yauzl';
 import { excelMimeTypes, megabyte } from 'librechat-data-provider';
 import { tryLibreOfficePreview } from './libreoffice';
 import { assertSafeZipSize } from './zipSafety';
+import { previewChartTitles } from './charts';
 
 /**
  * Maximum decompressed size we'll accept from a single PPTX entry. Mirrors the
@@ -1566,7 +1567,7 @@ export async function pptxToHtml(buffer: Buffer): Promise<string> {
    * the empty-render case and reveals this slide-list fallback so the
    * user always gets readable content. Manual e2e on PR #12934. */
   const slideListBody = await renderPptxSlidesBodyForBuffer(buffer);
-  const cdnDoc = await pptxToHtmlViaCdn(buffer, slideListBody);
+  const cdnDoc = await pptxToHtmlViaCdn(await previewChartTitles(buffer), slideListBody);
   /* Combined size budget: if base64 binary + slide-list fallback +
    * wrapper would exceed the cache cap, drop CDN entirely and ship
    * the slide-list standalone. Same pattern as the DOCX dispatcher's
