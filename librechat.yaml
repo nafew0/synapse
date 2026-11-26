@@ -690,6 +690,13 @@ endpoints:
     # raise their own limit (recursion_limit in config/phase-one-office-agents.yaml);
     # every other agent keeps the 50-step default.
     maxRecursionLimit: 150
+    # A single tool call's arguments (a build script, a file's text) may stream up to 256 KB
+    # before the SDK aborts it as runaway (default 64 KB; create_file 128 KB). The 32,000-token
+    # output limit on the specs and the Office Assistant (roughly 100-130 KB) is then reached
+    # first, so a long multi-page document is never cut off by this guard.
+    maxToolCallArgBytes: 262144
+    maxToolCallArgBytesByTool:
+      create_file: 262144
     capabilities:
       - 'subagents'
       - 'execute_code'
