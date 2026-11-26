@@ -348,7 +348,8 @@ speech:
     openai:
       url: "https://openrouter.ai/api/v1/audio/transcriptions"
       apiKey: "${OPENROUTER_KEY}"
-      model: "x-ai/grok-stt-1.0"
+      model: "x-ai/grok-stt-2.0"
+      language: "bn"
   speechTab:
     conversationMode: true
     advancedMode: false
