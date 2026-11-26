@@ -17,6 +17,7 @@ import {
 import { UnifiedSidebar, SIDEBAR_TRANSITION } from '~/components/UnifiedSidebar';
 import KeyboardShortcutsDialog from '~/components/Nav/KeyboardShortcutsDialog';
 import KeyboardDeleteDialog from '~/components/Nav/KeyboardDeleteDialog';
+import { UpgradeDialog } from '~/components/Upgrade';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import useKeyboardShortcuts from '~/hooks/useKeyboardShortcuts';
 import useSidebarState from '~/hooks/Nav/useSidebarState';
@@ -129,6 +130,7 @@ export default function Root() {
               </div>
             </PromptGroupsProvider>
             <KeyboardShortcutsProvider />
+            <UpgradeDialog />
           </AgentsMapContext.Provider>
           {config?.interface?.termsOfService?.modalAcceptance === true && (
             <TermsAndConditionsModal

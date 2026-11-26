@@ -1,5 +1,6 @@
 import { atom, selectorFamily } from 'recoil';
 import { TAttachment } from 'librechat-data-provider';
+import type { TQuotaExceeded } from '~/components/Messages/Content/QuotaNotice';
 import { atomWithLocalStorage } from './utils';
 import { BadgeItem } from '~/common';
 
@@ -73,6 +74,15 @@ const requestedSettingsTab = atom<string | null>({
   default: null,
 });
 
+/**
+ * A usage-limit refusal that just arrived in this session, so the upgrade dialog can open
+ * once for it. Set only from the live error path: reloaded messages never open it.
+ */
+const quotaUpgradePrompt = atom<TQuotaExceeded | null>({
+  key: 'quotaUpgradePrompt',
+  default: null,
+});
+
 export type KeyboardDeleteTarget = {
   conversationId: string;
   title: string;
@@ -111,6 +121,7 @@ export default {
   isEditingBadges,
   showShortcutsDialog,
   requestedSettingsTab,
+  quotaUpgradePrompt,
   keyboardDeleteTarget,
   customShortcuts,
   shortcutsEnabled,
