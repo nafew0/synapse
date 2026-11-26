@@ -5,6 +5,7 @@ import type { IMongoFile, AppConfig, IUser } from '@librechat/data-schemas';
 import type { FilterQuery, QueryOptions, ProjectionType } from 'mongoose';
 import type { Request as ServerRequest } from 'express';
 
+import { isDeferredCodeFile } from '~/files/code/deferred';
 import { TOOL_RESOURCE_KEYS } from './orphans';
 
 /** Removes runtime-only file records before persisted Agent resources enter tool initialization. */
@@ -101,7 +102,8 @@ const addFileToResource = ({
  * preparation gives one file several roles at once — a report that is searchable through RAG
  * and also sits in the sandbox so it can be edited — so the checks are independent rather than
  * mutually exclusive:
- * - execute_code: files with a code-environment ref (`codeEnvRef`)
+ * - execute_code: files with a code-environment ref (`codeEnvRef`), and images the model sees,
+ *   which are copied in only when a sandbox call needs them (`deferCodeFiles`)
  * - file_search: files marked as embedded
  * - image_edit: image files in the request file set with dimensions
  * @param params - Parameters object
@@ -121,7 +123,7 @@ const categorizeFileForToolResources = ({
   requestFileSet: Set<string>;
   processedResourceFiles: Set<string>;
 }): void => {
-  if (file.metadata?.codeEnvRef || file.metadata?.codeEnvRefs) {
+  if (file.metadata?.codeEnvRef || file.metadata?.codeEnvRefs || isDeferredCodeFile(file)) {
     addFileToResource({
       file,
       resourceType: EToolResources.execute_code,

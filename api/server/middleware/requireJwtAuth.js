@@ -3,6 +3,9 @@ const passport = require('passport');
 const { logger } = require('@librechat/data-schemas');
 const {
   isEnabled,
+  SsoRefusals,
+  sendSsoRefusal,
+  needsSsoSession,
   tenantContextMiddleware,
   getAuthFailureReasonCategory,
   buildSafeAuthLogContext,
@@ -18,6 +21,11 @@ const getAuthenticatedUserId = (user) => user?.id?.toString?.() ?? user?._id?.to
 const refreshCloudFrontCookies =
   maybeRefreshCloudFrontAuthCookiesMiddleware ?? ((_req, _res, next) => next());
 const ACCOUNT_DELETION_CODE = 'ACCOUNT_DELETION_IN_PROGRESS';
+const ACCOUNT_MOVING_CODE = 'ACCOUNT_MOVING';
+const MOVING_RETRY_AFTER_SECONDS = 5;
+
+/** A member move is re-scoping this account; a request now could write into the old institution. */
+const isMoving = (user) => user?.movingUntil != null && new Date(user.movingUntil) > new Date();
 
 const getAuthTokenSource = (req) => {
   const authorization = req.headers.authorization;
@@ -181,6 +189,16 @@ const requireJwtAuth = (req, res, next) => {
         }
         logAuthenticationFailure({ strategy, info, status: 401, err });
         return res.status(401).json({ message: 'Unauthorized' });
+      }
+      if (isMoving(user)) {
+        res.set('Retry-After', String(MOVING_RETRY_AFTER_SECONDS));
+        return res.status(503).json({
+          message: 'Your account is moving to another institution. Try again in a moment.',
+          code: ACCOUNT_MOVING_CODE,
+        });
+      }
+      if (needsSsoSession(user, req.originalUrl)) {
+        return sendSsoRefusal(res, SsoRefusals.session);
       }
       req.user = user;
       req.authStrategy = strategy;

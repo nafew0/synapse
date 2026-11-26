@@ -2,14 +2,14 @@ import { useEffect } from 'react';
 import { useToastContext } from '@librechat/client';
 import { EToolResources } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import { useDeleteFilesMutation } from '~/data-provider';
 import { logger, getFileType, getCachedPreview } from '~/utils';
-import { useFileDeletion } from '~/hooks/Files';
+import { useDeleteFilesMutation } from '~/data-provider';
 import PreparationStatus from './PreparationStatus';
+import { useFileDeletion } from '~/hooks/Files';
 import FileContainer from './FileContainer';
-import Tile from './Tile';
 import { useLocalize } from '~/hooks';
 import Image from './Image';
+import Tile from './Tile';
 
 /**
  * Shared wrapper with a stable module-scope identity. Passing an inline arrow as

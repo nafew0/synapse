@@ -17,15 +17,26 @@ const {
   omitTitleOptions,
   getProviderConfig,
   memoryInstructions,
+  autoMemoryInstructions,
+  memoryTextForPrompt,
   createTokenCounter,
   applyContextToAgent,
   isMemoryAgentEnabled,
   recordCollectedUsage,
+  classifyTask,
+  tagRequestTaskType,
+  extractTaskSignals,
   createDetachedSubagentUsageRecorder,
   sendEvent,
+  creditRates,
+  creditsForUsage,
+  withoutEdgeTargets,
+  imageCreditsEstimate,
+  unaffordableImageAgents,
   computeUsageCostUSD,
   aggregateEmittedUsage,
   aggregateBillableUsage,
+  splitImageUsage,
   resolveAgentTokenConfig,
   buildPersistedContextUsage,
   computeSummaryUsedTokens,
@@ -79,6 +90,7 @@ const {
   getMemoryAgentId,
   createMemoryProcessor,
   linkMemoryAbort,
+  takeFinishedMemory,
   agentHasInlineMemoryTools,
   loadAgent: loadAgentFn,
   createMultiAgentMapper,
@@ -134,6 +146,8 @@ const {
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { recordAuxiliaryCredits, resolveQuotaAccount } = require('~/server/services/usageQuota');
+const { getRequestAllowance } = require('~/server/services/bdrenAllowance');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const { resolveConfigServers, getAccessibleMcpServerNames } = require('~/server/services/MCP');
 const { getMCPServerTools } = require('~/server/services/Config');
@@ -144,6 +158,10 @@ const db = require('~/models');
 const loadAgent = (params) => loadAgentFn(params, { getAgent: db.getAgent, getMCPServerTools });
 
 const MEMORY_INPUT_CHARS_PER_TOKEN = 8;
+
+/** Added to the assistant's instructions when its image hand-off is removed for lack of allowance. */
+const IMAGE_UNAVAILABLE_INSTRUCTION =
+  'Image generation is unavailable for this request: the usage allowance cannot cover an image until it resets. If the user asks for an image, say so briefly and offer a text alternative.';
 
 class AgentClient extends BaseClient {
   constructor(options = {}) {
@@ -1759,8 +1777,26 @@ class AgentClient extends BaseClient {
      *  `delete_memory`; everyone else gets the unkeyed values only. */
     /** Partition the loaded memories belong to (the primary agent's). */
     const loadedMemoryAgentId = getMemoryAgentId(this.options.agent);
-    const buildMemoryContext = (text) =>
-      text ? `${memoryInstructions}\n\n# Existing memory about the user:\n${text}` : undefined;
+    /** The user's last two messages pick which saved facts reach the prompt. */
+    const recentUserTexts = [];
+    for (let i = orderedMessages.length - 1; i >= 0 && recentUserTexts.length < 2; i--) {
+      if (orderedMessages[i].isCreatedByUser) {
+        recentUserTexts.unshift(orderedMessages[i].text ?? '');
+      }
+    }
+    const buildMemoryContext = ({ text, partial, hasSaved }, autoSaves) => {
+      const instructions = autoSaves ? autoMemoryInstructions : memoryInstructions;
+      if (text) {
+        const scope = partial
+          ? '\nOnly the saved facts that look relevant to this conversation are listed.'
+          : '';
+        return `${instructions}${scope}\n\n# Existing memory about the user:\n${text}`;
+      }
+      if (!autoSaves) {
+        return undefined;
+      }
+      return hasSaved ? instructions : `${instructions}\n\nNothing is saved about this user yet.`;
+    };
     /** Resolves formatted memories for an agent's own partition. A defined
      *  `memories` means the run-level gates (permission, opt-out, config)
      *  passed; agents on other partitions fetch through the request-scoped
@@ -1828,7 +1864,12 @@ class AgentClient extends BaseClient {
       if (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory) {
         const partitionMemories = await getAgentPartitionMemories(agent);
         const agentMemoryContext = buildMemoryContext(
-          agentHasMemory ? partitionMemories?.withKeys : partitionMemories?.withoutKeys,
+          memoryTextForPrompt({
+            memories: partitionMemories,
+            keyed: agentHasMemory,
+            recentMessages: recentUserTexts,
+          }),
+          memoryAgentEnabled && partitionMemories != null,
         );
         if (agentMemoryContext) {
           agentRunContextParts.push(agentMemoryContext);
@@ -1940,35 +1981,7 @@ class AgentClient extends BaseClient {
   }
 
   /**
-   * Creates a promise that resolves with the memory promise result or undefined after a timeout
-   * @param {Promise<(TAttachment | null)[] | undefined>} memoryPromise - The memory promise to await
-   * @param {number} timeoutMs - Timeout in milliseconds (default: 3000)
-   * @returns {Promise<(TAttachment | null)[] | undefined>}
-   */
-  async awaitMemoryWithTimeout(memoryPromise, timeoutMs = 3000) {
-    if (!memoryPromise) {
-      return;
-    }
-
-    try {
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Memory processing timeout')), timeoutMs),
-      );
-
-      const attachments = await Promise.race([memoryPromise, timeoutPromise]);
-      return attachments;
-    } catch (error) {
-      if (error.message === 'Memory processing timeout') {
-        logger.warn('[AgentClient] Memory processing timed out after 3 seconds');
-      } else {
-        logger.error('[AgentClient] Error processing memory:', error);
-      }
-      return;
-    }
-  }
-
-  /**
-   * @returns {Promise<{ withKeys?: string; withoutKeys?: string } | undefined>}
+   * @returns {Promise<{ withKeys?: string; withoutKeys?: string; valuesByKey?: Map<string, string> } | undefined>}
    */
   async useMemory() {
     const user = this.options.req.user;
@@ -2001,13 +2014,13 @@ class AgentClient extends BaseClient {
 
     if (!isMemoryAgentEnabled(memoryConfig)) {
       try {
-        const { withKeys, withoutKeys } = await getRequestMemories({
+        const { withKeys, withoutKeys, valuesByKey } = await getRequestMemories({
           req: this.options.req,
           userId,
           agentId: memoryAgentId,
           getFormattedMemories: db.getFormattedMemories,
         });
-        return { withKeys, withoutKeys };
+        return { withKeys, withoutKeys, valuesByKey };
       } catch (error) {
         logger.error(
           '[api/server/controllers/agents/client.js #useMemory] Error loading memories',
@@ -2078,6 +2091,7 @@ class AgentClient extends BaseClient {
         updateFilesUsage: db.updateFilesUsage,
         getUserKeyValues: db.getUserKeyValues,
         getToolFilesByIds: db.getToolFilesByIds,
+        getInstitutionKbCatalog: db.listReadyKbCatalog,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
         filterFilesByAgentAccess,
       },
@@ -2129,8 +2143,9 @@ class AgentClient extends BaseClient {
 
     this.processMemory = processMemory;
     let withKeys = withoutKeys;
+    let valuesByKey;
     try {
-      ({ withKeys } = await getRequestMemories({
+      ({ withKeys, valuesByKey } = await getRequestMemories({
         req: this.options.req,
         userId,
         agentId: memoryAgentId,
@@ -2142,7 +2157,7 @@ class AgentClient extends BaseClient {
         error,
       );
     }
-    return { withKeys, withoutKeys };
+    return { withKeys, withoutKeys, valuesByKey };
   }
 
   /**
@@ -2183,38 +2198,56 @@ class AgentClient extends BaseClient {
    * @returns {Promise<void | (TAttachment | null)[]>}
    */
   /**
-   * Builds a recorder that logs memory-agent tokens in the ledger
-   * (`context: 'memory'`) for usage reports, deliberately without charging balance
-   * or usage packages. Extraction can outlive the request and `disposeClient`
-   * clears this client, so everything it needs is captured up front.
-   * @returns {(collectedUsage: UsageMetadata[]) => Promise<void>}
+   * What the memory agent's usage row needs, read up front: extraction can outlive the request, and
+   * `disposeClient` then clears `this.options`.
    */
-  createMemoryUsageRecorder() {
-    const params = {
-      user: this.user ?? this.options.req.user?.id,
-      tenantId: this.options.req.user?.tenantId,
-      requireTenant: Boolean(this.options.req.user?.tenantId),
+  getMemoryUsageContext() {
+    const req = this.options.req;
+    return {
+      user: this.user ?? req.user?.id,
+      tenantId: req.user?.tenantId,
       conversationId: this.conversationId,
+      model:
+        req.config?.memory?.agent?.model ?? this.model ?? this.options.agent.model_parameters.model,
       messageId: this.responseMessageId,
-      model: this.options.req.config?.memory?.agent?.model ?? this.model,
-      context: 'memory',
-      balance: { enabled: false },
-      transactions: getTransactionsConfig(this.options.req.config),
+      transactions: getTransactionsConfig(req.config),
       endpointTokenConfig: this.options.endpointTokenConfig,
     };
-    const deps = {
-      spendTokens: db.spendTokens,
-      spendStructuredTokens: db.spendStructuredTokens,
-      pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
-      bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
-    };
-    return async (collectedUsage) => {
-      try {
-        await recordCollectedUsage(deps, { ...params, collectedUsage });
-      } catch (error) {
-        logger.error('[AgentClient] Failed to record memory usage', error);
-      }
-    };
+  }
+
+  /**
+   * Writes the memory agent's tokens to the ledger (`context: 'memory'`, `billable: false`). They
+   * are our cost, not the member's: balance and the usage allowance are left alone, so this calls
+   * the package recorder directly instead of `recordCollectedUsage`, which charges non-message
+   * contexts to the allowance.
+   * @param {UsageMetadata[]} collectedUsage
+   * @param {ReturnType<AgentClient['getMemoryUsageContext']>} usageContext
+   */
+  async recordMemoryUsage(collectedUsage, usageContext) {
+    try {
+      await recordCollectedUsage(
+        {
+          spendTokens: db.spendTokens,
+          spendStructuredTokens: db.spendStructuredTokens,
+          pricing: { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+          bulkWriteOps: { insertMany: db.bulkInsertTransactions, updateBalance: db.updateBalance },
+        },
+        {
+          ...usageContext,
+          collectedUsage,
+          context: 'memory',
+          billable: false,
+          balance: { enabled: false },
+        },
+      );
+    } catch (error) {
+      logger.error('[AgentClient] Failed to record memory usage', error);
+    }
+    /** Extraction usually ends after the reply, once the client is disposed: tag with the ids
+     *  captured when it started. */
+    if (this.taskType) {
+      await this.tagTaskType(usageContext);
+    }
   }
 
   async runMemory(messages, signal) {
@@ -2222,6 +2255,7 @@ class AgentClient extends BaseClient {
       if (this.processMemory == null) {
         return;
       }
+      const usageContext = this.getMemoryUsageContext();
       const appConfig = this.options.req.config;
       const memoryConfig = appConfig.memory;
       const messageWindowSize = memoryConfig?.messageWindowSize ?? 5;
@@ -2290,15 +2324,49 @@ class AgentClient extends BaseClient {
         });
       }
       const bufferMessage = new HumanMessage(limitedMemoryInput);
-      const recordMemoryUsage = this.createMemoryUsageRecorder();
       const collectedUsage = [];
       try {
         return await this.processMemory([bufferMessage], { signal, collectedUsage });
       } finally {
-        await recordMemoryUsage(collectedUsage);
+        await this.recordMemoryUsage(collectedUsage, usageContext);
       }
     } catch (error) {
       logger.error('Memory Agent failed to process memory', error);
+    }
+  }
+
+  /**
+   * Stamps this request's ledger rows with the kind of task it was, decided from the tools and skills
+   * it used. Runs when the reply settles; later charges for the same reply (title, labels, memory)
+   * call it again once a type is set, so they carry it too. Never throws.
+   * @param {{ user?: string, conversationId?: string, messageId?: string }} [ids] Ids captured
+   *   before the client is disposed, for charges that settle after the request ends.
+   */
+  async tagTaskType(ids) {
+    try {
+      const req = this.options?.req;
+      const user = ids?.user ?? this.user ?? req?.user?.id;
+      const conversationId = ids?.conversationId ?? this.conversationId;
+      const messageId = ids?.messageId ?? this.responseMessageId;
+      if (!user || !conversationId || !messageId) {
+        return;
+      }
+      this.taskSince ??= new Date();
+      this.taskType ??= classifyTask(
+        extractTaskSignals(
+          this.contentParts,
+          Boolean(req?.body?.files?.length || this.options?.attachments?.length),
+        ),
+      );
+      await tagRequestTaskType({
+        user,
+        conversationId,
+        messageId,
+        taskType: this.taskType,
+        since: this.taskSince,
+      });
+    } catch (error) {
+      logger.error('[AgentClient] Failed to tag the task type', error);
     }
   }
 
@@ -2487,6 +2555,45 @@ class AgentClient extends BaseClient {
     if (result && updateStreamUsage) {
       this.usage = result;
     }
+    /** The reply's own calls settle through its reservation; titles and activity labels have
+     *  none, so their cost is charged to the allowance here, at the price just recorded. */
+    if (context !== 'message' && result?.credits > 0) {
+      await this.chargeAuxiliaryCredits({ context, credits: result.credits, model });
+    }
+  }
+
+  /**
+   * Charges a call outside the reply's reservation to the member's credit allowance. Keyed per
+   * call, so a retried recording cannot charge twice. Never fails the caller.
+   * @param {{ context: string, credits: number, model?: string }} params
+   */
+  async chargeAuxiliaryCredits({ context, credits, model }) {
+    const req = this.options.req;
+    const tenantId = req?.user ? await resolveQuotaAccount(req.user) : null;
+    if (!tenantId) {
+      return;
+    }
+    this.auxiliaryChargeSeq = (this.auxiliaryChargeSeq ?? 0) + 1;
+    const runKey =
+      this.jobCreatedAt != null
+        ? `${this.responseMessageId}:${this.jobCreatedAt}`
+        : this.responseMessageId;
+    try {
+      await recordAuxiliaryCredits({
+        tenantId,
+        userId: this.user ?? req.user.id,
+        memberPackage: req.user.usagePackage,
+        allowance: await getRequestAllowance(req.user),
+        reservationKey: `${this.conversationId}:${runKey}:${context}:${this.auxiliaryChargeSeq}`,
+        credits,
+        metadata: { context, model: model ?? null },
+      });
+    } catch (error) {
+      logger.error(
+        `[AgentClient] Failed to charge ${context} credits to the usage allowance`,
+        error,
+      );
+    }
   }
 
   /**
@@ -2497,8 +2604,114 @@ class AgentClient extends BaseClient {
     return this.usage;
   }
 
+  /**
+   * Token usage for the quota meter, with image generations removed.
+   *
+   * An image is billed per image by the provider, so metering the ~4,175 tokens
+   * it reports would charge ~$0.001 against a real cost of ~$0.04. The image
+   * itself is settled separately via {@link getQuotaImageCount}.
+   */
   getQuotaUsage() {
-    return aggregateBillableUsage(this.collectedUsage);
+    const { tokenUsages } = splitImageUsage(this.collectedUsage);
+    return aggregateBillableUsage(tokenUsages);
+  }
+
+  /**
+   * The model a credit reservation is estimated at: the agent's own. With the single-model
+   * Office Assistant this is its only text model; an image handoff is charged at settlement.
+   */
+  getQuotaPricingContext() {
+    const agent = this.options.agent;
+    const model = agent?.model ?? agent?.model_parameters?.model ?? this.model;
+    const endpoint = agent?.provider ?? this.options.endpoint;
+    /** Instructions and tool definitions join the prompt inside the run, after `promptTokens`
+     *  is counted, so the reservation adds them. */
+    const toolDefinitions =
+      Array.isArray(agent?.toolDefinitions) && agent.toolDefinitions.length > 0
+        ? JSON.stringify(agent.toolDefinitions)
+        : '';
+    const instructions = [agent?.instructions, agent?.additional_instructions, toolDefinitions]
+      .filter((value) => typeof value === 'string' && value.length > 0)
+      .join('\n');
+    /** Rates depend on the call's prompt size (long-prompt tiers), known only to the reservation. */
+    const ratesFor = (inputTokenCount) =>
+      creditRates({
+        model,
+        endpoint,
+        endpointTokenConfig: this.options.endpointTokenConfig,
+        inputTokenCount,
+        pricing: { getMultiplier: db.getMultiplier },
+      });
+    return {
+      model,
+      endpoint,
+      overheadTokens: instructions
+        ? countFormattedMessageTokens({ role: 'system', content: instructions }, this.getEncoding())
+        : 0,
+      rates: ratesFor(),
+      ratesFor,
+    };
+  }
+
+  /**
+   * Removes image hand-offs the remaining allowance cannot cover, for this run only, and tells the
+   * assistant why. An image is charged after it is made, so without this a run could overshoot the
+   * allowance by one image; the text answer still goes through.
+   * @param {{ remainingCredits?: number | null }} [quota]
+   */
+  applyQuotaToRun(quota) {
+    const remaining = quota?.remainingCredits;
+    if (remaining == null || !Number.isFinite(remaining) || !(this.agentConfigs?.size > 0)) {
+      return;
+    }
+    const unaffordable = unaffordableImageAgents(this.agentConfigs, remaining, (id, agent, model) =>
+      imageCreditsEstimate(
+        creditRates({
+          model,
+          endpoint: agent?.provider,
+          endpointTokenConfig: this.options.endpointTokenConfigByAgentId?.get?.(id),
+          pricing: { getMultiplier: db.getMultiplier },
+        }),
+      ),
+    );
+    if (unaffordable.size === 0) {
+      return;
+    }
+    for (const id of unaffordable) {
+      this.agentConfigs.delete(id);
+    }
+    const agent = this.options.agent;
+    this.options.agent = {
+      ...agent,
+      edges: withoutEdgeTargets(agent.edges, unaffordable),
+      additional_instructions: [agent.additional_instructions, IMAGE_UNAVAILABLE_INSTRUCTION]
+        .filter(Boolean)
+        .join('\n\n'),
+    };
+    logger.info('[AgentClient] Image hand-off removed: the usage allowance cannot cover an image', {
+      agents: [...unaffordable],
+      remainingCredits: remaining,
+    });
+  }
+
+  /** Actual credits of this run: every call priced at its own model, as `Transaction` prices it. */
+  getQuotaCredits() {
+    return creditsForUsage(
+      this.collectedUsage,
+      { getMultiplier: db.getMultiplier, getCacheMultiplier: db.getCacheMultiplier },
+      (usage) => this.resolveAgentEndpointTokenConfig(usage),
+    );
+  }
+
+  /**
+   * Images produced by this run, for the image meter.
+   *
+   * The reservation was made on the `agents` endpoint before any subagent chose
+   * a model, so an image delegated to the image specialist can only be
+   * attributed at settlement.
+   */
+  getQuotaImageCount() {
+    return splitImageUsage(this.collectedUsage).images;
   }
 
   /**
@@ -2961,6 +3174,7 @@ class AgentClient extends BaseClient {
   }
 
   async chatCompletion({ payload, userMCPAuthMap, abortController = null }) {
+    this.taskSince ??= new Date();
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
     /** @type {ReturnType<createRun>} */
@@ -3482,7 +3696,7 @@ class AgentClient extends BaseClient {
       detachMemoryAbort?.();
 
       try {
-        const attachments = await this.awaitMemoryWithTimeout(memoryPromise);
+        const attachments = await takeFinishedMemory(memoryPromise);
         if (attachments && attachments.length > 0) {
           this.artifactPromises.push(...attachments);
         }
@@ -3496,6 +3710,7 @@ class AgentClient extends BaseClient {
             balance: balanceConfig,
             transactions: transactionsConfig,
           });
+          await this.tagTaskType();
         } else {
           logger.debug(
             '[api/server/controllers/agents/client.js #chatCompletion] Skipping token spending - handled by abort middleware',
@@ -3565,6 +3780,7 @@ class AgentClient extends BaseClient {
     discoveredToolNames,
     activityPhaseSnapshot,
   }) {
+    this.taskSince ??= new Date();
     /** @type {Partial<GraphRunnableConfig>} */
     let config;
     /** @type {ReturnType<createRun>} */
@@ -3814,6 +4030,7 @@ class AgentClient extends BaseClient {
             balance: balanceConfig,
             transactions: transactionsConfig,
           });
+          await this.tagTaskType();
         }
       } catch (err) {
         logger.error(
@@ -4087,6 +4304,9 @@ class AgentClient extends BaseClient {
         transactions: transactionsConfig,
         messageId: this.responseMessageId,
       });
+      if (this.taskType) {
+        await this.tagTaskType();
+      }
 
       return sanitizeTitle(titleResult.title);
     } catch (err) {

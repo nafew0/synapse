@@ -11,6 +11,7 @@ import {
 import { MarketplaceProvider } from '~/components/Agents/MarketplaceContext';
 import AgentMarketplace from '~/components/Agents/Marketplace';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
+import { PhoneUpload } from '~/components/Phone';
 import { AuthContextProvider } from '~/hooks/AuthContext';
 import RouteErrorBoundary from './RouteErrorBoundary';
 import StartupLayout from './Layouts/Startup';
@@ -21,6 +22,7 @@ import ShareRoute from './ShareRoute';
 import ChatRoute from './ChatRoute';
 import Search from './Search';
 import Root from './Root';
+import { BrowserExtensionConnect } from '~/components/BrowserExtension';
 
 const AuthLayout = () => (
   <AuthContextProvider>
@@ -64,6 +66,11 @@ export const router = createBrowserRouter(
     {
       path: 'share/:shareId',
       element: <ShareRoute />,
+      errorElement: <RouteErrorBoundary />,
+    },
+    {
+      path: 'phone/:token',
+      element: <PhoneUpload />,
       errorElement: <RouteErrorBoundary />,
     },
     {
@@ -134,6 +141,10 @@ export const router = createBrowserRouter(
             {
               path: 'c/:conversationId?',
               element: <ChatRoute />,
+            },
+            {
+              path: 'browser-extension/connect',
+              element: <BrowserExtensionConnect />,
             },
             {
               path: 'search',

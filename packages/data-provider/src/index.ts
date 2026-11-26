@@ -48,6 +48,7 @@ export {
   buildLoginRedirectUrl,
 } from './api-endpoints';
 export { default as request } from './request';
+export * from './moving';
 export { dataService };
 import * as dataService from './data-service';
 /* general helpers */
@@ -63,3 +64,4 @@ export * from './errors';
 export * from './parameterSettings';
 /* code-execution sandbox */
 export * from './codeEnvRef';
+export * from './kb';

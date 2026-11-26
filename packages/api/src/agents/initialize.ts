@@ -73,6 +73,8 @@ import {
   createStatefulCodeEnvironmentPolicyError,
   isFatalAgentInitializationError,
 } from './errors';
+import { INSTITUTION_KB_TOOL_NAME, buildInstitutionKbInstructions } from '~/kb/tool';
+import { getKbRagApiUrl, getInstitutionKbCatalog } from '~/kb/availability';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { buildUnreachableAttachmentsNote } from './attachments';
@@ -518,6 +520,10 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
    * operator-config names.
    */
   getAccessibleMcpServerNames?: (userId?: string, role?: string) => Promise<string[]>;
+  /** The user's institution's searchable documents; when any, `institution_kb` is added. */
+  getInstitutionKbCatalog?: (
+    tenantId: string,
+  ) => Promise<{ id: string; title: string; docType: string }[]>;
   /** Update usage tracking for multiple files */
   updateFilesUsage: (
     files: Array<{ file_id: string }>,
@@ -692,6 +698,29 @@ export async function initializeAgent(
       });
       agent.tools = healedKeys.tools;
       agent.tool_options = healedKeys.toolOptions;
+    }
+  }
+
+  /**
+   * The institution knowledge base is offered to every model the member uses, but only to
+   * agents that already call tools: a tool-less agent, such as image generation, may run on
+   * a model that cannot take one.
+   */
+  const kbTenantId = (req.user as { tenantId?: string } | undefined)?.tenantId;
+  if (
+    db.getInstitutionKbCatalog &&
+    kbTenantId &&
+    getKbRagApiUrl() &&
+    (agent.tools?.length ?? 0) > 0 &&
+    !agent.tools!.includes(INSTITUTION_KB_TOOL_NAME)
+  ) {
+    const catalog = await getInstitutionKbCatalog(kbTenantId, db.getInstitutionKbCatalog);
+    if (catalog.length > 0) {
+      agent.tools = [...agent.tools!, INSTITUTION_KB_TOOL_NAME];
+      appendAdditionalInstructions(agent, buildInstitutionKbInstructions(catalog));
+      logger.debug(
+        `[kb] ${INSTITUTION_KB_TOOL_NAME} offered to ${agent.id} (tenant ${kbTenantId}, ${catalog.length} documents)`,
+      );
     }
   }
 

@@ -79,6 +79,22 @@ describe('auditLog methods', () => {
       expect(persisted?.createdAt).toBeInstanceOf(Date);
     });
 
+    it('records a usage policy change under the institution category', async () => {
+      await methods.recordAuditEntry(
+        baseInput({
+          action: 'institution.usage_policy_changed',
+          target: { type: 'institution', id: 'tenant-a' },
+          metadata: { policyVersion: 1 },
+        }),
+        { failClosed: true },
+      );
+      const persisted = await AuditLog.findOne({ chainKey: CK_A }).lean();
+      expect(persisted).toMatchObject({
+        category: 'institution',
+        action: 'institution.usage_policy_changed',
+      });
+    });
+
     it('derives a warning severity for non-success outcomes', async () => {
       await methods.recordAuditEntry(baseInput({ outcome: 'denied' }));
       const persisted = await AuditLog.findOne({ chainKey: CK_A }).lean();

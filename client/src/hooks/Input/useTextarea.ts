@@ -21,6 +21,7 @@ import {
   getEntity,
   checkIfScrollable,
 } from '~/utils';
+import { useGetStartupConfig, useInteractionHealthCheck } from '~/data-provider';
 import { useAssistantsMapContext } from '~/Providers/AssistantsMapContext';
 import { useLatestMessageMeta } from '~/hooks/Messages/useLatestMessage';
 import useComposerBindings from '~/hooks/Input/useComposerBindings';
@@ -28,7 +29,6 @@ import useFileUploadRouter from '~/hooks/Files/useFileUploadRouter';
 import { useAgentsMapContext } from '~/Providers/AgentsMapContext';
 import useGetSender from '~/hooks/Conversations/useGetSender';
 import useUploadOptions from '~/hooks/Files/useUploadOptions';
-import { useGetStartupConfig, useInteractionHealthCheck } from '~/data-provider';
 import { resolveComposerKeyDown } from '~/utils/shortcuts';
 import { useChatContext } from '~/Providers/ChatContext';
 import { useUploadModalContext } from '~/Providers';

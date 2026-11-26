@@ -1,6 +1,6 @@
 import type { FilterQuery, Model, Types } from 'mongoose';
+import type { ITransaction, TransactionService } from '~/schema/transaction';
 import type { IBalance, IBalanceUpdate, TransactionData } from '~/types';
-import type { ITransaction } from '~/schema/transaction';
 import { inferProviderKey } from '~/utils/transactions';
 import { getTenantId } from '~/config/tenantContext';
 import logger from '~/config/winston';
@@ -84,6 +84,8 @@ export interface TxData {
   context?: string;
   usageKind?: string;
   usageUnit?: 'tokens' | 'images' | 'seconds' | 'operations';
+  service?: TransactionService;
+  billable?: boolean;
   requestKey?: string;
   tokenType?: 'prompt' | 'completion' | 'credits';
   rawAmount?: number;
@@ -153,6 +155,7 @@ export function createTransactionMethods(
     filter: FilterQuery<ITransaction>,
   ) => Promise<import('mongodb').DeleteResult>;
   deleteBalances: (filter: FilterQuery<IBalance>) => Promise<import('mongodb').DeleteResult>;
+  createOcrTransaction: (data: OcrTransactionData) => Promise<void>;
   createTransaction: (_txData: TxData) => Promise<TransactionResult | undefined>;
   createAutoRefillTransaction: (txData: TxData) => Promise<
     | {
@@ -212,6 +215,9 @@ export function createTransactionMethods(
         : undefined;
     const requestKey = explicitRequestKey ?? derivedRequestKey;
 
+    const isModelRow = txData.tokenType === 'prompt' || txData.tokenType === 'completion';
+    const service = txData.service ?? (isModelRow ? 'openrouter' : undefined);
+
     return {
       providerKey,
       providerModelId,
@@ -219,6 +225,7 @@ export function createTransactionMethods(
       usageKind,
       usageUnit,
       requestKey,
+      ...(service ? { service } : {}),
     };
   }
 
@@ -773,6 +780,8 @@ export function createTransactionMethods(
         model: modelKey,
         modelKey,
         providerKey: 'unstructured',
+        service: 'unstructured',
+        billable: true,
         requestKey: `ocr:${user}:${contentHash}:${day}`,
       });
     } catch (error) {

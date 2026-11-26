@@ -1,6 +1,6 @@
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Loader2, AlertCircle, Download, ChevronDown, Files as FilesIcon } from 'lucide-react';
 import { Tools } from 'librechat-data-provider';
+import { Loader2, AlertCircle, Download, ChevronDown, Files as FilesIcon } from 'lucide-react';
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import type { ToolArtifactType } from '~/utils/artifacts';
 import {
@@ -13,20 +13,21 @@ import {
   isTextAttachment,
   renderAttachmentKey,
 } from './attachmentTypes';
-import FilePreview from '~/components/Chat/Input/Files/FilePreview';
+import { useLocalize, useAttachmentPreviewSync, useExpandCollapse } from '~/hooks';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import { fileToArtifact, TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
+import FilePreview from '~/components/Chat/Input/Files/FilePreview';
+import { PendingDownload, useDownloadReady } from './delivery';
 import Image from '~/components/Chat/Messages/Content/Image';
 import ToolMermaidArtifact from './ToolMermaidArtifact';
 import ToolArtifactCard from './ToolArtifactCard';
-import { PendingDownload, useDownloadReady } from './delivery';
 import { useAttachmentLink } from './LogLink';
-import { useLocalize, useAttachmentPreviewSync, useExpandCollapse } from '~/hooks';
 import { cn, getFileType } from '~/utils';
 
 const COLLAPSED_MAX_HEIGHT = 320;
 /** Up to this many generated files show as their own download chips; more fold into one group. */
 const INLINE_FILE_LIMIT = 3;
+
 const DOWNLOAD_CHIP_CLASS =
   'bg-surface-secondary hover:cursor-pointer hover:bg-surface-hover active:bg-surface-secondary focus:bg-surface-hover hover:border-border-heavy active:border-border-heavy';
 const PENDING_CHIP_CLASS = 'bg-surface-secondary cursor-default';

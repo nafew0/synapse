@@ -16,6 +16,11 @@ import {
   invalidateRequestMemories,
   agentHasInlineMemoryTools,
   buildInlineMemoryContext,
+  mergeMemoryValue,
+  createMemoryLedger,
+  compactMemories,
+  parseCompactedMemories,
+  takeFinishedMemory,
 } from './memory';
 import { GenerationJobManager } from '~/stream/GenerationJobManager';
 
@@ -231,6 +236,7 @@ describe('Memory run usage and cancellation', () => {
         output_tokens: 5,
         model: 'memory-model',
         provider: Providers.OPENROUTER,
+        runId: expect.any(String),
       },
     ]);
   });
@@ -785,9 +791,19 @@ describe('createMemoryTool tokenLimit enforcement', () => {
     });
 
     await tool.invoke({ key: 'k1', value });
-    await tool.invoke({ key: 'k1', value });
+    await tool.invoke({ key: 'k1', value: `${value} again`, replace: true });
 
     expect(setMemory).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not write a fact that is already saved', async () => {
+    const setMemory = jest.fn().mockResolvedValue({ ok: true });
+    const tool = createMemoryTool({ userId: 'user-1', setMemory });
+
+    await tool.invoke({ key: 'personal_info', value: "The user's name is Imtiaz." });
+    await tool.invoke({ key: 'personal_info', value: "The user's name is Imtiaz" });
+
+    expect(setMemory).toHaveBeenCalledTimes(1);
   });
 
   it('treats a persisted key as a replacement in a new tool instance', async () => {
@@ -811,7 +827,7 @@ describe('createMemoryTool tokenLimit enforcement', () => {
       tokenCountsByKey: new Map([['k1', 100]]),
     });
 
-    await secondTool.invoke({ key: 'k1', value });
+    await secondTool.invoke({ key: 'k1', value, replace: true });
 
     expect(setMemory).toHaveBeenCalledTimes(2);
   });
@@ -1003,5 +1019,232 @@ describe('getMemoryAgentId', () => {
     expect(getMemoryAgentId({ id: 'agent_a____1', memory_scope: MemoryScope.agent })).toBe(
       'agent_a',
     );
+  });
+});
+
+describe('mergeMemoryValue', () => {
+  it('adds a new fact after what is saved', () => {
+    expect(mergeMemoryValue("The user's name is Imtiaz.", 'The user is 30 years old.')).toBe(
+      "The user's name is Imtiaz. The user is 30 years old.",
+    );
+  });
+
+  it('adds a full stop between facts when the saved one has none', () => {
+    expect(mergeMemoryValue('Name is Imtiaz', 'Born on 5 March 1995.')).toBe(
+      'Name is Imtiaz. Born on 5 March 1995.',
+    );
+  });
+
+  it('keeps the saved value when the fact is already there', () => {
+    const saved = "The user's name is Imtiaz. The user is 30 years old.";
+    expect(mergeMemoryValue(saved, 'the user is 30 years old')).toBe(saved);
+  });
+
+  it('takes a rewrite that already contains the saved value', () => {
+    expect(
+      mergeMemoryValue("The user's name is Imtiaz.", "The user's name is Imtiaz. Born in 1995."),
+    ).toBe("The user's name is Imtiaz. Born in 1995.");
+  });
+
+  it('uses the new fact when nothing is saved', () => {
+    expect(mergeMemoryValue(undefined, ' A fact. ')).toBe('A fact.');
+  });
+});
+
+describe('createMemoryTool merging', () => {
+  it('keeps the name when the age is saved under the same key', async () => {
+    const setMemory = jest.fn().mockResolvedValue({ ok: true });
+    const tool = createMemoryTool({
+      userId: 'user-1',
+      setMemory,
+      valuesByKey: new Map([['personal_info', "The user's name is Imtiaz."]]),
+      tokenCountsByKey: new Map([['personal_info', 7]]),
+      totalTokens: 7,
+    });
+
+    await tool.invoke({ key: 'personal_info', value: 'The user is 30 years old.' });
+    await tool.invoke({ key: 'personal_info', value: 'The user was born on 5 March 1995.' });
+
+    expect(setMemory).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        key: 'personal_info',
+        value:
+          "The user's name is Imtiaz. The user is 30 years old. The user was born on 5 March 1995.",
+      }),
+    );
+  });
+
+  it('replaces the key when replace is set', async () => {
+    const setMemory = jest.fn().mockResolvedValue({ ok: true });
+    const tool = createMemoryTool({
+      userId: 'user-1',
+      setMemory,
+      valuesByKey: new Map([['work_info', 'The user is a lecturer at Rajshahi University.']]),
+    });
+
+    await tool.invoke({
+      key: 'work_info',
+      value: 'The user is a physics lecturer at Chittagong University.',
+      replace: true,
+    });
+
+    expect(setMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        value: 'The user is a physics lecturer at Chittagong University.',
+      }),
+    );
+  });
+
+  it('compacts saved memories and retries when a write would pass the limit', async () => {
+    const setMemory = jest.fn().mockResolvedValue({ ok: true });
+    const ledger = createMemoryLedger({
+      totalTokens: 140,
+      tokenCountsByKey: new Map([['context', 140]]),
+      valuesByKey: new Map([['context', 'word '.repeat(140).trim()]]),
+    });
+    const compact = jest.fn(async () => {
+      ledger.totalTokens = 10;
+      ledger.tokensByKey.set('context', 10);
+      ledger.valuesByKey.set('context', 'A short summary.');
+      return true;
+    });
+    const tool = createMemoryTool({
+      userId: 'user-1',
+      setMemory,
+      tokenLimit: 150,
+      ledger,
+      compact,
+    });
+
+    await tool.invoke({ key: 'personal_info', value: 'word '.repeat(30).trim() });
+
+    expect(compact).toHaveBeenCalledTimes(1);
+    expect(setMemory).toHaveBeenCalledWith(expect.objectContaining({ key: 'personal_info' }));
+  });
+
+  it('frees a deleted key in the shared ledger', async () => {
+    const ledger = createMemoryLedger({
+      totalTokens: 100,
+      tokenCountsByKey: new Map([['k1', 100]]),
+      valuesByKey: new Map([['k1', 'old']]),
+    });
+    const deleteTool = createDeleteMemoryTool({
+      userId: 'user-1',
+      deleteMemory: jest.fn().mockResolvedValue({ ok: true }),
+      ledger,
+    });
+
+    await deleteTool.invoke({ key: 'k1' });
+
+    expect(ledger.totalTokens).toBe(0);
+    expect(ledger.valuesByKey.has('k1')).toBe(false);
+  });
+});
+
+describe('parseCompactedMemories', () => {
+  const current = new Map([
+    ['personal_info', 'a'],
+    ['work_info', 'b'],
+  ]);
+
+  it('reads a fenced JSON reply and keeps only known keys', () => {
+    const text = '```json\n{"personal_info": "Name is Imtiaz.", "secret": "x"}\n```';
+    expect(parseCompactedMemories(text, current)).toEqual(
+      new Map([['personal_info', 'Name is Imtiaz.']]),
+    );
+  });
+
+  it('returns undefined for a reply that is not JSON', () => {
+    expect(parseCompactedMemories('NONE', current)).toBeUndefined();
+  });
+});
+
+describe('compactMemories', () => {
+  it('writes the shorter profile the model returns', async () => {
+    jest.spyOn(Run, 'create').mockImplementation(
+      () =>
+        ({
+          processStream: jest.fn(() =>
+            Promise.resolve([
+              { type: 'text', text: '{"personal_info": "Name is Imtiaz. Born 5 March 1995."}' },
+            ]),
+          ),
+        }) as never,
+    );
+    const long = 'The user is called Imtiaz. '.repeat(20).trim();
+    const ledger = createMemoryLedger({
+      totalTokens: 120,
+      tokenCountsByKey: new Map([['personal_info', 120]]),
+      valuesByKey: new Map([['personal_info', long]]),
+    });
+    const setMemory = jest.fn().mockResolvedValue({ ok: true });
+
+    const compacted = await compactMemories({
+      ledger,
+      userId: 'user-1',
+      setMemory,
+      tokenLimit: 150,
+      conversationId: 'conv-1',
+      llmConfig: { provider: Providers.OPENAI, model: 'gemma-4' },
+    });
+
+    expect(compacted).toBe(true);
+    expect(setMemory).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: 'personal_info',
+        value: 'Name is Imtiaz. Born 5 March 1995.',
+      }),
+    );
+    expect(ledger.totalTokens).toBeLessThan(120);
+  });
+
+  it('keeps memories when the model returns nothing shorter', async () => {
+    jest.spyOn(Run, 'create').mockImplementation(
+      () =>
+        ({
+          processStream: jest.fn(() => Promise.resolve([{ type: 'text', text: 'NONE' }])),
+        }) as never,
+    );
+    const ledger = createMemoryLedger({
+      totalTokens: 5,
+      tokenCountsByKey: new Map([['personal_info', 5]]),
+      valuesByKey: new Map([['personal_info', 'Name is Imtiaz.']]),
+    });
+    const setMemory = jest.fn();
+
+    const compacted = await compactMemories({
+      ledger,
+      userId: 'user-1',
+      setMemory,
+      tokenLimit: 150,
+      conversationId: 'conv-1',
+      llmConfig: { provider: Providers.OPENAI, model: 'gemma-4' },
+    });
+
+    expect(compacted).toBe(false);
+    expect(setMemory).not.toHaveBeenCalled();
+  });
+});
+
+describe('takeFinishedMemory', () => {
+  it('returns the result of extraction that already finished', async () => {
+    const done = Promise.resolve(['attachment']);
+    await done;
+    await expect(takeFinishedMemory(done)).resolves.toEqual(['attachment']);
+  });
+
+  it('does not wait for extraction that is still running', async () => {
+    let resolve: (value: string[]) => void = () => undefined;
+    const running = new Promise<string[]>((r) => {
+      resolve = r;
+    });
+    const started = Date.now();
+    await expect(takeFinishedMemory(running)).resolves.toBeUndefined();
+    expect(Date.now() - started).toBeLessThan(50);
+    resolve([]);
+  });
+
+  it('returns undefined without a promise', async () => {
+    await expect(takeFinishedMemory(null)).resolves.toBeUndefined();
   });
 });

@@ -8,25 +8,25 @@ import type {
 } from 'librechat-data-provider';
 import type { ReactNode, ReactElement } from 'react';
 import type { ToolCallGroupExpansionState } from './ToolCallGroup';
+import GeneratedImageArtifacts, { isGeneratedImageAttachment } from './GeneratedImageArtifacts';
 import { mapAttachments, filterAttachmentsForPart, groupSequentialToolCalls } from '~/utils';
-import { hideOfficeWorkNotes } from '~/utils/workNotes';
 import { groupActivityPhases, lastVisibleContentIdx } from '~/utils/activityLabels';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
-import MemoryArtifacts, { hasMemoryArtifacts } from './MemoryArtifacts';
+import MemoryArtifacts from './MemoryArtifacts';
+import { EmptyText, AgentUpdate, AttachmentGroup } from './Parts';
 import { MessageContext, SearchContext } from '~/Providers';
 import useToolDetails from '~/hooks/Config/useToolDetails';
+import { displayFilename } from './Parts/attachmentTypes';
+import { hideOfficeWorkNotes } from '~/utils/workNotes';
 import PendingSkillCall from './Parts/PendingSkillCall';
 import ActivityPhaseGroup from './ActivityPhaseGroup';
+import { DeliveryProvider } from './Parts/delivery';
 import { hasPendingApprovalInPart } from '~/utils';
 import EditContentParts from './EditContentParts';
-import { EmptyText, AgentUpdate, AttachmentGroup } from './Parts';
-import { displayFilename } from './Parts/attachmentTypes';
-import { DeliveryProvider } from './Parts/delivery';
 import ApprovalProvider from './ApprovalContext';
-import GeneratedImageArtifacts, { isGeneratedImageAttachment } from './GeneratedImageArtifacts';
+import GeneratingImage from './GeneratingImage';
 import Sources from '~/components/Web/Sources';
 import ToolCallGroup from './ToolCallGroup';
-import GeneratingImage from './GeneratingImage';
 import Container from './Container';
 import Part from './Part';
 
@@ -565,7 +565,6 @@ const ContentPartsBody = memo(function ContentPartsBody({
     return (
       <ApprovalProvider>
         <SearchContext.Provider value={{ searchResults }}>
-          <MemoryArtifacts attachments={attachments} />
           {hasParallelContent && (
             <Sources messageId={messageId} conversationId={conversationId || undefined} />
           )}
@@ -610,6 +609,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
           {/* Rendered after the phases so a multi-step run reads chronologically:
               the reasoning and handoffs that produced the image come first. */}
           <GeneratedImageArtifacts attachments={attachments} />
+          {!effectiveIsSubmitting && <MemoryArtifacts attachments={attachments} />}
         </SearchContext.Provider>
       </ApprovalProvider>
     );
@@ -677,7 +677,6 @@ const ContentPartsBody = memo(function ContentPartsBody({
     !(attachments ?? []).some(isGeneratedImageAttachment);
   const sequentialContent = (
     <SearchContext.Provider value={{ searchResults }}>
-      {!nestedActivityPhase && <MemoryArtifacts attachments={attachments} />}
       {!nestedActivityPhase && !imageAfterContent && (
         <GeneratedImageArtifacts attachments={attachments} />
       )}
@@ -687,11 +686,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
         <Container>
           {/** Nudge only when the dot is truly first under the header — leading
            * memory/skill rows and nested phases keep it flush. */}
-          <EmptyText
-            underHeaderIcon={
-              !nestedActivityPhase && !hasPendingSkills && !hasMemoryArtifacts(attachments)
-            }
-          />
+          <EmptyText underHeaderIcon={!nestedActivityPhase && !hasPendingSkills} />
         </Container>
       )}
       {!showEmptyCursor &&
@@ -739,6 +734,11 @@ const ContentPartsBody = memo(function ContentPartsBody({
         !awaitingGeneratedImage && <AttachmentGroup attachments={deliveredFiles} />}
       {!nestedActivityPhase && imageAfterContent && (
         <GeneratedImageArtifacts attachments={attachments} />
+      )}
+      {/** Memory is saved in the background while the reply runs; its note
+       *  follows the finished reply so it never reads as a step before it. */}
+      {!nestedActivityPhase && !effectiveIsSubmitting && (
+        <MemoryArtifacts attachments={attachments} />
       )}
     </SearchContext.Provider>
   );

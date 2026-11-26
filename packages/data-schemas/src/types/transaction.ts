@@ -1,3 +1,5 @@
+import type { TransactionService } from '~/schema/transaction';
+
 export interface TransactionData {
   user: string;
   tenantId?: string;
@@ -10,6 +12,8 @@ export interface TransactionData {
   context?: string;
   usageKind?: string;
   usageUnit?: 'tokens' | 'images' | 'seconds' | 'operations';
+  service?: TransactionService;
+  billable?: boolean;
   requestKey?: string;
   valueKey?: string;
   rate?: number;
@@ -21,4 +25,7 @@ export interface TransactionData {
   messageId?: string;
   inputTokenCount?: number;
   rateDetail?: Record<string, number>;
+  /** USD the provider reported for the call; see `costSource`. */
+  costUsd?: number;
+  costSource?: 'provider';
 }

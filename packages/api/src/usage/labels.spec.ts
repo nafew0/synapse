@@ -1,6 +1,5 @@
-import { buildModelLabelIndex, resolveModelLabel, bareModelId } from './labels';
-
 import type { TModelSpec } from 'librechat-data-provider';
+import { buildModelLabelIndex, resolveModelLabel, bareModelId } from './labels';
 
 function spec(name: string, label: string, preset: TModelSpec['preset']): TModelSpec {
   return { name, label, preset } as TModelSpec;

@@ -1,6 +1,6 @@
-import { Clock, ArrowRight, ExternalLink } from 'lucide-react';
-import { useRecoilValue } from 'recoil';
 import { cn } from '@librechat/client';
+import { useRecoilValue } from 'recoil';
+import { Clock, ArrowRight, ExternalLink } from 'lucide-react';
 import type { TBanner } from 'librechat-data-provider';
 import type { CategoryStyle } from './styles';
 import { getSchedule } from './schedule';

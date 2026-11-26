@@ -1,6 +1,6 @@
 const cookies = require('cookie');
 const passport = require('passport');
-const { isEnabled, tenantContextMiddleware } = require('@librechat/api');
+const { isEnabled, needsSsoSession, tenantContextMiddleware } = require('@librechat/api');
 
 const hasPassportStrategy = (strategy) =>
   typeof passport._strategy === 'function' && passport._strategy(strategy) != null;
@@ -19,7 +19,8 @@ const optionalJwtAuth = (req, res, next) => {
     if (err) {
       return next(err);
     }
-    if (user) {
+    /** A session that did not come through bdren.ai SSO is treated as anonymous while SSO-only is on. */
+    if (user && !needsSsoSession(user, req.originalUrl)) {
       req.user = user;
       req.authStrategy = useOpenIdJwt ? 'openidJwt' : 'jwt';
       return tenantContextMiddleware(req, res, next);

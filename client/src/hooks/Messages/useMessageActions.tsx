@@ -14,11 +14,11 @@ import type { TMessageChatContext } from '~/common/types';
 import type { TMessageProps } from '~/common';
 import { useAssistantsMapContext, useAgentsMapContext } from '~/Providers';
 import useCopyToClipboard, { hasCopyableText } from './useCopyToClipboard';
+import { hideOfficeWorkNotes } from '~/utils/workNotes';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { useGetAddedConvo } from '~/hooks/Chat';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
-import { hideOfficeWorkNotes } from '~/utils/workNotes';
 
 export type TMessageActions = Pick<
   TMessageProps,

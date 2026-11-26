@@ -561,6 +561,8 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
             storageRegion: file.storageRegion,
             user: file.author?.toString?.(),
             tenantId: file.tenantId?.toString?.(),
+            storageTenantId: file.storageTenantId,
+            storageUserId: file.storageUserId,
           }).catch((e) =>
             logger.error(`[deleteSkill] Blob cleanup failed for ${file.relativePath}:`, e),
           );
@@ -768,6 +770,8 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
           storageRegion: file.storageRegion,
           user: file.author?.toString?.(),
           tenantId: file.tenantId?.toString?.(),
+          storageTenantId: file.storageTenantId,
+          storageUserId: file.storageUserId,
         }).catch((e) => logger.error('[deleteFile] Storage cleanup failed:', e));
       }
 

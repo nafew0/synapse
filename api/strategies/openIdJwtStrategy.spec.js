@@ -45,6 +45,7 @@ jest.mock('@librechat/api', () => ({
   invalidateCachedAuthUserDoc: jest.fn(),
   setCachedAuthUserDoc: jest.fn(),
   getHttpsProxyAgent: jest.fn(() => undefined),
+  isOpenIdSessionEnded: jest.requireActual('@librechat/api').isOpenIdSessionEnded,
   math: jest.fn((val, fallback) => fallback),
 }));
 jest.mock('~/models', () => ({
@@ -388,6 +389,54 @@ describe('openIdJwtStrategy – token source handling', () => {
     expect(user.federatedTokens.access_token).toBe('the-access-token');
     expect(user.federatedTokens.id_token).toBe('the-id-token');
     expect(user.federatedTokens.access_token).not.toBe(user.federatedTokens.id_token);
+  });
+});
+
+describe('openIdJwtStrategy – sessions ended by back-channel logout', () => {
+  const payload = {
+    sub: 'oidc-123',
+    sid: 'idp-session-1',
+    auth_time: 1795512561,
+    email: 'test@example.com',
+    iss: 'https://issuer.example.com',
+    exp: 9999999999,
+  };
+  const req = { headers: { authorization: 'Bearer raw-bearer-token' } };
+  const userWith = (openidEndedSessions) => ({
+    _id: { toString: () => 'user-abc' },
+    role: SystemRoles.USER,
+    provider: 'openid',
+    openidEndedSessions,
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    updateUser.mockResolvedValue({});
+    openIdJwtLogin(mockOpenIdConfig);
+  });
+
+  it('refuses a token whose IdP session was ended', async () => {
+    findOpenIDUser.mockResolvedValue({
+      user: userWith([{ sid: 'idp-session-1', endedAt: new Date() }]),
+      error: null,
+      migration: false,
+    });
+
+    const result = await invokeVerify(req, payload);
+
+    expect(result).toEqual({ user: false, info: { message: 'Session ended' } });
+  });
+
+  it('accepts a token from another, still active IdP session', async () => {
+    findOpenIDUser.mockResolvedValue({
+      user: userWith([{ sid: 'idp-session-0', endedAt: new Date() }]),
+      error: null,
+      migration: false,
+    });
+
+    const { user } = await invokeVerify(req, payload);
+
+    expect(user).toEqual(expect.objectContaining({ id: 'user-abc' }));
   });
 });
 

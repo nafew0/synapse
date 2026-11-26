@@ -24,6 +24,12 @@ const promptSchema: Schema<IPrompt> = new Schema(
       enum: ['text', 'chat'],
       required: true,
     },
+    /** Set when a member left the institution and this item stayed: the person who owned it. */
+    transferredFrom: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      default: undefined,
+    },
     tenantId: {
       type: String,
       index: true,

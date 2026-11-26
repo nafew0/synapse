@@ -827,6 +827,8 @@ export type AssistantDocument = {
 export type AgentAvatar = {
   filepath: string;
   source: string;
+  /** Set by a member move: the tenant in the stored object's key (`null`: none). */
+  storageTenantId?: string | null;
 };
 
 export enum FilePurpose {

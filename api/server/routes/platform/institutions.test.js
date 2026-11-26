@@ -33,7 +33,6 @@ jest.mock('@librechat/data-schemas', () => ({
  *  and keeps these route tests free of a live database. */
 jest.mock('~/db/models', () => ({
   Institution: { findOneAndUpdate: jest.fn() },
-  InstitutionPackage: { findOne: jest.fn() },
   User: { find: jest.fn() },
   Agent: { find: jest.fn(), findOne: jest.fn() },
   Group: { find: jest.fn(), findOne: jest.fn() },
@@ -89,10 +88,6 @@ jest.mock('~/server/services/institutionUsage', () => ({
   getUsageSummary: jest.fn(),
   listUsageByMember: jest.fn(),
   listUsageByModel: jest.fn(),
-}));
-
-jest.mock('~/server/services/usageQuota', () => ({
-  getShadowReadiness: jest.fn(),
 }));
 
 jest.mock('~/models', () => ({
@@ -188,6 +183,25 @@ describe('platform institutions route', () => {
 
     expect(response.statusCode).toBe(400);
     expect(response.body.error).toMatch(/initial institution admin/i);
+  });
+
+  it('no longer serves the shadow readiness report', () => {
+    const router = require('./institutions');
+    const paths = router.stack.flatMap((layer) => (layer.route ? [layer.route.path] : []));
+    expect(paths).toContain('/:tenantId/quota');
+    expect(paths).not.toContain('/:tenantId/quota/readiness');
+  });
+
+  it('refuses a tenantId reserved for quota accounts', async () => {
+    const response = await invokeRoute({
+      path: '/',
+      method: 'post',
+      body: { tenantId: '__individuals__', name: 'Impostor', adminEmail: 'a@example.test' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.body.error).toMatch(/must not start with "__"/);
+    expect(mockRecordAuditEntry).not.toHaveBeenCalled();
   });
 
   it('invites a tenant-less existing identity instead of trying to appoint it directly', async () => {

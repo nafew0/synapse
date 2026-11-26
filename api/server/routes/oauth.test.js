@@ -49,6 +49,9 @@ const mockRedirectToAuthFailure = jest.fn((res, { clientDomain, authFailedError 
   res.redirect(`${clientDomain}/login?redirect=false&error=${authFailedError}`),
 );
 const mockPassportAuthenticate = jest.fn(() => (_req, _res, next) => next());
+const mockLoginLimiter = jest.fn((_req, _res, next) => next());
+const mockBackchannelLogout = jest.fn((_req, res) => res.sendStatus(200));
+let mockBackchannelLogoutSources;
 
 jest.mock('passport', () => ({
   authenticate: (...args) => mockPassportAuthenticate(...args),
@@ -66,6 +69,7 @@ jest.mock('librechat-data-provider', () => ({
   ...jest.requireActual('librechat-data-provider'),
   ErrorTypes: {
     AUTH_FAILED: 'auth_failed',
+    ACCOUNT_NOT_LINKED: 'account_not_linked',
   },
 }));
 
@@ -75,11 +79,18 @@ jest.mock('@librechat/api', () => ({
   createSetBalanceConfig: jest.fn(() => (_req, _res, next) => next()),
   getOAuthFailureMessage: (...args) => mockGetOAuthFailureMessage(...args),
   redirectToAuthFailure: (...args) => mockRedirectToAuthFailure(...args),
+  isEnabled: jest.requireActual('@librechat/api').isEnabled,
+  createOpenIdBackchannelLogout: (sources) => {
+    mockBackchannelLogoutSources = sources;
+    return mockBackchannelLogout;
+  },
+  refuseOtherProvidersWhenSsoOnly:
+    jest.requireActual('@librechat/api').refuseOtherProvidersWhenSsoOnly,
 }));
 
 jest.mock('~/server/middleware', () => ({
   checkDomainAllowed: jest.fn((_req, _res, next) => next()),
-  loginLimiter: jest.fn((_req, _res, next) => next()),
+  loginLimiter: (...args) => mockLoginLimiter(...args),
   logHeaders: jest.fn((_req, _res, next) => next()),
 }));
 
@@ -88,8 +99,15 @@ jest.mock('~/server/controllers/auth/oauth', () => ({
 }));
 
 jest.mock('~/models', () => ({
+  findUser: jest.fn(),
+  endOpenIdSession: jest.fn(),
   findBalanceByUser: jest.fn(),
   upsertBalanceFields: jest.fn(),
+  deleteAllUserSessions: jest.fn(),
+}));
+
+jest.mock('~/strategies', () => ({
+  getOpenIdConfig: jest.fn(),
 }));
 
 jest.mock('~/server/services/Config', () => ({
@@ -124,6 +142,61 @@ function createApp(sessionMessages) {
   return app;
 }
 
+describe('OpenID back-channel logout route', () => {
+  const ORIGINAL_REUSE = process.env.OPENID_REUSE_TOKENS;
+
+  beforeEach(() => {
+    mockLoginLimiter.mockClear();
+    mockBackchannelLogout.mockClear();
+  });
+
+  afterAll(() => {
+    if (ORIGINAL_REUSE === undefined) {
+      delete process.env.OPENID_REUSE_TOKENS;
+    } else {
+      process.env.OPENID_REUSE_TOKENS = ORIGINAL_REUSE;
+    }
+  });
+
+  it('answers the IdP without going through the per-IP login limiter', async () => {
+    await request(createApp())
+      .post('/oauth/openid/backchannel-logout')
+      .type('form')
+      .send({ logout_token: 'token' })
+      .expect(200);
+
+    expect(mockBackchannelLogout).toHaveBeenCalledTimes(1);
+    expect(mockLoginLimiter).not.toHaveBeenCalled();
+  });
+
+  it('wires the OpenID config and user methods into the handler', () => {
+    createApp();
+    const models = require('~/models');
+    const { getOpenIdConfig } = require('~/strategies');
+
+    expect(mockBackchannelLogoutSources).toEqual(
+      expect.objectContaining({
+        getOpenIdConfig,
+        findUser: models.findUser,
+        endOpenIdSession: models.endOpenIdSession,
+      }),
+    );
+  });
+
+  it('drops app-issued sessions only when Synapse does not reuse the IdP tokens', async () => {
+    createApp();
+    const models = require('~/models');
+
+    process.env.OPENID_REUSE_TOKENS = 'true';
+    await mockBackchannelLogoutSources.afterSessionEnded('user-1');
+    expect(models.deleteAllUserSessions).not.toHaveBeenCalled();
+
+    process.env.OPENID_REUSE_TOKENS = 'false';
+    await mockBackchannelLogoutSources.afterSessionEnded('user-1');
+    expect(models.deleteAllUserSessions).toHaveBeenCalledWith({ userId: 'user-1' });
+  });
+});
+
 describe('OAuth route failure logging', () => {
   beforeEach(() => {
     mockLogger.warn.mockClear();
@@ -153,6 +226,7 @@ describe('OAuth route failure logging', () => {
       logger: mockLogger,
       clientDomain: 'http://client.test',
       authFailedError: 'auth_failed',
+      forwardedErrors: ['account_not_linked'],
     });
     expect(mockOpenIDCallbackMiddleware).toHaveBeenCalledWith(
       expect.any(Object),

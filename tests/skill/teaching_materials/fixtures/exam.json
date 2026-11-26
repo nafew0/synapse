@@ -24,36 +24,21 @@
       "questions": [
         {
           "text": "Which SQL clause filters groups after aggregation?",
-          "options": [
-            "WHERE",
-            "HAVING",
-            "ORDER BY",
-            "LIMIT"
-          ],
+          "options": ["WHERE", "HAVING", "ORDER BY", "LIMIT"],
           "answer": "b",
           "bloom": "remember",
           "explanation": "HAVING is applied after GROUP BY; WHERE filters rows before grouping."
         },
         {
           "text": "Which normal form removes transitive dependencies?",
-          "options": [
-            "1NF",
-            "2NF",
-            "3NF",
-            "BCNF"
-          ],
+          "options": ["1NF", "2NF", "3NF", "BCNF"],
           "answer": "c",
           "bloom": "understand",
           "explanation": "A short reason the answer is right."
         },
         {
           "text": "A primary key must be unique and…",
-          "options": [
-            "nullable",
-            "not null",
-            "indexed by hand",
-            "a string"
-          ],
+          "options": ["nullable", "not null", "indexed by hand", "a string"],
           "answer": "b",
           "bloom": "remember",
           "explanation": "A short reason the answer is right."

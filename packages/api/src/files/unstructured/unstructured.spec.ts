@@ -364,6 +364,31 @@ describe('read_document', () => {
     return Buffer.from(await source.save());
   };
 
+  it('puts the image itself in the sandbox and names it in the rebuild command', async () => {
+    const copySource = jest.fn(async (file: { filename: string }) => ({
+      id: 'sandbox-photo',
+      name: file.filename,
+      storage_session_id: 'storage-1',
+      kind: 'user' as const,
+    }));
+    const { reader } = build({ copySource });
+    const { content, artifact } = await invoke(reader, 'photo.png');
+    expect(copySource).toHaveBeenCalledWith(png, Buffer.from('bytes'));
+    expect(content).toContain(
+      'scan_to_docx.py document-fedcba65.elements.json /mnt/data/photo.png /mnt/data/<name>.docx',
+    );
+    expect(artifact?.files.map((f) => f.name)).toContain('photo.png');
+  });
+
+  it('copies a PDF no further, since it reached the sandbox at upload', async () => {
+    const copySource = jest.fn(async () => null);
+    const bytes = await threePagePdf();
+    const { reader } = build({ copySource, readBytes: async () => bytes });
+    const { content } = await invoke(reader, 'order.pdf');
+    expect(copySource).not.toHaveBeenCalled();
+    expect(content).toContain('<source file>');
+  });
+
   it('sends only the pages that need OCR and keeps the parser text of the rest', async () => {
     const bytes = await threePagePdf();
     const { reader, partition } = build({ readBytes: async () => bytes });

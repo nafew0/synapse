@@ -13,7 +13,7 @@ jest.mock('~/server/services/AuthService', () => ({
   registerUser: jest.fn(),
 }));
 jest.mock('~/strategies', () => ({ getOpenIdConfig: jest.fn(), getOpenIdEmail: jest.fn() }));
-jest.mock('openid-client', () => ({ refreshTokenGrant: jest.fn() }));
+jest.mock('openid-client', () => ({ refreshTokenGrant: jest.fn(), tokenRevocation: jest.fn() }));
 jest.mock('~/models', () => ({
   deleteAllUserSessions: jest.fn(),
   getUserById: jest.fn(),
@@ -26,6 +26,7 @@ jest.mock('@librechat/api', () => ({
   isEnabled: jest.fn(),
   findOpenIDUser: jest.fn(),
   getOpenIdIssuer: jest.fn(() => 'https://issuer.example.com'),
+  isOpenIdSessionEnded: jest.requireActual('@librechat/api').isOpenIdSessionEnded,
   buildOpenIDRefreshParams: jest.fn(() => {
     const params = {};
     if (process.env.OPENID_SCOPE) {
@@ -302,6 +303,85 @@ describe('refreshController – OpenID path', () => {
       }),
     );
     expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  describe('sessions ended by back-channel logout', () => {
+    const endedUser = (sid = 'idp-session-1') => ({
+      ...defaultUser,
+      openidEndedSessions: [{ sid, endedAt: new Date() }],
+    });
+
+    const expectRefusedAndSignedOut = () => {
+      expect(openIdClient.tokenRevocation).toHaveBeenCalledWith(
+        { some: 'config' },
+        'stored-refresh',
+        {
+          token_type_hint: 'refresh_token',
+        },
+      );
+      expect(setOpenIDAuthTokens).not.toHaveBeenCalled();
+      expect(req.session.openidTokens).toBeUndefined();
+      expect(res.clearCookie).toHaveBeenCalledWith('refreshToken');
+      expect(res.clearCookie).toHaveBeenCalledWith('token_provider');
+      expect(res.clearCookie).toHaveBeenCalledWith('openid_user_id');
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.send).toHaveBeenCalledWith('OpenID session ended');
+    };
+
+    beforeEach(() => {
+      res.clearCookie = jest.fn();
+      openIdClient.tokenRevocation.mockResolvedValue(undefined);
+    });
+
+    it('refuses to reuse a stored token from an ended IdP session', async () => {
+      setOpenIDReuseCookies();
+      req.session = {
+        openidTokens: {
+          idToken: makeSessionToken({ sid: 'idp-session-1' }),
+          refreshToken: 'stored-refresh',
+          lastRefreshedAt: Date.now(),
+        },
+      };
+      getUserById.mockResolvedValue(endedUser());
+
+      await refreshController(req, res);
+
+      expect(openIdClient.refreshTokenGrant).not.toHaveBeenCalled();
+      expectRefusedAndSignedOut();
+    });
+
+    it('refuses fresh IdP tokens that still belong to an ended session', async () => {
+      mockTokenset.claims.mockReturnValue({ ...baseClaims, sid: 'idp-session-1' });
+      findOpenIDUser.mockResolvedValue({ user: endedUser(), error: null, migration: false });
+
+      await refreshController(req, res);
+
+      expect(openIdClient.refreshTokenGrant).toHaveBeenCalled();
+      expectRefusedAndSignedOut();
+    });
+
+    it('still refuses when the IdP cannot revoke the refresh token', async () => {
+      mockTokenset.claims.mockReturnValue({ ...baseClaims, sid: 'idp-session-1' });
+      findOpenIDUser.mockResolvedValue({ user: endedUser(), error: null, migration: false });
+      openIdClient.tokenRevocation.mockRejectedValue(new Error('unreachable'));
+
+      await refreshController(req, res);
+
+      expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('unreachable'));
+      expectRefusedAndSignedOut();
+    });
+
+    it('refreshes normally for another, still active IdP session', async () => {
+      mockTokenset.claims.mockReturnValue({ ...baseClaims, sid: 'idp-session-2' });
+      findOpenIDUser.mockResolvedValue({ user: endedUser(), error: null, migration: false });
+
+      await refreshController(req, res);
+
+      expect(openIdClient.tokenRevocation).not.toHaveBeenCalled();
+      expectOpenIDRefreshGrant();
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.send.mock.calls[0][0].user).not.toHaveProperty('openidEndedSessions');
+    });
   });
 
   it('reuses valid OpenID session tokens and refreshes CloudFront cookies', async () => {

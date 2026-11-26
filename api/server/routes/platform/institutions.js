@@ -1,8 +1,14 @@
 const express = require('express');
-const { isChatAccessContact } = require('@librechat/api');
+const {
+  isUsageAccount,
+  isReservedTenantId,
+  isChatAccessContact,
+  resolveAlert,
+} = require('@librechat/api');
 const { logger, runAsSystem, INSTITUTION_ADMIN_ROLE } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const requirePlatformSuperadmin = require('~/server/middleware/platformAdmin');
+const { refuseManaged } = require('~/server/middleware/ssoOnly');
 const {
   appointInstitutionAdmin,
   ensureInstitutionAdminRole,
@@ -28,7 +34,6 @@ const {
   listUsageByMember,
   listUsageByModel,
 } = require('~/server/services/institutionUsage');
-const { getShadowReadiness } = require('~/server/services/usageQuota');
 const {
   TenantAgentAccessError,
   getTenantAgentAccess,
@@ -253,7 +258,7 @@ router.delete('/:tenantId', async (req, res) => {
   }
 });
 
-router.post('/', async (req, res) => {
+router.post('/', refuseManaged, async (req, res) => {
   try {
     const {
       tenantId,
@@ -265,11 +270,12 @@ router.post('/', async (req, res) => {
       adminEmail,
       adminName,
       limits,
-      packageId,
-      monthlyTokenLimit,
     } = req.body ?? {};
     if (!tenantId || !name) {
       return res.status(400).json({ error: 'tenantId and name are required' });
+    }
+    if (isReservedTenantId(tenantId)) {
+      return res.status(400).json({ error: 'tenantId must not start with "__"' });
     }
     if (!adminUserId && !adminEmail) {
       return res.status(400).json({
@@ -297,7 +303,7 @@ router.post('/', async (req, res) => {
       if (existing) {
         return null;
       }
-      const created = await db.createInstitution({
+      return db.createInstitution({
         tenantId,
         name,
         slug,
@@ -307,31 +313,6 @@ router.post('/', async (req, res) => {
         stats: { activeMembers: 0 },
         createdBy: req.user.id ?? req.user._id,
       });
-      if (packageId) {
-        const pkg = await models.InstitutionPackage.findOne({ id: packageId, active: true })
-          .lean()
-          .exec();
-        if (!pkg) throw new HttpError(400, 'Active institution package not found');
-        const effectiveLimit =
-          Number.isInteger(monthlyTokenLimit) && monthlyTokenLimit > 0
-            ? monthlyTokenLimit
-            : pkg.monthlyTokenLimit;
-        created.packageAssignment = {
-          packageId: pkg.id,
-          packageSnapshot: {
-            name: pkg.name,
-            description: pkg.description,
-            price: pkg.price,
-            currency: pkg.currency,
-            monthlyTokenLimit: pkg.monthlyTokenLimit,
-          },
-          monthlyTokenLimit: effectiveLimit,
-          assignedAt: new Date(),
-          assignedBy: req.user.id ?? req.user._id,
-        };
-        await created.save();
-      }
-      return created;
     });
 
     if (!institution) {
@@ -481,6 +462,61 @@ router.patch('/:tenantId/ocr-access', async (req, res) => {
   }
 });
 
+/**
+ * Maps a Synapse institution to its bdren.ai organization (or clears the mapping with `null`).
+ * From then on a member's seat is read from bdren.ai. One organization maps to one institution.
+ */
+router.put('/:tenantId/bdren-organization', async (req, res) => {
+  const { tenantId } = req.params;
+  const { bdrenOrganizationId } = req.body ?? {};
+  const organizationId =
+    typeof bdrenOrganizationId === 'string' ? bdrenOrganizationId.trim() : null;
+  if (bdrenOrganizationId !== null && (!organizationId || organizationId.length > 100)) {
+    return res.status(400).json({ error: 'bdrenOrganizationId must be a string or null' });
+  }
+
+  try {
+    const update = organizationId
+      ? { $set: { bdrenOrganizationId: organizationId } }
+      : { $unset: { bdrenOrganizationId: 1 } };
+    const before = await runAsSystem(() =>
+      models.Institution.findOneAndUpdate({ tenantId: tenantId.trim() }, update, {
+        new: false,
+        projection: { bdrenOrganizationId: 1, name: 1 },
+      })
+        .lean()
+        .exec(),
+    );
+    if (!before) {
+      return res.status(404).json({ error: 'Institution not found' });
+    }
+    await recordPlatformAudit(req, {
+      action: 'institution.updated',
+      severity: 'warning',
+      target: { type: 'institution', id: tenantId, name: before.name },
+      metadata: {
+        operation: 'bdren_organization_mapped',
+        before: before.bdrenOrganizationId ?? null,
+        after: organizationId,
+      },
+    });
+    if (organizationId) {
+      await resolveAlert(`institution_link:${organizationId}`).catch((error) =>
+        logger.error('[platform/institutions] Failed to resolve the link alert', error),
+      );
+    }
+    return res.status(200).json({ tenantId, bdrenOrganizationId: organizationId });
+  } catch (error) {
+    if (error?.code === 11000) {
+      return res
+        .status(409)
+        .json({ error: 'That bdren.ai organization is already mapped to another institution' });
+    }
+    logger.error('[platform/institutions] Failed to map the bdren.ai organization', error);
+    return res.status(500).json({ error: 'Failed to map the bdren.ai organization' });
+  }
+});
+
 function sendAgentAccessError(res, error, fallback) {
   if (error instanceof HttpError || error instanceof TenantAgentAccessError) {
     return res.status(error.statusCode).json({ error: error.message });
@@ -563,55 +599,6 @@ router.post('/:tenantId/agent-access/reconcile', async (req, res) => {
   }
 });
 
-router.post('/:tenantId/package', async (req, res) => {
-  try {
-    const institution = await runAsSystem(() => db.getInstitutionByTenantId(req.params.tenantId));
-    if (!institution) return res.status(404).json({ error: 'Institution not found' });
-    const pkg = await runAsSystem(() =>
-      models.InstitutionPackage.findOne({ id: req.body?.packageId, active: true }).lean().exec(),
-    );
-    if (!pkg) return res.status(400).json({ error: 'Active institution package not found' });
-    const monthlyTokenLimit =
-      Number.isInteger(req.body?.monthlyTokenLimit) && req.body.monthlyTokenLimit > 0
-        ? req.body.monthlyTokenLimit
-        : pkg.monthlyTokenLimit;
-    const updated = await runAsSystem(() =>
-      models.Institution.findOneAndUpdate(
-        { tenantId: req.params.tenantId },
-        {
-          $set: {
-            packageAssignment: {
-              packageId: pkg.id,
-              packageSnapshot: {
-                name: pkg.name,
-                description: pkg.description,
-                price: pkg.price,
-                currency: pkg.currency,
-                monthlyTokenLimit: pkg.monthlyTokenLimit,
-              },
-              monthlyTokenLimit,
-              assignedAt: new Date(),
-              assignedBy: req.user.id ?? req.user._id,
-            },
-          },
-        },
-        { new: true },
-      )
-        .lean()
-        .exec(),
-    );
-    await recordPlatformAudit(req, {
-      action: 'institution.updated',
-      target: { type: 'institution', id: req.params.tenantId },
-      metadata: { packageId: pkg.id, monthlyTokenLimit },
-    });
-    return res.json({ institution: updated });
-  } catch (error) {
-    logger.error('[platform/institutions] package assignment failed', error);
-    return res.status(500).json({ error: 'Failed to assign institution package' });
-  }
-});
-
 router.get('/:tenantId/quota', async (req, res) => {
   try {
     return res.status(200).json(await getPolicyConsole({ tenantId: req.params.tenantId }));
@@ -627,15 +614,6 @@ router.get('/:tenantId/quota', async (req, res) => {
     }
     logger.error('[platform/institutions] quota read failed', error);
     return res.status(500).json({ error: 'Failed to load quota health' });
-  }
-});
-
-router.get('/:tenantId/quota/readiness', async (req, res) => {
-  try {
-    return res.status(200).json(await getShadowReadiness({ tenantId: req.params.tenantId }));
-  } catch (error) {
-    logger.error('[platform/institutions] quota readiness failed', error);
-    return res.status(500).json({ error: 'Failed to build quota readiness report' });
   }
 });
 
@@ -687,7 +665,10 @@ router.post('/:tenantId/policies', async (req, res) => {
     });
     await recordPlatformAudit(req, {
       action: 'institution.usage_policy_changed',
-      target: { type: 'institution', id: req.params.tenantId },
+      target: {
+        type: isUsageAccount(req.params.tenantId) ? 'usage_account' : 'institution',
+        id: req.params.tenantId,
+      },
       metadata: {
         before: before.policy,
         after: result.policy,
@@ -936,7 +917,7 @@ router.put('/:tenantId/chat-access', async (req, res) => {
   }
 });
 
-router.post('/:tenantId/admins', async (req, res) => {
+router.post('/:tenantId/admins', refuseManaged, async (req, res) => {
   const { tenantId } = req.params;
   try {
     const { userId, email, name } = req.body ?? {};

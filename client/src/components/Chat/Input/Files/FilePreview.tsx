@@ -2,8 +2,8 @@ import { FileIcon } from '@librechat/client';
 import type { TFile } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
 import SourceIcon from './SourceIcon';
-import Scan from './Scan';
 import { cn } from '~/utils';
+import Scan from './Scan';
 
 const FilePreview = ({
   file,

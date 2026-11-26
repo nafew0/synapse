@@ -9,6 +9,7 @@ type TestMessage = {
   conversationId?: string;
   text?: string;
   isCreatedByUser?: boolean;
+  error?: boolean;
   content?: Array<
     | {
         type?: string;
@@ -126,6 +127,7 @@ if (typeof (global as { PointerEvent?: unknown }).PointerEvent === 'undefined') 
 import type { TMessage } from 'librechat-data-provider';
 import MessageNav, {
   buildEntry,
+  describeSavedError,
   buildSteerEntry,
   buildFallbackEntry,
   magnifyFalloff,
@@ -333,6 +335,42 @@ describe('MessageNav', () => {
         asTMessage(buildMessage({ messageId: 'a', text: 'alpha-preview' })),
       );
       expect(entry.preview).toBe('alpha-preview');
+    });
+
+    it('labels a saved error with readable words, not its JSON', () => {
+      const json = '{"type":"token_quota_exceeded","limitCode":"WEEKLY_CAP"}';
+      const describe = jest.fn(() => 'Usage limit reached');
+      const entry = buildEntry(
+        'e',
+        asTMessage(buildMessage({ messageId: 'e', text: json, error: true })),
+        describe,
+      );
+      expect(entry.preview).toBe('Usage limit reached');
+      expect(describe).toHaveBeenCalledWith(json);
+    });
+
+    it('names the allowance that ran out, as the notice does', () => {
+      const localize = (key: string) => key;
+      const refusal = (limitCode: string) =>
+        `{"type":"token_quota_exceeded","limitCode":"${limitCode}"}`;
+      expect(describeSavedError(refusal('IMAGE_CREDITS_LOW'), localize)).toBe(
+        'com_error_quota_title_images',
+      );
+      expect(describeSavedError(refusal('INSTITUTION_WEEKLY_CAP'), localize)).toBe(
+        'com_error_quota_title_institution',
+      );
+      expect(describeSavedError(refusal('SOMETHING_NEW'), localize)).toBe('com_error_quota_title');
+    });
+
+    it('leaves ordinary messages to their own text', () => {
+      const describe = jest.fn(() => 'unused');
+      const entry = buildEntry(
+        'a',
+        asTMessage(buildMessage({ messageId: 'a', text: 'hello' })),
+        describe,
+      );
+      expect(entry.preview).toBe('hello');
+      expect(describe).not.toHaveBeenCalled();
     });
 
     it('falls back to DOM text content for messages without React Query data', () => {

@@ -19,7 +19,13 @@ export type OpenIdIssuerSource = {
 };
 
 type OpenIdLookupField = 'openidId' | 'idOnTheSource';
-type OpenIdUserResolution = { user: IUser | null; error: string | null; migration: boolean };
+type OpenIdUserResolution = {
+  user: IUser | null;
+  error: string | null;
+  migration: boolean;
+  /** Set when the email belongs to an account that signs in another way (e.g. `local`). */
+  conflictingProvider?: string;
+};
 
 const OPENID_DISCOVERY_PATH = '/.well-known/openid-configuration';
 const LEGACY_ISSUER_FILTERS: Array<FilterQuery<IUser>['openidIssuer']> = [
@@ -260,7 +266,12 @@ export async function findOpenIDUser({
         logger.warn(
           `[${strategyName}] Attempted OpenID login by user ${user.email}, was registered with "${user.provider}" provider`,
         );
-        return finish({ user: null, error: ErrorTypes.AUTH_FAILED, migration: false });
+        return finish({
+          user: null,
+          error: ErrorTypes.AUTH_FAILED,
+          migration: false,
+          conflictingProvider: user.provider,
+        });
       }
 
       if (user?.openidId && user.openidId !== openidId) {

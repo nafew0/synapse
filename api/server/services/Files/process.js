@@ -8,6 +8,7 @@ const {
   megabyte,
   Constants,
   FileContext,
+  isArchiveType,
   FileSources,
   imageExtRegex,
   EModelEndpoint,
@@ -27,6 +28,10 @@ const {
   isPermissiveMimeConfig,
 } = require('librechat-data-provider');
 const { logger, runAsSystem } = require('@librechat/data-schemas');
+
+/** Unstructured's per-page price, used when `documentOcr` is not configured for the recogniser. */
+const DEFAULT_OCR_PRICE_PER_PAGE_USD = 0.015;
+const { createServiceMeter } = require('~/server/services/serviceMeter');
 const {
   parseText,
   isTextType,
@@ -38,6 +43,8 @@ const {
   categorizeFile,
   planPreparation,
   sanitizeFilename,
+  recordOcrCharge,
+  ocrRequestKey,
   processAudioFile,
   sendUploadSuccess,
   getStorageSource,
@@ -477,10 +484,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
   const { handleImageUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id, endpoint } = metadata;
 
-  /* Before storing: local image storage converts the upload and deletes the temp file. */
-  const sandboxMetadata = returnFile
-    ? undefined
-    : await getImageSandboxMetadata({ req, file, metadata });
+  /* A chat image is copied to the sandbox only when a call needs it there (`deferCodeFiles`). */
   const { filepath, bytes, width, height, storageKey, storageRegion } = await handleImageUpload({
     req,
     file,
@@ -500,7 +504,6 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
       filename: file.originalname,
       context: FileContext.message_attachment,
       source,
-      metadata: sandboxMetadata,
       type: `image/${appConfig.imageOutputType}`,
       ...(await getRetentionExpiry(req)),
       width,
@@ -755,6 +758,7 @@ const uploadToCodeEnvironment = async ({ req, file, agent_id, messageAttachment 
  * @param {boolean} params.ocrAvailable - A configured OCR service may be used for this file.
  * @param {number} params.ocrMinCharsPerPage
  * @param {() => void} [params.onRecognize] - Called just before the OCR request goes out.
+ * @param {string} [params.fileId] - The file the text is for; keys the page charge so a retry records once.
  * @param {(scan: import('librechat-data-provider').FilePageScan) => void} [params.onClassify] - Gets
  *   the per-page verdicts. A callback because a fully scanned PDF has no text to return them with.
  * @returns {Promise<{ text: string, bytes: number, filepath?: string, pages?: number, ocrApplied: boolean } | undefined>}
@@ -766,6 +770,7 @@ const extractDocumentText = async ({
   ocrMinCharsPerPage,
   onRecognize,
   onClassify,
+  fileId,
 }) => {
   let parsed;
   let scan;
@@ -799,12 +804,43 @@ const extractDocumentText = async ({
     return parsed ? { ...parsed, ocrApplied: false } : undefined;
   }
 
+  const pricePerPageUsd =
+    req.config?.documentOcr?.pricePerPageUsd ?? DEFAULT_OCR_PRICE_PER_PAGE_USD;
+  const meter =
+    ocrStrategy !== FileSources.document_parser ? await createServiceMeter(req.user) : null;
+  const estimatedCredits = Math.round(
+    Math.max(parsed?.pages ?? 1, 1) * pricePerPageUsd * 1_000_000,
+  );
+  if (meter && !(await meter.canAfford(estimatedCredits))) {
+    logger.warn(
+      `[processAgentFileUpload] OCR skipped for "${file.originalname}": allowance used up`,
+    );
+    return parsed ? { ...parsed, ocrApplied: false } : undefined;
+  }
+
   onRecognize?.();
   try {
     const { handleFileUpload } = getStrategyFunctions(ocrStrategy);
     const recognized = await handleFileUpload({ req, file, loadAuthValues });
     if (recognized?.text?.trim()) {
-      return { ...recognized, ocrApplied: ocrStrategy !== FileSources.document_parser };
+      const applied = ocrStrategy !== FileSources.document_parser;
+      if (applied && fileId && req.user?.id) {
+        await recordOcrCharge({
+          user: req.user.id,
+          tenantId: req.user.tenantId,
+          fileId,
+          pages: recognized.pages ?? 0,
+          pricePerPageUsd,
+          modelKey: `upload/${ocrStrategy}`,
+          conversationId: req.body?.conversationId,
+        });
+        await meter?.charge(
+          ocrRequestKey(req.user.id, fileId),
+          Math.round((recognized.pages ?? 0) * pricePerPageUsd * 1_000_000),
+          'ocr',
+        );
+      }
+      return { ...recognized, ocrApplied: applied };
     }
   } catch (err) {
     logger.error(
@@ -869,6 +905,7 @@ const resolveContextExtraction = async ({
       ocrMinCharsPerPage: autoConfig.ocrMinCharsPerPage,
       onRecognize,
       onClassify,
+      fileId: file_id,
     });
     if (extracted) {
       return extracted;
@@ -1252,10 +1289,15 @@ const extractPreparedText = async ({
       ocrMinCharsPerPage: autoConfig.ocrMinCharsPerPage,
       onRecognize: () => sseStream?.sendProgress(UploadStage.recognizing),
       onClassify,
+      fileId: metadata?.file_id,
     });
     if (extracted?.text?.trim()) {
       return extracted;
     }
+  }
+
+  if (isArchiveType(file.mimetype)) {
+    return undefined;
   }
 
   if (!fileConfig.checkType(file.mimetype, fileConfig.text?.supportedMimeTypes || [])) {
@@ -1365,10 +1407,10 @@ const isSandboxUploadAllowed = ({ req, assistantTools }) => {
 };
 
 /**
- * Copies an attached image into the code sandbox when the assistant has one, so it can crop a
- * logo or signature out of a scan, OCR it, or compare a render against it. The model still sees
- * the image as before; this only adds the `codeEnvRef`. Only assistants whose tools include
- * `execute_code` get the copy, and a failed copy never fails the upload.
+ * Copies an image saved to an assistant's own files into the code sandbox when the assistant has
+ * one. A chat image is not copied here: the model sees it, and it reaches the sandbox only when a
+ * call needs it there (`deferCodeFiles`). Only assistants whose tools include `execute_code` get
+ * the copy, and a failed copy never fails the upload.
  *
  * @param {object} params
  * @param {ServerRequest} params.req
@@ -1777,7 +1819,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     });
   }
 
-  if (isImage && fileInfoMetadata == null) {
+  if (isImage && !messageAttachment && fileInfoMetadata == null) {
     fileInfoMetadata = await getImageSandboxMetadata({ req, file, metadata });
   }
 

@@ -46,6 +46,9 @@ export const userPreferences = () => `${user()}/preferences`;
 
 export const balance = () => `${BASE_URL}/api/balance`;
 
+export const quota = () => `${BASE_URL}/api/quota`;
+export const quotaPlan = () => `${BASE_URL}/api/quota/plan`;
+
 export const userPlugins = () => `${BASE_URL}/api/user/plugins`;
 
 export const deleteUser = () => `${BASE_URL}/api/user/delete`;
@@ -318,6 +321,16 @@ export const filePreview = (fileId: string) =>
 export const fileConfig = () => `${BASE_URL}/api/files/config`;
 /** Owner-scoped usage touch so queued attachments outlive the upload-window TTL. */
 export const fileUsage = () => `${BASE_URL}/api/files/usage`;
+
+const phoneUploadRoot = `${BASE_URL}/api/phone-upload`;
+export const phoneUploadSessions = () => `${phoneUploadRoot}/sessions`;
+export const phoneUploadSession = (sessionId: string) =>
+  `${phoneUploadSessions()}/${encodeURIComponent(sessionId)}`;
+export const phoneUploadSessionFile = (sessionId: string, fileId: string) =>
+  `${phoneUploadSession(sessionId)}/files/${encodeURIComponent(fileId)}`;
+/** Public link the phone opens; the token is its only credential. */
+export const phoneUploadLink = (token: string) =>
+  `${phoneUploadRoot}/u/${encodeURIComponent(token)}`;
 export const agentFiles = (agentId: string) => `${BASE_URL}/api/files/agent/${agentId}`;
 
 export const images = () => `${files()}/images`;
@@ -487,6 +500,9 @@ export const addTagToConversation = (conversationId: string) =>
 
 export const userTerms = () => `${BASE_URL}/api/user/terms`;
 export const acceptUserTerms = () => `${BASE_URL}/api/user/terms/accept`;
+export const browserExtensionCodes = () => `${BASE_URL}/api/browser/ext/codes`;
+export const browserExtensionTokens = () => `${BASE_URL}/api/browser/ext/tokens`;
+
 export const banner = () => `${BASE_URL}/api/banner`;
 export const bannerSeen = (bannerId: string) => `${banner()}/${encodeURIComponent(bannerId)}/seen`;
 export const bannerDismiss = (bannerId: string) =>

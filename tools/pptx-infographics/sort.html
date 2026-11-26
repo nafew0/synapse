@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Infographic sorter</title>
+<style>
+  :root {
+    --bg: #f6f6f4; --panel: #ffffff; --ink: #1d1f22; --muted: #6b6f76; --line: #e3e3df;
+    --accent: #2457d6; --accent-soft: #e6edfc; --done: #1f8a4c; --done-soft: #e3f3ea; --warn: #9a6a00;
+    --skip: #575b62; --focus: #f2b134;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151618; --panel: #1e2023; --ink: #e8e8e6; --muted: #9a9ea6; --line: #2e3136;
+      --accent: #7aa2ff; --accent-soft: #233154; --done: #5cc98a; --done-soft: #1d3a2a; --warn: #e3b450; --skip: #b4b8bf; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink);
+    display: grid; grid-template-columns: 290px 1fr; grid-template-rows: auto 1fr auto; height: 100vh; }
+  header { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; padding: 10px 16px;
+    background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 15px; margin: 0; font-weight: 650; }
+  .progress { flex: 1; display: flex; align-items: center; gap: 10px; color: var(--muted); }
+  .bar { flex: 1; max-width: 360px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .bar span { display: block; height: 100%; background: var(--done); }
+  button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 6px;
+    padding: 6px 12px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  aside { border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+  .filters { padding: 10px; display: flex; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+  .filters input { flex: 1 1 100%; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); font: inherit; }
+  .filters button.on { background: var(--accent-soft); border-color: var(--accent); }
+  .decks { overflow-y: auto; flex: 1; }
+  .deck { padding: 8px 12px; border-bottom: 1px solid var(--line); cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; }
+  .deck:hover { background: var(--bg); }
+  .deck.current { background: var(--accent-soft); }
+  .deck .name { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .deck .count { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; }
+  .deck .meta { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; }
+  .mini { flex: 1; height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; }
+  .mini span { display: block; height: 100%; background: var(--done); }
+  main { overflow-y: auto; padding: 14px 18px 24px; min-height: 0; }
+  .deckhead { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+  .deckhead h2 { margin: 0; font-size: 18px; }
+  .deckhead .note { color: var(--muted); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; cursor: pointer; outline: 3px solid transparent; }
+  .card.focus { outline-color: var(--focus); }
+  .card img, .card .ph { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; background: #fff; }
+  .card .ph { display: grid; place-items: center; color: var(--skip); font-size: 12px; }
+  .card .foot { display: flex; align-items: center; gap: 6px; padding: 6px 8px; font-size: 12px; }
+  .card .num { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .chip { border-radius: 999px; padding: 1px 8px; font-size: 12px; white-space: nowrap; }
+  .chip.done { background: var(--done-soft); color: var(--done); font-weight: 600; }
+  .chip.guess { border: 1px dashed var(--accent); color: var(--accent); }
+  .chip.hint { color: var(--muted); }
+  .chip.skip { background: var(--line); color: var(--skip); }
+  .chip.named { background: var(--accent-soft); color: var(--accent); }
+  .items { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+  footer { grid-column: 1 / -1; background: var(--panel); border-top: 1px solid var(--line); padding: 8px 14px;
+    display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); }
+  kbd { font: 600 11px ui-monospace, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px;
+    padding: 0 5px; color: var(--ink); background: var(--bg); }
+  .preview { position: fixed; inset: 0; background: rgb(0 0 0 / 0.75); display: none; place-items: center; z-index: 5; }
+  .preview.open { display: grid; }
+  .preview img { max-width: 92vw; max-height: 86vh; background: #fff; border-radius: 6px; }
+  .preview p { color: #fff; margin: 10px 0 0; text-align: center; }
+  .toast { position: fixed; right: 16px; bottom: 56px; background: var(--ink); color: var(--bg); padding: 8px 12px; border-radius: 6px; display: none; }
+  @media (prefers-reduced-motion: no-preference) { .card { transition: outline-color 0.1s; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Infographic sorter</h1>
+  <div class="progress"><div class="bar"><span id="overall"></span></div><span id="overallText"></span></div>
+  <button id="export" class="primary">Export</button>
+</header>
+<aside>
+  <div class="filters">
+    <input id="search" placeholder="Filter decks" aria-label="Filter decks">
+    <button data-filter="todo" class="on">Unfinished</button><button data-filter="all">All</button>
+    <button data-filter="A">Pack A</button><button data-filter="B">Pack B</button>
+  </div>
+  <div class="decks" id="decks" role="list"></div>
+</aside>
+<main id="main" aria-live="polite"></main>
+<footer id="legend"></footer>
+<div class="preview" id="preview" role="dialog" aria-label="Slide preview"><div><p></p></div></div>
+<div class="toast" id="toast"></div>
+<script>
+const state = { kinds: [], decks: [], deck: null, slides: [], focus: 0, filter: "todo", pending: null };
+const $ = (id) => document.getElementById(id);
+const byKey = () => Object.fromEntries(state.kinds.map((k) => [k.key, k.name]));
+
+async function api(path, body) {
+  const response = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
+  if (!response.ok) throw new Error(await response.text());
+  return response.json();
+}
+
+function toast(text) {
+  const el = $("toast"); el.textContent = text; el.style.display = "block";
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => (el.style.display = "none"), 1800);
+}
+
+async function loadDecks() {
+  const data = await api("/api/decks");
+  state.kinds = data.kinds; state.decks = data.decks;
+  renderLegend(); renderDecks(); renderProgress();
+}
+
+function renderProgress() {
+  const total = state.decks.reduce((n, d) => n + d.total, 0);
+  const done = state.decks.reduce((n, d) => n + d.done, 0);
+  $("overall").style.width = `${(100 * done) / Math.max(1, total)}%`;
+  $("overallText").textContent = `${done.toLocaleString()} of ${total.toLocaleString()} slides sorted`;
+}
+
+function renderLegend() {
+  const kinds = state.kinds.map((k) => `<span title="${k.use}"><kbd>${k.key}</kbd> ${k.name}</span>`).join("");
+  $("legend").innerHTML = kinds +
+    `<span><kbd>1</kbd>–<kbd>9</kbd> items</span><span><kbd>Enter</kbd> accept folder kind</span>` +
+    `<span><kbd>Shift</kbd>+<kbd>Enter</kbd> accept folder kind for every unsorted slide</span>` +
+    `<span><kbd>Space</kbd> enlarge</span><span><kbd>←↑→↓</kbd> move</span><span><kbd>]</kbd> next deck</span>`;
+}
+
+function visibleDecks() {
+  const text = $("search").value.toLowerCase();
+  return state.decks.filter((d) => {
+    if (text && !d.topic.toLowerCase().includes(text)) return false;
+    if (state.filter === "todo") return d.done < d.total;
+    if (state.filter === "A" || state.filter === "B") return d.pack === state.filter;
+    return true;
+  });
+}
+
+function renderDecks() {
+  $("decks").innerHTML = visibleDecks().map((d) => `
+    <div class="deck ${state.deck === d.deck ? "current" : ""}" role="listitem" data-deck="${d.deck}">
+      <span class="name">${d.topic}</span><span class="count">${d.done}/${d.total}</span>
+      <span class="meta"><span class="chip ${d.named ? "named" : "hint"}">${d.named || "mixed"} · ${d.pack}</span>
+      <span class="mini"><span style="width:${(100 * d.done) / d.total}%"></span></span></span>
+    </div>`).join("");
+}
+
+async function openDeck(deck) {
+  state.deck = deck; state.focus = 0; state.pending = null;
+  state.slides = await api(`/api/slides?deck=${encodeURIComponent(deck)}`);
+  const first = state.slides.findIndex((s) => !s.label);
+  state.focus = first < 0 ? 0 : first;
+  renderDecks(); renderSlides(); scrollToFocus();
+}
+
+function chip(slide) {
+  if (slide.label) {
+    return `<span class="chip ${slide.label.kind === "skip" ? "skip" : "done"}">${slide.label.kind}</span>`;
+  }
+  if (slide.confidence === "name") return `<span class="chip guess">${slide.guess}?</span>`;
+  if (slide.hint) return `<span class="chip hint">hint: ${slide.hint}</span>`;
+  return `<span class="chip hint">unsorted</span>`;
+}
+
+function itemsOf(slide) {
+  return slide.label?.items ?? slide.items;
+}
+
+function renderSlides() {
+  const deck = state.decks.find((d) => d.deck === state.deck);
+  $("main").innerHTML = `
+    <div class="deckhead"><h2>${deck.topic}</h2>
+      <span class="note">Pack ${deck.pack} · ${deck.done} of ${deck.total} sorted${deck.named ? ` · folder says <b>${deck.named}</b>` : ""}</span>
+      ${deck.named ? `<button id="acceptAll">Accept “${deck.named}” for every unsorted slide</button>` : ""}</div>
+    <div class="grid" id="grid">${state.slides.map((s, i) => `
+      <div class="card ${i === state.focus ? "focus" : ""}" data-index="${i}">
+        <img src="${s.thumb}" alt="Slide ${s.slide}" loading="lazy" onerror="this.outerHTML='<div class=ph>not rendered yet</div>'">
+        <div class="foot"><span class="num">#${s.slide}</span>${chip(s)}
+          <span class="items">${itemsOf(s) ? `${itemsOf(s)} items` : ""}</span></div>
+      </div>`).join("")}</div>`;
+  const button = $("acceptAll");
+  if (button) button.onclick = acceptAll;
+}
+
+function setFocus(index) {
+  const cards = document.querySelectorAll(".card");
+  if (!cards.length) return;
+  state.focus = Math.max(0, Math.min(cards.length - 1, index)); state.pending = null;
+  cards.forEach((c, i) => c.classList.toggle("focus", i === state.focus));
+  scrollToFocus();
+}
+
+function scrollToFocus() {
+  document.querySelector(".card.focus")?.scrollIntoView({ block: "nearest" });
+}
+
+function columns() {
+  const grid = $("grid");
+  return grid ? getComputedStyle(grid).gridTemplateColumns.split(" ").length : 1;
+}
+
+let saving = Promise.resolve();
+
+function label(entries) {
+  for (const entry of entries) {
+    const slide = state.slides.find((s) => s.id === entry.id);
+    if (!slide.label) state.decks.find((d) => d.deck === state.deck).done += 1;
+    slide.label = { kind: entry.kind, items: entry.items };
+  }
+  saving = saving.then(() => api("/api/label", entries)).catch((error) => toast(`not saved: ${error.message}`));
+  renderSlides(); renderDecks(); renderProgress();
+}
+
+function choose(kind) {
+  const slide = state.slides[state.focus];
+  const items = state.pending ?? itemsOf(slide);
+  label([{ id: slide.id, kind, items }]);
+  setFocus(state.focus + 1);
+}
+
+function setItems(count) {
+  const slide = state.slides[state.focus];
+  if (slide.label) {
+    label([{ id: slide.id, kind: slide.label.kind, items: count }]);
+    setFocus(state.focus);
+  } else {
+    state.pending = count; toast(`${count} items: now press the kind`);
+  }
+}
+
+function acceptAll() {
+  const entries = state.slides.filter((s) => !s.label && s.confidence === "name").map((s) => ({ id: s.id, kind: s.guess, items: s.items }));
+  if (!entries.length) return toast("nothing left to accept");
+  label(entries); setFocus(state.focus); toast(`${entries.length} slides set to ${entries[0].kind}`);
+}
+
+function nextDeck() {
+  const list = visibleDecks(); const at = list.findIndex((d) => d.deck === state.deck);
+  const next = list.slice(at + 1).find((d) => d.done < d.total) || list.find((d) => d.done < d.total && d.deck !== state.deck);
+  if (next) openDeck(next.deck); else toast("every deck in this list is sorted");
+}
+
+function togglePreview() {
+  const el = $("preview"); const slide = state.slides[state.focus];
+  if (el.classList.toggle("open") && slide) {
+    el.querySelector("img")?.remove();
+    const img = document.createElement("img");
+    img.src = slide.thumb; img.alt = `Slide ${slide.slide}`;
+    el.firstElementChild.prepend(img);
+    el.querySelector("p").textContent = `#${slide.slide} · ${slide.label?.kind || (slide.confidence === "name" ? slide.guess + "?" : "unsorted")}`;
+  }
+}
+
+document.addEventListener("keydown", (event) => {
+  if (event.target === $("search") || !state.deck) return;
+  const key = event.key;
+  {
+    if (key === " ") { event.preventDefault(); return togglePreview(); }
+    if (key === "Escape") return $("preview").classList.remove("open");
+    if (key === "ArrowRight") return setFocus(state.focus + 1);
+    if (key === "ArrowLeft") return setFocus(state.focus - 1);
+    if (key === "ArrowDown") { event.preventDefault(); return setFocus(state.focus + columns()); }
+    if (key === "ArrowUp") { event.preventDefault(); return setFocus(state.focus - columns()); }
+    if (key === "]") return nextDeck();
+    if (key === "Enter" && event.shiftKey) return acceptAll();
+    if (key === "Enter") {
+      const slide = state.slides[state.focus];
+      if (slide.label) return setFocus(state.focus + 1);
+      if (slide.confidence === "name") return choose(slide.guess);
+      return toast("no folder kind here: press the kind's letter");
+    }
+    if (/^[1-9]$/.test(key)) return setItems(Number(key));
+    const kind = byKey()[key.toLowerCase()];
+    if (kind && !event.metaKey && !event.ctrlKey) { $("preview").classList.remove("open"); return choose(kind); }
+  }
+});
+
+$("decks").addEventListener("click", (e) => { const d = e.target.closest(".deck"); if (d) openDeck(d.dataset.deck); });
+$("main").addEventListener("click", (e) => { const c = e.target.closest(".card"); if (c) setFocus(Number(c.dataset.index)); });
+$("main").addEventListener("dblclick", (e) => { if (e.target.closest(".card")) togglePreview(); });
+$("preview").addEventListener("click", togglePreview);
+$("search").addEventListener("input", renderDecks);
+document.querySelectorAll(".filters button").forEach((b) => (b.onclick = () => {
+  state.filter = b.dataset.filter;
+  document.querySelectorAll(".filters button").forEach((x) => x.classList.toggle("on", x === b));
+  renderDecks();
+}));
+$("export").onclick = async () => {
+  await saving;
+  const result = await api("/api/export", {});
+  toast(`exported ${result.labelled} of ${result.total} slides: folders by kind are in the sorted/ folder next to the catalogue`);
+};
+loadDecks().then(() => { const first = visibleDecks()[0]; if (first) openDeck(first.deck); });
+</script>
+</body>
+</html>

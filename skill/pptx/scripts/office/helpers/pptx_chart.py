@@ -139,6 +139,27 @@ def _check_chart_axis_references(part: str, xml: str) -> list[str]:
     return problems
 
 
+_RUN_PROPS_RE = re.compile(r"<a:(defRPr|rPr|endParaRPr)\b[^>]*(?<!/)>(.*?)</a:\1\s*>", re.DOTALL)
+_FONT_TAG_RE = re.compile(r"<a:(latin|ea|cs|sym)\b")
+FONT_ORDER = ("latin", "ea", "cs", "sym")
+
+
+def _check_text_fonts(part: str, xml: str) -> list[str]:
+    """Each run's fonts must appear at most once, in latin, ea, cs, sym order."""
+    bad = 0
+    for match in _RUN_PROPS_RE.finditer(xml):
+        ranks = [FONT_ORDER.index(tag) for tag in _FONT_TAG_RE.findall(match.group(2))]
+        if any(later <= earlier for earlier, later in zip(ranks, ranks[1:])):
+            bad += 1
+    if not bad:
+        return []
+    return [
+        f"{part}: {bad} text run(s) repeat or misorder <a:latin>/<a:ea>/<a:cs>/<a:sym>; "
+        "PowerPoint repairs the deck and drops the chart. Set chart fonts with the "
+        "pptxgenjs font options and rebuild instead of editing chart XML"
+    ]
+
+
 def _ext_lst_spans(text: str) -> list[tuple[int, int]]:
     spans: list[tuple[int, int]] = []
     depth = 0
@@ -158,7 +179,7 @@ def _ext_lst_spans(text: str) -> list[tuple[int, int]]:
     return spans
 
 
-CHART_CHECKS = (_check_stacked_label_positions, _check_chart_axis_references)
+CHART_CHECKS = (_check_stacked_label_positions, _check_chart_axis_references, _check_text_fonts)
 
 
 def find_chart_problems(files: Mapping[str, bytes]) -> list[str]:

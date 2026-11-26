@@ -2,13 +2,13 @@ import { useMemo, useState } from 'react';
 import { Globe, ChevronDown } from 'lucide-react';
 import type { PartMetadata } from 'librechat-data-provider';
 import { FaviconImage, getCleanDomain } from '~/components/Web/SourceHovercard';
-import { SourceList, SourceFaviconStack } from '~/components/Web/SourceList';
 import { useLocalize, useExpandCollapse, useLazyCollapseBody } from '~/hooks';
+import { SourceList, SourceFaviconStack } from '~/components/Web/SourceList';
 import { parsePageSource, parseSearchSources } from './sources';
-import useToolCallState from './useToolCallState';
-import { useDenseSteps } from './StepRow';
-import { useToolCallIntent } from './intent';
 import { WEB_SEARCH_TOOL_NAMES } from '~/utils/toolLabels';
+import useToolCallState from './useToolCallState';
+import { useToolCallIntent } from './intent';
+import { useDenseSteps } from './StepRow';
 import cn from '~/utils/cn';
 
 const rowBase = 'tool-status-text flex min-w-0 items-center gap-2.5 text-text-secondary';

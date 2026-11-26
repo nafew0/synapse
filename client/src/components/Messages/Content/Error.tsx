@@ -7,6 +7,7 @@ import {
   toErrorReference,
 } from 'librechat-data-provider';
 import type { ContextType } from 'react';
+import type { TQuotaExceeded } from './QuotaNotice';
 import type { TErrorInfo } from '~/utils/errors';
 import type { TranslationKeys } from '~/hooks';
 import { getErrorInfo, publicErrorKeys, recordError } from '~/utils/errors';
@@ -14,7 +15,9 @@ import { useGenerationsByLatest, useLocalize } from '~/hooks';
 import { ChatContext, useMessageContext } from '~/Providers';
 import { ReportButton } from '~/components/Report';
 import { useGetAddedConvo } from '~/hooks/Chat';
+import { extractJson } from '~/utils/json';
 import Deliverables from './Deliverables';
+import QuotaNotice from './QuotaNotice';
 
 /** Code stored on a response that stopped before it finished (see `UnfinishedMessage`). */
 export const UNFINISHED_ERROR_CODE = 'response_incomplete';
@@ -66,6 +69,30 @@ type TErrorProps = {
   conversationId?: string | null;
 };
 
+/** Error types that are an EXPECTED state rather than a failure. A usage limit
+ *  is planned behaviour: the user did nothing wrong and retrying will not help,
+ *  so destructive red is the wrong signal. */
+const noticeErrorTypes = new Set<string>([ErrorTypes.TOKEN_QUOTA_EXCEEDED, 'TOKEN_QUOTA_EXCEEDED']);
+
+/** The quota envelope's display fields, or `undefined` when `text` is not a quota refusal. */
+export function parseQuotaNotice(text: string): TQuotaExceeded | undefined {
+  const jsonString = extractJson(text);
+  if (!jsonString) {
+    return undefined;
+  }
+  try {
+    const json = JSON.parse(jsonString);
+    return noticeErrorTypes.has(json?.code ?? json?.type) ? json : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether a message error should be presented as a notice rather than a failure. */
+export function getErrorSeverity(text: string): 'error' | 'notice' {
+  return parseQuotaNotice(text) ? 'notice' : 'error';
+}
+
 function parseError(text: string): TErrorInfo {
   if (langChainModelNotFoundUrl.test(text)) {
     return { code: PublicErrorCodes.MODEL_UNAVAILABLE };
@@ -107,6 +134,7 @@ const Error = ({ text, messageId, conversationId }: TErrorProps) => {
   const chat = useContext(ChatContext);
   const messageContext = useMessageContext();
   const { code, requestId } = useMemo(() => parseError(text), [text]);
+  const quota = useMemo(() => parseQuotaNotice(text), [text]);
   const reference = toErrorReference(requestId);
   const targetMessageId = messageId ?? messageContext.messageId;
   const targetConversationId = conversationId ?? messageContext.conversationId ?? undefined;
@@ -116,6 +144,10 @@ const Error = ({ text, messageId, conversationId }: TErrorProps) => {
   useEffect(() => {
     recordError({ code, requestId });
   }, [code, requestId]);
+
+  if (quota) {
+    return <QuotaNotice json={quota} localize={localize} />;
+  }
 
   return (
     <>

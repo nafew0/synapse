@@ -10,12 +10,12 @@ import {
 import type { TAttachment, TFile, TAttachmentMetadata } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
 import FilePreview from '~/components/Chat/Input/Files/FilePreview';
-import { isCodeOnlyArtifact } from '~/utils/artifacts';
 import { PendingDownload, useDownloadReady } from './delivery';
+import { isCodeOnlyArtifact } from '~/utils/artifacts';
 import { displayFilename } from './attachmentTypes';
 import { useAttachmentLink } from './LogLink';
-import { useLocalize } from '~/hooks';
 import { cn, getFileType } from '~/utils';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 interface ToolArtifactCardProps {

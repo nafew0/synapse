@@ -12,6 +12,7 @@ import {
   QueryKeys,
   inferMimeType,
   excelMimeTypes,
+  isArchiveType,
   isExtensionAllowed,
   EToolResources,
   EModelEndpoint,
@@ -348,7 +349,10 @@ export const validateFiles = ({
   for (let i = 0; i < fileList.length; i++) {
     let originalFile = fileList[i];
     if (!isExtensionAllowed(originalFile.name, supportedExtensions)) {
-      setError('com_error_files_unsupported_type', { 0: originalFile.name });
+      const archive = isArchiveType(inferMimeType(originalFile.name, originalFile.type));
+      setError(archive ? 'com_error_files_archive' : 'com_error_files_unsupported_type', {
+        0: originalFile.name,
+      });
       return false;
     }
 

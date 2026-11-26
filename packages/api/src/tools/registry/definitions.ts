@@ -1,9 +1,10 @@
 import { WebSearchToolDefinition, CalculatorToolDefinition } from '@librechat/agents';
 import type { ExtendedJsonSchema } from './schema';
 import { AskUserQuestionToolDefinition } from '~/agents/hitl/askUserQuestionTool';
-import { firecrawlToolkit } from '~/tools/firecrawl/definitions';
 import { documentReadToolDefinition } from '~/files/unstructured/definitions';
 import { fileAuthoringToolkit } from '~/files/authoring/definitions';
+import { firecrawlToolkit } from '~/tools/firecrawl/definitions';
+import { institutionKbToolDefinition } from '~/kb/tool';
 import { geminiToolkit } from '~/tools/toolkits/gemini';
 import { oaiToolkit } from '~/tools/toolkits/oai';
 
@@ -402,6 +403,10 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   },
   read_web_page: {
     ...firecrawlToolkit.read_web_page,
+    toolType: 'builtin',
+  },
+  institution_kb: {
+    ...institutionKbToolDefinition,
     toolType: 'builtin',
   },
   read_document: {

@@ -13,7 +13,7 @@ export interface IInstitutionInvite extends Document {
   name?: string;
   requestedUsername?: string | null;
   requestedRole: string;
-  creditPackageId?: string | null;
+  usagePackageKey?: string | null;
   status: InstitutionInviteStatus;
   tokenHash: string;
   expiresAt: Date;

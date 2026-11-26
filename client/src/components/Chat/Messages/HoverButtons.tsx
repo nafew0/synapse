@@ -11,13 +11,13 @@ import {
 } from '@librechat/client';
 import type { TConversation, TMessage, TFeedback } from 'librechat-data-provider';
 import { useGenerationsByLatest, useLocalize } from '~/hooks';
+import { hideOfficeWorkNotes } from '~/utils/workNotes';
 import { Fork } from '~/components/Conversations';
 import { hoverButtonClasses } from './styles';
 import MessageAudio from './MessageAudio';
 import Feedback from './Feedback';
 import { cn } from '~/utils';
 import store from '~/store';
-import { hideOfficeWorkNotes } from '~/utils/workNotes';
 
 type THoverButtons = {
   isEditing: boolean;

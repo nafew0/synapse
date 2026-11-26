@@ -22,6 +22,7 @@ function getInstitutionAdminCapabilities() {
     SystemCapabilities.MANAGE_GROUPS,
     SystemCapabilities.READ_ROLES,
     SystemCapabilities.READ_USAGE,
+    SystemCapabilities.MANAGE_KB,
   ];
 }
 
@@ -77,6 +78,29 @@ async function syncAllTenantInterfacePermissions() {
   );
 }
 
+/**
+ * Startup repair: institution admin roles created before a capability was added to the bundle
+ * (such as `manage:kb`) receive it. Granting is idempotent.
+ */
+async function syncAllInstitutionAdminCapabilities() {
+  const institutions = await runAsSystem(() =>
+    models.Institution.find({}).select('tenantId').lean().exec(),
+  );
+  const tenantIds = institutions.map((institution) => institution.tenantId).filter(Boolean);
+  await Promise.all(
+    tenantIds.flatMap((tenantId) =>
+      getInstitutionAdminCapabilities().map((capability) =>
+        db.grantCapability({
+          principalType: PrincipalType.ROLE,
+          principalId: INSTITUTION_ADMIN_ROLE,
+          capability,
+          tenantId,
+        }),
+      ),
+    ),
+  );
+}
+
 async function appointInstitutionAdmin({ tenantId, userId }) {
   await ensureInstitutionAdminRole(tenantId);
 
@@ -106,6 +130,7 @@ module.exports = {
   getInstitutionAdminCapabilities,
   ensureInstitutionAdminRole,
   syncAllTenantInterfacePermissions,
+  syncAllInstitutionAdminCapabilities,
   syncTenantInterfacePermissions,
   appointInstitutionAdmin,
   revokeInstitutionAdmin,

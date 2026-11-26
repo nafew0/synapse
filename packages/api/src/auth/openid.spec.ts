@@ -402,6 +402,7 @@ describe('findOpenIDUser', () => {
         user: null,
         error: ErrorTypes.AUTH_FAILED,
         migration: false,
+        conflictingProvider: 'google',
       });
     });
 

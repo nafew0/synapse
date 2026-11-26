@@ -1,4 +1,5 @@
 import type { Document, Types } from 'mongoose';
+import type { InstitutionUsagePackage } from './usagePackage';
 import type { InstitutionStatus } from '~/common';
 
 export interface IInstitution extends Document {
@@ -6,30 +7,25 @@ export interface IInstitution extends Document {
   tenantId: string;
   name: string;
   slug?: string;
+  bdrenOrganizationId?: string;
   status: InstitutionStatus;
   authDomains?: string[];
   timezone?: string;
   ocrAccess?: boolean;
   usagePolicyVersion?: number;
-  packageAssignment?: {
-    packageId: string;
-    packageSnapshot: {
-      name: string;
-      description?: string;
-      price: number;
-      currency: string;
-      monthlyTokenLimit: number;
-    };
-    monthlyTokenLimit: number;
-    assignedAt: Date;
-    assignedBy?: Types.ObjectId | string;
-  } | null;
+  usagePackage?: InstitutionUsagePackage | null;
+  browserControl?: {
+    extensionEnabled?: boolean;
+    blockedDomains?: string[];
+  };
   limits?: {
     maxActiveMembers?: number | null;
   };
   stats?: {
     activeMembers?: number;
   };
+  /** Seat changes member moves already applied; see the schema. */
+  seatOps?: string[];
   createdBy?: Types.ObjectId | string;
   /** Set by a platform superadmin to stop new chats, e.g. when a free trial is over. */
   chatAccess?: {

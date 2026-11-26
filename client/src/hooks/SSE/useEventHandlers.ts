@@ -47,6 +47,7 @@ import { shouldResetSubagentAtomsOnConversationChange } from './cleanup';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
 import { CONNECTION_ERROR_TEXT, toErrorText } from './errors';
+import { parseQuotaNotice } from '~/components/Messages/Content/Error';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { useApplyAgentTemplate } from '~/hooks/Agents';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -312,6 +313,7 @@ export default function useEventHandlers({
   const { announcePolite } = useLiveAnnouncer();
   const applyAgentTemplate = useApplyAgentTemplate();
   const setAbortScroll = useSetRecoilState(store.abortScroll);
+  const setQuotaUpgradePrompt = useSetRecoilState(store.quotaUpgradePrompt);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -947,6 +949,12 @@ export default function useEventHandlers({
       const { messages, userMessage, initialResponse } = submission;
       setCompleted((prev) => new Set(prev.add(initialResponse.messageId)));
 
+      const sentText = data != null && 'text' in data ? data.text : undefined;
+      const quota = typeof sentText === 'string' ? parseQuotaNotice(sentText) : undefined;
+      if (quota) {
+        setQuotaUpgradePrompt(quota);
+      }
+
       const conversationId =
         userMessage.conversationId ?? submission.conversation?.conversationId ?? '';
 
@@ -1040,6 +1048,7 @@ export default function useEventHandlers({
       setIsSubmitting,
       getMessages,
       queryClient,
+      setQuotaUpgradePrompt,
     ],
   );
 

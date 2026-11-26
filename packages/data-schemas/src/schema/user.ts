@@ -78,6 +78,10 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
     openidIssuer: {
       type: String,
     },
+    openidEndedSessions: {
+      type: [{ _id: false, sid: { type: String }, endedAt: { type: Date, required: true } }],
+      default: undefined,
+    },
     samlId: {
       type: String,
     },
@@ -172,6 +176,11 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       type: String,
       sparse: true,
     },
+    /** While set and in the future, a member move is re-scoping this account; requests are asked to retry. */
+    movingUntil: {
+      type: Date,
+      default: undefined,
+    },
     tenantId: {
       type: String,
       index: true,
@@ -181,11 +190,38 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       enum: ['institution', 'standalone'],
       index: true,
     },
+    bdrenNotedOrganizationId: {
+      type: String,
+    },
+    /** When this account was moved from a local password to the bdren.ai SSO identity. */
+    ssoMigratedAt: {
+      type: Date,
+    },
+    /**
+     * Set by the SSO migration: the institution this account keeps until bdren.ai covers it there, so a
+     * "not covered" answer does not move a migrated member out. Cleared once bdren.ai covers them.
+     */
+    bdrenHoldTenantId: {
+      type: String,
+    },
     membershipStatus: {
       type: String,
       enum: Object.values(InstitutionMembershipStatuses),
       default: InstitutionMembershipStatuses.ACTIVE,
       index: true,
+    },
+    /** The member's own usage package; when absent the institution default applies. */
+    usagePackage: {
+      type: {
+        packageKey: { type: String, trim: true, required: true },
+        assignedAt: { type: Date },
+        assignedBy: { type: Schema.Types.ObjectId, ref: 'User' },
+        expiresAt: { type: Date, default: null },
+        /** A support override: lifts the wall while it lasts. Set only with a reason and an end. */
+        override: { type: Boolean, default: false },
+        reason: { type: String, trim: true },
+      },
+      default: null,
     },
     suspendedAt: {
       type: Date,

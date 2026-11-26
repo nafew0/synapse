@@ -17,6 +17,7 @@ import {
   mergeSandboxSessionArtifact,
   ToolExecuteOptions,
 } from './handlers';
+import { deferCodeFiles } from '~/files/code/deferred';
 import { markSandboxReady } from './prewarm';
 
 function createMockTool(
@@ -187,6 +188,62 @@ describe('createToolExecuteHandler', () => {
       expect(capturedConfigs).toHaveLength(1);
       expect(capturedConfigs[0].session_id).toBeUndefined();
       expect(capturedConfigs[0]._injected_files).toBeUndefined();
+    });
+
+    describe('attached images held back from the sandbox until a call needs them', () => {
+      const image = {
+        file_id: 'img-1',
+        filename: 'order.jpg',
+        type: 'image/jpeg',
+        width: 768,
+        height: 1086,
+      } as never;
+      const mounted = {
+        id: 'sandbox-img',
+        resource_id: 'user-1',
+        storage_session_id: 'storage-img',
+        name: 'order.jpg',
+        kind: 'user' as const,
+      };
+
+      it('copies the image in on the first code call and mounts it there', async () => {
+        const capturedConfigs: Record<string, unknown>[] = [];
+        const handler = createHandler(capturedConfigs);
+        const req = {};
+        const upload = jest.fn(async () => mounted);
+        deferCodeFiles(req, [image], upload);
+
+        const call = (id: string): ToolCallRequest => ({
+          id,
+          name: Constants.EXECUTE_CODE,
+          args: { lang: 'python', code: 'print(1)' },
+        });
+        await invokeHandlerWithConfig(handler, [call('call_a')], { req });
+        await invokeHandlerWithConfig(handler, [call('call_b')], { req });
+
+        expect(upload).toHaveBeenCalledTimes(1);
+        expect(capturedConfigs.map((config) => config._injected_files)).toEqual([
+          [mounted],
+          [mounted],
+        ]);
+        expect(capturedConfigs[0].session_id).toBe('storage-img');
+      });
+
+      it('copies nothing for a call that does not use the sandbox', async () => {
+        const capturedConfigs: Record<string, unknown>[] = [];
+        const handler = createHandler(capturedConfigs, ['web_search']);
+        const req = {};
+        const upload = jest.fn(async () => mounted);
+        deferCodeFiles(req, [image], upload);
+
+        await invokeHandlerWithConfig(
+          handler,
+          [{ id: 'call_c', name: 'web_search', args: { query: 'x' } }],
+          { req },
+        );
+
+        expect(upload).not.toHaveBeenCalled();
+      });
     });
 
     it('passes each code execution call the session the one before it left', async () => {
@@ -3684,9 +3741,7 @@ describe('createToolExecuteHandler', () => {
          * real fault was a generator script that threw before saving the deck.
          */
         const readSandboxImage = jest.fn(async () => {
-          throw new Error(
-            "[Errno 2] No such file or directory: '/mnt/data/.render/slide-2.jpg'",
-          );
+          throw new Error("[Errno 2] No such file or directory: '/mnt/data/.render/slide-2.jpg'");
         });
         const handler = makeReadFileHandler({
           codeEnvAvailable: true,

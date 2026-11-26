@@ -44,6 +44,7 @@ import { createShareMethods, type ShareMethods } from './share';
 import { createActionMethods, type ActionMethods } from './action';
 import { createAssistantMethods, type AssistantMethods } from './assistant';
 import { createBannerMethods, type BannerMethods } from './banner';
+import { createBrowserExtensionMethods, type BrowserExtensionMethods } from './browserExtension';
 import { createToolCallMethods, type ToolCallMethods } from './toolCall';
 import { createCategoriesMethods, type CategoriesMethods } from './categories';
 import { createPresetMethods, type PresetMethods } from './preset';
@@ -52,6 +53,18 @@ import { createConversationTagMethods, type ConversationTagMethods } from './con
 import { createMessageMethods, CLIENT_MESSAGE_SELECT, type MessageMethods } from './message';
 import { createConversationMethods, type ConversationMethods } from './conversation';
 import { createChatProjectMethods, type ChatProjectMethods } from './chatProject';
+import { createKbMethods, type KbMethods } from './kb';
+export type {
+  KbUsage,
+  KbTenantStorage,
+  KbStorageDailyInput,
+  KbCatalogEntry,
+  KbFileInput,
+  KbQueuedResult,
+  FailKbIngestInput,
+  CreateKbDocumentInput,
+  CompleteKbIngestInput,
+} from './kb';
 export type {
   AssignConversationToProjectResult,
   ChatProjectSortBy,
@@ -114,6 +127,11 @@ import { createAgentMethods, type AgentMethods, type AgentDeps } from './agent';
 /* Config */
 import { createConfigMethods, type ConfigMethods } from './config';
 import { createInstitutionMethods, type InstitutionMethods } from './institution';
+import {
+  createUsagePackageMethods,
+  type QuotaOwner,
+  type UsagePackageMethods,
+} from './usagePackage';
 import { createPlatformAdminMethods, type PlatformAdminMethods } from './platformAdmin';
 import {
   createMCPAuthorityMethods,
@@ -186,6 +204,7 @@ export type AllMethods = UserMethods &
   ActionMethods &
   AssistantMethods &
   BannerMethods &
+  BrowserExtensionMethods &
   ToolCallMethods &
   CategoriesMethods &
   PresetMethods &
@@ -193,6 +212,7 @@ export type AllMethods = UserMethods &
   MessageMethods &
   ConversationMethods &
   ChatProjectMethods &
+  KbMethods &
   TxMethods &
   TransactionMethods &
   SpendTokensMethods &
@@ -203,6 +223,7 @@ export type AllMethods = UserMethods &
   AgentMethods &
   ConfigMethods &
   InstitutionMethods &
+  UsagePackageMethods &
   PlatformAdminMethods &
   MCPAuthorityMethods &
   InsightsMethods;
@@ -327,6 +348,7 @@ export function createMethods(
     ...actionMethods,
     ...createAssistantMethods(mongoose),
     ...createBannerMethods(mongoose),
+    ...createBrowserExtensionMethods(mongoose),
     ...createToolCallMethods(mongoose),
     ...createCategoriesMethods(mongoose),
     ...createPresetMethods(mongoose),
@@ -335,6 +357,7 @@ export function createMethods(
     ...messageMethods,
     ...conversationMethods,
     ...createChatProjectMethods(mongoose),
+    ...createKbMethods(mongoose),
     /* Tier 3 */
     ...txMethods,
     ...transactionMethods,
@@ -348,6 +371,7 @@ export function createMethods(
     /* Config */
     ...createConfigMethods(mongoose),
     ...institutionMethods,
+    ...createUsagePackageMethods(mongoose),
     ...platformAdminMethods,
     /* MCP authority proofs */
     ...createMCPAuthorityMethods(mongoose),
@@ -379,6 +403,7 @@ export type {
   ActionMethods,
   AssistantMethods,
   BannerMethods,
+  BrowserExtensionMethods,
   ToolCallMethods,
   CategoriesMethods,
   PresetMethods,
@@ -386,6 +411,7 @@ export type {
   MessageMethods,
   ConversationMethods,
   ChatProjectMethods,
+  KbMethods,
   TxMethods,
   TransactionMethods,
   SpendTokensMethods,
@@ -408,6 +434,8 @@ export type {
   AgentMethods,
   ConfigMethods,
   InstitutionMethods,
+  UsagePackageMethods,
+  QuotaOwner,
   PlatformAdminMethods,
   MCPAuthorityMethods,
   MCPAuthorityMethodHooks,

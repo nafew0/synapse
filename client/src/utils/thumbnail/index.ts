@@ -1,6 +1,6 @@
 import { drawGrid, drawPage, drawPicture, PREVIEW_WIDTH } from './draw';
-import { readEmbeddedThumbnail } from './office';
 import { readLeadPicture, readParagraphs } from './word';
+import { readEmbeddedThumbnail } from './office';
 import { readSheet } from './sheet';
 
 /** Reading a huge file into memory for a small picture is not worth it. */

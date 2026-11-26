@@ -20,11 +20,11 @@ import {
 } from '~/utils';
 import { useLocalize, useExpandCollapse, scheduleMessageContentLayoutReconcile } from '~/hooks';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
-import { getToolCallIntent } from './Parts/intent';
-import { DenseStepsContext } from './Parts/StepRow';
-import parseJsonField from './Parts/parseJsonField';
 import { isBashProgrammaticToolCall } from './routing';
 import { ASK_USER_QUESTION } from '~/utils/approval';
+import { DenseStepsContext } from './Parts/StepRow';
+import parseJsonField from './Parts/parseJsonField';
+import { getToolCallIntent } from './Parts/intent';
 import { StackedToolIcons } from './ToolOutput';
 import { AttachmentGroup } from './Parts';
 import store from '~/store';

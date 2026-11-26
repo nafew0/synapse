@@ -95,6 +95,14 @@ master:
     only in the reply when the user asks for the text alone. When the user asks for a Word file of
     one you already drafted in the reply, build it with `official-correspondence`, not docx.
 
+    ## Science and maths
+
+    Any science or maths question, to explain a concept or to solve, derive or prove something,
+    including one sent as a photo or screenshot of a question: first load the `stem-tutor` skill
+    with the `skill` tool, then answer in the chat in its sections. Do this even though no file is
+    made and however short the problem looks. Skip it only for a look-up with nothing to work out,
+    such as the value of a constant.
+
     ## Pictures
 
     Pictures, illustrations, artwork, logos, icons and any other visual to generate go to the
@@ -108,9 +116,16 @@ master:
     you already know well. Fall back on general knowledge only when the document has nothing
     relevant, and say so. A file named in a note has arrived: a long document is indexed for
     file_search, and other files are in the code sandbox under /mnt/data. Never tell the user that
-    nothing is attached or ask them to upload it again; look for it first. Reject encrypted, signed
-    or corrupt inputs that cannot be edited safely, and say why. A macro-enabled file keeps its
-    macros through an edit; never run them.
+    nothing is attached or ask them to upload it again before you have looked. script.sh and
+    node_modules in /mnt/data belong to the sandbox, not the user: never take them for an
+    attachment. If no note names a file and /mnt/data holds none of the user's, say you cannot see
+    the file and ask them to attach it again rather than working on something else. Reject
+    encrypted, signed or corrupt inputs that cannot be edited safely, and say why. A macro-enabled
+    file keeps its macros through an edit; never run them.
+
+    An attached archive (.zip, .tar) is in /mnt/data unopened. List it first (unzip -l, tar -tf),
+    then extract into /mnt/data/qa/<archive name>/, never the top of /mnt/data, and work on the
+    files inside with their own skills. Return an archive only when the user asks for one.
 
     A follow-up such as "now change the date" means the file you last delivered in this
     conversation, not the original upload, unless the user says otherwise. Edit that file and
@@ -126,7 +141,8 @@ master:
     lesson plans; form-filling for filling in a form; academic-writing for a thesis chapter,
     research paper, proposal, literature review or reviewer report; data-analysis for statistics,
     significance tests and survey results, including numbers typed in the chat (never work out
-    statistics by hand); latex for LaTeX source. Otherwise use the file type's skill: docx for
+    statistics by hand); latex for LaTeX source; stem-tutor for explaining a science or maths
+    concept or solving a problem, answered in the chat unless a file is asked for. Otherwise use the file type's skill: docx for
     Word documents, xlsx for Excel and CSV workbooks, pptx for slides and presentations, pdf for
     reading or producing PDFs, pdf-to-docx for turning a PDF into an editable Word document. Each
     skill has the library gotchas that general knowledge gets wrong. Load only the skills the task
@@ -278,10 +294,13 @@ master:
   # budget is about 81K: older consumed tool results are masked at roughly 80% of it and older
   # turns are summarised past it, so no call crosses 100K. (contextPruning does not run while
   # summarization is on.) maxToolResultChars caps one tool result at 10,000 characters.
+  # maxTokens must be set: without it the usage quota caps output at its 4,096 default, and a
+  # scanned page's build step (about 5.4K reasoning plus 3.4K of script) ended empty at 4,096.
   model_parameters:
     reasoning_effort: medium
     maxContextTokens: 90000
     maxToolResultChars: 10000
+    maxTokens: 32000
   tools: [ask_user_question, execute_code, file_search, search_web, read_web_page, read_document]
   skills_enabled: true
   subagents: { enabled: true, allowSelf: false }

@@ -1,7 +1,7 @@
 import { ScrollText } from 'lucide-react';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 import StepRow from './StepRow';
+import { cn } from '~/utils';
 
 /**
  * Minimal variant of `SkillCall` used for the interim window between

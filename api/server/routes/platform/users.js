@@ -1,10 +1,9 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const { runAsSystem } = require('@librechat/data-schemas');
 const { requireJwtAuth } = require('~/server/middleware');
 const requirePlatformSuperadmin = require('~/server/middleware/platformAdmin');
+const { refuseManaged } = require('~/server/middleware/ssoOnly');
 const models = require('~/db/models');
-const db = require('~/models');
 const { resendUserVerificationEmail } = require('~/server/services/AuthService');
 const { isPlatformAdminEmail } = require('~/server/services/platformAdmin');
 const { resolveMemberRole } = require('~/server/services/accountRoles');
@@ -124,21 +123,13 @@ async function mapPlatformUser(user) {
     updatedAt: user.updatedAt?.toISOString?.() ?? user.updatedAt,
     suspendedAt: user.suspendedAt?.toISOString?.() ?? user.suspendedAt ?? null,
     removedAt: user.removedAt?.toISOString?.() ?? user.removedAt ?? null,
+    usagePackage: user.usagePackage
+      ? {
+          packageKey: user.usagePackage.packageKey,
+          expiresAt: user.usagePackage.expiresAt?.toISOString?.() ?? null,
+        }
+      : null,
   };
-}
-
-async function getPlatformCreditPackages() {
-  const { getAppConfig } = require('~/server/services/Config');
-  const appConfig = await getAppConfig({ baseOnly: true });
-  return appConfig?.config?.creditPackages ?? appConfig?.creditPackages ?? { currency: 'BDT', list: [] };
-}
-
-async function getCreditPackagesForUser(user) {
-  const { getAppConfig } = require('~/server/services/Config');
-  const appConfig = user.tenantId
-    ? await getAppConfig({ tenantId: user.tenantId })
-    : await getAppConfig({ baseOnly: true });
-  return appConfig?.config?.creditPackages ?? appConfig?.creditPackages ?? { currency: 'BDT', list: [] };
 }
 
 router.use(requireJwtAuth, requirePlatformSuperadmin);
@@ -148,7 +139,9 @@ router.get('/', async (req, res) => {
     const { limit, offset } = parsePagination(req.query);
     const result = await listPlatformInstitutionMembers({
       tenantId: typeof req.query.tenantId === 'string' ? req.query.tenantId.trim() : undefined,
-      ...(typeof req.query.accountScope === 'string' ? { accountScope: req.query.accountScope } : null),
+      ...(typeof req.query.accountScope === 'string'
+        ? { accountScope: req.query.accountScope }
+        : null),
       limit,
       offset,
       query: req.query.q,
@@ -161,20 +154,19 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.get('/standalone/packages', async (req, res) => {
-  return res.status(200).json(await getPlatformCreditPackages());
-});
-
-router.post('/standalone/invites', async (req, res) => {
+router.post('/standalone/invites', refuseManaged, async (req, res) => {
   try {
     const result = await createStandaloneInvite({
       email: req.body?.email,
       username: req.body?.username,
-      creditPackageId: req.body?.creditPackageId,
+      usagePackageKey: req.body?.usagePackageKey,
       invitedBy: req.user,
       context: buildAuditContext(req),
     });
-    return res.status(201).json({ invite: result.invite, ...(result.inviteLink ? { inviteLink: result.inviteLink } : null) });
+    return res.status(201).json({
+      invite: result.invite,
+      ...(result.inviteLink ? { inviteLink: result.inviteLink } : null),
+    });
   } catch (error) {
     return handleError(res, error, 'Failed to create individual user invitation');
   }
@@ -204,78 +196,34 @@ router.get('/:id/usage', async (req, res) => {
   }
 });
 
-router.get('/:id/credits', async (req, res) => {
+router.post('/standalone/invites/:inviteId/resend', refuseManaged, async (req, res) => {
   try {
-    const user = await findPlatformUser(req.params.id);
-    const tenantFilter = user.tenantId
-      ? { tenantId: user.tenantId }
-      : { $or: [{ tenantId: null }, { tenantId: { $exists: false } }] };
-    const packages = await getCreditPackagesForUser(user);
-    const balance = await models.Balance.findOne({ user: user._id }).lean().exec();
-    const Grant = mongoose.models.CreditGrant;
-    const grants = await Grant.find({ user: user._id, ...tenantFilter })
-      .sort({ createdAt: -1 })
-      .limit(100)
-      .lean()
-      .exec();
-    return res.json({ balance: balance?.tokenCredits ?? 0, grants, packages });
-  } catch (error) {
-    return handleError(res, error, 'Failed to load user credits');
-  }
-});
-
-router.post('/:id/credits/grant', async (req, res) => {
-  try {
-    const user = await findPlatformUser(req.params.id);
-    const config = await getCreditPackagesForUser(user);
-    const pkg = config.list.find((item) => item.id === req.body?.packageId);
-    if (!pkg) {
-      throw new HttpError(400, 'Invalid credit package');
-    }
-    const appConfig = require('~/server/services/Config');
-    const loadedConfig = user.tenantId
-      ? await appConfig.getAppConfig({ tenantId: user.tenantId })
-      : await appConfig.getAppConfig({ baseOnly: true });
-    const result = await db.createTransaction({
-      user: user._id,
-      tokenType: 'credits',
-      context: 'purchase',
-      rawAmount: pkg.credits,
-      balance: loadedConfig?.config?.balance ?? loadedConfig?.balance,
-      tenantId: user.tenantId ?? null,
+    const result = await resendStandaloneInvite({
+      inviteId: req.params.inviteId,
+      actor: req.user,
+      context: buildAuditContext(req),
     });
-    if (!result) {
-      throw new HttpError(503, 'Balance is disabled');
-    }
-    const Grant = mongoose.models.CreditGrant;
-    const grant = await Grant.create({
-      user: user._id,
-      tenantId: user.tenantId ?? null,
-      packageId: pkg.id,
-      credits: pkg.credits,
-      price: pkg.price,
-      currency: config.currency,
-      reference: req.body.reference || null,
-      note: req.body.note || '',
-      source: 'topup',
-      grantedBy: req.user?._id || null,
+    return res.json({
+      invite: result.invite,
+      ...(result.inviteLink ? { inviteLink: result.inviteLink } : null),
     });
-    return res.status(201).json({ balance: result.balance, grant });
   } catch (error) {
-    return handleError(res, error, 'Failed to grant credits');
+    return handleError(res, error, 'Failed to resend invitation');
   }
-});
-
-router.post('/standalone/invites/:inviteId/resend', async (req, res) => {
-  try {
-    const result = await resendStandaloneInvite({ inviteId: req.params.inviteId, actor: req.user, context: buildAuditContext(req) });
-    return res.json({ invite: result.invite, ...(result.inviteLink ? { inviteLink: result.inviteLink } : null) });
-  } catch (error) { return handleError(res, error, 'Failed to resend invitation'); }
 });
 
 router.post('/standalone/invites/:inviteId/revoke', async (req, res) => {
-  try { return res.json({ invite: await revokeStandaloneInvite({ inviteId: req.params.inviteId, actor: req.user, context: buildAuditContext(req) }) }); }
-  catch (error) { return handleError(res, error, 'Failed to revoke invitation'); }
+  try {
+    return res.json({
+      invite: await revokeStandaloneInvite({
+        inviteId: req.params.inviteId,
+        actor: req.user,
+        context: buildAuditContext(req),
+      }),
+    });
+  } catch (error) {
+    return handleError(res, error, 'Failed to revoke invitation');
+  }
 });
 
 function readAccountScope(value) {
@@ -298,7 +246,7 @@ router.get('/invites/resendable', async (req, res) => {
  * A superadmin may resend across every institution at once, so `tenantId` is
  * optional here — unlike the institution-admin route, which is always scoped.
  */
-router.post('/invites/resend-bulk', async (req, res) => {
+router.post('/invites/resend-bulk', refuseManaged, async (req, res) => {
   try {
     const result = await resendPendingInvites({
       tenantId: req.body?.tenantId?.trim() || undefined,
@@ -313,7 +261,7 @@ router.post('/invites/resend-bulk', async (req, res) => {
   }
 });
 
-router.post('/invites/:inviteId/resend', async (req, res) => {
+router.post('/invites/:inviteId/resend', refuseManaged, async (req, res) => {
   try {
     const result = await resendInstitutionInvite({
       tenantId: requireTenantId(req),
@@ -344,7 +292,7 @@ router.post('/invites/:inviteId/revoke', async (req, res) => {
   }
 });
 
-router.post('/:id/resend-verification', async (req, res) => {
+router.post('/:id/resend-verification', refuseManaged, async (req, res) => {
   try {
     const tenantId = requireTenantId(req);
     const user = await runAsSystem(() =>

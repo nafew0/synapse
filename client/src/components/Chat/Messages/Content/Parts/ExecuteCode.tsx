@@ -13,9 +13,9 @@ import useFollowScroll from './useFollowScroll';
 import { AttachmentGroup } from './Attachment';
 import { useToolCallIntent } from './intent';
 import { useLocalize } from '~/hooks';
+import StepRow from './StepRow';
 import Stdout from './Stdout';
 import { cn } from '~/utils';
-import StepRow from './StepRow';
 
 interface ParsedArgs {
   lang?: string;

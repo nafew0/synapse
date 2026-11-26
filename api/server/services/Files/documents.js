@@ -3,6 +3,7 @@ const { logger, runAsSystem } = require('@librechat/data-schemas');
 const { Time, CacheKeys, documentOcrSchema } = require('librechat-data-provider');
 const {
   getStorageSource,
+  bringDeferredCodeFile,
   createDocumentReadTool,
   isDocumentOcrAllowed,
   createStructureLabeller,
@@ -107,6 +108,31 @@ async function createDocumentReader(req, agentId) {
         profile: config.profile,
         pricePerPageUsd: config.pricePerPageUsd,
       }),
+    copySource: async (file, bytes) => {
+      try {
+        const deferred = bringDeferredCodeFile(req, file, bytes);
+        if (deferred) {
+          return await deferred;
+        }
+        const uploaded = await uploadCodeEnvFile({
+          req,
+          stream: Readable.from(bytes),
+          filename: file.filename,
+          kind: 'user',
+          id: userId,
+        });
+        return {
+          id: uploaded.file_id,
+          name: file.filename,
+          storage_session_id: uploaded.storage_session_id,
+          kind: 'user',
+          resource_id: userId,
+        };
+      } catch (error) {
+        logger.warn(`[read_document] Could not copy "${file.filename}" to the sandbox:`, error);
+        return null;
+      }
+    },
     uploadToSandbox: async (name, content) => {
       const uploaded = await uploadCodeEnvFile({
         req,

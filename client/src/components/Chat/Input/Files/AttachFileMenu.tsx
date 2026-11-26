@@ -3,6 +3,7 @@ import { useRecoilState } from 'recoil';
 import * as Ariakit from '@ariakit/react';
 import {
   FileSearch,
+  Smartphone,
   ImageUpIcon,
   FileType2Icon,
   FileImageIcon,
@@ -11,6 +12,7 @@ import {
 import {
   FileUpload,
   TooltipAnchor,
+  useToastContext,
   DropdownPopup,
   AttachmentIcon,
   SharePointIcon,
@@ -42,10 +44,12 @@ import {
 } from '~/hooks';
 import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
 import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
-import { PER_FILE_UPLOAD_ROUTE } from '~/utils';
+import usePhoneUpload from '~/hooks/Files/usePhoneUpload';
 import { SharePointPickerDialog } from '~/components/SharePoint';
+import { PhoneUploadDialog } from './Phone';
 import { useGetStartupConfig } from '~/data-provider';
 import { ephemeralAgentByConvoId } from '~/store';
+import { PER_FILE_UPLOAD_ROUTE } from '~/utils';
 import { MenuItemProps } from '~/common';
 import { cn } from '~/utils';
 
@@ -109,7 +113,8 @@ const AttachFileMenu = ({
     ephemeralAgentByConvoId(conversationId),
   );
   const toolResourceRef = useRef<string | undefined>();
-  const { handleFileChange } = useFileHandlingNoChatContext(undefined, {
+  const { showToast } = useToastContext();
+  const { handleFileChange, handleFiles } = useFileHandlingNoChatContext(undefined, {
     files,
     setFiles,
     setFilesLoading,
@@ -128,6 +133,21 @@ const AttachFileMenu = ({
   const autoPreparationEnabled = startupConfig?.autoFilePreparationEnabled === true;
 
   const [isSharePointDialogOpen, setIsSharePointDialogOpen] = useState(false);
+  const phoneUpload = usePhoneUpload({
+    conversationId,
+    endpoint,
+    endpointType,
+    onFiles: (phoneFiles) => {
+      setFilesLoading(true);
+      handleFiles(phoneFiles, autoPreparationEnabled ? PER_FILE_UPLOAD_ROUTE : undefined);
+      showToast({ message: localize('com_ui_phone_upload_added'), status: 'success' });
+    },
+    onFileError: (file) =>
+      showToast({
+        message: localize('com_ui_phone_upload_fetch_error', { 0: file.filename }),
+        status: 'error',
+      }),
+  });
 
   /** TODO: Ephemeral Agent Capabilities
    * Allow defining agent capabilities on a per-endpoint basis
@@ -298,6 +318,11 @@ const AttachFileMenu = ({
     };
 
     const localItems = createMenuItems(handleUploadClick);
+    localItems.push({
+      label: localize('com_ui_upload_from_phone'),
+      onClick: phoneUpload.openDialog,
+      icon: <Smartphone className="icon-md" />,
+    });
 
     if (sharePointEnabled) {
       const sharePointItems = createMenuItems(() => {
@@ -328,6 +353,7 @@ const AttachFileMenu = ({
     autoPreparationEnabled,
     fileSearchAllowedByAgent,
     setIsSharePointDialogOpen,
+    phoneUpload.openDialog,
   ]);
 
   const menuTrigger = (
@@ -384,6 +410,13 @@ const AttachFileMenu = ({
           iconClassName="mr-0"
         />
       </FileUpload>
+      {phoneUpload.isDialogOpen && (
+        <PhoneUploadDialog
+          open={phoneUpload.isDialogOpen}
+          onOpenChange={phoneUpload.setDialogOpen}
+          view={phoneUpload.view}
+        />
+      )}
       <SharePointPickerDialog
         isOpen={isSharePointDialogOpen}
         onOpenChange={setIsSharePointDialogOpen}

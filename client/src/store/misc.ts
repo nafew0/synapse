@@ -1,5 +1,6 @@
 import { atom, selectorFamily } from 'recoil';
 import { TAttachment } from 'librechat-data-provider';
+import type { TQuotaExceeded } from '~/components/Messages/Content/QuotaNotice';
 import { atomWithLocalStorage } from './utils';
 import { BadgeItem } from '~/common';
 
@@ -62,6 +63,26 @@ const showShortcutsDialog = atom<boolean>({
   default: false,
 });
 
+/**
+ * Requests the settings dialog open on a given tab, from anywhere in the app.
+ * Settings is otherwise local state inside `AccountSettings`, unreachable from a
+ * chat message — this follows the existing `showShortcutsDialog` pattern rather
+ * than lifting the dialog itself. `null` means no request is pending.
+ */
+const requestedSettingsTab = atom<string | null>({
+  key: 'requestedSettingsTab',
+  default: null,
+});
+
+/**
+ * A usage-limit refusal that just arrived in this session, so the upgrade dialog can open
+ * once for it. Set only from the live error path: reloaded messages never open it.
+ */
+const quotaUpgradePrompt = atom<TQuotaExceeded | null>({
+  key: 'quotaUpgradePrompt',
+  default: null,
+});
+
 export type KeyboardDeleteTarget = {
   conversationId: string;
   title: string;
@@ -99,6 +120,8 @@ export default {
   queriesEnabled,
   isEditingBadges,
   showShortcutsDialog,
+  requestedSettingsTab,
+  quotaUpgradePrompt,
   keyboardDeleteTarget,
   customShortcuts,
   shortcutsEnabled,

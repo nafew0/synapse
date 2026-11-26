@@ -1,12 +1,12 @@
 import type { AxiosResponse } from 'axios';
 import type { TInsightsAccessResponse, TInsightsParams, TInsightsResponse } from './types/insights';
+import type { UploadStageHandler, UploadProgressHandler } from './upload';
 import type { TIssueReportRequest } from './errors';
 import type { TFileConfig } from './file-config';
 import type * as t from './types';
+import { uploadEventStream, getUploadConfig } from './upload';
 import * as permissions from './accessPermissions';
 import * as endpoints from './api-endpoints';
-import { uploadEventStream, getUploadConfig } from './upload';
-import type { UploadStageHandler, UploadProgressHandler } from './upload';
 import * as mcp from './types/mcpServers';
 import * as a from './types/assistants';
 import * as m from './types/mutations';
@@ -198,6 +198,14 @@ export function updateUserPreferences(
 
 export function getUserBalance(): Promise<t.TBalanceResponse> {
   return request.get(endpoints.balance());
+}
+
+export function getUserQuota(): Promise<t.TQuotaResponse> {
+  return request.get(endpoints.quota());
+}
+
+export function getPlanUsage(): Promise<t.TPlanUsageResponse> {
+  return request.get(endpoints.quotaPlan());
 }
 
 export const updateTokenCount = (text: string) => {
@@ -537,6 +545,41 @@ export const uploadFile = (
 export const markFilesUsage = (body: f.TFilesUsageBody): Promise<f.TFilesUsageResponse> => {
   return request.post(endpoints.fileUsage(), body);
 };
+
+/* upload from phone */
+
+export const createPhoneUploadSession = (
+  body: f.PhoneUploadSessionBody,
+): Promise<f.PhoneUploadSessionCreated> => request.post(endpoints.phoneUploadSessions(), body);
+
+export const getPhoneUploadSession = (sessionId: string): Promise<f.PhoneUploadSession> =>
+  request.get(endpoints.phoneUploadSession(sessionId));
+
+/** Downloads one staged phone file as a blob so the desktop can upload it like a picked file. */
+export const downloadPhoneUploadFile = async (sessionId: string, fileId: string): Promise<Blob> => {
+  const response = await request.getResponse<AxiosResponse<Blob>>(
+    endpoints.phoneUploadSessionFile(sessionId, fileId),
+    { responseType: 'blob' },
+  );
+  return response.data;
+};
+
+export const closePhoneUploadSession = (sessionId: string): Promise<void> =>
+  request.delete(endpoints.phoneUploadSession(sessionId));
+
+export const getPhoneUploadStatus = (token: string): Promise<f.PhoneUploadStatus> =>
+  request.get(endpoints.phoneUploadLink(token));
+
+export const sendPhoneUploadFile = (
+  token: string,
+  data: FormData,
+  onProgress?: UploadProgressHandler,
+): Promise<f.PhoneUploadFile> =>
+  request.postMultiPart(
+    endpoints.phoneUploadLink(token),
+    data,
+    getUploadConfig(data, undefined, onProgress),
+  );
 
 /* actions */
 
@@ -1348,6 +1391,14 @@ export function getBanner(): Promise<t.TBannerResponse> {
 
 export function markBannerSeen(bannerId: string): Promise<void> {
   return request.post(endpoints.bannerSeen(bannerId));
+}
+
+export function createBrowserExtensionCode(): Promise<t.TBrowserExtensionCode> {
+  return request.post(endpoints.browserExtensionCodes());
+}
+
+export function signOutBrowserExtensions(): Promise<t.TBrowserExtensionSignOut> {
+  return request.delete(endpoints.browserExtensionTokens());
 }
 
 export function dismissBanner(bannerId: string): Promise<void> {

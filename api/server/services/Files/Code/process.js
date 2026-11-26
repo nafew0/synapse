@@ -1,10 +1,13 @@
 const path = require('path');
+const { Readable } = require('stream');
 const { v4 } = require('uuid');
 const { logger } = require('@librechat/data-schemas');
 const { getCodeBaseURL } = require('@librechat/agents');
 const {
   withTimeout,
   getBasePath,
+  deferCodeFiles,
+  isDeferredCodeFile,
   logAxiosError,
   hasOfficeHtmlPath,
   sanitizeArtifactPath,
@@ -918,6 +921,63 @@ const getReuploadFailureCategory = (error) => {
  * toolContext: string,
  * }>}
  */
+/**
+ * Copies an attached image into the sandbox the first time a call needs it (see `deferCodeFiles`),
+ * from the bytes the caller holds or from storage, and records the copy on the file so later
+ * turns prime it like any other sandbox file.
+ *
+ * @param {object} params
+ * @param {ServerRequest} params.req
+ * @param {string} [params.codeApiBaseUrl]
+ * @param {string} params.executionProfile
+ * @returns {(file: MongoFile, bytes?: Buffer) => Promise<object>} The mounted file's ref.
+ */
+const copyDeferredFile =
+  ({ req, codeApiBaseUrl, executionProfile }) =>
+  async (file, bytes) => {
+    const { handleFileUpload: uploadCodeEnvFile } = getStrategyFunctions(FileSources.execute_code);
+    let stream;
+    if (bytes) {
+      stream = Readable.from(bytes);
+    } else {
+      const { getDownloadStream } = getStrategyFunctions(getStorageSource(file));
+      stream = await getDownloadStream(req, file.filepath);
+    }
+    const id = req.user.id;
+    const uploaded = await uploadCodeEnvFile({
+      req,
+      stream,
+      filename: file.filename,
+      kind: 'user',
+      id,
+      codeApiBaseUrl,
+      executionProfile,
+    });
+    const newRef = {
+      kind: 'user',
+      id,
+      storage_session_id: uploaded.storage_session_id,
+      file_id: uploaded.file_id,
+      executionProfile,
+    };
+    const updatedRefs = mergeCodeEnvRef(file.metadata, newRef);
+    await updateFile({
+      file_id: file.file_id,
+      'metadata.codeEnvRef': updatedRefs.codeEnvRef,
+      [`metadata.codeEnvRefs.${executionProfile}`]: newRef,
+    });
+    logger.debug(
+      `[primeCodeFiles] file=${file.file_id} path=deferred-copy storage_session_id=${uploaded.storage_session_id}`,
+    );
+    return {
+      id: uploaded.file_id,
+      resource_id: id,
+      storage_session_id: uploaded.storage_session_id,
+      name: file.filename,
+      kind: 'user',
+    };
+  };
+
 const primeFiles = async (options) => {
   const {
     tool_resources,
@@ -1005,9 +1065,19 @@ const primeFiles = async (options) => {
     );
   }
 
+  const deferred = [];
   for (const file of newestByName.values()) {
     const ref = getCodeEnvRefForProfile(file.metadata, executionProfile);
     const sourceRef = ref ?? getCodeEnvRefs(file.metadata)[0]?.[1];
+    if (!sourceRef && isDeferredCodeFile(file) && req?.user?.id) {
+      deferred.push(file);
+      toolContext = appendVisibleCodeFileContext(
+        toolContext,
+        getVisibleCodeFileContextLine(file, agentResourceIds),
+      );
+      logger.debug(`[primeCodeFiles] file=${file.file_id} path=deferred reason=image`);
+      continue;
+    }
     if (!sourceRef) {
       skippedNoRef += 1;
       logger.debug(`[primeCodeFiles] file=${file.file_id} path=skip reason=no-codeenvref`);
@@ -1160,6 +1230,10 @@ const primeFiles = async (options) => {
       `[primeCodeFiles] file=${file.file_id} path=fresh-active storage_session_id=${session_id}`,
     );
     pushFile();
+  }
+
+  if (deferred.length > 0) {
+    deferCodeFiles(req, deferred, copyDeferredFile({ req, codeApiBaseUrl, executionProfile }));
   }
 
   /* Dispatch summary — emitted unconditionally so a single grep on

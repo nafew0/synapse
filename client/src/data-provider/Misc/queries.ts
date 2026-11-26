@@ -57,6 +57,44 @@ export const useGetUserBalance = (
   });
 };
 
+/**
+ * The signed-in user's remaining allowance on both meters.
+ *
+ * Refetched on focus and mount because a hard wall must not be discovered by a
+ * failed request: a member who exhausted their weekly tokens in another tab
+ * should see it here before trying to send.
+ */
+export const useGetUserQuota = (
+  config?: UseQueryOptions<t.TQuotaResponse>,
+): QueryObserverResult<t.TQuotaResponse> => {
+  const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
+  return useQuery<t.TQuotaResponse>([QueryKeys.quota], () => dataService.getUserQuota(), {
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchOnMount: true,
+    ...config,
+    enabled: (config?.enabled ?? true) === true && queriesEnabled,
+  });
+};
+
+/**
+ * The signed-in user's plan and AI allowance for Settings. Always refetched on mount, so opening
+ * Settings shows a plan changed on bdren.ai as soon as its webhook or allowance refresh has landed.
+ */
+export const useGetPlanUsage = (
+  config?: UseQueryOptions<t.TPlanUsageResponse>,
+): QueryObserverResult<t.TPlanUsageResponse> => {
+  const queriesEnabled = useRecoilValue<boolean>(store.queriesEnabled);
+  return useQuery<t.TPlanUsageResponse>([QueryKeys.quotaPlan], () => dataService.getPlanUsage(), {
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchOnMount: 'always',
+    staleTime: 0,
+    ...config,
+    enabled: (config?.enabled ?? true) === true && queriesEnabled,
+  });
+};
+
 export const useGetSearchEnabledQuery = (
   config?: UseQueryOptions<boolean>,
 ): QueryObserverResult<boolean> => {

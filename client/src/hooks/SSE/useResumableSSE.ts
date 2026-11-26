@@ -18,6 +18,10 @@ import {
   createPayload,
   ApprovalEvents,
   removeNullishValues,
+  isAccountMovingBody,
+  accountMovingWaitMs,
+  announceAccountMoving,
+  ACCOUNT_MOVING_MAX_TOTAL_MS,
 } from 'librechat-data-provider';
 import type {
   Agents,
@@ -688,6 +692,8 @@ export default function useResumableSSE(
 
   const sseRef = useRef<SSE | null>(null);
   const reconnectAttemptRef = useRef(0);
+  /** When the stream started being turned away because the account is moving, or `null`. */
+  const movingSinceRef = useRef<number | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const submissionRef = useRef<TSubmission | null>(null);
   /** Suppresses the normal close/cleanup idle transition while a stale
@@ -1499,6 +1505,7 @@ export default function useResumableSSE(
         setIsSubmitting(true);
         setShowStopButton(generationCreatedAt != null);
         reconnectAttemptRef.current = 0;
+        movingSinceRef.current = null;
       });
 
       sse.addEventListener('message', async (e: MessageEvent) => {
@@ -2901,6 +2908,41 @@ export default function useResumableSSE(
           createdStreamIdsRef.current.delete(currentStreamId);
           reconnectAttemptRef.current = 0;
           return;
+        }
+
+        /**
+         * The account is moving between institutions: the server turns the stream away until it
+         * is done. Wait and reattach for as long as it keeps saying so (up to five minutes),
+         * without spending the network-failure reconnect budget.
+         */
+        if (responseCode === 503 && isAccountMovingBody(e.data)) {
+          const since = (movingSinceRef.current ??= Date.now());
+          const delay = accountMovingWaitMs(
+            (e as MessageEvent & { headers?: Record<string, string[] | string> }).headers?.[
+              'retry-after'
+            ]?.toString(),
+          );
+          if (Date.now() - since + delay <= ACCOUNT_MOVING_MAX_TOTAL_MS) {
+            announceAccountMoving();
+            reconnectAttemptRef.current = Math.max(reconnectAttemptRef.current, 1);
+            sse.close();
+            reconnectTimeoutRef.current = setTimeout(() => {
+              if (isCurrentSubscription() && submissionRef.current) {
+                subscribeToStream(
+                  currentStreamId,
+                  submissionRef.current,
+                  true,
+                  generationCreatedAt,
+                  generationProtocolVersion,
+                  lifecycleSignal,
+                );
+              }
+            }, delay);
+            setIsSubmitting(true);
+            setShowStopButton(generationCreatedAt != null);
+            return;
+          }
+          movingSinceRef.current = null;
         }
 
         // Network failure or unknown HTTP error - attempt reconnection with backoff

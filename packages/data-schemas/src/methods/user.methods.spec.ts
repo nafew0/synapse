@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { AUTH_USER_DOC_BY_ID_PREFIX, CacheKeys } from 'librechat-data-provider';
 import type * as t from '~/types';
-import { createUserMethods, USER_DELETION_FENCE_STALE_MS } from './user';
+import { createUserMethods, MAX_OPENID_ENDED_SESSIONS, USER_DELETION_FENCE_STALE_MS } from './user';
 import balanceSchema from '~/schema/balance';
 import userSchema from '~/schema/user';
 
@@ -1180,5 +1180,82 @@ describe('User Methods - Database Tests', () => {
       const users = await methods.findUsers({});
       expect(users).toHaveLength(5);
     });
+  });
+});
+
+describe('endOpenIdSession', () => {
+  const createOpenIdUser = () =>
+    User.create({ name: 'SSO User', email: 'sso-user@example.com', provider: 'openid' });
+
+  const endedSessions = async (userId: string) =>
+    (await User.findById(userId).lean())?.openidEndedSessions ?? [];
+
+  test('records an ended session once per sid', async () => {
+    const user = await createOpenIdUser();
+    const userId = user._id.toString();
+    const endedAt = new Date('2026-11-24T10:00:00Z');
+
+    expect(await methods.endOpenIdSession(userId, { sid: 'sid-1', endedAt })).toBe(true);
+    expect(await methods.endOpenIdSession(userId, { sid: 'sid-1', endedAt })).toBe(false);
+
+    expect(await endedSessions(userId)).toEqual([{ sid: 'sid-1', endedAt }]);
+  });
+
+  test('records a session-less logout as a cutoff entry', async () => {
+    const user = await createOpenIdUser();
+    const userId = user._id.toString();
+    const endedAt = new Date('2026-11-24T11:00:00Z');
+
+    await methods.endOpenIdSession(userId, { sid: 'sid-1', endedAt });
+    await methods.endOpenIdSession(userId, { endedAt });
+
+    const sessions = await endedSessions(userId);
+    expect(sessions).toHaveLength(2);
+    expect(sessions[1]).toEqual({ endedAt });
+  });
+
+  test('keeps only the newest entries', async () => {
+    const user = await createOpenIdUser();
+    const userId = user._id.toString();
+    const endedAt = new Date();
+
+    for (let i = 0; i < MAX_OPENID_ENDED_SESSIONS + 3; i++) {
+      await methods.endOpenIdSession(userId, { sid: `sid-${i}`, endedAt });
+    }
+
+    const sessions = await endedSessions(userId);
+    expect(sessions).toHaveLength(MAX_OPENID_ENDED_SESSIONS);
+    expect(sessions[0].sid).toBe('sid-3');
+    expect(sessions[sessions.length - 1].sid).toBe(`sid-${MAX_OPENID_ENDED_SESSIONS + 2}`);
+  });
+
+  test('invalidates the cached auth user document', async () => {
+    enableAuthUserDocCache();
+    const user = await createOpenIdUser();
+    const userId = user._id.toString();
+    const cache = {
+      get: jest.fn().mockResolvedValue(['auth-cache-key']),
+      delete: jest.fn().mockResolvedValue(true),
+    };
+    const getCache = jest.fn().mockReturnValue(cache);
+    const methodsWithCache = createUserMethods(mongoose, { getCache });
+
+    await methodsWithCache.endOpenIdSession(userId, { sid: 'sid-1', endedAt: new Date() });
+
+    expect(cache.delete).toHaveBeenCalledWith('auth-cache-key');
+    expect(cache.delete).toHaveBeenCalledWith(`${AUTH_USER_DOC_BY_ID_PREFIX}:${userId}`);
+  });
+
+  test('does not touch other users', async () => {
+    const user = await createOpenIdUser();
+    const other = await User.create({
+      name: 'Other',
+      email: 'other@example.com',
+      provider: 'openid',
+    });
+
+    await methods.endOpenIdSession(user._id.toString(), { sid: 'sid-1', endedAt: new Date() });
+
+    expect(await endedSessions(other._id.toString())).toEqual([]);
   });
 });

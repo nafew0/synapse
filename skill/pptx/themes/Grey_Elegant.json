@@ -1,0 +1,50 @@
+{
+  "name": "Grey_Elegant",
+  "description": "Quiet greys with line illustrations, circles and a jigsaw quote. Formal, academic, policy.",
+  "file": "Grey_Elegant.pptx",
+  "fonts": {
+    "latin": "Calibri",
+    "bangla": "Nikosh"
+  },
+  "colors": {
+    "primary": "5C6670",
+    "accent": "8D99AE",
+    "emphasis": "3D4852",
+    "ink": "222222",
+    "muted": "6C757D",
+    "tint": "EEF0F2",
+    "chart": [
+      "3D4852",
+      "8D99AE",
+      "CED4DA",
+      "6C757D",
+      "ADB5BD"
+    ]
+  },
+  "layouts": {
+    "cover": {
+      "role": "cover"
+    },
+    "agenda": {},
+    "content": {},
+    "content_circles": {},
+    "quote": {},
+    "picture_right": {
+      "picture": [
+        7.6,
+        1.2,
+        5.0,
+        5.0
+      ]
+    }
+  },
+  "aliases": {
+    "cover": "cover",
+    "section": "cover",
+    "closing": "cover",
+    "content": "content",
+    "agenda": "agenda",
+    "picture": "picture_right",
+    "quote": "quote"
+  }
+}

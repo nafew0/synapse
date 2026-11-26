@@ -2,6 +2,14 @@
 import axios from 'axios';
 import type { AxiosRequestConfig } from 'axios';
 import type * as t from './types';
+import {
+  isAccountMovingBody,
+  accountMovingWaitMs,
+  isAccountMovingError,
+  announceAccountMoving,
+  ACCOUNT_MOVING_MAX_RETRIES,
+  ACCOUNT_MOVING_MAX_TOTAL_MS,
+} from './moving';
 import { setTokenHeader } from './headers-helpers';
 import * as endpoints from './api-endpoints';
 
@@ -68,7 +76,10 @@ const AUTH_REDIRECT_STORAGE_KEY = 'librechat.auth.redirect.startedAt';
 const AUTH_REDIRECT_DEDUPE_MS = 15_000;
 const TOKEN_REFRESH_BUFFER_MS = 2 * 60 * 1000;
 
-type RetryableAxiosRequestConfig = AxiosRequestConfig & { _retry?: boolean };
+type RetryableAxiosRequestConfig = AxiosRequestConfig & {
+  _retry?: boolean;
+  _movingRetries?: number;
+};
 
 type AuthRecoveryState = {
   lastRedirectStartedAt: number;
@@ -224,6 +235,28 @@ const startAuthRecovery = (retryRefresh?: boolean) => {
   return state.refreshPromise;
 };
 
+/** The server's answer to a session that did not come through bdren.ai SSO; refreshing cannot fix it. */
+const SSO_REQUIRED_CODE = 'SSO_REQUIRED';
+
+const isSsoRequiredBody = (body: unknown): boolean =>
+  body != null &&
+  typeof body === 'object' &&
+  (body as { code?: unknown }).code === SSO_REQUIRED_CODE;
+
+const isSsoRequiredError = (error: any): boolean =>
+  error?.response?.status === 401 && isSsoRequiredBody(error.response.data);
+
+const isSsoRequiredResponse = async (response: Response): Promise<boolean> => {
+  if (response.status !== 401) {
+    return false;
+  }
+  try {
+    return isSsoRequiredBody(await response.clone().json());
+  } catch {
+    return false;
+  }
+};
+
 const redirectToLoginOnce = () => {
   if (isAuthRedirectInProgress()) {
     return;
@@ -305,6 +338,60 @@ const withAuthorization = (options: RequestInit | undefined, token: string | nul
 type FetchTransport = (url: string, options?: RequestInit) => Promise<Response>;
 
 /** `transport` swaps the network call (an upload uses XHR to report bytes sent); auth stays here. */
+const abortError = () => new DOMException('The operation was aborted.', 'AbortError');
+
+/** Waits `ms`, or rejects as soon as `signal` aborts. */
+const waitOrAbort = (ms: number, signal?: AbortSignal | null): Promise<void> =>
+  new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(abortError());
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(abortError());
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+
+/**
+ * Sends a request and, while the server answers `503 ACCOUNT_MOVING` (the person's account is
+ * moving between institutions), waits as asked and sends it again, for at most five minutes; then
+ * the refusal is returned for the caller to show. The server turns these away before any handler
+ * runs, so resending a POST cannot do anything twice. A streamed body cannot be resent.
+ */
+async function sendWhileMoving(
+  url: string,
+  options: RequestInit | undefined,
+  transport: FetchTransport,
+): Promise<Response> {
+  const started = Date.now();
+  for (;;) {
+    const response = await transport(url, options);
+    if (response.status !== 503 || options?.body instanceof ReadableStream) {
+      return response;
+    }
+    const body = await response
+      .clone()
+      .text()
+      .catch(() => '');
+    if (!isAccountMovingBody(body)) {
+      return response;
+    }
+    const wait = accountMovingWaitMs(response.headers.get('retry-after'));
+    if (Date.now() - started + wait > ACCOUNT_MOVING_MAX_TOTAL_MS) {
+      return response;
+    }
+    announceAccountMoving();
+    await response.body?.cancel().catch(() => undefined);
+    await waitOrAbort(wait, options?.signal);
+  }
+}
+
 async function _authenticatedFetch(
   url: string,
   options?: RequestInit,
@@ -315,13 +402,18 @@ async function _authenticatedFetch(
   }
 
   const token = (await refreshBeforeRequest(url)) ?? getBearerToken();
-  const response = await transport(url, withAuthorization(options, token));
+  const response = await sendWhileMoving(url, withAuthorization(options, token), transport);
   if (
     response.status !== 401 ||
     isAuthRecoveryEndpoint(url) ||
     isAuthRedirectInProgress() ||
     !getBearerToken()
   ) {
+    return response;
+  }
+
+  if (await isSsoRequiredResponse(response)) {
+    redirectToLoginOnce();
     return response;
   }
 
@@ -339,7 +431,7 @@ async function _authenticatedFetch(
   }
 
   await response.body?.cancel().catch(() => undefined);
-  return transport(url, withAuthorization(options, refreshedToken));
+  return sendWhileMoving(url, withAuthorization(options, refreshedToken), transport);
 }
 
 if (typeof window !== 'undefined') {
@@ -362,8 +454,27 @@ if (typeof window !== 'undefined') {
         return Promise.reject(error);
       }
 
+      /** The account is moving between institutions: wait as asked and retry; never a sign-out. */
+      if (isAccountMovingError(error)) {
+        const attempts = originalRequest._movingRetries ?? 0;
+        if (attempts >= ACCOUNT_MOVING_MAX_RETRIES) {
+          return Promise.reject(error);
+        }
+        originalRequest._movingRetries = attempts + 1;
+        announceAccountMoving();
+        const wait = accountMovingWaitMs(error.response.headers?.['retry-after']);
+        await new Promise((resolve) => setTimeout(resolve, wait));
+        return axios(originalRequest);
+      }
+
       const isRefreshRequest = originalRequest.url?.includes('/api/auth/refresh') === true;
       if (isAuthRecoveryEndpoint(originalRequest.url) && !isRefreshRequest) {
+        return Promise.reject(error);
+      }
+
+      /** The session did not come through bdren.ai SSO: sign in again instead of refreshing. */
+      if (!isRefreshRequest && isSsoRequiredError(error)) {
+        redirectToLoginOnce();
         return Promise.reject(error);
       }
 

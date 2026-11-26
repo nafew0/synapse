@@ -5,8 +5,8 @@ import * as Popover from '@radix-ui/react-popover';
 import { isReportableRunStepDuration } from 'librechat-data-provider';
 import type { ToolCallPhase } from '~/utils/toolCallPhase';
 import { cn, getRunStepDurationLabels } from '~/utils';
-import CancelledIcon from './CancelledIcon';
 import { useLocalize, useToolDetails } from '~/hooks';
+import CancelledIcon from './CancelledIcon';
 
 const wrapperClass =
   'progress-text-wrapper text-token-text-secondary relative -mt-[0.75px] h-5 w-full leading-5';

@@ -12,6 +12,7 @@ and the next deploy silently reverts whatever was changed in place.
 | `caddy/rag.bdren.ai.Caddyfile` | `203.96.189.202` | a block in `~/caddy/Caddyfile` (see below) |
 | `../ecosystem.config.js` | `203.96.189.213` | `/opt/synapse/ecosystem.config.js` |
 | `../librechat.yaml` | `203.96.189.213` | `/opt/synapse/librechat.yaml` |
+| `dev/` | `203.96.189.220` (Imtiaz-VM) | dev server pipeline, see [`dev/README.md`](dev/README.md) |
 
 **The Caddyfile here is partial.** The live `~/caddy/Caddyfile` also serves
 `langfuse.bdren.ai` and `langfuse-storage.bdren.ai`, whose blocks are not captured yet.

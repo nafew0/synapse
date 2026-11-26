@@ -287,7 +287,6 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
 
   return (
     <SearchContext.Provider value={{ searchResults }}>
-      {showDecorations && <MemoryArtifacts attachments={attachments} />}
       {showDecorations && (
         <Sources messageId={messageId} conversationId={conversationId || undefined} />
       )}
@@ -320,6 +319,7 @@ export const ParallelContentRenderer = memo(function ParallelContentRenderer({
         const rendered = renderPart(part, idx, idx === lastContentIdx);
         return attribution != null ? [attribution, rendered] : [rendered];
       })}
+      {showDecorations && !isSubmitting && <MemoryArtifacts attachments={attachments} />}
     </SearchContext.Provider>
   );
 });

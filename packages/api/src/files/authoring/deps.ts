@@ -1,8 +1,8 @@
+import { Types } from 'mongoose';
 import { randomUUID } from 'crypto';
 import { FileContext } from 'librechat-data-provider';
-import { Types } from 'mongoose';
-import type { FilterQuery } from 'mongoose';
 import type { IMongoFile } from '@librechat/data-schemas';
+import type { FilterQuery } from 'mongoose';
 import type { AuthoringFile, FileAuthoringDeps } from './tools';
 import { truncateCachedText } from '../code/extract';
 

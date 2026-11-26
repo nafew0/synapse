@@ -22,13 +22,14 @@ import type {
 } from './transactions';
 import type { UsageMetadata } from '~/stream/interfaces/IJobStore';
 import type { EndpointTokenConfig } from '~/types/tokens';
-import { matchModelName } from '~/utils/tokens';
 import {
   prepareStructuredTokenSpend,
+  applyProviderCost,
   bulkWriteTransactions,
   prepareTokenSpend,
 } from './transactions';
 import { collectDetachedSubagentUsage } from './subagentTaskContext';
+import { matchModelName } from '~/utils/tokens';
 
 type SpendTokensFn = (txData: TxMetadata, tokenUsage: TokenUsage) => Promise<unknown>;
 type SpendStructuredTokensFn = (
@@ -523,6 +524,8 @@ export interface RecordUsageParams {
   collectedUsage: UsageMetadata[];
   model?: string;
   context?: string;
+  /** False for platform cost (memory extraction) that never draws down an allowance. Default true. */
+  billable?: boolean;
   messageId?: string;
   balance?: Partial<TCustomConfig['balance']> | null;
   transactions?: Partial<TTransactionsConfig>;
@@ -541,6 +544,8 @@ export interface RecordUsageParams {
 export interface RecordUsageResult {
   input_tokens: number;
   output_tokens: number;
+  /** Credits (USD × 1e6) of the transactions written, when they were priced here (bulk path). */
+  credits?: number;
 }
 
 export interface DetachedSubagentUsageRecorderParams {
@@ -577,6 +582,7 @@ export async function recordCollectedUsage(
     endpointTokenConfig,
     resolveEndpointTokenConfig,
     context = 'message',
+    billable = true,
   } = params;
 
   if (!collectedUsage || !collectedUsage.length) {
@@ -652,6 +658,8 @@ export async function recordCollectedUsage(
         context: usageContext,
         usageKind: usageContext,
         usageUnit: 'tokens',
+        service: 'openrouter',
+        billable,
         model: usage.model ?? model,
         modelKey:
           matchModelName(usage.model ?? model ?? '') ??
@@ -702,6 +710,7 @@ export async function recordCollectedUsage(
                 },
                 pricing,
               );
+        applyProviderCost(entries, usage.provider_cost_usd);
         docs.push(...entries);
         continue;
       }
@@ -749,6 +758,9 @@ export async function recordCollectedUsage(
   return {
     input_tokens,
     output_tokens: total_output_tokens,
+    ...(useBulk && {
+      credits: allDocs.reduce((sum, entry) => sum + Math.abs(entry.tokenValue ?? 0), 0),
+    }),
   };
 }
 

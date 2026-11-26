@@ -119,26 +119,6 @@ balance:
   startBalance: 0
   autoRefillEnabled: false
 
-creditPackages:
-  currency: BDT
-  list:
-    - id: waiver
-      label: Waived / Complimentary
-      price: 0
-      credits: 1000000
-    - id: starter
-      label: Starter
-      price: 500
-      credits: 10000000
-    - id: standard
-      label: Standard
-      price: 2000
-      credits: 25000000
-    - id: premium
-      label: Premium
-      price: 5000
-      credits: 75000000
-
 memory:
   validKeys: ['personal_info', 'work_info', 'preferences', 'communication_style', 'interests', 'context']
   tokenLimit: 2000
@@ -154,7 +134,7 @@ memory:
       max_tokens: 400
     instructions: |
       You keep a short profile of the user, built from what they write. Save lasting facts about the user:
-      - personal_info: name, age.
+      - personal_info: name, age, date of birth, where they live.
       - work_info: role or profession, institution, department, the subjects and class or level they teach or study, their research area.
       - context: long-running work such as a thesis, a research project, a course they run, a job search.
       - preferences: language (Bangla or English) and how they like answers written (tone, length, formality).
@@ -169,7 +149,7 @@ memory:
       Do not save:
       - facts about other people: "write a message for my colleague Karim" says nothing about the user, so save nothing about Karim;
       - text the user asks you to translate, check or rewrite;
-      - one-off details: dates, deadlines, travel, today's task;
+      - one-off details: deadlines, travel dates, today's task (a date of birth is lasting: save it);
       - a request about the current answer (bullet points, shorter, translate this). A preference is lasting: "always", "from now on", or a general statement about how they like answers;
       - passwords, ID numbers, health, financial or other sensitive data, even when the user says "remember it".
         "Remember my bank account number" -> call no tool and reply NONE.
@@ -179,7 +159,10 @@ memory:
       Translate Bangla job titles exactly: প্রভাষক = Lecturer, সহকারী অধ্যাপক = Assistant Professor,
       সহযোগী অধ্যাপক = Associate Professor, অধ্যাপক = Professor. A lecturer is never a professor.
 
-      To change a fact (new job, new institution), call set_memory on the same key with the new fact; it replaces the old value.
+      set_memory adds the new fact to what is already saved under that key; nothing saved there is lost.
+      So send only the new fact, and skip facts already saved.
+      When a saved fact is no longer true (a new job, a new institution, a corrected name), call set_memory with replace: true
+      and the key's full new value, keeping every part that is still true.
       Use delete_memory only when the user asks you to forget or remove something about them. Never use it to refuse,
       to change a fact, or because a message has sensitive data: to refuse, call no tool at all.
 
@@ -377,6 +360,9 @@ speech:
       decibelValue: -45
       autoSendText: 0
 
+# Every chat spec sets max_tokens: without it the usage quota reserves its 4,096-token
+# default and writes that in as the output limit, so a reasoning model can spend it all
+# thinking and stop with an empty reply (kb/issues/office-output-capped-by-quota-default.md).
 modelSpecs:
   enforce: true
   prioritize: true
@@ -403,6 +389,7 @@ modelSpecs:
         model: openai/gpt-6-luna
         # GPT-6 Luna bills 2x above 272K prompt tokens.
         maxContextTokens: 262144
+        max_tokens: 32000
         promptPrefix: |
           You return transcripts of audio files the user attaches.
 
@@ -438,6 +425,7 @@ modelSpecs:
         # a long chat costs up to ~944K input tokens a message. 256K keeps 6-12 full
         # read_attachment results in context, so file editing rarely compacts mid-edit.
         maxContextTokens: 262144
+        max_tokens: 32000
         promptPrefix: &chatPrefix |
           ## Language and tone
 
@@ -544,6 +532,38 @@ modelSpecs:
             one short question to check it, and wait for their answer. If they ask for
             practice problems, give the answers only when they ask.
 
+          For a science or maths question, whether it asks you to explain or to solve,
+          answer in these sections, in this order. Start each one with its name as a
+          "###" heading on its own line, so the sections stand apart:
+          1. The idea behind it: the concept or theory needed, in plain words, built
+             from something the reader already knows. For a problem, the theory it
+             rests on, not the solution yet.
+          2. Everyday analogy: one analogy from daily life anyone has seen (water in a
+             pipe, a queue, a ball rolling downhill), then where it stops being true.
+          3. The formula and why it works: the formula or law on its own line, each
+             symbol named with its unit, then in two to four lines where it comes from
+             or why it must be true, not the formula restated. Example: the product
+             rule holds because when both sides of a rectangle grow a little, its area
+             grows by two thin strips, one for each side. Keep the formula for this
+             section, not section 1.
+          4. Applying it: to solve, Given and Find with units, then numbered steps that
+             each say which part of sections 1 or 3 they use. To explain, one worked
+             example with real numbers and where the idea shows up in real life. To
+             prove, each step justified by a named result.
+          5. Answer: set apart, with units, and what it means in real terms.
+          6. Check: one line (units, substitution or a rough estimate), plus a common
+             mistake if there is a well-known one.
+          A teacher preparing a lesson also gets two more analogies, a simple classroom
+          demo and three check questions with answers. Every calculation, derivative,
+          proof or "how many" gets all six sections, however short the working. Skip them
+          only for a look-up with nothing to work out, such as the value of a constant.
+          - Never invent a constant, value or law. State any assumption you make.
+          - Write maths as $...$ inline and $$...$$ on its own line, never \( \) or
+            \[ \]: the chat shows those raw. Fractions as \frac{a}{b}, never a/b; units
+            as \mathrm{m/s}; chemistry as \mathrm{2H_2 + O_2 \rightarrow 2H_2O}, never \ce{}.
+          - Answer in the chat. You cannot make Word or PDF files; for a solution as a
+            file, point to the Office Assistant.
+
           Do not add questions or practice to a request for a plain fact or a finished
           document.
 
@@ -565,6 +585,7 @@ modelSpecs:
         model: anthropic/claude-haiku-5.5
         # Claude Haiku 5.5 bills 5x above 100K prompt tokens; 90K keeps every call under it.
         maxContextTokens: 90000
+        max_tokens: 32000
         promptCache: true
         promptPrefix: *chatPrefix
 
@@ -585,6 +606,7 @@ modelSpecs:
         endpoint: OpenRouter DeepSeek
         model: deepseek/deepseek-v4-flash-0731
         maxContextTokens: 262144
+        max_tokens: 32000
         promptCache: true
         promptPrefix: |
           If the user's message is in a language other than English, explain in that language. Match how they talk: formal with a formal message (আপনি and its verb forms in Bangla), relaxed with a casual one (তুমি and its verb forms in Bangla, unless they say আপনি to you). Code, identifiers and technical terms stay in English unless asked otherwise.
@@ -655,6 +677,7 @@ modelSpecs:
         endpoint: OpenRouter
         model: google/gemini-3.8-flash
         maxContextTokens: 262144
+        max_tokens: 32000
         promptPrefix: *chatPrefix
 
 endpoints:
@@ -667,6 +690,13 @@ endpoints:
     # raise their own limit (recursion_limit in config/phase-one-office-agents.yaml);
     # every other agent keeps the 50-step default.
     maxRecursionLimit: 150
+    # A single tool call's arguments (a build script, a file's text) may stream up to 256 KB
+    # before the SDK aborts it as runaway (default 64 KB; create_file 128 KB). The 32,000-token
+    # output limit on the specs and the Office Assistant (roughly 100-130 KB) is then reached
+    # first, so a long multi-page document is never cut off by this guard.
+    maxToolCallArgBytes: 262144
+    maxToolCallArgBytesByTool:
+      create_file: 262144
     capabilities:
       - 'subagents'
       - 'execute_code'
@@ -705,13 +735,29 @@ endpoints:
       titleModel: openai/gpt-6-luna
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
+      # OpenRouter list prices, USD per 1M tokens, checked 2026-10-18. Usage credits are
+      # charged at these rates, so keep them in step with openrouter.ai/api/v1/models.
+      # OpenRouter's price follows the provider it routes to and can change within a day.
       tokenConfig:
         'google/gemini-3.8-flash':
-          prompt: 0.75
-          completion: 3.75
-          read: 0.075
+          prompt: 0.825
+          completion: 4.125
+          read: 0.0825
           write: 0.0417
           context: 1048576
+        'deepseek/deepseek-v4-flash-0731':
+          prompt: 0.10
+          completion: 0.30
+          read: 0.03
+          context: 1048576
+        # The dotted id matches no key in tx.ts/tokens.ts (they list `claude-haiku-4-5`), so
+        # without this entry it fell back to `claude-`: 0.8/2.4 and a 100K context.
+        'anthropic/claude-haiku-4.5':
+          prompt: 1
+          completion: 5
+          read: 0.1
+          write: 1.25
+          context: 200000
         # Neither model is in the built-in pricing table (tx.ts) or context map
         # (tokens.ts); without these entries usage is billed at a fallback rate and
         # gpt-6-luna gets no known context window. OpenRouter list prices, 2026-10-21.

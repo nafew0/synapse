@@ -194,6 +194,7 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
           withoutKeys: '',
           totalTokens: 0,
           tokenCountsByKey: new Map<string, number>(),
+          valuesByKey: new Map<string, string>(),
         };
       }
 
@@ -201,14 +202,19 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
         (a, b) => new Date(a.updated_at!).getTime() - new Date(b.updated_at!).getTime(),
       );
 
-      const { totalTokens, tokenCountsByKey } = sortedMemories.reduce(
+      const { totalTokens, tokenCountsByKey, valuesByKey } = sortedMemories.reduce(
         (counts, memory) => {
           const tokenCount = memory.tokenCount || 0;
           counts.totalTokens += tokenCount;
           counts.tokenCountsByKey.set(memory.key, tokenCount);
+          counts.valuesByKey.set(memory.key, memory.value);
           return counts;
         },
-        { totalTokens: 0, tokenCountsByKey: new Map<string, number>() },
+        {
+          totalTokens: 0,
+          tokenCountsByKey: new Map<string, number>(),
+          valuesByKey: new Map<string, string>(),
+        },
       );
 
       const withKeys = sortedMemories
@@ -226,7 +232,7 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
         })
         .join('\n\n');
 
-      return { withKeys, withoutKeys, totalTokens, tokenCountsByKey };
+      return { withKeys, withoutKeys, totalTokens, tokenCountsByKey, valuesByKey };
     } catch (error) {
       logger.error('Failed to get formatted memories:', error);
       return {
@@ -234,6 +240,7 @@ export function createMemoryMethods(mongoose: typeof import('mongoose')): {
         withoutKeys: '',
         totalTokens: 0,
         tokenCountsByKey: new Map<string, number>(),
+        valuesByKey: new Map<string, string>(),
       };
     }
   }

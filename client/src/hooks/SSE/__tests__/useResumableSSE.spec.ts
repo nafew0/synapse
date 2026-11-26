@@ -599,6 +599,34 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
+  it('keeps reattaching the stream while the account is moving, past the reconnect budget', async () => {
+    jest.useFakeTimers();
+    const announced = jest.fn();
+    window.addEventListener('accountMoving', announced);
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    for (let attempt = 1; attempt <= 8; attempt++) {
+      const sse = getLastSSE();
+      await act(async () => {
+        sse._emit('error', { responseCode: 503, data: '{"code":"ACCOUNT_MOVING"}' });
+        await Promise.resolve();
+      });
+      expect(sse.close).toHaveBeenCalled();
+      await advanceRetryTimer(5_000);
+      expect(mockSSEInstances).toHaveLength(attempt + 1);
+      expect(getLastSSE()._url).toContain('resume=true');
+    }
+
+    window.removeEventListener('accountMoving', announced);
+    expect(announced).toHaveBeenCalledTimes(8);
+    expect(mockSetSubmission).not.toHaveBeenCalledWith(null);
+    expect(mockSetIsSubmitting).toHaveBeenLastCalledWith(true);
+    unmount();
+  });
+
   it('closes the SSE connection on 404', async () => {
     const { sse, unmount } = await render404Scenario();
 

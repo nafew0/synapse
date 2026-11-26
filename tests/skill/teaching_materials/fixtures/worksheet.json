@@ -5,9 +5,7 @@
     "course_code": "IS 2104",
     "course_title": "Database Systems"
   },
-  "instructions": [
-    "Work through the example, then answer the questions in the space provided."
-  ],
+  "instructions": ["Work through the example, then answer the questions in the space provided."],
   "sections": [
     {
       "title": "Worked example",

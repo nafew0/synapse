@@ -15,6 +15,32 @@ const usageReservationSchema: Schema<IUsageReservation> = new Schema<IUsageReser
     outputTokenCap: { type: Number, required: true, min: 0 },
     reservedTokens: { type: Number, required: true, min: 0 },
     actualTokens: { type: Number, min: 0 },
+    /** Quota weight in force when this reservation was created. Read back at
+     *  settlement rather than recomputed, so a policy change mid-request cannot
+     *  settle against a different weight than it reserved. Billing-only: this
+     *  never reaches `Transaction`, which stays raw provider cost. */
+    weight: { type: Number, required: true, default: 1, min: 0 },
+    unit: { type: String, enum: ['tokens', 'images', 'credits'], default: 'tokens' },
+    /** Images attributed to this TOKEN reservation at settlement (an agent run
+     *  that delegated to the image specialist). Doubles as the idempotency
+     *  guard so a replayed settlement cannot double-count the image meter. */
+    imagesSettled: { type: Number, default: 0, min: 0 },
+    /** Buckets this reservation holds capacity in, one per enforced window. */
+    scopes: {
+      type: [
+        {
+          _id: false,
+          scopeType: { type: String, required: true },
+          scopeKey: { type: String, required: true },
+          periodStart: { type: Date, required: true },
+          periodEnd: { type: Date, required: true },
+          /** The scope's limit when reserved (credits scopes); warnings compare against it. */
+          limit: { type: Number, default: null },
+          window: { type: String, enum: ['month', 'week'], default: null },
+        },
+      ],
+      default: [],
+    },
     status: {
       type: String,
       enum: ['reserved', 'settled', 'released', 'expired'],
@@ -42,8 +68,7 @@ usageReservationSchema.index({ tenantId: 1, periodStart: 1, modelKey: 1 });
  * Aging them out is safe: the ledger — not this collection — is the record of
  * usage, and bucket reconciliation derives the periods it repairs *from* these
  * rows, so a period with no surviving reservations is simply never revisited
- * rather than recomputed to zero. The readiness report only looks back seven
- * days, well inside the default.
+ * rather than recomputed to zero.
  *
  * Set `USAGE_RESERVATION_RETENTION_DAYS=0` to retain indefinitely.
  */

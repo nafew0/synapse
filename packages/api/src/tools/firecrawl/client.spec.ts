@@ -1,6 +1,6 @@
 import { createServer } from 'http';
-import type { AddressInfo } from 'net';
 import type { Server, IncomingMessage, ServerResponse } from 'http';
+import type { AddressInfo } from 'net';
 import type { FirecrawlConfig } from './client';
 import {
   scrapeFirecrawl,

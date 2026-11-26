@@ -1,0 +1,511 @@
+const mongoose = require('mongoose');
+const { MongoMemoryReplSet } = require('mongodb-memory-server');
+
+jest.mock('~/server/utils', () => ({
+  sendEmail: jest.fn(),
+}));
+
+/** GPT-5.6 Luna on OpenRouter: 0.2 credits per input token, 1.2 per output token. */
+const LUNA = {
+  model: 'openai/gpt-5.6-luna',
+  endpoint: 'OpenRouter',
+  rates: { input: 0.2, output: 1.2 },
+};
+
+describe('usageQuota credit metering (replica set)', () => {
+  let replSet;
+  let models;
+  let quota;
+  let usageCatalog;
+  const tenantId = 'credit-integration';
+  const userId = new mongoose.Types.ObjectId();
+  const otherUserId = new mongoose.Types.ObjectId();
+  let sequence = 0;
+
+  /** BDT allowance for a given number of monthly credits at the default 123 BDT/USD. */
+  const bdtFor = (credits) => (credits / 1e6) * 123;
+
+  const createPackage = (key, monthlyCredits, overrides = {}) =>
+    models.UsagePackage.create({
+      key,
+      name: key,
+      scopes: ['member', 'institution'],
+      price: 0,
+      monthlyCredit: bdtFor(monthlyCredits),
+      ...overrides,
+    });
+
+  const reserve = (overrides = {}) =>
+    quota.reserveUsage({
+      tenantId,
+      userId,
+      provider: 'openrouter',
+      endpoint: 'agents',
+      model: 'agent_office_assistant',
+      reservationKey: `call-${(sequence += 1)}`,
+      pricingContext: LUNA,
+      estimatedInputTokens: 100,
+      requestedOutputTokens: 400,
+      ...overrides,
+    });
+
+  const bucket = (scopeType, scopeKey, periodStart) =>
+    models.UsageBucket.findOne({ tenantId, scopeType, scopeKey, periodStart }).lean();
+
+  beforeAll(async () => {
+    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    await mongoose.connect(replSet.getUri());
+    models = require('~/db/models');
+    quota = require('./usageQuota');
+    usageCatalog = require('./usageCatalog');
+    await Promise.all([
+      models.Institution.syncIndexes(),
+      models.UsagePolicy.syncIndexes(),
+      models.UsageBucket.syncIndexes(),
+      models.UsageReservation.syncIndexes(),
+      models.UsageWarning.syncIndexes(),
+      models.UsagePackage.syncIndexes(),
+    ]);
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await replSet?.stop();
+  });
+
+  beforeEach(async () => {
+    usageCatalog.invalidate();
+    await Promise.all(
+      [
+        'Institution',
+        'UsagePolicy',
+        'UsageBucket',
+        'UsageReservation',
+        'UsageWarning',
+        'UsagePackage',
+        'UsagePricing',
+        'User',
+      ].map((name) => models[name].deleteMany({})),
+    );
+    await models.Institution.create({
+      tenantId,
+      name: 'Credit Integration',
+      timezone: 'Asia/Dhaka',
+      usagePolicyVersion: 1,
+      usagePackage: { packageKey: 'pool', memberPackageKey: 'member' },
+    });
+    await models.UsagePolicy.create({
+      tenantId,
+      version: 1,
+      timezone: 'Asia/Dhaka',
+      limits: {},
+      inputSafetyFactor: 1,
+      inputSafetyTokens: 0,
+      effectiveAt: new Date(),
+      reason: 'credit integration test',
+    });
+  });
+
+  describe('reserving and settling', () => {
+    beforeEach(async () => {
+      await createPackage('pool', 10_000_000);
+      await createPackage('member', 1_000_000);
+    });
+
+    it('reserves the estimate at the request model in all four credit buckets', async () => {
+      const { reservation } = await reserve();
+      const estimate = 100 * 0.2 + 400 * 1.2;
+      expect(reservation).toMatchObject({ unit: 'credits', reservedTokens: estimate });
+      expect(reservation.metadata).toMatchObject({
+        rates: { input: 0.2, output: 1.2 },
+        institutionPackageKey: 'pool',
+        memberPackageKey: 'member',
+      });
+      expect(reservation.scopes.map((scope) => `${scope.scopeType}:${scope.window}`)).toEqual([
+        'institution_credits:month',
+        'institution_credits:week',
+        'member_credits:month',
+        'member_credits:week',
+      ]);
+      for (const scope of reservation.scopes) {
+        const held = await bucket(scope.scopeType, scope.scopeKey, scope.periodStart);
+        expect(held).toMatchObject({ usedTokens: 0, reservedTokens: estimate });
+      }
+    });
+
+    it('reserves at the long-prompt tier rate once the reserved input crosses the threshold', async () => {
+      const ratesFor = jest.fn((inputTokens) =>
+        inputTokens > 100000 ? { input: 0.5, output: 2.5 } : { input: 0.1, output: 0.5 },
+      );
+      const pricingContext = { ...LUNA, rates: { input: 0.1, output: 0.5 }, ratesFor };
+      const small = await reserve({ pricingContext, estimatedInputTokens: 1000 });
+      expect(small.reservation.metadata.rates).toEqual({ input: 0.1, output: 0.5 });
+      const large = await reserve({ pricingContext, estimatedInputTokens: 150000 });
+      expect(large.reservation.metadata.rates).toEqual({ input: 0.5, output: 2.5 });
+      expect(ratesFor.mock.calls.at(-1)[0]).toBeGreaterThanOrEqual(150000);
+    });
+
+    it('settles at the actual credits the client priced, releasing the estimate', async () => {
+      const { reservation } = await reserve();
+      await quota.settleUsage({
+        tenantId,
+        reservationKey: reservation.reservationKey,
+        credits: 333,
+      });
+      for (const scope of reservation.scopes) {
+        const settled = await bucket(scope.scopeType, scope.scopeKey, scope.periodStart);
+        expect(settled).toMatchObject({ usedTokens: 333, reservedTokens: 0 });
+      }
+    });
+
+    it('prices tokens at the reserved rates when the client sends no credits', async () => {
+      const { reservation } = await reserve();
+      const settled = await quota.settleUsage({
+        tenantId,
+        reservationKey: reservation.reservationKey,
+        usage: { inputTokens: 50, cacheReadTokens: 50, outputTokens: 100 },
+      });
+      expect(settled.actualTokens).toBe(100 * 0.2 + 100 * 1.2);
+    });
+
+    it('replays a reservation idempotently', async () => {
+      const first = await reserve({ reservationKey: 'same' });
+      const second = await reserve({ reservationKey: 'same' });
+      expect(second.idempotentReplay).toBe(true);
+      expect(String(second.reservation._id)).toBe(String(first.reservation._id));
+      expect(await models.UsageReservation.countDocuments({ reservationKey: 'same' })).toBe(1);
+    });
+
+    it("lets a member's own package override the institution default", async () => {
+      await createPackage('vip', 50_000_000, { scopes: ['member'], unlimited: true });
+      const { reservation } = await reserve({ memberPackage: { packageKey: 'vip' } });
+      expect(reservation.metadata.memberPackageKey).toBe('vip');
+      expect(reservation.scopes.find((scope) => scope.scopeType === 'member_credits').limit).toBe(
+        50_000_000,
+      );
+    });
+
+    it('keeps a tenant with no packages on the token policy', async () => {
+      await models.Institution.updateOne({ tenantId }, { $set: { usagePackage: null } });
+      const { reservation } = await reserve();
+      expect(reservation.unit).toBe('tokens');
+    });
+  });
+
+  describe('weekly and monthly walls', () => {
+    it('trims the output to the remaining weekly allowance, then refuses with WEEKLY_CAP', async () => {
+      await createPackage('pool', 10_000_000);
+      /** 1,000 credits a month, so 350 a week at the 35% default. */
+      await createPackage('member', 1_000);
+
+      const first = await reserve();
+      expect(first.outputCapped).toBe(true);
+      expect(first.outputTokenCap).toBe(Math.floor((350 - 20) / 1.2));
+      await quota.settleUsage({
+        tenantId,
+        reservationKey: first.reservation.reservationKey,
+        credits: 340,
+      });
+
+      await expect(reserve()).rejects.toMatchObject({
+        statusCode: 429,
+        details: expect.objectContaining({
+          code: 'TOKEN_QUOTA_EXCEEDED',
+          limitCode: 'WEEKLY_CAP',
+          window: 'week',
+          meter: 'credits',
+        }),
+      });
+    });
+
+    it('names the week and its Monday reset even though the month still has room', async () => {
+      await createPackage('pool', 10_000_000);
+      await createPackage('member', 1_000);
+      const first = await reserve();
+      await quota.settleUsage({
+        tenantId,
+        reservationKey: first.reservation.reservationKey,
+        credits: 350,
+      });
+      const error = await reserve().catch((caught) => caught);
+      const week = quota.getCalendarWeekRange(quota.QUOTA_RESET_TIMEZONE);
+      expect(error.details.resetAt).toBe(week.end.toISOString());
+      expect(new Date(error.details.resetAt).getUTCDay()).toBe(1);
+      expect(JSON.parse(error.message)).toEqual({
+        type: 'token_quota_exceeded',
+        limitCode: 'WEEKLY_CAP',
+        window: 'week',
+        meter: 'credits',
+        resetAt: week.end.toISOString(),
+      });
+    });
+
+    it("refuses every member once the institution's weekly pool is spent", async () => {
+      /** 3,000 credits a month for the whole institution, so 1,050 a week. */
+      await createPackage('pool', 3_000);
+      await createPackage('member', 10_000_000);
+      const first = await reserve();
+      await quota.settleUsage({
+        tenantId,
+        reservationKey: first.reservation.reservationKey,
+        credits: 1_050,
+      });
+      await expect(reserve({ userId: otherUserId })).rejects.toMatchObject({
+        details: expect.objectContaining({ limitCode: 'INSTITUTION_WEEKLY_CAP', window: 'week' }),
+      });
+    });
+
+    it("enforces a policy stored before shadow mode was removed with mode 'shadow'", async () => {
+      /** The schema no longer has `mode`, so the old field is written to the collection directly. */
+      await models.UsagePolicy.collection.updateOne({ tenantId }, { $set: { mode: 'shadow' } });
+      await createPackage('pool', 10_000_000);
+      await createPackage('member', 10);
+      await expect(reserve()).rejects.toMatchObject({
+        statusCode: 429,
+        details: expect.objectContaining({ code: 'TOKEN_QUOTA_EXCEEDED', meter: 'credits' }),
+      });
+      const view = await quota.getMemberQuota({ tenantId, userId });
+      expect(view).not.toHaveProperty('enforced');
+      expect(view).not.toHaveProperty('mode');
+    });
+  });
+
+  describe('image requests', () => {
+    /** Gemini 3.1 Flash Lite Image: one 1K image ≈ 500 × 0.25 + 1,120 × 30 = 33,725 credits. */
+    const IMAGE = {
+      model: 'google/gemini-3.1-flash-lite-image',
+      endpoint: 'OpenRouter Image',
+      rates: { input: 0.25, output: 30 },
+    };
+    const reserveImage = () =>
+      reserve({ endpoint: 'OpenRouter Image', provider: 'openrouter', pricingContext: IMAGE });
+
+    beforeEach(async () => {
+      await createPackage('pool', 10_000_000);
+    });
+
+    it('reserves a whole image and never trims it', async () => {
+      await createPackage('member', 1_000_000);
+      const result = await reserveImage();
+      expect(result.reservation.reservedTokens).toBe(33_725);
+      expect(result.outputTokenCap).toBeNull();
+      expect(result.outputCapped).toBe(false);
+      expect(result.remainingCredits).toBe(350_000 - 33_725);
+    });
+
+    it('refuses an image the weekly allowance cannot cover, instead of cutting it short', async () => {
+      /** 35% of 90,000 = 31,500 a week: less than one image. */
+      await createPackage('member', 90_000);
+      await expect(reserveImage()).rejects.toMatchObject({
+        details: expect.objectContaining({
+          limitCode: 'IMAGE_CREDITS_LOW',
+          window: 'week',
+          remaining: 31_500,
+        }),
+      });
+    });
+
+    it('reports what is left after a text reservation, for the image hand-off check', async () => {
+      await createPackage('member', 1_000_000);
+      const result = await reserve();
+      expect(result.remainingCredits).toBe(350_000 - result.reservation.reservedTokens);
+    });
+  });
+
+  describe('calls outside a reservation (titles, activity labels)', () => {
+    beforeEach(async () => {
+      await createPackage('pool', 10_000_000);
+      /** 1,000 credits a month, so 350 a week. */
+      await createPackage('member', 1_000);
+    });
+
+    const charge = (credits, key = 'conv:resp:title:1') =>
+      quota.recordAuxiliaryCredits({
+        tenantId,
+        userId,
+        reservationKey: key,
+        credits,
+        metadata: { context: 'title', model: 'openai/gpt-5.6-luna' },
+      });
+
+    it('charges all four credit buckets as a settled record', async () => {
+      const record = await charge(56);
+      expect(record).toMatchObject({ unit: 'credits', status: 'settled', actualTokens: 56 });
+      const buckets = await models.UsageBucket.find({
+        scopeType: { $in: ['member_credits', 'institution_credits'] },
+      }).lean();
+      expect(buckets).toHaveLength(4);
+      for (const charged of buckets) {
+        expect(charged).toMatchObject({ usedTokens: 56, reservedTokens: 0 });
+      }
+    });
+
+    it('charges a retried recording only once', async () => {
+      await charge(56);
+      expect(await charge(56)).toBeNull();
+      const week = await bucket(
+        'member_credits',
+        String(userId),
+        quota.getCalendarWeekRange(quota.QUOTA_RESET_TIMEZONE).start,
+      );
+      expect(week.usedTokens).toBe(56);
+    });
+
+    it('leaves a tenant on the token policy alone', async () => {
+      await models.Institution.updateOne({ tenantId }, { $set: { usagePackage: null } });
+      expect(await charge(56)).toBeNull();
+      expect(await models.UsageReservation.countDocuments({})).toBe(0);
+    });
+
+    it('counts toward the wall, so the next request is refused', async () => {
+      await charge(340);
+      await expect(reserve()).rejects.toMatchObject({
+        details: expect.objectContaining({ limitCode: 'WEEKLY_CAP' }),
+      });
+    });
+
+    it('survives a bucket repair', async () => {
+      await charge(56);
+      await models.UsageBucket.updateMany({}, { $set: { usedTokens: 0 } });
+      await quota.reconcileQuotaState({ now: new Date() });
+      const week = await bucket(
+        'member_credits',
+        String(userId),
+        quota.getCalendarWeekRange(quota.QUOTA_RESET_TIMEZONE).start,
+      );
+      expect(week.usedTokens).toBe(56);
+    });
+  });
+
+  describe('getCreditConsole', () => {
+    it('shows the institution pool and each member against their own limits', async () => {
+      await createPackage('pool', 10_000_000, { name: 'Pool' });
+      await createPackage('member', 1_000_000, { name: 'Standard' });
+      await createPackage('vip', 5_000_000, { name: 'VIP' });
+      await models.User.create({
+        _id: userId,
+        email: 'member@quota.test',
+        name: 'Quota Member',
+        provider: 'local',
+        tenantId,
+        usagePackage: { packageKey: 'vip' },
+      });
+      const first = await reserve({ memberPackage: { packageKey: 'vip' } });
+      await quota.settleUsage({
+        tenantId,
+        reservationKey: first.reservation.reservationKey,
+        credits: 120_000,
+      });
+      const second = await reserve({ userId: otherUserId });
+      await quota.settleUsage({
+        tenantId,
+        reservationKey: second.reservation.reservationKey,
+        credits: 30_000,
+      });
+
+      const console = await quota.getCreditConsole({ tenantId });
+      expect(console).toMatchObject({
+        institutionPackage: 'Pool',
+        defaultMemberPackage: 'Standard',
+        institution: { month: { used: 150_000, limit: 10_000_000 }, week: { used: 150_000 } },
+      });
+      expect(console).not.toHaveProperty('enforced');
+      expect(console.members.map((member) => member.userId)).toEqual([
+        String(userId),
+        String(otherUserId),
+      ]);
+      expect(console.members[0]).toMatchObject({
+        name: 'Quota Member',
+        package: { key: 'vip', name: 'VIP' },
+        ownPackage: true,
+        month: { used: 120_000, limit: 5_000_000, usedBdt: 14.76 },
+      });
+      expect(console.members[1]).toMatchObject({
+        name: null,
+        package: { key: 'member' },
+        ownPackage: false,
+        week: { used: 30_000, limit: 350_000 },
+      });
+    });
+
+    it('is null for an institution on the token policy', async () => {
+      await models.Institution.updateOne({ tenantId }, { $set: { usagePackage: null } });
+      expect(await quota.getCreditConsole({ tenantId })).toBeNull();
+    });
+  });
+
+  describe('getMemberQuota', () => {
+    it('reports the member in credits and taka, and only whether the institution is blocked', async () => {
+      await createPackage('pool', 10_000_000);
+      await createPackage('member', 1_000_000, { name: 'Standard' });
+      const first = await reserve();
+      await quota.settleUsage({
+        tenantId,
+        reservationKey: first.reservation.reservationKey,
+        credits: 100_000,
+      });
+
+      const result = await quota.getMemberQuota({ tenantId, userId });
+      expect(result).toMatchObject({
+        unit: 'credits',
+        package: { key: 'member', name: 'Standard', unlimited: false },
+      });
+      const month = result.meters.find((m) => m.meter === 'credits' && m.window === 'month');
+      expect(month).toMatchObject({
+        used: 100_000,
+        limit: 1_000_000,
+        remaining: 900_000,
+        usedBdt: 12.3,
+        blocked: false,
+      });
+      const institution = result.meters.filter((m) => m.meter === 'institution');
+      expect(institution).toHaveLength(2);
+      for (const meter of institution) {
+        expect(meter).toMatchObject({ used: null, limit: null, remaining: null, blocked: false });
+      }
+    });
+  });
+
+  describe('warnings and repair', () => {
+    beforeEach(async () => {
+      await createPackage('pool', 10_000_000);
+      await createPackage('member', 1_000);
+    });
+
+    it("warns against the weekly bucket's own window", async () => {
+      const first = await reserve();
+      await quota.settleUsage({
+        tenantId,
+        reservationKey: first.reservation.reservationKey,
+        credits: 300,
+      });
+      const week = quota.getCalendarWeekRange(quota.QUOTA_RESET_TIMEZONE);
+      const warnings = await models.UsageWarning.find({ scopeType: 'member_credits' }).lean();
+      expect(warnings.map((w) => w.threshold).sort()).toEqual([0.8]);
+      expect(warnings[0].periodStart.toISOString()).toBe(week.start.toISOString());
+      expect(warnings[0].limit).toBe(350);
+    });
+
+    it('rebuilds weekly and monthly credit buckets from the reservations', async () => {
+      const first = await reserve();
+      await quota.settleUsage({
+        tenantId,
+        reservationKey: first.reservation.reservationKey,
+        credits: 200,
+      });
+      await models.UsageBucket.updateMany(
+        { scopeType: { $in: ['member_credits', 'institution_credits'] } },
+        { $set: { usedTokens: 0 } },
+      );
+      const result = await quota.reconcileQuotaState({ now: new Date() });
+      expect(result.repairedCreditWindows).toBe(2);
+      const buckets = await models.UsageBucket.find({
+        scopeType: { $in: ['member_credits', 'institution_credits'] },
+      }).lean();
+      expect(buckets).toHaveLength(4);
+      for (const repaired of buckets) {
+        expect(repaired.usedTokens).toBe(200);
+      }
+    });
+  });
+});

@@ -1,7 +1,7 @@
 import yaml from 'js-yaml';
 import { Types } from 'mongoose';
-import { GraphEvents, Constants, CODE_EXECUTION_TOOLS } from '@librechat/agents';
 import { logger, normalizeSkillFrontmatterKeys } from '@librechat/data-schemas';
+import { GraphEvents, Constants, CODE_EXECUTION_TOOLS } from '@librechat/agents';
 import type {
   LCTool,
   EventHandler,
@@ -15,8 +15,6 @@ import type {
 import type { StructuredToolInterface } from '@librechat/agents/langchain/tools';
 import type { ValidationIssue } from '@librechat/data-schemas';
 import type { CodeEnvRef } from 'librechat-data-provider';
-import { dedupeInjectedFiles } from './injectedFiles';
-import { fitImageForModel } from './vision';
 import type { SkillFileRecord, PrimeSkillFilesResult } from './skillFiles';
 import type { CodeExecutionContext } from './execution';
 import type { ServerRequest } from '~/types';
@@ -48,13 +46,16 @@ import {
   stripIntentLabelsFromToolDefinitions,
   INTENT_ARG,
 } from './intent';
+import { bringDeferredCodeFiles, hasDeferredCodeFiles } from '~/files/code/deferred';
 import { READ_DOCUMENT_TOOL_NAME } from '~/files/unstructured/definitions';
 import { logAxiosError, runOutsideTracing, truncateMiddle } from '~/utils';
 import { buildSkillPrimeMessage, SKILL_FILE_PREFIX } from './skills';
+import { dedupeInjectedFiles } from './injectedFiles';
 import { parseFrontmatter } from '../skills/import';
 import { cleanCodeToolOutput } from './cleanup';
 import { primeSkillFiles } from './skillFiles';
 import { markSandboxReady } from './prewarm';
+import { fitImageForModel } from './vision';
 
 export interface ToolEndCallbackData {
   output: {
@@ -3948,6 +3949,34 @@ function buildToolCallConfig(
   return toolCallConfig;
 }
 
+/**
+ * Attached images are not copied to the sandbox at upload: a question about a picture never needs
+ * them there. The first call in a run that can use the sandbox copies them in and mounts them.
+ */
+async function mountDeferredCodeFiles(
+  toolCalls: ToolCallRequest[],
+  mergedConfigurable: Record<string, unknown>,
+): Promise<void> {
+  const req = mergedConfigurable.req as ServerRequest | undefined;
+  if (!req || !hasDeferredCodeFiles(req)) {
+    return;
+  }
+  const calls = toolCalls.filter((tc) => isCodeSessionAwareToolCall(tc.name, mergedConfigurable));
+  if (calls.length === 0) {
+    return;
+  }
+  const files = await bringDeferredCodeFiles(req);
+  if (files.length === 0) {
+    return;
+  }
+  for (const tc of calls) {
+    tc.codeSessionContext = {
+      session_id: tc.codeSessionContext?.session_id || files[0].storage_session_id || '',
+      files: [...(tc.codeSessionContext?.files ?? []), ...files],
+    };
+  }
+}
+
 export function createToolExecuteHandler(options: ToolExecuteOptions): EventHandler {
   const { loadTools, toolEndCallback, persistBackgroundCodeResult, emitAttachment, subagentTasks } =
     options;
@@ -4010,6 +4039,7 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
             const authoringQueues = new Map<string, Promise<void>>();
             const sandboxAuthoringContexts = new Map<string, SandboxSessionContext>();
             const sequenceSandboxCalls = shouldSequenceSandboxCalls(toolCalls, mergedConfigurable);
+            await mountDeferredCodeFiles(toolCalls, mergedConfigurable);
 
             /**
              * Background tool calls. The set of tools that received the injected

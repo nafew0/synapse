@@ -130,6 +130,20 @@ describe('text', () => {
       mockedFs.createReadStream.mockReturnValue({} as unknown as ReadStream);
     });
 
+    it.each(['application/zip', 'application/x-tar', 'application/gzip'])(
+      'refuses an archive (%s) instead of returning its bytes as text',
+      async (mimetype) => {
+        process.env.RAG_API_URL = 'http://rag-api.test';
+        const archive = { ...mockFile, originalname: 'Archive.zip', mimetype };
+
+        await expect(
+          parseText({ req: mockReq, file: archive, file_id: mockFileId }),
+        ).rejects.toThrow('is an archive');
+        expect(mockedReadFileAsString).not.toHaveBeenCalled();
+        expect(mockedAxios.post).not.toHaveBeenCalled();
+      },
+    );
+
     it('should fall back to native parsing when RAG_API_URL is not defined', async () => {
       const mockText = 'Native parsing result';
       const mockBytes = Buffer.byteLength(mockText, 'utf8');

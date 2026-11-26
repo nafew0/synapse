@@ -1,11 +1,11 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { ErrorTypes, ViolationTypes, PublicErrorCodes } from 'librechat-data-provider';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { ErrorTypes, ViolationTypes, PublicErrorCodes } from 'librechat-data-provider';
 import type { ContextType } from 'react';
-import translation from '~/locales/en/translation.json';
 import { clearRecentErrors, getRecentErrors } from '~/utils/errors';
 import { ChatContext, MessageContext } from '~/Providers';
+import translation from '~/locales/en/translation.json';
 import Error from '../Error';
 
 /**

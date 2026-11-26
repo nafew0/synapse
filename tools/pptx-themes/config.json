@@ -1,0 +1,64 @@
+{
+  "Candy": {
+    "layouts": {
+      "0.0": {"name": "cover", "title": [1.1, 1.5, 6.0, 1.3], "body": [1.1, 2.9, 6.0, 0.9]},
+      "0.2": {"name": "agenda", "title": [5.3, 0.6, 7.3, 0.9], "body": [5.3, 1.7, 7.3, 5.0]},
+      "0.3": {"name": "section", "body": [6.19, 3.75, 5.7, 1.2]},
+      "0.9": {"name": "section_2"},
+      "0.14": {"name": "section_3"},
+      "0.4": {"name": "content"},
+      "0.7": {"name": "four_columns", "body": [0.75, 6.5, 11.8, 0.55]},
+      "0.10": {"name": "picture_right", "title": [0.75, 0.55, 5.4, 1.4], "body": [0.75, 2.1, 5.4, 4.6]},
+      "0.12": {"name": "picture_left", "title": [7.0, 0.55, 5.8, 1.2], "body": [7.0, 1.9, 5.8, 4.8]},
+      "0.15": {"name": "content_narrow", "title": [0.75, 0.55, 8.6, 1.0], "body": [0.75, 1.7, 8.6, 5.0]},
+      "0.16": {"name": "closing", "title": [0.67, 1.4, 6.6, 1.8], "body": [0.67, 3.3, 6.6, 1.0]}
+    }
+  },
+  "Growing_Liberty": {
+    "layouts": {
+      "0.0": {"name": "cover", "color": "FFFFFF"},
+      "0.2": {"name": "content"},
+      "0.5": {"name": "content_wave"},
+      "0.6": {"name": "content_dark"},
+      "0.7": {"name": "feature", "title": [4.0, 0.55, 8.6, 0.9], "body": [4.0, 1.6, 8.6, 5.2]},
+      "0.8": {"name": "feature_2", "title": [0.75, 0.55, 8.0, 0.9], "body": [0.75, 1.6, 7.6, 5.2]},
+      "0.12": {"name": "section", "title": [4.0, 2.6, 8.3, 1.2], "body": [4.0, 3.9, 8.3, 1.5]},
+      "0.14": {"name": "feature_dark", "title": [0.75, 0.55, 8.0, 0.9], "body": [0.75, 1.6, 7.6, 5.2]},
+      "0.16": {"name": "closing", "color": "FFFFFF"}
+    }
+  },
+  "Freshes": {
+    "layouts": {
+      "0.0": {"name": "cover"},
+      "0.1": {"name": "section"},
+      "0.3": {"name": "content_left_bar", "title": [3.7, 0.5, 9.0, 0.9], "body": [3.7, 1.6, 9.0, 5.3]},
+      "0.5": {"name": "content_band", "body": [0.75, 3.6, 11.8, 3.3]},
+      "0.7": {"name": "picture_tiles", "title": [0.75, 0.5, 6.8, 1.2], "body": [0.75, 1.9, 6.8, 5.0]},
+      "0.9": {"name": "chart_dark", "title": [0.75, 1.35, 11.8, 0.8], "body": [0.75, 2.3, 11.8, 4.6], "color": "FFFFFF"},
+      "0.10": {"name": "chart", "title": [0.75, 1.35, 11.8, 0.8], "body": [0.75, 2.3, 11.8, 4.6]},
+      "0.11": {"name": "diagram", "title": [3.4, 0.5, 8.0, 0.9], "body": [2.8, 1.7, 7.3, 5.2]}
+    }
+  },
+  "Yellow_Idea": {
+    "layouts": {
+      "0.0": {"name": "cover", "title": [5.9, 2.0, 6.6, 1.6], "body": [5.9, 3.7, 6.6, 1.2], "body_size": 20},
+      "0.2": {"name": "callout", "title": [0.75, 0.5, 11.8, 0.9], "body": [2.9, 2.35, 8.4, 1.8]},
+      "0.5": {"name": "section"},
+      "0.7": {"name": "content_panel", "title": [0.75, 0.7, 11.8, 0.9], "body": [1.3, 2.25, 10.6, 4.2]},
+      "0.8": {"name": "content", "body": [0.75, 2.2, 8.8, 4.8]},
+      "0.9": {"name": "content_plain"},
+      "0.10": {"name": "content_dark"},
+      "0.11": {"name": "closing"}
+    }
+  },
+  "Grey_Elegant": {
+    "layouts": {
+      "0.1": {"name": "cover", "body_size": 20},
+      "1.0": {"name": "agenda", "title": [0.75, 0.55, 5.8, 0.9], "body": [0.75, 1.6, 5.8, 5.3]},
+      "1.1": {"name": "content", "title": [1.6, 0.85, 10.9, 0.9], "body": [1.6, 1.9, 10.0, 4.8]},
+      "1.2": {"name": "content_circles"},
+      "1.8": {"name": "quote", "title": [3.4, 0.5, 9.2, 0.9], "body": [6.0, 2.5, 5.2, 2.6]},
+      "1.11": {"name": "picture_right", "title": [0.75, 0.55, 6.8, 0.9], "body": [0.75, 1.6, 6.8, 5.2]}
+    }
+  }
+}

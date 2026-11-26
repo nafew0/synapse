@@ -13,10 +13,10 @@ import type { AppConfig } from '@librechat/data-schemas';
 import type { ParsedServerConfig } from '~/mcp/types';
 import { requiresEphemeralUserConnection, validateMCPServerConfig } from '~/mcp/utils';
 import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
+import { fileAuthoringToolNames } from '~/files/authoring/definitions';
 import { synthesizeBackgroundToolOptions } from '~/agents/background';
 import { mergeSynthesizedToolOptions } from '~/agents/selection';
 import { synthesizeIntentToolOptions } from '~/agents/intent';
-import { fileAuthoringToolNames } from '~/files/authoring/definitions';
 import { scopeEphemeralAgent } from '~/agents/toggles';
 import { getCustomEndpointConfig } from '~/app/config';
 

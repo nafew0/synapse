@@ -11,12 +11,18 @@ const adminRoles = require('./admin/roles');
 const adminSkills = require('./admin/skills');
 const adminUsage = require('./admin/usage');
 const adminUsers = require('./admin/users');
-const adminBilling = require('./admin/billing');
 const adminAuditLog = require('./admin/audit');
 const adminBanner = require('./admin/banner');
+const adminKb = require('./admin/kb');
 const platformInstitutions = require('./platform/institutions');
+const platformKb = require('./platform/kb');
 const platformUsers = require('./platform/users');
-const platformInstitutionPackages = require('./platform/institutionPackages');
+const platformUsagePackages = require('./platform/usagePackages');
+const platformAlerts = require('./platform/alerts');
+const platformCosts = require('./platform/costs');
+const platformPrices = require('./platform/prices');
+const bdren = require('./bdren');
+const platformUsageAssignments = require('./platform/usageAssignments');
 const platformAgentsCatalog = require('./platform/agentsCatalog');
 const endpoints = require('./endpoints');
 const staticRoute = require('./static');
@@ -27,9 +33,11 @@ const projects = require('./projects');
 const prompts = require('./prompts');
 const skills = require('./skills');
 const balance = require('./balance');
+const quota = require('./quota');
 const actions = require('./actions');
 const apiKeys = require('./apiKeys');
 const banner = require('./banner');
+const browserExtension = require('./browserExtension');
 const search = require('./search');
 const reports = require('./reports');
 const models = require('./models');
@@ -39,6 +47,7 @@ const agents = require('./agents');
 const roles = require('./roles');
 const oauth = require('./oauth');
 const files = require('./files');
+const phoneUpload = require('./files/phone');
 const share = require('./share');
 const tags = require('./tags');
 const auth = require('./auth');
@@ -64,12 +73,18 @@ module.exports = {
   adminSkills,
   adminUsage,
   adminUsers,
-  adminBilling,
   adminAuditLog,
   adminBanner,
+  adminKb,
   platformInstitutions,
+  platformKb,
   platformUsers,
-  platformInstitutionPackages,
+  platformUsagePackages,
+  platformAlerts,
+  platformCosts,
+  platformPrices,
+  bdren,
+  platformUsageAssignments,
   platformAgentsCatalog,
   keys,
   apiKeys,
@@ -78,8 +93,10 @@ module.exports = {
   roles,
   oauth,
   files,
+  phoneUpload,
   share,
   banner,
+  browserExtension,
   agents,
   convos,
   search,
@@ -91,6 +108,7 @@ module.exports = {
   actions,
   presets,
   balance,
+  quota,
   messages,
   memories,
   endpoints,

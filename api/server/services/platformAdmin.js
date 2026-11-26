@@ -96,7 +96,14 @@ async function isPlatformAdminEmail(email) {
   return existing?.active === true;
 }
 
+/** Whether this account is an active platform superadmin. */
+async function isPlatformSuperadmin(user) {
+  const { isPlatformSuperadmin: result } = await ensurePlatformSuperadminForUser(user);
+  return result === true;
+}
+
 module.exports = {
   ensurePlatformSuperadminForUser,
+  isPlatformSuperadmin,
   isPlatformAdminEmail,
 };

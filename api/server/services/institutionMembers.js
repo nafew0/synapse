@@ -22,7 +22,6 @@ const { sendEmail } = require('~/server/utils');
 const { isPlatformAdminEmail } = require('./platformAdmin');
 const { resolveMemberRole, toStoredUserRole, isPlatformRole } = require('./accountRoles');
 const { appointInstitutionAdmin, revokeInstitutionAdmin } = require('./tenancy');
-const { getAppConfig } = require('./Config');
 const { syncTenantMemberSafely } = require('./tenantAgentAccess');
 
 const DEFAULT_INVITE_EXPIRY = 1000 * 60 * 60 * 24 * 7;
@@ -54,24 +53,44 @@ function normalizeEmail(email) {
     .toLowerCase();
 }
 
-function getCreditPackages(appConfig) {
-  return appConfig?.creditPackages ?? appConfig?.config?.creditPackages ?? { currency: 'BDT', list: [] };
+/** The usage package an invite gives its member: an active member package, or none (the default applies). */
+async function resolveInvitePackage(usagePackageKey) {
+  const key = String(usagePackageKey || '')
+    .trim()
+    .toLowerCase();
+  if (!key) {
+    return null;
+  }
+  const pkg = await runAsSystem(() => models.UsagePackage.findOne({ key }).lean().exec());
+  if (!pkg || !pkg.active || !pkg.scopes?.includes('member')) {
+    throw new HttpError(400, 'Choose an active member usage package');
+  }
+  return pkg.key;
 }
 
-const usernameAllowedCharactersRegex = /^[a-zA-Z0-9_.@#$%&*()\p{Script=Latin}\p{Script=Common}\p{Script=Cyrillic}\p{Script=Devanagari}\p{Script=Han}\p{Script=Arabic}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+$/u;
+const usernameAllowedCharactersRegex =
+  /^[a-zA-Z0-9_.@#$%&*()\p{Script=Latin}\p{Script=Common}\p{Script=Cyrillic}\p{Script=Devanagari}\p{Script=Han}\p{Script=Arabic}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+$/u;
 const usernameInjectionRegex = /('|--|\$ne|\$gt|\$lt|\$or|\{|\}|\*|;|<|>|\/|=)/i;
 
 function normalizeUsername(username) {
   const value = String(username || '').trim();
   if (!value) return null;
-  if (value.length < 2 || value.length > 80 || !usernameAllowedCharactersRegex.test(value) || usernameInjectionRegex.test(value)) {
+  if (
+    value.length < 2 ||
+    value.length > 80 ||
+    !usernameAllowedCharactersRegex.test(value) ||
+    usernameInjectionRegex.test(value)
+  ) {
     throw new HttpError(400, 'Invalid username');
   }
   return value.toLowerCase();
 }
 
 function normalizeRole(role) {
-  const normalizedRole = String(role ?? '').trim().toUpperCase().replace(/\s+/g, '_');
+  const normalizedRole = String(role ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, '_');
   return normalizedRole === INSTITUTION_ADMIN_ROLE || normalizedRole === 'INSTITUTION_ADMIN'
     ? INSTITUTION_ADMIN_ROLE
     : toStoredUserRole(normalizedRole || SystemRoles.USER);
@@ -458,7 +477,6 @@ async function deleteUserAccountData(user) {
     models.ToolCall.deleteMany({ user: user._id }).exec(),
     models.Token.deleteMany({ userId }).exec(),
     models.Transaction.deleteMany({ user: user._id }).exec(),
-    models.CreditGrant.deleteMany({ user: user._id }).exec(),
     models.AclEntry.deleteMany({ principalId: user._id }).exec(),
     models.InstitutionInvite.deleteMany({
       $or: [{ email: user.email }, { acceptedUserId: user._id }],
@@ -467,10 +485,7 @@ async function deleteUserAccountData(user) {
   ];
 
   await Promise.all(deleteTasks);
-  await models.Group.updateMany(
-    { memberIds: user._id },
-    { $pull: { memberIds: user._id } },
-  ).exec();
+  await models.Group.updateMany({ memberIds: user._id }, { $pull: { memberIds: user._id } }).exec();
 }
 
 async function removeMemberWithoutTransaction(tenantId, userId, actorId) {
@@ -831,7 +846,7 @@ async function createInstitutionInvite({
   email,
   name,
   requestedRole,
-  creditPackageId,
+  usagePackageKey,
   invitedBy,
   source = InstitutionInviteSources.MANUAL,
   context,
@@ -846,12 +861,7 @@ async function createInstitutionInvite({
     throw new HttpError(400, 'Invalid institution role');
   }
 
-  if (creditPackageId) {
-    const appConfig = await getAppConfig({ tenantId });
-    if (!getCreditPackages(appConfig).list.some((item) => item.id === creditPackageId)) {
-      throw new HttpError(400, 'Invalid credit package');
-    }
-  }
+  const packageKey = await resolveInvitePackage(usagePackageKey);
 
   if (await isPlatformAdminEmail(normalizedEmail)) {
     throw new HttpError(409, 'This email address cannot be invited');
@@ -890,7 +900,7 @@ async function createInstitutionInvite({
       email: normalizedEmail,
       name: String(name || '').trim(),
       requestedRole: role,
-      creditPackageId: creditPackageId || null,
+      usagePackageKey: packageKey,
       status: InstitutionInviteStatuses.PENDING,
       tokenHash,
       invitedBy: toObjectId(invitedBy?.id ?? invitedBy?._id ?? invitedBy),
@@ -921,23 +931,49 @@ async function createInstitutionInvite({
   return { invite, ...emailResult };
 }
 
-async function createStandaloneInvite({ email, username, creditPackageId, invitedBy, context }) {
+/** Invites a person outside any institution. Without a package, they get the individuals' trial package. */
+async function createStandaloneInvite({ email, username, usagePackageKey, invitedBy, context }) {
   const normalizedEmail = normalizeEmail(email);
   if (!normalizedEmail) throw new HttpError(400, 'Email is required');
-  if (!creditPackageId) throw new HttpError(400, 'A package is required');
   const requestedUsername = normalizeUsername(username);
-  if (await isPlatformAdminEmail(normalizedEmail)) throw new HttpError(409, 'This email address cannot be invited');
-  const existingUser = await runAsSystem(() => models.User.findOne({ email: normalizedEmail }).select('_id tenantId').lean().exec());
+  if (await isPlatformAdminEmail(normalizedEmail))
+    throw new HttpError(409, 'This email address cannot be invited');
+  const existingUser = await runAsSystem(() =>
+    models.User.findOne({ email: normalizedEmail }).select('_id tenantId').lean().exec(),
+  );
   if (existingUser) throw new HttpError(409, 'This email is already attached to an account');
-  const existingInvite = await runAsSystem(() => models.InstitutionInvite.findOne({ accountScope: InstitutionInviteAccountScopes.STANDALONE, email: normalizedEmail, status: InstitutionInviteStatuses.PENDING }).lean().exec());
-  if (existingInvite) throw new HttpError(409, 'A pending invitation already exists for this email');
-  const appConfig = await getAppConfig({ baseOnly: true });
-  const pkg = getCreditPackages(appConfig).list.find((item) => item.id === creditPackageId);
-  if (!pkg) throw new HttpError(400, 'Invalid credit package');
+  const existingInvite = await runAsSystem(() =>
+    models.InstitutionInvite.findOne({
+      accountScope: InstitutionInviteAccountScopes.STANDALONE,
+      email: normalizedEmail,
+      status: InstitutionInviteStatuses.PENDING,
+    })
+      .lean()
+      .exec(),
+  );
+  if (existingInvite)
+    throw new HttpError(409, 'A pending invitation already exists for this email');
+  const packageKey = await resolveInvitePackage(usagePackageKey);
   const rawToken = await getRandomValues(32);
   const tokenHash = await hashToken(rawToken);
   const name = requestedUsername || normalizedEmail.split('@')[0];
-  const invite = await runAsSystem(() => models.InstitutionInvite.create({ accountScope: InstitutionInviteAccountScopes.STANDALONE, tenantId: null, email: normalizedEmail, name, requestedUsername, requestedRole: SystemRoles.USER, creditPackageId: pkg.id, status: InstitutionInviteStatuses.PENDING, tokenHash, invitedBy: toObjectId(invitedBy?.id ?? invitedBy?._id ?? invitedBy), lastSentAt: new Date(), expiresAt: new Date(Date.now() + getInviteExpiryMs()), source: InstitutionInviteSources.MANUAL }));
+  const invite = await runAsSystem(() =>
+    models.InstitutionInvite.create({
+      accountScope: InstitutionInviteAccountScopes.STANDALONE,
+      tenantId: null,
+      email: normalizedEmail,
+      name,
+      requestedUsername,
+      requestedRole: SystemRoles.USER,
+      usagePackageKey: packageKey,
+      status: InstitutionInviteStatuses.PENDING,
+      tokenHash,
+      invitedBy: toObjectId(invitedBy?.id ?? invitedBy?._id ?? invitedBy),
+      lastSentAt: new Date(),
+      expiresAt: new Date(Date.now() + getInviteExpiryMs()),
+      source: InstitutionInviteSources.MANUAL,
+    }),
+  );
   const emailResult = await sendInstitutionInviteEmail({
     email: normalizedEmail,
     token: rawToken,
@@ -945,14 +981,21 @@ async function createStandaloneInvite({ email, username, creditPackageId, invite
     name: invite.name,
     expiresAt: invite.expiresAt,
   });
-  await recordMemberAudit({ tenantId: undefined, action: 'member.invited', actor: actorFromUser(invitedBy), target: { type: 'standalone_invite', id: invite._id, name: normalizedEmail }, metadata: { accountScope: InstitutionInviteAccountScopes.STANDALONE, packageId: pkg.id }, context });
+  await recordMemberAudit({
+    tenantId: undefined,
+    action: 'member.invited',
+    actor: actorFromUser(invitedBy),
+    target: { type: 'standalone_invite', id: invite._id, name: normalizedEmail },
+    metadata: {
+      accountScope: InstitutionInviteAccountScopes.STANDALONE,
+      usagePackageKey: packageKey,
+    },
+    context,
+  });
   return { invite, ...emailResult };
 }
 
-const RESENDABLE_STATUSES = [
-  InstitutionInviteStatuses.PENDING,
-  InstitutionInviteStatuses.EXPIRED,
-];
+const RESENDABLE_STATUSES = [InstitutionInviteStatuses.PENDING, InstitutionInviteStatuses.EXPIRED];
 
 /**
  * The audiences a bulk resend can target.
@@ -1190,7 +1233,9 @@ async function resendPendingInvites({
         tenantId: standalone ? undefined : invite.tenantId,
         standalone,
       });
-      return inviteLink ? { ...row, outcome: 'link_only', inviteLink } : { ...row, outcome: 'sent' };
+      return inviteLink
+        ? { ...row, outcome: 'link_only', inviteLink }
+        : { ...row, outcome: 'sent' };
     } catch (error) {
       logger.error('[institutionMembers] failed to resend invitation', {
         email: invite.email,
@@ -1234,9 +1279,33 @@ async function resendPendingInvites({
 }
 
 async function revokeStandaloneInvite({ inviteId, actor, context }) {
-  const invite = await runAsSystem(() => models.InstitutionInvite.findOneAndUpdate({ _id: inviteId, accountScope: InstitutionInviteAccountScopes.STANDALONE, status: InstitutionInviteStatuses.PENDING }, { $set: { status: InstitutionInviteStatuses.REVOKED, revokedAt: new Date(), revokedBy: toObjectId(actor?.id ?? actor?._id) } }, { new: true }).lean().exec());
+  const invite = await runAsSystem(() =>
+    models.InstitutionInvite.findOneAndUpdate(
+      {
+        _id: inviteId,
+        accountScope: InstitutionInviteAccountScopes.STANDALONE,
+        status: InstitutionInviteStatuses.PENDING,
+      },
+      {
+        $set: {
+          status: InstitutionInviteStatuses.REVOKED,
+          revokedAt: new Date(),
+          revokedBy: toObjectId(actor?.id ?? actor?._id),
+        },
+      },
+      { new: true },
+    )
+      .lean()
+      .exec(),
+  );
   if (!invite) throw new HttpError(404, 'Pending invitation not found');
-  await recordMemberAudit({ tenantId: undefined, action: 'member.invite_revoked', actor: actorFromUser(actor), target: { type: 'standalone_invite', id: invite._id, name: invite.email }, context });
+  await recordMemberAudit({
+    tenantId: undefined,
+    action: 'member.invite_revoked',
+    actor: actorFromUser(actor),
+    target: { type: 'standalone_invite', id: invite._id, name: invite.email },
+    context,
+  });
   return invite;
 }
 
@@ -1493,7 +1562,10 @@ async function buildPlatformMemberFilters({ tenantId, accountScope, query, statu
         )
       : [];
     const adminEmails = [
-      ...new Set([...configuredAdmins, ...adminRecords.map((admin) => admin.email).filter(Boolean)]),
+      ...new Set([
+        ...configuredAdmins,
+        ...adminRecords.map((admin) => admin.email).filter(Boolean),
+      ]),
     ];
     const institutionTenantIds = await runAsSystem(() =>
       models.Institution.distinct('tenantId').exec(),
@@ -1636,13 +1708,28 @@ async function listPlatformInstitutionMembers({
   if (accountScope === 'standalone') {
     const normalizedQuery = String(query || '').trim();
     const searchFilter = normalizedQuery
-      ? { $or: [{ name: { $regex: escapeRegex(normalizedQuery), $options: 'i' } }, { email: { $regex: escapeRegex(normalizedQuery), $options: 'i' } }] }
+      ? {
+          $or: [
+            { name: { $regex: escapeRegex(normalizedQuery), $options: 'i' } },
+            { email: { $regex: escapeRegex(normalizedQuery), $options: 'i' } },
+          ],
+        }
       : {};
-    const configuredAdmins = String(process.env.PLATFORM_SUPERADMIN_EMAILS || '').split(',').map((email) => email.trim().toLowerCase()).filter(Boolean);
+    const configuredAdmins = String(process.env.PLATFORM_SUPERADMIN_EMAILS || '')
+      .split(',')
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean);
     const adminRecords = models.PlatformAdmin
-      ? await runAsSystem(() => models.PlatformAdmin.find({ active: true }).select('email').lean().exec())
+      ? await runAsSystem(() =>
+          models.PlatformAdmin.find({ active: true }).select('email').lean().exec(),
+        )
       : [];
-    const adminEmails = [...new Set([...configuredAdmins, ...adminRecords.map((admin) => admin.email).filter(Boolean)])];
+    const adminEmails = [
+      ...new Set([
+        ...configuredAdmins,
+        ...adminRecords.map((admin) => admin.email).filter(Boolean),
+      ]),
+    ];
     // Older accounts may have been created before institution records existed and
     // can retain a legacy tenantId. Treat those accounts as standalone when the
     // referenced institution no longer exists. This keeps the Others view useful
@@ -1656,13 +1743,22 @@ async function listPlatformInstitutionMembers({
         { tenantId: { $exists: false } },
         { tenantId: null },
         { tenantId: '' },
-        ...(institutionTenantIds.length > 0
-          ? [{ tenantId: { $nin: institutionTenantIds } }]
-          : []),
+        ...(institutionTenantIds.length > 0 ? [{ tenantId: { $nin: institutionTenantIds } }] : []),
       ],
     };
     const statusFilter = platformUserStatusFilter(status);
-    const userFilter = { $and: [tenantlessFilter, { email: { $nin: adminEmails } }, visibleMembershipFilter(), searchFilter, statusFilter, ...(status === 'invited' || status === InstitutionInviteStatuses.EXPIRED ? [{ _id: null }] : [])] };
+    const userFilter = {
+      $and: [
+        tenantlessFilter,
+        { email: { $nin: adminEmails } },
+        visibleMembershipFilter(),
+        searchFilter,
+        statusFilter,
+        ...(status === 'invited' || status === InstitutionInviteStatuses.EXPIRED
+          ? [{ _id: null }]
+          : []),
+      ],
+    };
     const inviteFilter = {
       $and: [
         { accountScope: InstitutionInviteAccountScopes.STANDALONE },
@@ -1671,14 +1767,56 @@ async function listPlatformInstitutionMembers({
       ],
     };
     const fetchLimit = offset + limit;
-    const [users, invites, userTotal, inviteTotal] = await runAsSystem(() => Promise.all([
-      models.User.find(userFilter).select('_id name username email emailVerified role provider membershipStatus createdAt updatedAt suspendedAt removedAt').sort({ createdAt: -1 }).limit(fetchLimit).lean().exec(),
-      models.InstitutionInvite.find(inviteFilter).select('_id name requestedUsername email requestedRole status source accountScope createdAt updatedAt lastSentAt expiresAt acceptedAt').sort({ createdAt: -1 }).limit(fetchLimit).lean().exec(),
-      models.User.countDocuments(userFilter),
-      models.InstitutionInvite.countDocuments(inviteFilter),
-    ]));
-    const members = [...users.map((user) => ({ ...mapUserMember(user), tenantId: undefined, institutionName: 'Others', accountScope: 'standalone' })), ...invites.map((invite) => ({ ...mapInviteMember(invite), tenantId: undefined, institutionName: 'Others', accountScope: 'standalone' }))].sort(sortMembersDesc).slice(offset, offset + limit);
-    return { members, total: userTotal + inviteTotal, limit, offset, summary: { activeMembers: userTotal, maxActiveMembers: null, pendingInvites: inviteTotal, institutions: 0 } };
+    const [users, invites, userTotal, inviteTotal] = await runAsSystem(() =>
+      Promise.all([
+        models.User.find(userFilter)
+          .select(
+            '_id name username email emailVerified role provider membershipStatus createdAt updatedAt suspendedAt removedAt',
+          )
+          .sort({ createdAt: -1 })
+          .limit(fetchLimit)
+          .lean()
+          .exec(),
+        models.InstitutionInvite.find(inviteFilter)
+          .select(
+            '_id name requestedUsername email requestedRole status source accountScope createdAt updatedAt lastSentAt expiresAt acceptedAt',
+          )
+          .sort({ createdAt: -1 })
+          .limit(fetchLimit)
+          .lean()
+          .exec(),
+        models.User.countDocuments(userFilter),
+        models.InstitutionInvite.countDocuments(inviteFilter),
+      ]),
+    );
+    const members = [
+      ...users.map((user) => ({
+        ...mapUserMember(user),
+        tenantId: undefined,
+        institutionName: 'Others',
+        accountScope: 'standalone',
+      })),
+      ...invites.map((invite) => ({
+        ...mapInviteMember(invite),
+        tenantId: undefined,
+        institutionName: 'Others',
+        accountScope: 'standalone',
+      })),
+    ]
+      .sort(sortMembersDesc)
+      .slice(offset, offset + limit);
+    return {
+      members,
+      total: userTotal + inviteTotal,
+      limit,
+      offset,
+      summary: {
+        activeMembers: userTotal,
+        maxActiveMembers: null,
+        pendingInvites: inviteTotal,
+        institutions: 0,
+      },
+    };
   }
   const normalizedQuery = String(query || '').trim();
   const searchFilter = normalizedQuery
@@ -1690,9 +1828,7 @@ async function listPlatformInstitutionMembers({
       }
     : {};
   const tenantFilter = tenantId ? { tenantId } : { tenantId: { $exists: true, $ne: null } };
-  const storedRole = role
-    ? normalizeRole(role)
-    : undefined;
+  const storedRole = role ? normalizeRole(role) : undefined;
   const statusFilter = platformUserStatusFilter(status);
   const userFilter = {
     $and: [
@@ -1803,7 +1939,24 @@ async function getInstitutionMemberDetail({ tenantId, id, kind }) {
   return mapUserMember(user);
 }
 
+/**
+ * Membership changes wait while a member move re-scopes the person: the move reads their status
+ * when it switches them, and a change in between would count a seat twice or not at all.
+ */
+async function assertNotMoving(userId) {
+  const id = toObjectId(userId);
+  const [user, running] = await Promise.all([
+    runAsSystem(() => models.User.findById(id).select('movingUntil').lean().exec()),
+    runAsSystem(() => models.MemberMove.exists({ userId: id, status: 'running' }).exec()),
+  ]);
+  const fenced = user?.movingUntil != null && new Date(user.movingUntil) > new Date();
+  if (fenced || running) {
+    throw new HttpError(409, 'This member is being moved between institutions. Try again shortly.');
+  }
+}
+
 async function setInstitutionRole({ tenantId, userId, role, actor, context }) {
+  await assertNotMoving(userId);
   const nextRole = normalizeRole(role);
   if (!ALLOWED_MEMBER_ROLES.has(nextRole)) {
     throw new HttpError(400, 'Invalid institution role');
@@ -1833,6 +1986,7 @@ async function setInstitutionRole({ tenantId, userId, role, actor, context }) {
 }
 
 async function reactivateInstitutionMember({ tenantId, userId, actor, context }) {
+  await assertNotMoving(userId);
   const result = await withInstitutionUserTransaction(
     tenantId,
     userId,
@@ -1875,6 +2029,7 @@ async function reactivateInstitutionMember({ tenantId, userId, actor, context })
 }
 
 async function suspendInstitutionMember({ tenantId, userId, actor, context }) {
+  await assertNotMoving(userId);
   const actorId = actor?.id ?? actor?._id;
   const result = await withInstitutionUserTransaction(
     tenantId,
@@ -1913,16 +2068,52 @@ async function suspendInstitutionMember({ tenantId, userId, actor, context }) {
   return result;
 }
 
+/**
+ * In an institution linked to bdren.ai, membership follows coverage and the person keeps their
+ * account and data: removal is a leave (they become an individual; what they shared stays, owned by
+ * the institution). Unlinked institutions keep the old behaviour and delete the account.
+ */
+async function leaveLinkedInstitution(tenantId, userId) {
+  const user = await models.User.findOne({ _id: userId, tenantId }).lean().exec();
+  if (!user) {
+    throw new HttpError(404, 'Member not found');
+  }
+  if (isPlatformRole(user.role)) {
+    throw new HttpError(403, 'Platform admins cannot be removed from tenant flows');
+  }
+  const { bdrenMover } = require('~/server/services/bdrenAllowance');
+  const outcome = await bdrenMover.move({
+    userId: String(userId),
+    from: tenantId,
+    to: null,
+    reason: 'member_removed',
+  });
+  if (outcome.status !== 'moved') {
+    throw new HttpError(
+      409,
+      `Member could not be removed now (${outcome.reason ?? outcome.status})`,
+    );
+  }
+  return { ...user, membershipStatus: InstitutionMembershipStatuses.REMOVED };
+}
+
 async function removeInstitutionMember({ tenantId, userId, actor, context }) {
   const actorId = actor?.id ?? actor?._id;
-  const result = await removeMemberWithoutTransaction(tenantId, userId, actorId);
-  await syncTenantMemberSafely({ tenantId, userId, previous: result });
+  const institution = await getInstitutionOrThrow(tenantId);
+  const linked = typeof institution.bdrenOrganizationId === 'string';
+  const result = linked
+    ? await leaveLinkedInstitution(tenantId, userId)
+    : await removeMemberWithoutTransaction(tenantId, userId, actorId);
+  if (!linked) {
+    await syncTenantMemberSafely({ tenantId, userId, previous: result });
+  }
 
   await recordMemberAudit({
     tenantId,
     action: 'member.removed',
     actor: actorFromUser(actor),
     target: { type: 'user', id: userId, name: result.email },
+    metadata: { accountKept: linked },
     context,
   });
 
@@ -2017,25 +2208,50 @@ async function completeInviteAcceptance({ inviteId, userId }) {
       .lean()
       .exec(),
   );
-  if (invite?.creditPackageId) {
+  if (invite?.usagePackageKey) {
     try {
-      const grantPackage = async () => {
-        const existingGrant = await models.CreditGrant.findOne({ inviteId: invite._id }).lean().exec();
-        if (existingGrant) return;
-        const appConfig = await getAppConfig(invite.tenantId ? { tenantId: invite.tenantId } : { baseOnly: true });
-        const pkg = getCreditPackages(appConfig).list.find((item) => item.id === invite.creditPackageId);
-        if (!pkg) throw new Error(`Invalid credit package: ${invite.creditPackageId}`);
-        const result = await db.createTransaction({ user: toObjectId(userId), tokenType: 'credits', context: 'purchase', rawAmount: pkg.credits, balance: appConfig.balance, tenantId: invite.tenantId });
-        if (!result) throw new Error('Balance is disabled');
-        await models.CreditGrant.create({ user: toObjectId(userId), tenantId: invite.tenantId ?? null, packageId: pkg.id, credits: pkg.credits, price: pkg.price, currency: getCreditPackages(appConfig).currency, source: 'invite', inviteId: invite._id, grantedBy: null });
-      };
-      if (invite.tenantId) await tenantStorage.run({ tenantId: invite.tenantId }, grantPackage);
-      else await grantPackage();
+      await assignInvitePackage({ invite, userId });
     } catch (error) {
-      logger.error('[institutionMembers] invite credit grant failed', { inviteId, userId, error });
+      logger.error('[institutionMembers] invite usage package assignment failed', {
+        inviteId,
+        userId,
+        error,
+      });
     }
   }
   return invite;
+}
+
+/**
+ * Gives an accepted invite's member the package it was sent with. A package archived since the invite
+ * is skipped, so the member falls back to their default (the institution's, or the trial).
+ */
+async function assignInvitePackage({ invite, userId }) {
+  const pkg = await runAsSystem(() =>
+    models.UsagePackage.findOne({ key: invite.usagePackageKey, active: true }).lean().exec(),
+  );
+  if (!pkg) {
+    logger.warn('[institutionMembers] invite package is no longer active; the default applies', {
+      inviteId: invite._id,
+      usagePackageKey: invite.usagePackageKey,
+    });
+    return;
+  }
+  await runAsSystem(() =>
+    models.User.updateOne(
+      { _id: toObjectId(userId), 'usagePackage.packageKey': { $exists: false } },
+      {
+        $set: {
+          usagePackage: {
+            packageKey: pkg.key,
+            assignedAt: new Date(),
+            assignedBy: invite.invitedBy ?? null,
+            expiresAt: null,
+          },
+        },
+      },
+    ),
+  );
 }
 
 /**
@@ -2115,7 +2331,9 @@ function parseCsv(text) {
     throw new HttpError(400, 'CSV content is empty');
   }
 
-  const header = parseCsvLine(lines[0].replace(/^\uFEFF/, '')).map((column) => column.trim().toLowerCase());
+  const header = parseCsvLine(lines[0].replace(/^\uFEFF/, '')).map((column) =>
+    column.trim().toLowerCase(),
+  );
   const emailIndex = header.indexOf('email');
   const nameIndex = header.indexOf('name');
   const roleIndex = header.indexOf('role');
@@ -2147,7 +2365,10 @@ async function analyzeImportRows({ tenantId, csvText }) {
   for (const row of rows) {
     const normalizedEmail = normalizeEmail(row.email);
     const requestedRole = normalizeRole(row.role);
-    const normalizedRequestedRole = String(row.role ?? '').trim().toUpperCase().replace(/\s+/g, '_');
+    const normalizedRequestedRole = String(row.role ?? '')
+      .trim()
+      .toUpperCase()
+      .replace(/\s+/g, '_');
 
     if (normalizedRequestedRole && !ALLOWED_MEMBER_ROLES.has(normalizedRequestedRole)) {
       results.push({
@@ -2485,7 +2706,6 @@ async function getInstitutionImportJob({ tenantId, jobId }) {
 }
 
 module.exports = {
-  visibleMembershipFilter,
   HttpError,
   visibleMembershipFilter,
   assertSeatLimitChangeAllowed,

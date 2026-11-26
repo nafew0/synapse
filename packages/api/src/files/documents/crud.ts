@@ -9,8 +9,8 @@ import {
 import type { FilePageScan } from 'librechat-data-provider';
 import type { MistralOCRUploadResult } from '~/types';
 import { summarizeScan } from '../scan/classify';
-import { readPdfPages } from '../scan/read';
 import { assertSafeZipSize } from './zipSafety';
+import { readPdfPages } from '../scan/read';
 
 type ParsedDocument = {
   text: string;

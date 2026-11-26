@@ -9,6 +9,7 @@ export * from './filter';
 export * from './mistral/crud';
 export * from './ocr';
 export * from './parse';
+export * from './phone';
 export * from './prepare';
 export * from './rag';
 export * from './regexEngine';

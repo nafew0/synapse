@@ -30,11 +30,11 @@ import {
 } from '~/utils';
 import { getErrorInfo, getErrorMessage, recordError } from '~/utils/errors';
 import { useGetFileConfig, useUploadFileMutation } from '~/data-provider';
-import useLocalize from '~/hooks/useLocalize';
 import { useDelayedUploadToast } from './useDelayedUploadToast';
 import { useChatContext } from '~/Providers/ChatContext';
 import store, { ephemeralAgentByConvoId } from '~/store';
 import useClientResize from './useClientResize';
+import useLocalize from '~/hooks/useLocalize';
 import useUpdateFiles from './useUpdateFiles';
 import useUploadRoute from './useUploadRoute';
 
