@@ -28,6 +28,29 @@ index ffd31a8..44b79f4 100644
  	}
  	getPromptCacheProvider() {
  		if (this.provider === "anthropic") return this.clientOptions?.promptCache === true ? "anthropic" : void 0;
+diff --git a/node_modules/@librechat/agents/dist/cjs/graphs/Graph.cjs b/node_modules/@librechat/agents/dist/cjs/graphs/Graph.cjs
+index 7d97661..270f9b3 100644
+--- a/node_modules/@librechat/agents/dist/cjs/graphs/Graph.cjs
++++ b/node_modules/@librechat/agents/dist/cjs/graphs/Graph.cjs
+@@ -1315,6 +1315,7 @@ var StandardGraph = class StandardGraph extends Graph {
+ 				finalMessages = trackProviderMessageOrigins(before, require_content.formatContentStrings(before));
+ 			}
+ 			const maxProviderToolResultChars = agentContext.maxToolResultChars ?? require_truncation.calculateMaxToolResultChars(agentContext.maxContextTokens);
++			const maxArtifactPayloadChars = Math.max(maxProviderToolResultChars, require_truncation.HARD_MAX_TOOL_RESULT_CHARS * 2);
+ 			const beforeToolStreamProjection = finalMessages;
+ 			finalMessages = trackProviderMessageOrigins(beforeToolStreamProjection, require_core.projectToolStreamContentForProvider(beforeToolStreamProjection));
+ 			const beforeToolInputProjection = finalMessages;
+@@ -1461,8 +1462,8 @@ var StandardGraph = class StandardGraph extends Graph {
+ 			let artifactBaseMessages;
+ 			if (lastMessageY instanceof _langchain_core_messages.ToolMessage) {
+ 				let artifactCandidate = finalMessages;
+-				if (anthropicLike) artifactCandidate = trackProviderMessageOrigins(finalMessages, require_core.projectAnthropicArtifactContent(finalMessages, maxProviderToolResultChars));
+-				else if (require_llm.isOpenAILike(agentContext.provider) && agentContext.provider !== "deepseek" || require_llm.isGoogleLike(agentContext.provider)) artifactCandidate = trackProviderMessageOrigins(finalMessages, require_core.projectArtifactPayload(finalMessages, maxProviderToolResultChars));
++				if (anthropicLike) artifactCandidate = trackProviderMessageOrigins(finalMessages, require_core.projectAnthropicArtifactContent(finalMessages, maxArtifactPayloadChars));
++				else if (require_llm.isOpenAILike(agentContext.provider) && agentContext.provider !== "deepseek" || require_llm.isGoogleLike(agentContext.provider)) artifactCandidate = trackProviderMessageOrigins(finalMessages, require_core.projectArtifactPayload(finalMessages, maxArtifactPayloadChars));
+ 				if (artifactCandidate !== finalMessages) {
+ 					const projection = measureProviderPayload(artifactCandidate);
+ 					if (projection.fits) {
 diff --git a/node_modules/@librechat/agents/dist/cjs/llm/openai/index.cjs b/node_modules/@librechat/agents/dist/cjs/llm/openai/index.cjs
 index de7609a..eb22ff5 100644
 --- a/node_modules/@librechat/agents/dist/cjs/llm/openai/index.cjs
@@ -85,6 +108,38 @@ index aa116d1..30d4099 100644
  	}
  	getPromptCacheProvider() {
  		if (this.provider === "anthropic") return this.clientOptions?.promptCache === true ? "anthropic" : void 0;
+diff --git a/node_modules/@librechat/agents/dist/esm/graphs/Graph.mjs b/node_modules/@librechat/agents/dist/esm/graphs/Graph.mjs
+index bcb402b..fb23a43 100644
+--- a/node_modules/@librechat/agents/dist/esm/graphs/Graph.mjs
++++ b/node_modules/@librechat/agents/dist/esm/graphs/Graph.mjs
+@@ -10,7 +10,7 @@ import { shouldTraceToolNodeForLangfuse } from "../langfuseToolOutputTracing.mjs
+ import { createLangfuseHandler, createLangfuseTraceMetadata, disposeLangfuseHandler, isLangfuseCallbackHandler } from "../langfuse.mjs";
+ import { appendCallbacks, findCallback } from "../utils/callbacks.mjs";
+ import { applyGraphRuntimeConfig } from "./applyGraphRuntimeConfig.mjs";
+-import { calculateMaxToolResultChars } from "../utils/truncation.mjs";
++import { HARD_MAX_TOOL_RESULT_CHARS, calculateMaxToolResultChars } from "../utils/truncation.mjs";
+ import { compactToolContent, getToolContentCharLength, serializeToolContentBounded } from "../utils/toolContent.mjs";
+ import { apportionTokenCounts } from "../utils/tokens.mjs";
+ import { initializeLangfuseTracing } from "../instrumentation.mjs";
+@@ -1315,6 +1315,7 @@ var StandardGraph = class StandardGraph extends Graph {
+ 				finalMessages = trackProviderMessageOrigins(before, formatContentStrings(before));
+ 			}
+ 			const maxProviderToolResultChars = agentContext.maxToolResultChars ?? calculateMaxToolResultChars(agentContext.maxContextTokens);
++			const maxArtifactPayloadChars = Math.max(maxProviderToolResultChars, HARD_MAX_TOOL_RESULT_CHARS * 2);
+ 			const beforeToolStreamProjection = finalMessages;
+ 			finalMessages = trackProviderMessageOrigins(beforeToolStreamProjection, projectToolStreamContentForProvider(beforeToolStreamProjection));
+ 			const beforeToolInputProjection = finalMessages;
+@@ -1461,8 +1462,8 @@ var StandardGraph = class StandardGraph extends Graph {
+ 			let artifactBaseMessages;
+ 			if (lastMessageY instanceof ToolMessage) {
+ 				let artifactCandidate = finalMessages;
+-				if (anthropicLike) artifactCandidate = trackProviderMessageOrigins(finalMessages, projectAnthropicArtifactContent(finalMessages, maxProviderToolResultChars));
+-				else if (isOpenAILike(agentContext.provider) && agentContext.provider !== "deepseek" || isGoogleLike(agentContext.provider)) artifactCandidate = trackProviderMessageOrigins(finalMessages, projectArtifactPayload(finalMessages, maxProviderToolResultChars));
++				if (anthropicLike) artifactCandidate = trackProviderMessageOrigins(finalMessages, projectAnthropicArtifactContent(finalMessages, maxArtifactPayloadChars));
++				else if (isOpenAILike(agentContext.provider) && agentContext.provider !== "deepseek" || isGoogleLike(agentContext.provider)) artifactCandidate = trackProviderMessageOrigins(finalMessages, projectArtifactPayload(finalMessages, maxArtifactPayloadChars));
+ 				if (artifactCandidate !== finalMessages) {
+ 					const projection = measureProviderPayload(artifactCandidate);
+ 					if (projection.fits) {
 diff --git a/node_modules/@librechat/agents/dist/esm/llm/openai/index.mjs b/node_modules/@librechat/agents/dist/esm/llm/openai/index.mjs
 index 4f7280e..11b14c8 100644
 --- a/node_modules/@librechat/agents/dist/esm/llm/openai/index.mjs
