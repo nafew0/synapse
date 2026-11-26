@@ -360,6 +360,9 @@ speech:
       decibelValue: -45
       autoSendText: 0
 
+# Every chat spec sets max_tokens: without it the usage quota reserves its 4,096-token
+# default and writes that in as the output limit, so a reasoning model can spend it all
+# thinking and stop with an empty reply (kb/issues/office-output-capped-by-quota-default.md).
 modelSpecs:
   enforce: true
   prioritize: true
@@ -386,6 +389,7 @@ modelSpecs:
         model: openai/gpt-6-luna
         # GPT-6 Luna bills 2x above 272K prompt tokens.
         maxContextTokens: 262144
+        max_tokens: 32000
         promptPrefix: |
           You return transcripts of audio files the user attaches.
 
@@ -421,6 +425,7 @@ modelSpecs:
         # a long chat costs up to ~944K input tokens a message. 256K keeps 6-12 full
         # read_attachment results in context, so file editing rarely compacts mid-edit.
         maxContextTokens: 262144
+        max_tokens: 32000
         promptPrefix: &chatPrefix |
           ## Language and tone
 
@@ -580,6 +585,7 @@ modelSpecs:
         model: anthropic/claude-haiku-5.5
         # Claude Haiku 5.5 bills 5x above 100K prompt tokens; 90K keeps every call under it.
         maxContextTokens: 90000
+        max_tokens: 32000
         promptCache: true
         promptPrefix: *chatPrefix
 
@@ -600,6 +606,7 @@ modelSpecs:
         endpoint: OpenRouter DeepSeek
         model: deepseek/deepseek-v4-flash-0731
         maxContextTokens: 262144
+        max_tokens: 32000
         promptCache: true
         promptPrefix: |
           If the user's message is in a language other than English, explain in that language. Match how they talk: formal with a formal message (আপনি and its verb forms in Bangla), relaxed with a casual one (তুমি and its verb forms in Bangla, unless they say আপনি to you). Code, identifiers and technical terms stay in English unless asked otherwise.
@@ -670,6 +677,7 @@ modelSpecs:
         endpoint: OpenRouter
         model: google/gemini-3.8-flash
         maxContextTokens: 262144
+        max_tokens: 32000
         promptPrefix: *chatPrefix
 
 endpoints:
