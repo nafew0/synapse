@@ -59,6 +59,8 @@ from office.embed import embed_font  # noqa: E402
 from office.soffice import run_soffice  # noqa: E402
 
 A4 = (21.0, 29.7)
+MIN_DATE_CM = 3.0
+MAX_DATE_SHARE = 0.5
 DEFAULT_MARGINS = [1.5, 2.0, 1.5, 2.0]
 MIN_SIZE = 10.0
 # The two or three words printed under an emblem, as on a UGC letterhead.
@@ -312,7 +314,9 @@ def letterhead(doc, block, style):
 
 def memo(doc, block, style):
     right = block.get("right", [])
-    right_width = float(block.get("right_width_cm", 6.0))
+    # Word keeps a table's stored widths, so a date column wider than half the line squeezes the
+    # memo number into a column one letter wide; LibreOffice widens it again and hides that.
+    right_width = min(max(float(block.get("right_width_cm", 6.0)), MIN_DATE_CM), style.text_width_cm * MAX_DATE_SHARE)
     left_cell, right_cell = borderless_table(doc, [style.text_width_cm - right_width, right_width])
     paragraph = shape(left_cell.paragraphs[0], style, {}, after=0)
     add_text(paragraph, block.get("left", ""), style, block)

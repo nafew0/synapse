@@ -59,6 +59,8 @@ CONTACT = re.compile(r"@|www\.|https?:|\.(?:com|org|gov|edu|bd)\b", re.IGNORECAS
 MAX_HANDWRITTEN_CHARS = 25
 SIGNATURE_LINES_ABOVE = 3
 MAX_SIGNATURE_LINES_ABOVE = 6
+SIGNED_DATE = re.compile(r"[০-৯\d]{1,2}[/.-][০-৯\d]{1,2}(?:[/.-](?:[০-৯\d]{2,4})?)?")
+"""A date a signer writes beside the signature, often without the year: 16.09.26, 16/09, 16.09."""
 HANDWRITTEN_DATE = re.compile(r"[০-৯\d]{1,2}[/.-][০-৯\d]{1,2}[/.-][০-৯\d]{2,4}$")
 SHORT_LINE = 70
 MAX_SIGNATURE_LINES = 5
@@ -96,6 +98,9 @@ ROW_MIN_OVERLAP = 0.3
 COLUMN_GAP_LINES = 2.5
 ROW_COLUMN_GAP_CM = 0.3
 MIN_DATE_CM = 3.0
+MIN_DATE_X = 0.4
+"""A date box starting left of this share of the page is the whole memo line read as one; its start
+says nothing about where the date sits."""
 A4_HEIGHT_CM = 29.7
 MIN_TOP_MARGIN_CM = 1.0
 MAX_TOP_MARGIN_CM = 2.5
@@ -228,7 +233,7 @@ def looks_handwritten(element):
     text = text_of(element)
     if not text or element.get("type") in PICTURE_TYPES:
         return False
-    if re.fullmatch(r"[০-৯\d]{1,2}[/.-][০-৯\d]{1,2}[/.-][০-৯\d]{2,4}", text):
+    if SIGNED_DATE.fullmatch(text.strip()):
         return True
     return (
         len(text) <= MAX_HANDWRITTEN_CHARS
@@ -363,6 +368,10 @@ def without_echoes(elements):
     for index, element in enumerate(elements):
         text = squeeze(text_of(element))
         following = elements[index + 1] if index + 1 < len(elements) else None
+        # A logo's caption is printed under the emblem, apart from the letterhead's own lines.
+        if element.get("type") in PICTURE_TYPES:
+            kept.append(element)
+            continue
         # Returned again as the first line of the next element: keep this one, cut that line.
         if following is not None and text and "\n" in text_of(following):
             first, rest = text_of(following).split("\n", 1)
@@ -879,7 +888,7 @@ def place_blocks(blocks, margins, body_line_height):
         if kind == "signature":
             block["left_cm"] = round(max(left, 0), 2)
             block["width_cm"] = round(max((x1 - x0) * cm, MIN_SIGNATURE_BLOCK_CM), 2)
-        if kind == "memo" and date_x is not None:
+        if kind == "memo" and date_x is not None and date_x >= MIN_DATE_X:
             block["right_width_cm"] = round(max(page_width - right_margin - date_x * page_width, MIN_DATE_CM), 2)
         previous_box = (*box, page)
     return bottoms
