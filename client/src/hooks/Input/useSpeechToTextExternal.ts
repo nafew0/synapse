@@ -46,6 +46,7 @@ const useSpeechToTextExternal = (
   const audioStream = useRef<MediaStream | null>(null);
   const animationFrameIdRef = useRef<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 
   const audioChunksRef = useRef<Blob[]>([]);
@@ -127,13 +128,32 @@ const useSpeechToTextExternal = (
     }
   };
 
-  const monitorSilence = (stream: MediaStream, stopRecording: () => void) => {
-    const audioContext = new AudioContext();
-    const audioStreamSource = audioContext.createMediaStreamSource(stream);
-    const analyser = audioContext.createAnalyser();
-    analyser.minDecibels = minDecibels;
-    audioStreamSource.connect(analyser);
+  const openAnalyser = (stream: MediaStream): AnalyserNode | null => {
+    if (typeof AudioContext === 'undefined') {
+      return null;
+    }
+    try {
+      const audioContext = new AudioContext();
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.minDecibels = minDecibels;
+      audioContext.createMediaStreamSource(stream).connect(analyser);
+      audioContextRef.current = audioContext;
+      analyserRef.current = analyser;
+      return analyser;
+    } catch (error) {
+      console.error('[useSpeechToTextExternal] Failed to open the audio analyser', error);
+      return null;
+    }
+  };
 
+  const closeAnalyser = () => {
+    analyserRef.current = null;
+    audioContextRef.current?.close().catch(() => undefined);
+    audioContextRef.current = null;
+  };
+
+  const monitorSilence = (analyser: AnalyserNode, stopRecording: () => void) => {
     const bufferLength = analyser.frequencyBinCount;
     const domainData = new Uint8Array(bufferLength);
     let lastSoundTime = Date.now();
@@ -184,8 +204,9 @@ const useSpeechToTextExternal = (
         });
         mediaRecorderRef.current.addEventListener('stop', handleStop);
         mediaRecorderRef.current.start(100);
-        if (!audioContextRef.current && autoTranscribeAudio && speechToText) {
-          monitorSilence(audioStream.current, stopRecording);
+        const analyser = openAnalyser(audioStream.current);
+        if (analyser && autoTranscribeAudio && speechToText) {
+          monitorSilence(analyser, stopRecording);
         }
         setIsListening(true);
       } catch (error) {
@@ -213,6 +234,7 @@ const useSpeechToTextExternal = (
         animationFrameIdRef.current = null;
       }
 
+      closeAnalyser();
       setIsListening(false);
     } else {
       showToast({ message: localize('com_nav_stt_not_recording'), status: 'error' });
@@ -244,6 +266,7 @@ const useSpeechToTextExternal = (
 
   return {
     isListening,
+    analyserRef,
     externalStopRecording,
     externalStartRecording,
     isLoading: isProcessing,

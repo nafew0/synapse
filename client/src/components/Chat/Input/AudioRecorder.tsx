@@ -1,5 +1,4 @@
 import { memo, useCallback, useEffect, useRef } from 'react';
-import { MicOff } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import {
   IconButton,
@@ -8,9 +7,12 @@ import {
   ListeningIcon,
   Spinner,
 } from '@librechat/client';
+import type { RefObject } from 'react';
+import useVoiceLevel, { VOICE_BAR_COUNT } from '~/hooks/Input/useVoiceLevel';
 import { useLocalize, useSpeechToText, useGetAudioSettings } from '~/hooks';
 import { globalAudioId, type TAskFunction } from '~/common';
 import { useChatFormContext } from '~/Providers';
+import { cn } from '~/utils';
 import store from '~/store';
 
 const isExternalSTT = (speechToTextEndpoint: string) => speechToTextEndpoint === 'external';
@@ -19,11 +21,14 @@ export default memo(function AudioRecorder({
   ask,
   methods,
   isSubmitting,
+  composerRef,
 }: {
   disabled: boolean;
   ask: TAskFunction;
   methods: ReturnType<typeof useChatFormContext>;
   isSubmitting: boolean;
+  /** The composer box that glows with the voice while recording */
+  composerRef?: RefObject<HTMLDivElement>;
 }) {
   const { setValue, reset, getValues } = methods;
   const localize = useLocalize();
@@ -84,10 +89,13 @@ export default memo(function AudioRecorder({
     [setValue, speechToTextEndpoint],
   );
 
-  const { isListening, isLoading, startRecording, stopRecording } = useSpeechToText(
+  const { isListening, isLoading, analyserRef, startRecording, stopRecording } = useSpeechToText(
     setText,
     onTranscriptionComplete,
   );
+
+  const barsRef = useRef<HTMLSpanElement>(null);
+  useVoiceLevel({ active: isListening === true, analyserRef, barsRef, composerRef });
 
   const handleStartRecording = useCallback(() => {
     existingTextRef.current = getValues('text') || '';
@@ -123,7 +131,13 @@ export default memo(function AudioRecorder({
 
   const renderIcon = () => {
     if (isListening === true) {
-      return <MicOff className="stroke-status-error" />;
+      return (
+        <span ref={barsRef} className="lc-voice-bars" aria-hidden="true">
+          {Array.from({ length: VOICE_BAR_COUNT }, (_, i) => (
+            <span key={i} className="bg-status-error" />
+          ))}
+        </span>
+      );
     }
     if (isLoading === true) {
       return <Spinner className="stroke-text-secondary" />;
@@ -144,7 +158,10 @@ export default memo(function AudioRecorder({
           label={localize('com_ui_use_micrphone')}
           onClick={isListening === true ? handleStopRecording : handleStartRecording}
           disabled={recorderDisabled}
-          className="p-1 hover:bg-surface-composer-hover"
+          className={cn(
+            'p-1 hover:bg-surface-composer-hover',
+            isListening === true && 'bg-status-error-subtle hover:bg-status-error-subtle',
+          )}
           aria-pressed={isListening}
         >
           {renderIcon()}
