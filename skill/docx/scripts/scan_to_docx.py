@@ -1365,6 +1365,10 @@ def main(argv):
     print(f"spec: {spec_path}")
     if missing:
         print("pictures left out, no position found: " + ", ".join(missing))
+    print(
+        "words and numbers: keep them as read; do not change any by reading the image (that turned a "
+        "correct 2026 into 2023). Tell the user to check numbers and handwriting."
+    )
     return result.returncode
 
 

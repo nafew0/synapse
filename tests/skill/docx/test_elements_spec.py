@@ -8,7 +8,7 @@ import pytest
 SCRIPTS = Path(__file__).resolve().parents[3] / "skill" / "docx" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from elements_spec import convert, memo_warnings, table_rows  # noqa: E402
+from elements_spec import convert, memo_warnings, prepare, table_rows, text_of  # noqa: E402
 
 
 def el(kind, text="", **metadata):
@@ -294,6 +294,33 @@ def test_tight_style_sets_the_leading_from_the_type_size(letter, tmp_path):
     fmt = Document(str(out)).paragraphs[0].paragraph_format
     assert fmt.line_spacing_rule == WD_LINE_SPACING.EXACTLY
     assert fmt.line_spacing.pt == pytest.approx(12.5)
+
+
+def test_a_date_written_beside_a_signature_counts_as_handwriting_even_without_a_year():
+    from elements_spec import looks_handwritten
+
+    for written in ("16.09.26", "16/09/26", "16.09.", "16/09", "১৬.০৯"):
+        assert looks_handwritten(el("NarrativeText", written)), written
+    assert not looks_handwritten(el("NarrativeText", "১৪-০৯-২০২৬ তারিখের পত্র"))
+
+
+def test_a_logo_caption_does_not_cut_the_same_words_from_the_letterhead():
+    elements = [
+        el("Image", "বাংলাদেশ\nবিশ্ববিদ্যালয় মঞ্জুরী কমিশন", **box(92, 50, 191, 129)),
+        el("NarrativeText", "বাংলাদেশ বিশ্ববিদ্যালয় মঞ্জুরী কমিশন\nUniversity Grants Commission of Bangladesh",
+           **box(236, 51, 533, 133)),
+    ]
+    texts = [text_of(e) for e in prepare(elements)]
+    assert "বাংলাদেশ বিশ্ববিদ্যালয় মঞ্জুরী কমিশন" in texts
+
+
+def test_a_date_read_with_the_whole_memo_line_keeps_the_default_width():
+    from elements_spec import place_blocks
+
+    block = {"type": "memo", "left": "স্মারক নং", "right": ["তারিখ : ০১"], "right_width_cm": 5,
+             "_box": (100, 300, 1700, 340, 2066, 2924), "_page": 1, "_date_x": 0.06}
+    place_blocks([block], [2, 2, 2, 2.5], 40)
+    assert block["right_width_cm"] == 5
 
 
 def test_memo_numbers_that_disagree_are_reported():
