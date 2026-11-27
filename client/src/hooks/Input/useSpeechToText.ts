@@ -1,3 +1,4 @@
+import type { RefObject } from 'react';
 import useSpeechToTextExternal from './useSpeechToTextExternal';
 import useSpeechToTextBrowser from './useSpeechToTextBrowser';
 import useGetAudioSettings from './useGetAudioSettings';
@@ -8,6 +9,8 @@ const useSpeechToText = (
 ): {
   isLoading?: boolean;
   isListening?: boolean;
+  /** Live analyser for the recording; only the external engine records a stream it can measure */
+  analyserRef?: RefObject<AnalyserNode | null>;
   stopRecording: () => void | (() => Promise<void>);
   startRecording: () => void | (() => Promise<void>);
 } => {
@@ -24,6 +27,7 @@ const useSpeechToText = (
   const {
     isListening: speechIsListeningExternal,
     isLoading: speechIsLoadingExternal,
+    analyserRef: externalAnalyserRef,
     externalStartRecording: startSpeechRecordingExternal,
     externalStopRecording: stopSpeechRecordingExternal,
   } = useSpeechToTextExternal(setText, onTranscriptionComplete);
@@ -41,6 +45,7 @@ const useSpeechToText = (
   return {
     isLoading,
     isListening,
+    analyserRef: externalSpeechToText ? externalAnalyserRef : undefined,
     stopRecording,
     startRecording,
   };
