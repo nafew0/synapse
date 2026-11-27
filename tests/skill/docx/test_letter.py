@@ -275,6 +275,26 @@ def test_fitting_shrinks_the_signature_but_keeps_its_proportions(scan, tmp_path)
     assert round(int(shape.get('cy')) / int(shape.get('cx')), 2) == round(800 / 600, 2)
 
 
+def test_a_memo_row_keeps_the_memo_number_readable(tmp_path):
+    sys.path.insert(0, str(SCRIPTS))
+    from docx.oxml.ns import qn
+    from letter import Style, build
+
+    spec = {'blocks': [{
+        'type': 'memo',
+        'left': 'স্মারক নং- ইউজিসি/প্রশা:/বা:না:/টিএডআই/৩৩২/০৬/৯২৬৮',
+        'right': ['তারিখ : ০১ আশ্বিন ১৪৩৩', '১৬ সেপ্টেম্বর ২০২৬'],
+        'right_width_cm': 15.39,
+    }]}
+    out = tmp_path / 'memo.docx'
+    style = Style(spec)
+    build(spec, out, style)
+    grid = Document(out).tables[0]._tbl.tblGrid.findall(qn('w:gridCol'))
+    left, right = (int(col.get(qn('w:w'))) / 567 for col in grid)
+    assert right <= style.text_width_cm / 2 + 0.01
+    assert left >= style.text_width_cm / 2 - 0.01
+
+
 def test_crop_trims_to_ink_and_whitens_paper(scan, tmp_path):
     result = run('crop.py', scan, tmp_path / 'qa', 'logo=20,20,120,120', 'sig=280,440,440,540', cwd=tmp_path)
 
