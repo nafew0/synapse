@@ -74,6 +74,11 @@ describe('buildInstitutionKbInstructions', () => {
     );
     expect(text).toMatch(/call `institution_kb` before using web search/);
     expect(text).toMatch(/"home office"/);
+    expect(text).toMatch(/give every relevant part the results contain/);
+    expect(text).toMatch(/even when the user writes casually/);
+    expect(text).toMatch(/search for their names and emails/);
+    expect(text).not.toContain('doc_types');
+    expect(text).toMatch(/refers to another section, search for that section/);
   });
 
   it('caps a long list', () => {
@@ -105,48 +110,88 @@ describe('getKbRagApiUrl', () => {
   });
 });
 
+interface Hit {
+  doc_id: string;
+  text: string;
+  page_start?: number;
+}
+
+interface QueryBody {
+  query: string;
+  k: number;
+  doc_types?: string[];
+}
+
+const hit = ({ doc_id, text, page_start = 1 }: Hit) => ({
+  doc_id,
+  title: doc_id === 'live' ? 'HR policy' : 'Deleted',
+  doc_type: 'policy',
+  section_path: '',
+  page_start,
+  page_end: page_start,
+  text,
+});
+
+/** A real local RAG API stand-in that records each request body and answers with `hits`. */
+async function withRagApi(
+  hits: Hit[],
+  run: (url: string, bodies: QueryBody[]) => Promise<void>,
+): Promise<void> {
+  process.env.RAG_JWT_SECRET = 'test-secret';
+  const bodies: QueryBody[] = [];
+  const server = http.createServer((req, res) => {
+    let raw = '';
+    req.on('data', (part: Buffer) => (raw += part.toString()));
+    req.on('end', () => {
+      bodies.push(JSON.parse(raw) as QueryBody);
+      res.setHeader('Content-Type', 'application/json');
+      res.end(JSON.stringify({ results: hits.map(hit) }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address() as AddressInfo;
+  try {
+    await run(`http://127.0.0.1:${port}`, bodies);
+  } finally {
+    server.close();
+  }
+}
+
 describe('createInstitutionKbTool', () => {
   it('never shows results from a document that no longer has a record', async () => {
-    process.env.RAG_JWT_SECRET = 'test-secret';
-    const server = http.createServer((_req, res) => {
-      res.setHeader('Content-Type', 'application/json');
-      res.end(
-        JSON.stringify({
-          results: [
-            {
-              doc_id: 'gone',
-              title: 'Deleted',
-              doc_type: 'other',
-              section_path: '',
-              page_start: 1,
-              page_end: 1,
-              text: 'stale',
-            },
-            {
-              doc_id: 'live',
-              title: 'HR policy',
-              doc_type: 'policy',
-              section_path: '',
-              page_start: 2,
-              page_end: 2,
-              text: 'Twenty days',
-            },
-          ],
-        }),
-      );
-    });
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const { port } = server.address() as AddressInfo;
-    try {
-      const kbTool = createInstitutionKbTool({
-        ragApiUrl: `http://127.0.0.1:${port}`,
-        tenantId: 'uni-a',
-        knownDocumentIds: async () => new Set(['live']),
-      });
-      const output = await kbTool.invoke({ query: 'leave' });
-      expect(output).toBe('[1] HR policy, page 2\nTwenty days');
-    } finally {
-      server.close();
-    }
+    await withRagApi(
+      [
+        { doc_id: 'gone', text: 'stale' },
+        { doc_id: 'live', text: 'Twenty days', page_start: 2 },
+      ],
+      async (ragApiUrl) => {
+        const kbTool = createInstitutionKbTool({
+          ragApiUrl,
+          tenantId: 'uni-a',
+          knownDocumentIds: async () => new Set(['live']),
+        });
+        const output = await kbTool.invoke({ query: 'leave' });
+        expect(output).toBe('[1] HR policy, page 2\nTwenty days');
+      },
+    );
+  });
+
+  it('asks for twelve results and shows repeated text only once', async () => {
+    await withRagApi(
+      [
+        { doc_id: 'live', text: 'SPECIAL CLAUSE\nThe CEO may  allow it.', page_start: 3 },
+        { doc_id: 'live', text: 'Apply to HR.', page_start: 2 },
+        { doc_id: 'live', text: ' special clause the ceo\nmay allow it. ', page_start: 4 },
+      ],
+      async (ragApiUrl, bodies) => {
+        const kbTool = createInstitutionKbTool({ ragApiUrl, tenantId: 'uni-a' });
+        const output = await kbTool.invoke({ query: 'home office' });
+        expect(bodies).toEqual([{ query: 'home office', k: 12 }]);
+        expect(output).toBe(
+          '[1] HR policy, page 3\nSPECIAL CLAUSE\nThe CEO may  allow it.\n\n' +
+            '[2] HR policy, page 2\nApply to HR.',
+        );
+      },
+    );
   });
 });
