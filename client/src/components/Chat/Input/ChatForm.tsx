@@ -84,6 +84,7 @@ const ChatForm = memo(function ChatForm({
 }: ChatFormProps) {
   const submitButtonRef = useRef<HTMLButtonElement>(null);
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
   useFocusChatEffect(textAreaRef);
   const localize = useLocalize();
 
@@ -554,6 +555,7 @@ const ChatForm = memo(function ChatForm({
               agentId={conversation?.agent_id}
             />
             <div
+              ref={composerRef}
               onClick={handleContainerClick}
               className={cn(
                 'relative flex w-full flex-grow flex-col overflow-hidden rounded-t-3xl border pb-4 text-text-primary transition-all duration-200 sm:rounded-3xl sm:pb-0',
@@ -690,6 +692,7 @@ const ChatForm = memo(function ChatForm({
                     ask={submitMessage}
                     disabled={disableInputs || isNotAppendable}
                     isSubmitting={isSubmitting}
+                    composerRef={composerRef}
                   />
                 )}
                 {/* Synapse Browser: hands the typed task to the extension, which opens it in a new tab. */}

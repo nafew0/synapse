@@ -590,6 +590,20 @@ html:not(.dark) .lc-auth-network-background-light { filter: invert(1) grayscale(
 .lc-composer.lc-composer-temp, .dark .lc-composer.lc-composer-temp { background: var(--lc-temp-box); box-shadow: inset 0 0 0 1.5px rgb(var(--lc-temp-ring)); }
 .lc-composer.lc-composer-temp::before { opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .lc-composer, .lc-composer::before { transition: none; } }
+/* Voice recording: the mic bars follow the voice (useVoiceLevel writes --lc-voice-level and each bar's scale);
+   custom CSS because the border is a masked gradient ring that utilities cannot express. */
+.lc-voice-bars { display: flex; align-items: center; gap: 2.5px; height: 20px; }
+.lc-voice-bars > span { width: 3px; height: 18px; border-radius: 9999px; transform: scaleY(0.25); transition: transform 80ms linear; }
+.lc-voice-bars:not([data-live]) > span { animation: lc-voice-idle 1.1s ease-in-out infinite; }
+.lc-voice-bars:not([data-live]) > span:nth-child(2), .lc-voice-bars:not([data-live]) > span:nth-child(4) { animation-delay: -0.35s; }
+.lc-voice-bars:not([data-live]) > span:nth-child(3) { animation-delay: -0.7s; }
+@keyframes lc-voice-idle { 0%, 100% { transform: scaleY(0.3); } 50% { transform: scaleY(0.85); } }
+.lc-composer[data-recording] { box-shadow: 0 0 calc(6px + var(--lc-voice-level, 0) * 26px) calc(var(--lc-voice-level, 0) * 4px) color-mix(in srgb, var(--lc-action-background) calc(14% + var(--lc-voice-level, 0) * 30%), transparent); }
+.lc-composer[data-recording]::before { opacity: 1; padding: calc(1.5px + var(--lc-voice-level, 0) * 1.5px); background: conic-gradient(from var(--lc-orbit-angle), rgb(var(--status-error)), var(--lc-action-background) 40%, #328a8a 70%, rgb(var(--status-error))); animation: lc-orbit 5s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .lc-voice-bars > span, .lc-voice-bars:not([data-live]) > span { animation: none; transition: none; transform: scaleY(0.6); }
+  .lc-composer[data-recording]::before { animation: none; }
+}
 .dark .lc-model-pill { background: var(--lc-model-pill-background); border-color: #30363a; box-shadow: none; }
 .dark .lc-footer { color: rgb(var(--lc-footer-body)); }
 .dark .lc-footer a { color: rgb(var(--lc-footer-label)); }
