@@ -10,7 +10,7 @@ const axios = createAxiosInstance();
 
 export const INSTITUTION_KB_TOOL_NAME = 'institution_kb';
 const QUERY_TIMEOUT_MS = 30_000;
-const DEFAULT_RESULTS = 8;
+const DEFAULT_RESULTS = 12;
 
 const institutionKbSchema: ExtendedJsonSchema = {
   type: 'object',
@@ -38,7 +38,7 @@ export const institutionKbToolDefinition: {
 } = {
   name: INSTITUTION_KB_TOOL_NAME,
   description:
-    "Searches the user's own institution's knowledge base: the policies, circulars, notices, forms, templates, contact lists and reports its administrators uploaded. Call it when the request concerns the institution, its offices, people, rules, figures or formats, including when drafting a letter, email or message to one of its teams, to get exact names, designations, emails and phone numbers. Search it before web search or answering from memory; skip it only for plainly general questions. Use only details found in the results and name the document and page you used; if nothing relevant comes back, say so and leave placeholders such as [NOC email] instead of guessing. When the knowledge base, a web search and a file the user attached disagree, say what each source says.",
+    "Searches the user's own institution's knowledge base: the policies, circulars, notices, forms, templates, contact lists and reports its administrators uploaded. Call it when the request concerns the institution, its offices, people, rules, figures or formats, including when drafting a letter, email or message to one of its teams, to get exact names, designations, emails and phone numbers. For a policy or procedure, also search for the names and emails of the people it names. Search it before web search or answering from memory; skip it only for plainly general questions. Use only details found in the results and name the document and page you used; if nothing relevant comes back, say so and leave placeholders such as [NOC email] instead of guessing. When the knowledge base, a web search and a file the user attached disagree, say what each source says.",
   schema: institutionKbSchema,
 };
 
@@ -62,7 +62,9 @@ export function buildInstitutionKbInstructions(catalog: KbCatalogItem[]): string
 The user's institution keeps its own documents in a knowledge base, searched with the \`${INSTITUTION_KB_TOOL_NAME}\` tool. It currently holds:
 ${listed}${more}
 
-Look in the knowledge base first. Unless the request is plainly general knowledge or only about a file the user attached, call \`${INSTITUTION_KB_TOOL_NAME}\` before using web search or answering from memory, including when drafting letters, emails or documents. Read the user's words as being about their own institution: "home office", "leave", "apply for", "our policy" or a team name usually mean the institution's own rules, people and procedures. Search again with other wording (English and Bangla, synonyms such as "work from home") if the first search finds nothing relevant. Only when the knowledge base has nothing relevant, use other sources, and say that the institution's documents did not cover it.`;
+Look in the knowledge base first. Unless the request is plainly general knowledge or only about a file the user attached, call \`${INSTITUTION_KB_TOOL_NAME}\` before using web search or answering from memory, including when drafting letters, emails or documents. Read the user's words as being about their own institution: "home office", "leave", "apply for", "our policy" or a team name usually mean the institution's own rules, people and procedures. Search again with other wording (English and Bangla, synonyms such as "work from home") if the first search finds nothing relevant. Only when the knowledge base has nothing relevant, use other sources, and say that the institution's documents did not cover it.
+
+For a question about a policy or procedure, give every relevant part the results contain: who may apply, requirements, reasons or options, steps, approvals and any rule that overrides them. Do not cut it down to a short summary, even when the user writes casually: keep the friendly tone, not a shorter answer. When it names a role, office or team (such as the General Manager, HR or the CEO), search for their names and emails, such as in a staff or team list, and include them. When a result refers to another section, search for that section too.`;
 }
 
 interface KbResult {
@@ -102,6 +104,27 @@ export function formatKbResults(results: KbResult[]): string {
     .join('\n\n');
 }
 
+const textKey = (text: string): string => text.replace(/\s+/g, ' ').trim().toLowerCase();
+
+/**
+ * Drops results of documents without a record and results whose text repeats an earlier one
+ * (documents often restate a clause word for word), so every slot carries new text.
+ */
+function keepUsable(results: KbResult[], known: ReadonlySet<string> | null): KbResult[] {
+  const seen = new Set<string>();
+  return results.filter((result) => {
+    if (known && !known.has(result.doc_id)) {
+      return false;
+    }
+    const key = textKey(result.text);
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
 export interface InstitutionKbToolOptions {
   ragApiUrl: string;
   /** Taken from the signed-in user on the server, never from the model. */
@@ -129,8 +152,7 @@ export function createInstitutionKbTool({
         signal: runConfig?.signal,
       },
     );
-    const results = data.results ?? [];
     const known = knownDocumentIds ? await knownDocumentIds() : null;
-    return formatKbResults(known ? results.filter((r) => known.has(r.doc_id)) : results);
+    return formatKbResults(keepUsable(data.results ?? [], known));
   }, institutionKbToolDefinition) as DynamicStructuredTool;
 }
